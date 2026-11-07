@@ -1,7 +1,8 @@
 # hyprslots design
 
 Status: slices 1 to 6 implemented and integrated on `feature/engine` (§11);
-editor slice D1 on `feature/editor`; next is the cutover. Targets Hyprland 0.56.2
+editor slice D1 on `feature/editor`, D2 (Layout view) on
+`feature/editor-layout`; next is the cutover. Targets Hyprland 0.56.2
 (Lua config) on Omarchy 4.5.
 
 ## 1. Purpose
@@ -476,8 +477,9 @@ the running engine only through Hyprland:
 | `Engine.qml` | the service: runs the api through `hyprctl repl` (one `Process` per command, in order, 3 s watchdog), reads `state` debounced (60 ms) on `custom>>hyprslots changed` and on window events (`openwindow`, `closewindow`, `movewindowv2`, `windowtitlev2`, monitor events, `configreloaded`) via `Quickshell.Hyprland`'s `rawEvent`, only while the panel is open; keeps `error` (last state read) and `lastError` (last call) |
 | `Panel.qml` | the panel: an `OverlayWindow` card (`qs.Ui`), themed through `qs.Commons` (`Color.menu.*`, `Style`) like Omarchy's own panels; tabs Assignment, Layout, Slots, Arrangements (Tab / Shift+Tab), Esc or q closes; `press(key)` feeds a key by name |
 | `AssignmentView.qml` | aerolayout's Assignment view (below) |
-| `PlaceholderView.qml` | Layout, Slots, Arrangements: their data, read-only, until D2/D3 |
-| `Protocol.js`, `Assignment.js`, `Summary.js` | pure logic, tested under node (`editor/tests/`) |
+| `LayoutView.qml` | aerolayout's Layout view (below) |
+| `PlaceholderView.qml` | Slots, Arrangements: their data, read-only, until D3 |
+| `Protocol.js`, `Assignment.js`, `Layout.js`, `Summary.js` | pure logic, tested under node (`editor/tests/`) |
 
 **Assignment view** (aerolayout `views.py` AssignmentView). Pages: every
 window, then each desk; it opens on the focused workspace's desk. A desk's
@@ -496,6 +498,50 @@ a config error) shows in the urgent colour. Unlike aerolayout's `a`, which
 wrote the window's spec into the slot, `assign` is a sticky assignment in
 memory; writing specs belongs to the Slots view (D3). aerolayout's `n`
 (name a workspace) has no counterpart: desks have no names.
+
+**Layout view** (aerolayout `views.py` LayoutView, `tree_visualizer.py`).
+One desk of one arrangement at a time; it opens on the active arrangement
+at the focused workspace's desk and screen. A pane per screen role, side
+by side, each a scale model of its monitor (its aspect from Hyprland, else
+16:9): leaves are boxes proportional to their weights (tree.lua's integer
+arithmetic) with the slot name, `×n` for a share other than 1, and the
+title of the window in the slot; a nested split is a box titled with its
+kind and ratio (`h 1:3`); an accordion is a row of tabs over the box of its
+open member (the selected one, else the first); the overflow leaf is
+`* overflow`. Under each pane its tree text and ratio string (and
+`overflow parked` when the tree has no `*`); under the panes the leaf order
+once the tree nests. Edits go to a **draft** per pane (`edited` on the
+pane, `edited, not applied (w)` in the header); the header also shows the
+engine's `dirty` as `● unsaved (s)`. Keys, as in the TUI:
+
+| Key | Does |
+|---|---|
+| ←↑↓→ | select the leaf that way; off a pane's left/right edge, the next screen's |
+| h j k l | swap the leaf with its neighbour in its container; off the edge, move it to the next screen's tree |
+| H J K L | along its container: pair it with its neighbour in a new container across; across: move it out beside its container |
+| / | flip every split of the tree |
+| t | stack the leaf's container as an accordion, or back to the split it was; refused, with tree.lua's message, when it holds a split or `*` |
+| r | prompt for the whole tree's ratio (grammar below; the current one shown, empty clears all); typed, Backspace, Return, Esc |
+| o | park the overflow leaf (the engine then gives it a column at the right) or put it back where it was |
+| w | apply the edited panes (`set_trees`) |
+| s | apply, then `save` |
+| d | after y/n, put the pane's tree back to slots.lua (`reset`) |
+| R | `record` the pane's workspace (active arrangement only), show the tree, its ratio and what it would drop (`missing`), apply after y/n |
+| g / c | pick the desk / the arrangement to edit (one key each) |
+
+A read-only arrangement, a config without slots.lua, or the engine being
+off shows `Read only: <why>` and refuses the editing keys. Layout.js
+mirrors tree.lua's text and ratio.lua's grammar (a node test runs the same
+corpus through the Lua modules), so a draft is checked and shown without a
+round trip; the engine validates again on apply. Deviations from
+aerolayout: edits are a draft applied with `w` (aerolayout saved on every
+keystroke); `d` resets one screen to slots.lua (aerolayout's `d` dropped a
+workspace's own tree for the arrangement default, which hyprslots does not
+have); `g` picks a desk and `c` an arrangement (aerolayout's `g` picked a
+workspace or "all", and arrangements were the Monitors tab's); `R` always
+previews and asks; a parked overflow leaf is remembered only while the
+panel is open (aerolayout kept it hidden in the saved tree); an accordion
+has no orientation of its own, so arrows and moves treat it as a row.
 
 **Install** (the user's machine; not done by the slices):
 
@@ -537,6 +583,8 @@ any event as "re-read state", not as an ordering.
 | `unassign` | `address` | `address, desk?, slot?, seq` |
 | `save` | — | `path, seq` |
 | `reload` | — | `arrangement, seq` |
+| `set_trees` | `arrangement?`, `desk`, `trees` (role -> tree) | `arrangement, desk, trees` (role -> `tree, ratio`), `seq` |
+| `reset` | `arrangement?`, `desk`, `role` | `arrangement, desk, role, tree?, ratio?, seq` |
 
 `state`: `seq`, `dirty` (unsaved edits, keyboard-resized trees included),
 `arrangement` (active name), `screens` (role -> connector), `workspaces`
@@ -569,6 +617,16 @@ re-solve, until it is assigned again or closes. Both live in memory only
 (neither touches `slots.lua`), survive `reload` and hotplug, and are lost on
 a Hyprland config reload like every assignment. Both refuse a window that is
 not open; `assign` refuses a slot the desk does not have.
+
+**Layout editing** (the Layout view). `set_trees` sets several of a
+desk's trees in one edit, all or nothing: a slot sits on one screen of a
+desk, so moving it to another screen cannot be two `set_tree` calls. Each
+tree it sets replaces that branch's keyboard-resized override (kept when
+the edit fails). `reset` puts one branch back to the tree slots.lua holds
+on disk (read data-only, as saved, not as first loaded; no tree when the
+file has none), dropping an unsaved edit and a keyboard-resized override
+of it; other branches keep their edits, and the engine is clean again once
+its data is the file's.
 
 **The tree in force** for a branch is `api.effective_branch`, which is
 `resize.effective_branch`: a keyboard-resized override (§6) if there is
@@ -662,7 +720,7 @@ cannot go after hyprmoncfg's `dofile`, which stays last.
 | 6 Protocol | record, api protocol, serializer, ratio grammar | done |
 | 7 Cutover | install on the user's machine, retire the old setup | next |
 | Editor D1 | plugin skeleton (Engine service, panel, tabs) + Assignment view; api `assign` / `unassign`, `overflow` in `state` | done |
-| Editor D2 | Layout view | next |
+| Editor D2 | Layout view; api `set_trees` / `reset` | done |
 | Editor D3 | Slots + Arrangements views | — |
 
 Slices 2 to 6 were built in parallel on top of slices 1 and 2 and
@@ -691,7 +749,7 @@ spanning windows, public release / AUR package, QML tests.
 - **S3 — pure modules**: busted specs; aerolayout's unittest cases are ported
   where the logic carries over (tree parsing, weights, assignment, record).
 - **Editor**: the api it relies on is S2 (`spec/assignment_api_spec.lua`,
-  `spec/api_spec.lua`); its pure JavaScript runs under `node --test`
+  `spec/layout_api_spec.lua`, `spec/api_spec.lua`); its pure JavaScript runs under `node --test`
   (`editor/tests/`, part of `make test`); `make editor-lint` runs Qt 6's
   qmllint. `make e2e-editor` (`e2e/editor_smoke.sh`, opt-in, needs qs, grim
   and wtype) runs the plugin in Quickshell on the nested Hyprland through
@@ -699,8 +757,9 @@ spanning windows, public release / AUR package, QML tests.
   the service and adds an IPC target), drives the panel with real keys from
   one wtype session (a fresh virtual keyboard loses its first key, and a
   second wtype's keys did not arrive, so the sequence is one session starting
-  with an ignored F13) and with `press()`, asserts through api `state`, and
-  writes screenshots to `.e2e-tmp/editor-smoke-*.png`.
+  with an ignored F13) and with `press()`, asserts through api `state` (and,
+  for the Layout view, the windows' geometry after `w` and slots.lua after
+  `s`), and writes screenshots to `.e2e-tmp/editor-smoke-*.png`.
 
 ### Completion test
 

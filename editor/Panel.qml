@@ -10,7 +10,7 @@ import qs.Ui
 // The hyprslots editor panel (docs/design.md §9): aerolayout's `edit` TUI as
 // an Omarchy shell panel. Four tabs, cycled with Tab / Shift+Tab as in the
 // TUI: Assignment (which window fills which slot), Layout, Slots and
-// Arrangements (the last three arrive in later slices). Esc or q closes it.
+// Arrangements (the last two arrive in D3). Esc or q closes it.
 //
 //   omarchy-shell shell toggle milan.hyprslots
 //   omarchy-shell shell call milan.hyprslots press a   (a key, for scripts and tests)
