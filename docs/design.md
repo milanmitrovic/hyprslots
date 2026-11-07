@@ -291,7 +291,8 @@ to the same arrangement but not a config reload. `resize.effective_branch`
 is the one lookup for the tree in force; the layout and the api (§9) both
 use it. The api's `save` writes overrides to `slots.lua` and clears them,
 its `reload` drops them, and `set_tree` / `set_ratio` / `record` replace
-the one they edit. A nudge or reset emits the editor's change event.
+the one they edit. A nudge or reset emits the editor's change event; a `resize` that moves
+both edges emits it once.
 
 `hyprslots.bind_resize_keys()` rebinds Omarchy's twelve resize keys
 (`SUPER [+ SHIFT] [+ ALT|CTRL] + code:20/21`, from

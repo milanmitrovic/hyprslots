@@ -106,7 +106,9 @@ end
 
 -- `present(desk)`, when given, is the set of slots the layout shows on that
 -- desk entry (layout.present), so the nudge acts on the tree as laid out.
-local function nudge(engine, ctx, dir, text, present)
+-- `quiet` leaves the change event to the caller (resize, which may nudge on
+-- both axes and announces once).
+local function nudge(engine, ctx, dir, text, present, quiet)
   local delta, pixels = amount(text)
   if not delta then
     return nil, "a nudge must be a fraction (0.1) or pixels (100px), got '" .. tostring(text) .. "'"
@@ -122,7 +124,9 @@ local function nudge(engine, ctx, dir, text, present)
   end
   overrides(engine)[key(engine, desk)] = nudged
   engine.log:info("nudge %s %s %s on desk %s", slot, dir, text, tostring(desk.desk))
-  announce(engine)
+  if not quiet then
+    announce(engine)
+  end
   return true
 end
 
@@ -144,7 +148,8 @@ end
 -- it, with dwindle's feel: an edge of the focused slot moves by dx (its right
 -- edge, or its left edge when nothing is to its right) and by dy (its bottom
 -- edge, or its top edge). So dx = -100 ("Expand window left") narrows a slot
--- with a neighbour on its right and widens the rightmost slot.
+-- with a neighbour on its right and widens the rightmost slot. A resize on
+-- both axes is one change for the editor: one event, not one per axis.
 local function resize(engine, ctx, dx, dy, present)
   dx, dy = math.tointeger(tonumber(dx)), math.tointeger(tonumber(dy))
   if not dx or not dy then
@@ -155,14 +160,15 @@ local function resize(engine, ctx, dx, dy, present)
     local delta, forward, backward = step[1], step[2], step[3]
     if delta ~= 0 then
       local ok
-      ok, err = nudge(engine, ctx, forward, delta .. "px", present)
+      ok, err = nudge(engine, ctx, forward, delta .. "px", present, true)
       if not ok then
-        ok, err = nudge(engine, ctx, backward, -delta .. "px", present)
+        ok, err = nudge(engine, ctx, backward, -delta .. "px", present, true)
       end
       changed = changed or ok == true
     end
   end
   if changed then
+    announce(engine) -- once, however many axes moved
     return true
   end
   return nil, err or "nothing to resize"
