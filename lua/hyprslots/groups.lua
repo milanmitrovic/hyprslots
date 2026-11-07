@@ -32,8 +32,7 @@ local M = {}
 -- move must not become a loop). Any window event starts the count again.
 local LAYOUT_RETRIES = 3
 
--- Deferral for the reconcile pass: after the event that asked for it, and
--- after the 1 ms arrangement re-selection a monitor event schedules.
+-- Deferral for the reconcile pass, after the event that asked for it.
 local DEFER_MS = 20
 
 local function group_key(group)
@@ -192,7 +191,11 @@ end
 
 -- Give the engine `engine.regroup(reason)`, which schedules one deferred
 -- reconcile pass (reason "layout" from recalculate, anything else from an
--- event), and ask for a pass on every event that can change membership.
+-- event), and ask for a pass on every window event that can change
+-- membership. Monitor events are not among them: hotplug re-selects and
+-- re-routes in two timer hops (hotplug.lua) and router.reroute_all asks for
+-- the pass when it is done, so the pass always sees the windows where the
+-- new arrangement put them, whatever order timers fire in.
 function M.attach(engine)
   local pending, streak, gave_up = false, 0, false
 
@@ -223,7 +226,7 @@ function M.attach(engine)
 
   for _, event in ipairs({
     "window.open", "window.destroy", "window.move_to_workspace",
-    "hyprland.start", "config.reloaded", "monitor.added", "monitor.removed",
+    "hyprland.start", "config.reloaded",
   }) do
     adapter.on(event, function()
       engine.regroup("event")

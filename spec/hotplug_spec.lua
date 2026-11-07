@@ -142,6 +142,61 @@ describe("hotplug", function()
     end)
   end)
 
+  describe("with an accordion in the arrangement that is left", function()
+    -- dual tiles x and y side by side on side; single stacks them in an
+    -- accordion on big, which only a group pass after the re-route can form.
+    local SLOTS = [==[
+return {
+  slots = { [3] = { x = "t-x", y = "t-y", main = "t-main" } },
+  arrangements = {
+    dual = {
+      screens = { big = "HEADLESS-2", side = "HEADLESS-3" },
+      desks = { [3] = { side = "h[x, y]", big = "main" } },
+    },
+    single = {
+      screens = { big = "HEADLESS-2" },
+      desks = { [3] = { big = "h[main, a[x, y]]" } },
+    },
+  },
+}
+]==]
+
+    local function drain()
+      for _ = 1, 10 do
+        hl.run_timers()
+      end
+    end
+
+    local function index_of(name, args)
+      for i, d in ipairs(hl.dispatched) do
+        if type(d) == "table" and d.dsp == name and (args == nil or d.args.window == args) then
+          return i
+        end
+      end
+    end
+
+    it("groups the accordion's windows after they are re-routed onto its workspace", function()
+      local x, y = window_on(1, "t-x", 13), window_on(2, "t-y", 13)
+      window_on(3, "t-main", 3)
+      hyprslots = engine.setup(SLOTS)
+      for _, window in ipairs(hl.windows) do
+        hl.emit("window.open", window)
+      end
+      drain()
+      assert.is_nil(x.group, "no accordion on dual")
+
+      unplug_side()
+      drain()
+      assert.are.equal("single", engine.state(hyprslots).arrangement)
+      assert.are.same({ 3, 3 }, { workspace_of("t-x"), workspace_of("t-y") })
+      assert.is_truthy(x.group, "x is in a group")
+      assert.are.equal(x.group, y.group)
+      local moved = index_of("window.move", "address:" .. y.address)
+      local grouped = index_of("group.toggle")
+      assert.is_true(moved < grouped, "the group pass ran after the re-route")
+    end)
+  end)
+
   it("moves nothing when no arrangement fits what is left", function()
     window_on(1, "t-left", 13)
     hyprslots = engine.setup(engine.TWO_SCREENS)

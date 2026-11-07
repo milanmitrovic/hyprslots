@@ -4,7 +4,9 @@
 -- event itself. Two oneshot hops follow:
 --
 --   1. re-select the arrangement for the monitors now connected;
---   2. re-route every assigned window to its slot's workspace under it.
+--   2. re-route every assigned window to its slot's workspace under it,
+--      which ends by asking for the accordion group pass (groups.lua), so
+--      groups form only once the windows are where they belong.
 --
 -- Omarchy's monitor-workspaces reconciles on monitor.removed from a oneshot
 -- timer it creates in the same event (and on monitor.added inside the event),

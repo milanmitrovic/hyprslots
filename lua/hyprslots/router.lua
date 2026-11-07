@@ -56,8 +56,10 @@ function M.place(engine, address, target)
 end
 
 -- Move every assigned window to its slot's workspace under the active
--- arrangement (after hotplug). Windows with no slot, or whose slot no screen
--- of the arrangement holds, stay where they are.
+-- arrangement (after hotplug or an edit). Windows with no slot, or whose slot
+-- no screen of the arrangement holds, stay where they are. Then ask for a
+-- deferred accordion group pass (groups.lua), which must see the windows
+-- where they have just been moved.
 function M.reroute_all(engine)
   if engine.refused or not engine.active then
     return
@@ -70,6 +72,9 @@ function M.reroute_all(engine)
         tostring(window.workspace_id), target)
       M.place(engine, window.address, target)
     end
+  end
+  if engine.regroup then
+    engine.regroup("event")
   end
 end
 
