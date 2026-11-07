@@ -55,6 +55,7 @@ local function new_engine()
     config_dir = nil,
     data = nil, -- the editor-owned slots.lua data the running config came from
     dirty = false, -- data differs from slots.lua on disk
+    since_save = {}, -- renames and removals since data was slots.lua's (api.lua's reset reads through them)
     ruled = {}, -- workspace ids given lua:slots
     resized = {}, -- "<arrangement>/<desk>/<role>" -> keyboard-resized tree (resize.lua)
   }, Engine)
@@ -327,6 +328,9 @@ function Engine:apply_config(cfg, data, dirty)
   self.config_error = nil
   self.data = data
   self.dirty = dirty and true or false
+  if not self.dirty then
+    self.since_save = {}
+  end
   workspace_rules(cfg, self.ruled)
   self:reselect()
   self:assign_all()

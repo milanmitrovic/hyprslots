@@ -533,6 +533,7 @@ function handlers.save(engine)
   else
     engine.data = data
     engine.dirty = false
+    engine.since_save = {}
     engine:changed()
   end
   return { path = path, seq = engine.seq }
@@ -633,6 +634,15 @@ end
 local function not_taken(what)
   return "config.lua does not take " .. what .. " from " .. DATA_FILE .. ", so the edit would change nothing; "
     .. "change it in config.lua"
+end
+
+-- Remember an edit that renames or removes what slots.lua names (a slot, an
+-- arrangement, a screen role) until data is the file's again: reset reads
+-- the saved trees through them. `op` is edit.lua's function and its
+-- arguments after the data.
+local function remember(engine, op, ...)
+  engine.since_save = engine.since_save or {}
+  engine.since_save[#engine.since_save + 1] = { op = op, args = table.pack(...) }
 end
 
 -- The desk of a slot edit, if its slots are the editor's.
@@ -753,6 +763,7 @@ function handlers.remove_slot(engine, args)
   if not cfg then
     return fail(apply_err)
   end
+  remember(engine, "remove_slot", desk, args.slot)
   return { desk = desk, slot = args.slot, seq = engine.seq }
 end
 
@@ -795,6 +806,7 @@ function handlers.rename_slot(engine, args)
   if not cfg then
     return fail(apply_err)
   end
+  remember(engine, "rename_slot", desk, old, new)
   return { desk = desk, slot = old, to = new, trees = trees, seq = engine.seq }
 end
 
@@ -939,6 +951,7 @@ function handlers.rename_arrangement(engine, args)
   if not cfg then
     return fail(apply_err)
   end
+  remember(engine, "rename_arrangement", old, new)
   return { arrangement = old, to = new, active = active_name(engine), seq = engine.seq }
 end
 
@@ -966,6 +979,7 @@ function handlers.delete_arrangement(engine, args)
   if not cfg then
     return fail(apply_err)
   end
+  remember(engine, "delete_arrangement", name)
   return { arrangement = name, active = active_name(engine), seq = engine.seq }
 end
 
@@ -1005,6 +1019,7 @@ function handlers.set_screens(engine, args)
   if not cfg then
     return fail(apply_err)
   end
+  remember(engine, "set_screens", name, args.screens, renames)
   return { arrangement = name, screens = object(shallow(screens)), active = active_name(engine), seq = engine.seq }
 end
 
@@ -1182,9 +1197,22 @@ local function saved_data(engine)
   return data
 end
 
+-- The saved data through the renames and removals made since (slots,
+-- arrangements, screen roles), so its trees name what the running data
+-- names. An edit that does not apply to the file (it renames a slot added
+-- since) is skipped.
+local function as_edited(engine, saved)
+  local out = saved
+  for _, e in ipairs(engine.since_save or {}) do
+    out = edit[e.op](out, table.unpack(e.args, 1, e.args.n)) or out
+  end
+  return out
+end
+
 -- reset { arrangement?, desk, role }: a branch back to the tree slots.lua
--- holds on disk (no tree when it has none), dropping both an unsaved edit and
--- a keyboard-resized override of it. Other branches keep their edits; the
+-- holds on disk (no tree when it has none), read through the slot,
+-- arrangement and role renames and removals made since, dropping both an
+-- unsaved edit and a keyboard-resized override of it. Other branches keep their edits; the
 -- engine is clean again when nothing differs from the file.
 function handlers.reset(engine, args)
   local name, err = target_arrangement(engine, args)
@@ -1199,7 +1227,7 @@ function handlers.reset(engine, args)
   if not saved then
     return fail(read_err)
   end
-  local data, reset_err = edit.reset_tree(engine.data, saved, name, desk, args.role)
+  local data, reset_err = edit.reset_tree(engine.data, as_edited(engine, saved), name, desk, args.role)
   if not data then
     return fail(reset_err)
   end

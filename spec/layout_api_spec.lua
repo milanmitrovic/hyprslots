@@ -251,8 +251,73 @@ return { slots = data.slots, arrangements = arrangements }
   end)
 
   -- The Slots and Arrangements views rename what the Layout view's calls
-  -- name: set_trees targets the renamed arrangement.
+  -- name: set_trees targets the renamed arrangement, and reset reads the
+  -- tree slots.lua holds through the renames and removals made since.
   describe("after slot and arrangement edits", function()
+    it("reset after rename_slot puts the saved tree back under the slot's new name", function()
+      setup()
+      call("set_tree", { desk = 3, role = "big", tree = "v[b, a]" })
+      assert.is_true(call("rename_slot", { desk = 3, slot = "a", to = "x" }).ok)
+      assert.are.equal("v[b, x]", branch("dual", "big").tree)
+
+      local reply = call("reset", { desk = 3, role = "big" })
+      assert.is_true(reply.ok, reply.error)
+      assert.are.equal("h[x:2, b]", reply.tree)
+      assert.are.equal("h[x:2, b]", branch("dual", "big").tree)
+      assert.is_true(call("state").dirty, "the rename is still unsaved")
+    end)
+
+    it("follows a slot renamed twice, and one renamed after a save only from there", function()
+      setup()
+      call("rename_slot", { desk = 3, slot = "a", to = "x" })
+      call("rename_slot", { desk = 3, slot = "x", to = "y" })
+      assert.are.equal("h[y:2, b]", call("reset", { desk = 3, role = "big" }).tree)
+
+      call("save")
+      call("rename_slot", { desk = 3, slot = "y", to = "z" })
+      call("set_tree", { desk = 3, role = "big", tree = "v[b, z]" })
+      assert.are.equal("h[z:2, b]", call("reset", { desk = 3, role = "big" }).tree)
+    end)
+
+    it("reset after remove_slot leaves the removed slot out", function()
+      setup()
+      assert.is_true(call("remove_slot", { desk = 3, slot = "b" }).ok)
+      call("set_tree", { desk = 3, role = "big", tree = "v[a, *]" })
+      local reply = call("reset", { desk = 3, role = "big" })
+      assert.is_true(reply.ok, reply.error)
+      assert.are.equal("a", reply.tree)
+    end)
+
+    it("reset after rename_arrangement finds the tree saved under the old name", function()
+      setup()
+      assert.is_true(call("rename_arrangement", { arrangement = "dual", to = "duo" }).ok)
+      call("set_tree", { arrangement = "duo", desk = 3, role = "big", tree = "v[b, a]" })
+      local reply = call("reset", { arrangement = "duo", desk = 3, role = "big" })
+      assert.is_true(reply.ok, reply.error)
+      assert.are.equal("h[a:2, b]", reply.tree)
+      assert.are.equal("h[a:2, b]", branch("duo", "big").tree)
+      assert.is_nil(call("state").arrangements.dual)
+    end)
+
+    it("reset after a screen role is renamed finds the tree saved under the old role", function()
+      setup()
+      assert.is_true(call("set_screens", { arrangement = "dual", screens = { main = "HEADLESS-2", side = "HEADLESS-3" },
+        renames = { big = "main" } }).ok)
+      call("set_tree", { desk = 3, role = "main", tree = "v[b, a]" })
+      local reply = call("reset", { desk = 3, role = "main" })
+      assert.is_true(reply.ok, reply.error)
+      assert.are.equal("h[a:2, b]", reply.tree)
+    end)
+
+    it("forgets the edits once they are reloaded away", function()
+      setup()
+      call("rename_slot", { desk = 3, slot = "a", to = "x" })
+      assert.is_true(call("reload").ok)
+      call("set_tree", { desk = 3, role = "big", tree = "v[b, a]" })
+      assert.are.equal("h[a:2, b]", call("reset", { desk = 3, role = "big" }).tree)
+      assert.is_false(call("state").dirty)
+    end)
+
     it("set_trees after rename_arrangement edits the renamed one and replaces its resized tree", function()
       setup()
       local windows = {}
