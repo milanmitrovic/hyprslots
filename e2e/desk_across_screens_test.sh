@@ -58,9 +58,12 @@ test_body() {
     spawn_and_wait "$class"
   done
   settle
-  local on_ws1
-  on_ws1=$(hc clients -j | jq '[.[] | select(.mapped and .workspace.id == 1)] | length')
-  [[ $on_ws1 == 3 ]] || harness_fail "expected 3 windows on workspace 1, have: $(client_table)"
+  # They open on workspace 1, and the router moves each to its desk-3
+  # workspace as it opens (design §7), so where they sit now is not a
+  # precondition; only that all three exist.
+  local mapped
+  mapped=$(hc clients -j | jq '[.[] | select(.mapped)] | length')
+  [[ $mapped == 3 ]] || harness_fail "expected 3 mapped windows, have: $(client_table)"
   log "windows before desk switch:"
   client_table | sed 's/^/    /'
 
