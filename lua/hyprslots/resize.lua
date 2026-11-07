@@ -103,7 +103,9 @@ local function amount(text)
   return tonumber(text), false
 end
 
-local function nudge(engine, ctx, dir, text)
+-- `present(desk)`, when given, is the set of slots the layout shows on that
+-- desk entry (layout.present), so the nudge acts on the tree as laid out.
+local function nudge(engine, ctx, dir, text, present)
   local delta, pixels = amount(text)
   if not delta then
     return nil, "a nudge must be a fraction (0.1) or pixels (100px), got '" .. tostring(text) .. "'"
@@ -112,7 +114,8 @@ local function nudge(engine, ctx, dir, text)
   if not desk then
     return nil, slot
   end
-  local nudged, err = tree.nudge(M.branch(engine, desk), slot, dir, delta, pixels and { area = ctx.area } or nil)
+  local nudged, err = tree.nudge(M.branch(engine, desk), slot, dir, delta,
+    { area = pixels and ctx.area or nil, present = present and present(desk) or nil })
   if not nudged then
     return nil, err
   end
@@ -141,7 +144,7 @@ end
 -- edge, or its left edge when nothing is to its right) and by dy (its bottom
 -- edge, or its top edge). So dx = -100 ("Expand window left") narrows a slot
 -- with a neighbour on its right and widens the rightmost slot.
-local function resize(engine, ctx, dx, dy)
+local function resize(engine, ctx, dx, dy, present)
   dx, dy = math.tointeger(tonumber(dx)), math.tointeger(tonumber(dy))
   if not dx or not dy then
     return nil, "resize takes whole pixels: resize <dx> <dy>"
@@ -151,9 +154,9 @@ local function resize(engine, ctx, dx, dy)
     local delta, forward, backward = step[1], step[2], step[3]
     if delta ~= 0 then
       local ok
-      ok, err = nudge(engine, ctx, forward, delta .. "px")
+      ok, err = nudge(engine, ctx, forward, delta .. "px", present)
       if not ok then
-        ok, err = nudge(engine, ctx, backward, -delta .. "px")
+        ok, err = nudge(engine, ctx, backward, -delta .. "px", present)
       end
       changed = changed or ok == true
     end
@@ -164,19 +167,20 @@ local function resize(engine, ctx, dx, dy)
   return nil, err or "nothing to resize"
 end
 
--- Handle one layout message. Returns true, or nil and why not.
-function M.message(engine, ctx, msg)
+-- Handle one layout message. Returns true, or nil and why not. `present`
+-- (optional) maps a desk entry to the slots laid out on it (layout.present).
+function M.message(engine, ctx, msg, present)
   local words = {}
   for word in tostring(msg):gmatch("%S+") do
     words[#words + 1] = word
   end
   local verb = words[1]
   if verb == "nudge" and #words == 3 then
-    return nudge(engine, ctx, words[2], words[3])
+    return nudge(engine, ctx, words[2], words[3], present)
   elseif verb == "reset" and #words == 1 then
     return reset(engine)
   elseif verb == "resize" and #words == 3 then
-    return resize(engine, ctx, words[2], words[3])
+    return resize(engine, ctx, words[2], words[3], present)
   end
   return nil, "unknown layout message '" .. tostring(msg) .. "' (nudge <l|r|u|d> <fraction|Npx>, resize <dx> <dy>, reset)"
 end

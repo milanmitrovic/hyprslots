@@ -79,25 +79,20 @@ local function group_is_accordion(window, slot_in_branch, accordion_of, accordio
   return true
 end
 
-local function place_slots(engine, ctx)
-  if #ctx.targets == 0 then
-    return
-  end
-
-  local desk = engine:desk_of_workspace(workspace_of(ctx))
-  if not desk then
-    place_columns(ctx)
-    return
-  end
-
+-- What a layout pass on desk entry `desk` sees in ctx.targets: the branch in
+-- force, the target placed in each slot, the overflowing targets, the set of
+-- slots present (tree.OVERFLOW when something overflows), and whether an
+-- accordion is split over several targets or holds a stranger.
+local function survey(engine, ctx, desk)
   local branch = resize.branch(engine, desk)
   local in_branch = {}
   for _, slot in ipairs(tree.slots(branch)) do
     in_branch[slot] = true
   end
 
+  local accordions = tree.accordions(branch)
   local accordion_of = {}
-  for i, members in ipairs(tree.accordions(branch)) do
+  for i, members in ipairs(accordions) do
     for _, slot in ipairs(members) do
       accordion_of[slot] = i
     end
@@ -114,7 +109,7 @@ local function place_slots(engine, ctx)
 
   local slotted, overflow, present = {}, {}, {}
   local targets_of_accordion, regroup = {}, false
-  for _, target in ipairs(ctx.targets) do
+  for _, target in ipairs(ctx.targets or {}) do
     local slot = target.window and target_slot(target.window, slot_in_branch, accordion_of)
     local accordion = slot and accordion_of[slot]
     if accordion then
@@ -130,25 +125,70 @@ local function place_slots(engine, ctx)
       overflow[#overflow + 1] = target
     end
   end
-  if regroup and engine.regroup then
-    engine.regroup("layout")
+  if #overflow > 0 then
+    present[tree.OVERFLOW] = true
+  end
+  return {
+    branch = branch,
+    slotted = slotted,
+    overflow = overflow,
+    present = present,
+    regroup = regroup,
+    accordions = accordions,
+  }
+end
+
+-- The slots a resize on desk entry `desk` sees laid out in ctx: the layout's
+-- present set, with every member of a present accordion (a group is one
+-- target standing for one member, whichever member is focused).
+function M.present(engine, ctx, desk)
+  local seen = survey(engine, ctx, desk)
+  local out = {}
+  for key in pairs(seen.present) do
+    out[key] = true
+  end
+  for _, members in ipairs(seen.accordions) do
+    local shown = false
+    for _, slot in ipairs(members) do
+      shown = shown or seen.present[slot] == true
+    end
+    if shown then
+      for _, slot in ipairs(members) do
+        out[slot] = true
+      end
+    end
+  end
+  return out
+end
+
+local function place_slots(engine, ctx)
+  if #ctx.targets == 0 then
+    return
   end
 
-  if next(slotted) == nil then
+  local desk = engine:desk_of_workspace(workspace_of(ctx))
+  if not desk then
     place_columns(ctx)
     return
   end
 
-  if #overflow > 0 then
-    present[tree.OVERFLOW] = true
+  local seen = survey(engine, ctx, desk)
+  if seen.regroup and engine.regroup then
+    engine.regroup("layout")
   end
-  local boxes = tree.boxes(tree.with_overflow(branch), ctx.area, present)
-  for slot, target in pairs(slotted) do
+
+  if next(seen.slotted) == nil then
+    place_columns(ctx)
+    return
+  end
+
+  local boxes = tree.boxes(tree.with_overflow(seen.branch), ctx.area, seen.present)
+  for slot, target in pairs(seen.slotted) do
     target:place(boxes[slot])
   end
-  if #overflow > 0 then
-    local stacked = rows(boxes[tree.OVERFLOW], #overflow)
-    for i, target in ipairs(overflow) do
+  if #seen.overflow > 0 then
+    local stacked = rows(boxes[tree.OVERFLOW], #seen.overflow)
+    for i, target in ipairs(seen.overflow) do
       target:place(stacked[i])
     end
   end
@@ -169,7 +209,10 @@ function M.provider(engine)
     -- focused workspace's algorithm only. Returns true, or the reason the
     -- message did nothing (Hyprland shows a string reply as the error).
     layout_msg = function(ctx, msg)
-      local ok, handled, err = pcall(resize.message, engine, ctx, msg)
+      local present = function(desk)
+        return M.present(engine, ctx, desk)
+      end
+      local ok, handled, err = pcall(resize.message, engine, ctx, msg, present)
       if not ok then
         engine.log:error("layout message '%s' failed: %s", tostring(msg), tostring(handled))
         return tostring(handled)

@@ -135,6 +135,17 @@ describe("accordions and overflow", function()
       assert.are.same(box(1200, 0, 1200, 1350), placed["t-d"])
     end)
 
+    it("resizes as one box from whichever member is focused", function()
+      setup(TREE)
+      local x, y, z, d = opened(1, "t-x"), opened(2, "t-y"), opened(3, "t-z"), opened(4, "t-d")
+      hl_stub.group({ x, y, z }, 2)
+      hl.active_window = z
+      assert.is_true(hl.layouts.slots.layout_msg(hl_stub.layout_ctx(AREA, { y, d }), "nudge r 100px"))
+      local placed = recalculate({ y, d })
+      assert.are.same(box(0, 0, 1300, 1350), placed["t-y"])
+      assert.are.same(box(1300, 0, 1100, 1350), placed["t-d"])
+    end)
+
     it("gives a group showing a stranger the accordion's box, and takes the stranger out", function()
       setup(TREE)
       local x, y, d = opened(1, "t-x"), opened(2, "t-y"), opened(4, "t-d")

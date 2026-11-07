@@ -103,6 +103,26 @@ describe("keyboard resize", function()
     assert.are.same(1300, placed()["t-b"].w)
   end)
 
+  describe("over the tree as laid out", function()
+    -- t-c is closed and an unmatched window overflows: h[h[a, b]:3, *:1],
+    -- so a and b are 900 px each and the overflow column 600.
+    before_each(function()
+      windows = { windows[1], windows[2], hl_stub.window(4, "foot", { workspace = 3 }) }
+      hl.windows = windows
+    end)
+
+    it("moves the edge by exact pixels with the overflow column showing", function()
+      assert.are.same({ 900, 900, 600 }, { placed()["t-a"].w, placed()["t-b"].w, placed()["foot"].w })
+      assert.is_true(msg("nudge r 100px"))
+      assert.are.same({ 1000, 800, 600 }, { placed()["t-a"].w, placed()["t-b"].w, placed()["foot"].w })
+    end)
+
+    it("does the same for Omarchy's resize binds", function()
+      assert.is_true(msg("resize -50 0", windows[2]))
+      assert.are.same({ 850, 950 }, { placed()["t-a"].w, placed()["t-b"].w })
+    end)
+  end)
+
   it("accumulates nudges", function()
     msg("nudge r 0.1")
     msg("nudge r 0.1")
