@@ -1,0 +1,112 @@
+-- Windows -> slots.
+--
+-- Every (desk, slot) pair is a candidate, tried in desk order then slot-name
+-- order; a window takes the first free one whose spec matches it. Windows are
+-- considered oldest first (by stable_id), so the result never depends on the
+-- order Hyprland lists them in. Assignment is sticky: a previous assignment
+-- that still matches is kept before anything new is handed out. Pure.
+
+local spec = require("hyprslots.spec")
+
+local M = {}
+
+-- The (desk, slot) pairs in the order they are tried.
+local function candidates(cfg)
+  local desks = {}
+  for desk in pairs(cfg.slots) do
+    desks[#desks + 1] = desk
+  end
+  table.sort(desks)
+
+  local out = {}
+  for _, desk in ipairs(desks) do
+    local names = {}
+    for name in pairs(cfg.slots[desk]) do
+      names[#names + 1] = name
+    end
+    table.sort(names)
+    for _, name in ipairs(names) do
+      out[#out + 1] = { desk = desk, slot = name, spec = cfg.slots[desk][name] }
+    end
+  end
+  return out
+end
+
+local function key(desk, slot)
+  return desk .. "\0" .. slot
+end
+
+local function still_holds(cfg, assignment, window)
+  local desk = cfg.slots[assignment.desk]
+  local parsed = desk and desk[assignment.slot]
+  return parsed and spec.match(parsed, window) or false
+end
+
+local function oldest_first(windows)
+  local sorted = {}
+  for i, window in ipairs(windows) do
+    sorted[i] = window
+  end
+  table.sort(sorted, function(a, b)
+    if a.stable_id ~= b.stable_id then
+      return (a.stable_id or 0) < (b.stable_id or 0)
+    end
+    return a.address < b.address
+  end)
+  return sorted
+end
+
+local function first_free(pairs_, taken, window)
+  for _, candidate in ipairs(pairs_) do
+    if not taken[key(candidate.desk, candidate.slot)] and spec.match(candidate.spec, window) then
+      return { desk = candidate.desk, slot = candidate.slot }
+    end
+  end
+  return nil
+end
+
+-- Assign every window ({ address, class, stable_id }). `previous` (address ->
+-- { desk, slot }) is honoured where it still matches; it is not modified.
+-- Returns address -> { desk, slot } for the windows that got a slot.
+function M.solve(cfg, windows, previous)
+  previous = previous or {}
+  local ordered = oldest_first(windows)
+  local result, taken = {}, {}
+
+  for _, window in ipairs(ordered) do
+    local before = previous[window.address]
+    if before and not taken[key(before.desk, before.slot)] and still_holds(cfg, before, window) then
+      result[window.address] = { desk = before.desk, slot = before.slot }
+      taken[key(before.desk, before.slot)] = true
+    end
+  end
+
+  local pairs_ = candidates(cfg)
+  for _, window in ipairs(ordered) do
+    if not result[window.address] then
+      local assignment = first_free(pairs_, taken, window)
+      if assignment then
+        result[window.address] = assignment
+        taken[key(assignment.desk, assignment.slot)] = true
+      end
+    end
+  end
+
+  return result
+end
+
+-- The slot for one window given the current assignments: its own when it has
+-- one, else the first free matching slot, else nil. `current` is not modified.
+function M.claim(cfg, current, window)
+  local own = current[window.address]
+  if own then
+    return own
+  end
+  local taken = {}
+  for _, assignment in pairs(current) do
+    taken[key(assignment.desk, assignment.slot)] = true
+  end
+  return first_free(candidates(cfg), taken, window)
+end
+
+return M
