@@ -5,18 +5,29 @@
 -- screen whose tree holds the slot in the active arrangement. Moves happen
 -- here, in the event callback, never in recalculate. window.destroy frees the
 -- slot. A target workspace that does not exist yet is created where Hyprland
--- puts it (the focused monitor) and then moved to its screen. Title-based re-routing arrives with the full spec grammar (slice 3).
+-- puts it (the focused monitor) and then moved to its screen.
+--
+-- Late titles: on window.title a window with no slot is matched again once
+-- its title has been quiet for TITLE_DEBOUNCE_MS (one oneshot timer per
+-- window, replaced on every change), against the title it has then, and
+-- routed like a new window when it matches. A window with a slot never moves
+-- because its title changed: assignment is sticky.
 
 local adapter = require("hyprslots.hl_adapter")
 
 local M = {}
 
+M.TITLE_DEBOUNCE_MS = 150
+
 function M.window_opened(engine, hl_window)
   if engine.refused or not engine.cfg then
     return
   end
+  M.route(engine, adapter.window(hl_window))
+end
 
-  local window = adapter.window(hl_window)
+-- Assign a plain window to a slot and move it to the slot's workspace.
+function M.route(engine, window)
   local assignment = engine:assign(window)
   if not assignment then
     engine.log:info("open %s (%s): no slot", tostring(window.class), tostring(window.address))
@@ -73,8 +84,47 @@ function M.reroute_all(engine)
   end
 end
 
+local function find_window(address)
+  for _, window in ipairs(adapter.windows()) do
+    if window.address == address then
+      return window
+    end
+  end
+  return nil
+end
+
+function M.window_title(engine, hl_window)
+  local address = hl_window and hl_window.address
+  if engine.refused or not engine.cfg or not address or engine.assignments[address] then
+    return
+  end
+  engine.title_timers = engine.title_timers or {}
+  local pending = engine.title_timers[address]
+  if pending then
+    pending:set_enabled(false)
+  end
+  engine.title_timers[address] = adapter.defer(function()
+    engine.title_timers[address] = nil
+    engine:guard("window.title", function()
+      if engine.assignments[address] then
+        return
+      end
+      local window = find_window(address)
+      if window then
+        engine.log:info("title %s: %s", tostring(window.class), tostring(window.title))
+        M.route(engine, window)
+      end
+    end)
+  end, M.TITLE_DEBOUNCE_MS)
+end
+
 function M.window_destroyed(engine, hl_window)
   local address = hl_window and hl_window.address
+  local pending = address and engine.title_timers and engine.title_timers[address]
+  if pending then
+    pending:set_enabled(false)
+    engine.title_timers[address] = nil
+  end
   if address and engine.assignments[address] then
     local assignment = engine.assignments[address]
     engine.assignments[address] = nil
