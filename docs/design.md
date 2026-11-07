@@ -232,7 +232,9 @@ Other top-level directories: `editor/` (QML plugin), `spec/` (busted specs and
 `spec/helpers/hl_stub.lua`), `e2e/` (headless Hyprland harness).
 
 **Loading.** A shim `~/.config/hypr/hyprslots.lua` prepends the repo's
-`lua/?.lua;lua/?/init.lua` to `package.path` and requires `hyprslots`. It is
+`lua/?.lua;lua/?/init.lua` to `package.path`, then runs
+`hyprslots = require("hyprslots")` and `hyprslots.setup()`; the `hyprslots`
+global is what `hyprctl repl` and the editor address. It is
 required from `hyprland.lua` right after `require("hypr.autostart")`; it
 cannot go after hyprmoncfg's `dofile`, which stays last.
 
@@ -254,10 +256,14 @@ spanning windows, public release / AUR package, QML tests.
 
 ## 12. Test seams
 
-- **S1 — e2e** (`e2e/`): a headless Hyprland instance driven only through
-  `hyprctl -i <its signature>`, with headless outputs created per test and
-  `foot --app-id <class>` clients. Modeled on upstream `hyprtester/`
-  (`layout_custom.cpp`). Never touches the live session.
+- **S1 — e2e** (`e2e/`, `make e2e`): a nested Hyprland instance per test
+  (see "e2e host" below) driven only through `hyprctl -i <its signature>`,
+  with headless outputs created per test (`hyprctl output create headless
+  HEADLESS-2`) and `foot --app-id <class>` clients. Modeled on upstream
+  `hyprtester/` (`layout_custom.cpp`). Tests are `e2e/*_test.sh` defining
+  `test_setup` (config written before Hyprland starts) and `test_body`,
+  asserting on `hyprctl -j` output with jq via `e2e/lib.sh`. Never touches
+  the live session.
 - **S2 — engine**: `hyprslots.setup()` and `api.call` run against a stubbed
   `hl` (`spec/helpers/hl_stub.lua`) under busted.
 - **S3 — pure modules**: busted specs; aerolayout's unittest cases are ported
@@ -265,24 +271,52 @@ spanning windows, public release / AUR package, QML tests.
 
 ### Completion test
 
-`e2e/desk_across_screens_test`: outputs `big` (HEADLESS-2) and `side`
-(HEADLESS-3); arrangements `dual` and `single` as in §4; slots `left`, `main`,
-`right` matched to classes `t-left`, `t-main`, `t-right`.
+`e2e/desk_across_screens_test.sh`: outputs `big` (HEADLESS-2, 2400x1350 at
+0,0, Omarchy block 0) and `side` (HEADLESS-3, 1920x1080 at 2400,0, block 1),
+matched by connector; arrangements `dual` and `single` as in §4; slots
+`left`, `main`, `right` matched to classes `t-left`, `t-main`, `t-right`.
 
 1. The three windows open on workspace 1 in shuffled order; desk 3 is
    activated with `hyprslots.api.call("desk", '{"desk":3}')`.
-2. Both outputs show their desk-3 workspace; `t-left` fills `side`;
-   `t-main` and `t-right` split `big` horizontally 2:1 (±1 px).
+2. Both outputs show their desk-3 workspace (3 on big, 13 on side);
+   `t-left` fills `side`; `t-main` and `t-right` split `big` horizontally
+   2:1 (1600 + 800 px, ±1 px).
 3. `side` is removed (`hyprctl output remove HEADLESS-3`): arrangement
-   `single` applies and all three tile 1:1:1 on big's desk-3 workspace.
+   `single` applies and all three tile 1:1:1 (800 px each) on workspace 3.
 
-### e2e host requirement
+### e2e host
 
-Hyprland 0.56.2 always requests the headless backend *plus* DRM (if
-available) and Wayland (fallback); aquamarine 0.15.1's headless backend has
-no DRM fd of its own, so it needs one of the other two to provide a GPU
-allocator. `HYPRLAND_HEADLESS_ONLY` is not read by this Hyprland version.
-Inside a running Hyprland session the DRM backend cannot open the seat
-(logind: "Could not take control of session: Device or resource busy"), so
-the e2e harness needs either a free seat/TTY, a VM, or a separate headless
-host compositor for the Wayland backend to connect to.
+Hyprland 0.56.2 cannot run headless-only inside a live session. It always
+requests the headless backend plus DRM (if available) and Wayland
+(fallback), and ignores `HYPRLAND_HEADLESS_ONLY`; aquamarine 0.15.1's
+headless backend has no GPU device of its own, so DRM or Wayland must
+provide the allocator. Inside a running session the DRM backend cannot take
+the seat (logind: "Could not take control of session: Device or resource
+busy"). Upstream's hyprtester avoids this by running in a VM on a free TTY.
+
+`e2e/run.sh` therefore runs, per test:
+
+1. a headless **sway** host (`WLR_BACKENDS=headless`, `WLR_RENDERER=gles2`
+   on `/dev/dri/renderD128`, `WLR_LIBINPUT_NO_DEVICES=1`, `e2e/sway.conf`:
+   no bar, no binds), whose linux-dmabuf feedback hands Hyprland's Wayland
+   backend the render node for its GBM allocator;
+2. **Hyprland** on that socket with `-c e2e/hyprland-test.lua`. Its own
+   window on the host (`WAYLAND-1`) is disabled; tests create headless
+   outputs, which can be removed again to simulate hotplug.
+
+Isolation: temp `XDG_CONFIG_HOME` / `XDG_STATE_HOME` / `XDG_CACHE_HOME` under
+the ignored `.e2e-tmp/`, and a private `XDG_RUNTIME_DIR`
+(`$XDG_RUNTIME_DIR/hs.XXXXXX`, short because of the 108-byte socket path
+limit), so neither the nested Hyprland nor the harness's `hyprctl` can see
+the live session's sockets. `WAYLAND_DISPLAY`, `HYPRLAND_INSTANCE_SIGNATURE`,
+`DISPLAY`, `DBUS_SESSION_BUS_ADDRESS` and `NOTIFY_SOCKET` are unset;
+`HYPRLAND_NO_SD_VARS` / `HYPRLAND_NO_SD_NOTIFY` are set. A trap exits
+Hyprland with `hl.dsp.exit()` (killing it on timeout), stops sway and the
+clients, and removes the runtime dir; logs are kept under `.e2e-tmp/` when a
+test fails.
+
+One shim is needed: aquamarine binds `xdg_wm_base` at version 6
+unconditionally while sway 1.12 advertises 5, and the host drops the
+connection. `e2e/shim/clamp-xdg-wm-base.c`, built by `run.sh` and
+`LD_PRELOAD`ed into the nested Hyprland only, clamps that one bind to 5
+(version 6 only adds the `suspended` toplevel state).
