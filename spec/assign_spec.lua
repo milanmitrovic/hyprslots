@@ -106,6 +106,21 @@ describe("assign precedence with title specs", function()
     assert.is_nil(assign.claim(titled, current, titled_win(3, "other | x")))
   end)
 
+  it("keeps a title-spec assignment through a re-solve after the title changed", function()
+    -- A reload, an api edit or hotplug re-solves with the old assignments.
+    local previous = { ["0x1"] = { desk = 3, slot = "main" } }
+    local result = assign.solve(titled, { titled_win(1, "notes | x") }, previous)
+    assert.are.same({ ["0x1"] = { desk = 3, slot = "main" } }, result)
+  end)
+
+  it("still drops a previous slot that is gone, or whose spec names another class", function()
+    local other = cfg_with({ [3] = { main = "kitty/deltaf", notes = "foot/notes" } })
+    local result = assign.solve(other, { titled_win(1, "notes | x") }, { ["0x1"] = { desk = 3, slot = "main" } })
+    assert.are.same({ ["0x1"] = { desk = 3, slot = "notes" } }, result)
+    result = assign.solve(other, { titled_win(1, "notes | x") }, { ["0x1"] = { desk = 3, slot = "gone" } })
+    assert.are.same({ ["0x1"] = { desk = 3, slot = "notes" } }, result)
+  end)
+
   it("keeps an assignment when the title changes (claim never re-matches)", function()
     local current = { ["0x1"] = { desk = 3, slot = "main" } }
     assert.are.same({ desk = 3, slot = "main" }, assign.claim(titled, current, titled_win(1, "notes | x")))

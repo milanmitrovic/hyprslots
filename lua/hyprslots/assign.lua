@@ -4,7 +4,8 @@
 -- order; a window takes the first free one whose spec matches it. Windows are
 -- considered oldest first (by stable_id), so the result never depends on the
 -- order Hyprland lists them in. Assignment is sticky: a previous assignment
--- that still matches is kept before anything new is handed out. Pure.
+-- whose slot still exists and whose spec still admits the window's class is
+-- kept, whatever its title says now, before anything new is handed out. Pure.
 
 local spec = require("hyprslots.spec")
 
@@ -39,10 +40,13 @@ local function key(desk, slot)
   return desk .. "\0" .. slot
 end
 
+-- A previous assignment holds while its slot exists and its spec still
+-- admits the window's class: a title that changed after the window won its
+-- slot does not take the slot away (assignment is sticky, as in claim).
 local function still_holds(cfg, assignment, window)
   local desk = cfg.slots[assignment.desk]
   local parsed = desk and desk[assignment.slot]
-  return parsed and spec.match(parsed, window) or false
+  return parsed and spec.admits(parsed, window) or false
 end
 
 local function oldest_first(windows)

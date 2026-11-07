@@ -180,6 +180,19 @@ local function match_tag(spec, window)
   return title:find("(" .. spec.profile .. ")", tag_end + 1, true) ~= nil
 end
 
+-- Whether some title would let this window match the spec: its class is the
+-- spec's (a browser_apps class for a tag spec). What a sticky assignment
+-- still needs once the title that won it has changed.
+function M.admits(spec, window)
+  if window.class == nil or window.class == "" then
+    return false
+  end
+  if spec.kind == "tag" then
+    return spec.tm.browser_apps[window.class] == true
+  end
+  return window.class == spec.class
+end
+
 -- Whether a window (anything with `class` and `title` fields) matches a
 -- parsed spec.
 function M.match(spec, window)
