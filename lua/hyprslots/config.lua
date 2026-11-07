@@ -69,8 +69,22 @@ local function load_chunk(path, env)
   return result
 end
 
--- The environment config.lua runs in.
-function M.sandbox(dir)
+local function deep_copy(value)
+  if type(value) ~= "table" then
+    return value
+  end
+  local out = {}
+  for key, inner in pairs(value) do
+    out[key] = deep_copy(inner)
+  end
+  return out
+end
+
+-- The environment config.lua runs in. `data` (name -> table) stands in for
+-- data files, so the engine can re-run config.lua over edited slots.lua data
+-- without writing it first. `loaded` (when given) records, per data file,
+-- { data = what the file holds, given = the copy config.lua was handed }.
+function M.sandbox(dir, data, loaded)
   local env = copy(_G, {
     "assert", "error", "ipairs", "next", "pairs", "pcall", "rawequal", "rawget", "rawlen", "rawset",
     "select", "setmetatable", "getmetatable", "tonumber", "tostring", "type", "xpcall", "_VERSION",
@@ -86,12 +100,21 @@ function M.sandbox(dir)
     if type(name) ~= "string" or not name:match("^[%w_%-][%w_%-%.]*$") or name:find("..", 1, true) then
       error("load_data: '" .. tostring(name) .. "' must be a plain file name in " .. dir, 2)
     end
-    local path = dir .. "/" .. name
-    local data, err = load_chunk(path, {})
-    if err then
-      error("load_data: " .. err, 2)
+    local held
+    if data and data[name] ~= nil then
+      held = data[name]
+    else
+      local err
+      held, err = load_chunk(dir .. "/" .. name, {})
+      if err then
+        error("load_data: " .. err, 2)
+      end
     end
-    return data
+    local given = deep_copy(held)
+    if loaded then
+      loaded[name] = { data = deep_copy(held), given = given }
+    end
+    return given
   end
 
   env._G = env
@@ -310,7 +333,10 @@ end
 
 -- Load config.lua from `dir` (default M.dir()). Returns the validated config,
 -- or nil, an error message, and `true` when the file simply does not exist.
-function M.load(dir)
+-- opts.data (name -> table) stands in for data files (see M.sandbox). The
+-- config also keeps `dir`, `raw` (the table config.lua returned) and
+-- `data_files` (name -> { data, given }) for the editor api.
+function M.load(dir, opts)
   dir = dir or M.dir()
   local path = dir .. "/config.lua"
 
@@ -320,7 +346,8 @@ function M.load(dir)
   end
   probe:close()
 
-  local raw, err = load_chunk(path, M.sandbox(dir))
+  local loaded = {}
+  local raw, err = load_chunk(path, M.sandbox(dir, opts and opts.data, loaded))
   if err then
     return nil, err
   end
@@ -332,6 +359,7 @@ function M.load(dir)
   if not cfg then
     return nil, path .. ":\n" .. invalid
   end
+  cfg.dir, cfg.raw, cfg.data_files = dir, raw, loaded
   return cfg
 end
 

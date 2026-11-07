@@ -133,6 +133,14 @@ function M.new(opts)
     return hl.monitors[1]
   end
 
+  function hl.get_active_workspace()
+    if hl.active_workspace then
+      return hl.active_workspace
+    end
+    local monitor = hl.get_active_monitor()
+    return monitor and monitor.active_workspace
+  end
+
   function hl.get_windows()
     return hl.windows
   end
@@ -172,7 +180,7 @@ function M.new(opts)
     exit = dispatcher("exit"),
     event = dispatcher("event"),
     layout = dispatcher("layout"),
-    window = { move = dispatcher("window.move") },
+    window = { move = dispatcher("window.move"), resize = dispatcher("window.resize") },
     group = { toggle = dispatcher("group.toggle") },
     workspace = { move = dispatcher("workspace.move") },
   }
@@ -262,16 +270,13 @@ function M.new(opts)
   end
 
   -- Keyboard resize (slice 5): the focused window and workspace are whatever
-  -- the test sets as hl.active_window / hl.active_workspace; hl.binds maps
+  -- the test sets as hl.active_window / hl.active_workspace (else the focused
+  -- monitor's active_workspace); hl.binds maps
   -- keys -> { dispatcher, opts } and hl.unbound lists every hl.unbind.
   hl.binds, hl.unbound = {}, {}
 
   function hl.get_active_window()
     return hl.active_window
-  end
-
-  function hl.get_active_workspace()
-    return hl.active_workspace
   end
 
   function hl.bind(keys, dispatcher, bind_opts)
@@ -283,8 +288,6 @@ function M.new(opts)
     hl.unbound[#hl.unbound + 1] = keys
     hl.binds[keys] = nil
   end
-
-  hl.dsp.window.resize = dispatcher("window.resize")
 
   return hl
 end

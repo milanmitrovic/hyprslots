@@ -32,7 +32,30 @@ function M.monitors()
   return out
 end
 
--- A plain copy of an HL.Window: { address, class, title, stable_id, workspace_id }.
+-- An HL.Vec2-like value ({ x, y } or { [1], [2] }) as two numbers.
+local function vec2(value)
+  if type(value) ~= "table" then
+    return nil
+  end
+  local x, y = value.x or value[1], value.y or value[2]
+  if type(x) == "number" and type(y) == "number" then
+    return x, y
+  end
+  return nil
+end
+
+-- A window's box { x, y, w, h } from its at / size, or nil.
+local function window_box(window)
+  local x, y = vec2(window.at)
+  local w, h = vec2(window.size)
+  if x and w then
+    return { x = x, y = y, w = w, h = h }
+  end
+  return nil
+end
+
+-- A plain copy of an HL.Window: { address, class, title, stable_id,
+-- workspace_id, floating, box }.
 function M.window(window)
   local workspace = window.workspace
   return {
@@ -41,6 +64,8 @@ function M.window(window)
     title = window.title,
     stable_id = window.stable_id,
     workspace_id = workspace and workspace.id,
+    floating = window.floating == true,
+    box = window_box(window),
   }
 end
 
@@ -226,6 +251,24 @@ end
 -- Hyprland's own relative resize of the focused window.
 function M.resize_window(dx, dy)
   return hl().dispatch(hl().dsp.window.resize({ x = dx, y = dy, relative = true }))
+end
+
+-- The id of the focused monitor's active workspace, or nil.
+function M.active_workspace_id()
+  local workspace = hl().get_active_workspace()
+  return workspace and workspace.id
+end
+
+-- Emit `custom>>text` on socket2 (hyprctl dispatch event).
+function M.emit_event(text)
+  return hl().dispatch(hl().dsp.event(text))
+end
+
+-- Make Hyprland lay out the workspace holding a tiled window again: a lua
+-- layout recalculates on any resize request (CLuaTiledAlgorithm::resizeTarget
+-- discards the delta), so a zero resize is a relayout.
+function M.nudge(address)
+  return hl().dispatch(hl().dsp.window.resize({ x = 0, y = 0, relative = true, window = "address:" .. address }))
 end
 
 return M
