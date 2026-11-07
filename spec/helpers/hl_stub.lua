@@ -235,4 +235,82 @@ function M.new(opts)
   return hl
 end
 
+-- Make `hl` keep workspaces the way Hyprland does, for specs that follow
+-- windows and workspaces across screens. Opt-in; afterwards:
+--   hl.workspaces          { id, name, monitor = <HL.Monitor>, windows }
+--   hl.get_workspace(id)   by number or numeric string
+--   window.move            moves a window in hl.windows (by "address:...")
+--                          to a workspace, creating it on the FOCUSED
+--                          monitor when it does not exist yet
+--   workspace.move         puts a workspace on another monitor
+--   hl.add_workspace(id, monitor_name) creates one directly
+function M.simulate(hl)
+  local function find_workspace(id)
+    id = tonumber(id)
+    for _, workspace in ipairs(hl.workspaces) do
+      if workspace.id == id then
+        return workspace
+      end
+    end
+    return nil
+  end
+
+  -- Windows already in hl.windows on that id join it.
+  function hl.add_workspace(id, monitor_name)
+    local workspace = { id = id, name = tostring(id), monitor = hl.get_monitor(monitor_name), windows = 0 }
+    for _, window in ipairs(hl.windows) do
+      if window.workspace and window.workspace.id == id then
+        window.workspace = workspace
+        workspace.windows = workspace.windows + 1
+      end
+    end
+    hl.workspaces[#hl.workspaces + 1] = workspace
+    return workspace
+  end
+
+  function hl.get_workspace(selector)
+    return find_workspace(selector)
+  end
+
+  local function find_window(selector)
+    local address = type(selector) == "string" and selector:match("^address:(.+)$")
+    for _, window in ipairs(hl.windows) do
+      if window.address == address then
+        return window
+      end
+    end
+    return nil
+  end
+
+  local plain = hl.dispatch
+  function hl.dispatch(dispatcher)
+    local result = plain(dispatcher)
+    if type(dispatcher) ~= "table" then
+      return result
+    end
+    local args = dispatcher.args or {}
+    if dispatcher.dsp == "window.move" and args.workspace then
+      local window = find_window(args.window)
+      local workspace = find_workspace(args.workspace)
+        or hl.add_workspace(tonumber(args.workspace), hl.get_active_monitor().name)
+      if window then
+        local from = window.workspace and find_workspace(window.workspace.id)
+        if from then
+          from.windows = from.windows - 1
+        end
+        workspace.windows = workspace.windows + 1
+        window.workspace = workspace
+      end
+    elseif dispatcher.dsp == "workspace.move" and args.workspace and args.monitor then
+      local workspace = find_workspace(args.workspace)
+      if workspace then
+        workspace.monitor = hl.get_monitor(args.monitor)
+      end
+    end
+    return result
+  end
+
+  return hl
+end
+
 return M
