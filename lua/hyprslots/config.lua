@@ -337,7 +337,31 @@ local function validate_title_matching(raw, fail)
   return spec.title_matching(raw)
 end
 
-local KNOWN = { slots = true, arrangements = true, pinned = true, title_matching = true }
+-- descriptions (desk -> slot -> text) are the editor's notes on slots
+-- (aerolayout's logical slot descriptions); the engine does not use them.
+local function validate_descriptions(raw, fail)
+  if raw == nil then
+    return
+  end
+  if type(raw) ~= "table" then
+    fail("descriptions", "must be a table of desk -> { slot = text }")
+    return
+  end
+  for _, desk in ipairs(sorted_keys(raw)) do
+    local path = key_path("descriptions", desk)
+    if not is_desk(desk) or type(raw[desk]) ~= "table" then
+      fail(path, "must be a desk from 1 to " .. DESKS .. " holding { slot = text }")
+    else
+      for _, slot in ipairs(sorted_keys(raw[desk])) do
+        if type(raw[desk][slot]) ~= "string" then
+          fail(key_path(path, slot), "must be text")
+        end
+      end
+    end
+  end
+end
+
+local KNOWN = { slots = true, arrangements = true, pinned = true, title_matching = true, descriptions = true }
 
 -- Normalize a raw config table. Returns the config, or nil and every error
 -- found (one per line).
@@ -355,6 +379,7 @@ function M.validate(raw)
   end
 
   local title_matching = validate_title_matching(raw.title_matching, fail)
+  validate_descriptions(raw.descriptions, fail)
   local cfg = {
     slots = validate_slots(raw.slots, fail, title_matching),
     title_matching = title_matching,

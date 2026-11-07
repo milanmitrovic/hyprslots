@@ -10,7 +10,10 @@
 # through the panel's keyboard handling), then taken out again with the
 # panel's press() hook, and api state must show both. Then the Layout tab
 # flips desk 3's tree, takes a typed ratio, applies it (api state and the
-# windows' geometry must follow) and saves it (slots.lua must hold it).
+# windows' geometry must follow) and saves it (slots.lua must hold it); the
+# Slots tab renames a slot (the trees follow) and sets a spec (a malformed one
+# is refused in its prompt first), the Arrangements tab creates one for the
+# connected screen, and a save must write all of it to slots.lua.
 # Screenshots of the nested compositor go to .e2e-tmp/editor-smoke-*.png.
 #
 # Screen: HEADLESS-2, 1920x1080, Omarchy block 0 (desk N = workspace N).
@@ -115,6 +118,212 @@ start_editor() {
   E2E_CLIENT_PIDS+=("$SMOKE_QS_PID")
   eventually 15 qs ipc --pid "$SMOKE_QS_PID" show ||
     harness_fail "Quickshell never answered ipc (alive: $(kill -0 "$SMOKE_QS_PID" 2>/dev/null && echo yes || echo no)); see $E2E_DIR/qs.log"
+}
+
+# Type text into the panel, one press() per character.
+press_text() {
+  local text=$1 i
+  for ((i = 0; i < ${#text}; i++)); do
+    [[ $(smoke press "${text:i:1}") == ok ]] || fail "press '${text:i:1}' was ignored"
+  done
+}
+
+press_keys() {
+  local k
+  for k in "$@"; do
+    [[ $(smoke press "$k") == ok ]] || fail "press $k was ignored"
+  done
+}
+
+notes_taken() { [[ $(api_state | jq -r '.slots["3"].notes') == t-* ]]; }
+
+state_is() { [[ $(api_state | jq -r "$1") == "$2" ]]; }
+
+# The Slots tab: rename right (every tree that places it is rewritten), a
+# refused spec shows in its prompt, then a good one.
+slots_view() {
+  expect_eq "Tab to Slots" "ok" "$(smoke press Tab)"
+  sleep 0.3
+  shot 9-slots
+  # Desk 3's slots by name: main, right, side; main selected.
+  press_keys Down r
+  expect_eq "r prompts for the new name" "Rename 'right' to [Enter] save  [Esc] cancel: ▏" "$(smoke message)"
+  press_text aside
+  press_keys Return
+  if eventually 5 state_is '.slots["3"].aside' t-right; then
+    pass "r renamed right to aside"
+  else
+    fail "right was not renamed: $(api_state | jq -c '.slots'); $(smoke message); errors: $(smoke errors)"
+  fi
+  expect_eq "the tree is rewritten" "v[main:2, h[aside, side:3]]" \
+    "$(api_state | jq -r '.arrangements.solo.desks["3"].main.tree')"
+  expect_eq "the edit is unsaved" "true" "$(api_state | jq -r .dirty)"
+  eventually 5 smoke_idle || true
+  log "message: $(smoke message)"
+
+  # side: s, clear the spec, a malformed one is refused in place, then fixed.
+  press_keys Down Down s
+  press_keys Backspace Backspace Backspace Backspace Backspace Backspace
+  press_text "[Tag"
+  press_keys Return
+  eventually 5 bash -c "[[ \$(qs ipc --pid $SMOKE_QS_PID call smoke message) == *\"closing ']'\"* ]]" ||
+    fail "the refused spec did not show in its prompt: $(smoke message)"
+  log "refusal: $(smoke message)"
+  sleep 0.3
+  shot 10-slots-refused
+  press_keys Backspace Backspace Backspace Backspace
+  press_text "foot/notes"
+  press_keys Return
+  if eventually 5 state_is '.slots["3"].side' foot/notes; then
+    pass "s set side's spec to foot/notes"
+  else
+    fail "side's spec is $(api_state | jq -r '.slots["3"].side'): $(smoke message)"
+  fi
+  eventually 5 smoke_idle || true
+
+  # a adds notes (spec, description), t takes its spec from the first
+  # window offered, d deletes it again; e describes main.
+  press_keys a
+  press_text notes
+  press_keys Return
+  press_text foot
+  press_keys Return
+  press_text scratch
+  press_keys Return
+  if eventually 5 state_is '.slots["3"].notes + " " + .descriptions["3"].notes' "foot scratch"; then
+    pass "a added notes with its spec and description"
+  else
+    fail "notes was not added: $(api_state | jq -c '{slots, descriptions}'); $(smoke message)"
+  fi
+  eventually 5 smoke_idle || true
+  press_keys t 1
+  if eventually 5 notes_taken; then
+    pass "t took notes' spec from a window: $(api_state | jq -r '.slots["3"].notes')"
+  else
+    fail "notes' spec is $(api_state | jq -r '.slots["3"].notes'): $(smoke message)"
+  fi
+  eventually 5 smoke_idle || true
+  press_keys d
+  expect_eq "d asks first" "Delete slot 'notes' from desk 3? (y/n)" "$(smoke message)"
+  press_keys y
+  if eventually 5 state_is '.slots["3"].notes' null; then
+    pass "d, y deleted notes"
+  else
+    fail "notes is still there: $(smoke message)"
+  fi
+  eventually 5 smoke_idle || true
+  press_keys Up Up Up Down e
+  press_text "the editor"
+  press_keys Return
+  if eventually 5 state_is '.descriptions["3"].main' "the editor"; then
+    pass "e described main"
+  else
+    fail "main's description is $(api_state | jq -c '.descriptions'): $(smoke message)"
+  fi
+  eventually 5 smoke_idle || true
+  sleep 0.3
+  shot 11-slots-edited
+}
+
+# The Arrangements tab: n makes "desk" for the connected screen, copying
+# solo's trees; it sorts before solo, so these monitors run it.
+arrangements_view() {
+  expect_eq "Tab to Arrangements" "ok" "$(smoke press Tab)"
+  sleep 0.3
+  shot 12-arrangements
+  press_keys n
+  press_text desk
+  press_keys Return
+  expect_eq "a role is suggested for the monitor" "main" \
+    "$(smoke message | sed -E 's/.*cancel: (.*)▏.*/\1/')"
+  press_keys Return
+  expect_eq "then where its trees come from" \
+    "Trees for 'desk' from: (d)efault, (e)mpty, (s)olo? [Esc] cancel   → default" "$(smoke message)"
+  press_keys s
+  if eventually 5 state_is .arrangement desk; then
+    pass "n created desk from these screens, and they run it"
+  else
+    fail "desk is not running: $(api_state | jq -c '{arrangement, a: (.arrangements | keys)}'); $(smoke message)"
+  fi
+  local selector
+  selector=$(api_state | jq -r '.monitors[0] | if .description != "" then .description elif .serial != "" then .serial else .name end')
+  expect_eq "desk selects the monitor by $selector" "$selector" "$(api_state | jq -r '.arrangements.desk.screens.main')"
+  expect_eq "desk has solo's trees" "v[main:2, h[aside, side:3]]" \
+    "$(api_state | jq -r '.arrangements.desk.desks["3"].main.tree')"
+  eventually 5 smoke_idle || true
+  log "message: $(smoke message)"
+  sleep 0.3
+  shot 13-arrangements-created
+}
+
+save_and_check() {
+  local file=$E2E_CONFIG_HOME/hyprslots/slots.lua
+  press_keys w
+  if eventually 5 state_is .dirty false; then
+    pass "w saved"
+  else
+    fail "still unsaved: $(smoke message)"
+  fi
+  local saved
+  saved=$(cat "$file")
+  for want in 'aside = "t-right"' 'side = "foot/notes"' 'main = "v[main:2, h[aside, side:3]]"' 'desk = {' 'solo = {' \
+    'descriptions = {' 'main = "the editor"'; do
+    if grep -qF "$want" <<<"$saved"; then
+      pass "slots.lua holds $want"
+    else
+      fail "slots.lua lacks $want:"$'\n'"$saved"
+    fi
+  done
+}
+
+# More of the Arrangements tab, unsaved: r renames desk to home, p is refused
+# (this config.lua does not read pinned from slots.lua), c copies the
+# default trees into home, e renames its screen role, x deletes solo.
+arrangement_edits() {
+  press_keys r
+  press_text home
+  press_keys Return
+  if eventually 5 state_is .arrangement home; then
+    pass "r renamed desk to home, still running"
+  else
+    fail "home is not running: $(api_state | jq -r .arrangement); $(smoke message)"
+  fi
+  eventually 5 smoke_idle || true
+  press_keys p m
+  eventually 5 bash -c "[[ \$(qs ipc --pid $SMOKE_QS_PID call smoke message) == *config.lua* ]]" ||
+    fail "p was not refused: $(smoke message)"
+  log "p: $(smoke message)"
+  press_keys c d
+  expect_eq "c asks first" "Replace every tree of 'home' with the default trees? (y/n)" "$(smoke message)"
+  press_keys y
+  if eventually 5 state_is '.arrangements.home.desks["3"].main.tree' "h[aside, main, side]"; then
+    pass "c, d, y gave home the default trees"
+  else
+    fail "home's tree is $(api_state | jq -r '.arrangements.home.desks["3"].main.tree'): $(smoke message)"
+  fi
+  eventually 5 smoke_idle || true
+  press_keys e m Backspace Backspace Backspace Backspace
+  press_text big
+  press_keys Return Return
+  if eventually 5 state_is '.arrangements.home.desks["3"].big.tree' "h[aside, main, side]"; then
+    pass "e renamed home's screen role main to big, its tree along"
+  else
+    fail "home is $(api_state | jq -c '.arrangements.home'): $(smoke message)"
+  fi
+  eventually 5 smoke_idle || true
+  press_keys Down x
+  expect_eq "x asks first" "Delete arrangement 'solo'? It takes its trees for desks 3. (y/n)" "$(smoke message)"
+  press_keys y
+  if eventually 5 state_is '.arrangements.solo' null; then
+    pass "x, y deleted solo"
+  else
+    fail "solo is still there: $(smoke message)"
+  fi
+  eventually 5 smoke_idle || true
+  expect_eq "home still runs" "home" "$(api_state | jq -r .arrangement)"
+  expect_eq "unsaved" "true" "$(api_state | jq -r .dirty)"
+  sleep 0.3
+  shot 14-arrangements-edited
 }
 
 test_body() {
@@ -257,10 +466,19 @@ test_body() {
   fi
   expect_eq "nothing unsaved" "false" "$(api_state | jq -r .dirty)"
 
+  slots_view
+  arrangements_view
+  save_and_check
+  arrangement_edits
+
   expect_eq "Escape" "ok" "$(smoke press Escape)"
   expect_eq "the panel is closed" "no" "$(smoke ready)"
 
-  expect_eq "no editor errors" "" "$(smoke errors)"
+  # The last failed call is the pin the Arrangements tab was refused on
+  # purpose (the malformed spec before it was too).
+  expect_eq "no editor errors but the refused pin" \
+    " | config.lua does not take pinned from slots.lua, so the edit would change nothing; change it in config.lua" \
+    "$(smoke errors)"
   log "assign round trip takes $(time_ms repl "return hyprslots.api.call(\"assign\", \"{\\\"address\\\":\\\"$stray\\\",\\\"desk\\\":3,\\\"slot\\\":\\\"side\\\"}\")") ms"
 
   log "qs log (warnings):"

@@ -6,11 +6,13 @@ import Quickshell.Wayland
 import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
+import "Prompts.js" as Prompts
 
 // The hyprslots editor panel (docs/design.md §9): aerolayout's `edit` TUI as
 // an Omarchy shell panel. Four tabs, cycled with Tab / Shift+Tab as in the
-// TUI: Assignment (which window fills which slot), Layout, Slots and
-// Arrangements (the last two arrive in D3). Esc or q closes it.
+// TUI: Assignment (which window fills which slot), Layout (one desk's
+// trees), Slots and Arrangements. Esc or q closes it (while a view's prompt
+// is open, every key is the prompt's).
 //
 //   omarchy-shell shell toggle milan.hyprslots
 //   omarchy-shell shell call milan.hyprslots press a   (a key, for scripts and tests)
@@ -56,6 +58,9 @@ Item {
     assignmentView.reset()
     layoutView.focusedWorkspace = assignmentView.focusedWorkspace
     layoutView.reset()
+    slotsView.focusedWorkspace = assignmentView.focusedWorkspace
+    slotsView.reset()
+    arrangementsView.reset()
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
@@ -80,6 +85,8 @@ Item {
   function handleKey(key, text, modifiers) {
     if (assignmentView.prompting && root.tab === 0) return assignmentView.handleKey(key, text, modifiers)
     if (layoutView.prompting && root.tab === 1) return layoutView.handleKey(key, text, modifiers)
+    if (slotsView.prompting && root.tab === 2) return slotsView.handleKey(key, text, modifiers)
+    if (arrangementsView.prompting && root.tab === 3) return arrangementsView.handleKey(key, text, modifiers)
     if (key === Qt.Key_Backtab || (key === Qt.Key_Tab && (modifiers & Qt.ShiftModifier))) {
       root.tab = (root.tab + root.tabs.length - 1) % root.tabs.length
       return true
@@ -94,6 +101,8 @@ Item {
     }
     if (root.tab === 0) return assignmentView.handleKey(key, text, modifiers)
     if (root.tab === 1) return layoutView.handleKey(key, text, modifiers)
+    if (root.tab === 2) return slotsView.handleKey(key, text, modifiers)
+    if (root.tab === 3) return arrangementsView.handleKey(key, text, modifiers)
     return false
   }
 
@@ -103,7 +112,7 @@ Item {
     var named = {
       Tab: Qt.Key_Tab, Backtab: Qt.Key_Backtab, Escape: Qt.Key_Escape, Return: Qt.Key_Return,
       Up: Qt.Key_Up, Down: Qt.Key_Down, Left: Qt.Key_Left, Right: Qt.Key_Right,
-      BackSpace: Qt.Key_Backspace, Backspace: Qt.Key_Backspace,
+      BackSpace: Qt.Key_Backspace, Backspace: Qt.Key_Backspace, Delete: Qt.Key_Delete, Home: Qt.Key_Home, End: Qt.Key_End,
     }
     var s = String(name)
     var key = named[s]
@@ -117,7 +126,7 @@ Item {
   }
 
   // What the Assignment view has selected, "<status> <slot> <class>", and
-  // its message or prompt line: for scripts and the e2e smoke.
+  // the current view's message or prompt line: for scripts and the e2e smoke.
   function selectionText() {
     if (root.tab === 1) return layoutView.selectionText()
     var row = assignmentView.selectedRow
@@ -130,8 +139,17 @@ Item {
     return layoutView.draftText()
   }
 
+  // A Slots or Arrangements prompt as one line, the engine's refusal after
+  // " | "; the view's message when no prompt is open.
+  function promptText(prompt, message) {
+    if (!prompt) return message
+    return Prompts.display(prompt) + (prompt.error ? " | " + prompt.error : "")
+  }
+
   function messageText() {
     if (root.tab === 1) return layoutView.messageText()
+    if (root.tab === 2) return root.promptText(slotsView.prompt, slotsView.message)
+    if (root.tab === 3) return root.promptText(arrangementsView.prompt, arrangementsView.message)
     return assignmentView.prompting ? assignmentView.prompt.text : assignmentView.message
   }
 
@@ -248,12 +266,25 @@ Item {
             fontFamily: root.fontFamily
           }
 
-          PlaceholderView {
+          SlotsView {
+            id: slotsView
             anchors.fill: parent
-            visible: root.tab > 1
-            view: root.tabs[root.tab]
+            visible: root.tab === 2
             engine: root.engine
             foreground: root.foreground
+            selectedBackground: root.selectedBackground
+            selectedText: root.selectedText
+            fontFamily: root.fontFamily
+          }
+
+          ArrangementsView {
+            id: arrangementsView
+            anchors.fill: parent
+            visible: root.tab === 3
+            engine: root.engine
+            foreground: root.foreground
+            selectedBackground: root.selectedBackground
+            selectedText: root.selectedText
             fontFamily: root.fontFamily
           }
         }
@@ -266,6 +297,8 @@ Item {
           wrapMode: Text.WordWrap
           text: root.tab === 0 ? assignmentView.helpText
             : root.tab === 1 ? layoutView.helpText
+            : root.tab === 2 ? slotsView.helpText
+            : root.tab === 3 ? arrangementsView.helpText
             : "Tab switch view   ·   q close"
           color: root.foreground
           opacity: 0.7

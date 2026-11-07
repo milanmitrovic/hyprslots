@@ -201,6 +201,18 @@ describe("config.validate", function()
     rejects(raw, "unknown key 'title_rules'")
   end)
 
+  it("accepts slot descriptions, the editor's notes (a config may return the data file whole)", function()
+    local raw = valid()
+    raw.descriptions = { [3] = { main = "the editor" } }
+    assert(config.validate(raw))
+  end)
+
+  it("rejects descriptions that are not desk -> slot -> text", function()
+    local raw = valid()
+    raw.descriptions = { [3] = { main = 4 } }
+    rejects(raw, "descriptions%[3%]%.main: must be text")
+  end)
+
   it("rejects a desk that is not 1-10", function()
     local raw = valid()
     raw.slots[11] = { x = "y" }

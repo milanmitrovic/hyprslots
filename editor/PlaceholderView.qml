@@ -4,8 +4,8 @@ import qs.Commons
 import qs.Commons as Commons
 import "Summary.js" as Summary
 
-// A tab whose editor arrives in a later slice (Layout: D2; Slots and
-// Arrangements: D3). Until then it shows, read-only, what it will edit.
+// A tab whose editor arrives in a later slice (Layout: D2). Until then it
+// shows, read-only, what it will edit.
 Item {
   id: root
 

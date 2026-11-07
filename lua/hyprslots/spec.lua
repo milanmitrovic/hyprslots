@@ -215,4 +215,35 @@ function M.match(spec, window)
   return identifier:lower():find(spec.pattern:lower(), 1, true) ~= nil
 end
 
+-- The spec that names this window (aerolayout's Window.to_spec), for the
+-- editor's "take spec from window": a browser window with "[Tag]" in its
+-- title is `[Tag]`, or `[Tag]/Profile` when the title ends in "(Profile)"; a
+-- class with title rules (an extractor or a strip pattern) is
+-- `class/identifier` when the title leaves one; anything else is its class.
+-- Nil for a window with no class.
+function M.from_window(window, title_matching)
+  local class, title = window.class, window.title
+  if type(class) ~= "string" or class == "" then
+    return nil
+  end
+  local tm = title_matching or DEFAULT_TM
+  if tm.browser_apps[class] and type(title) == "string" then
+    local tag = title:match("%[([^%]]-)%]")
+    if tag and trim(tag) ~= "" then
+      local profile = title:match("%(([^)]+)%)%s*$")
+      if profile then
+        return "[" .. tag .. "]/" .. profile
+      end
+      return "[" .. tag .. "]"
+    end
+  end
+  if tm.extractors[class] or tm.strip_patterns[class] then
+    local identifier = M.identifier(window, tm)
+    if identifier and identifier ~= "" then
+      return class .. "/" .. identifier
+    end
+  end
+  return class
+end
+
 return M

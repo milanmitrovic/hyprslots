@@ -302,3 +302,40 @@ describe("spec", function()
     end)
   end)
 end)
+
+-- The Slots view's "take spec from window" (aerolayout's Window.to_spec).
+describe("spec.from_window", function()
+  it("is the class for a window whose class has no title rules", function()
+    assert.are.equal("firefox", spec.from_window(window("firefox", "Mozilla Firefox")))
+  end)
+
+  it("adds the extracted title for a class with an extractor", function()
+    assert.are.equal("kitty/deltaf", spec.from_window(window("kitty", "deltaf | nvim")))
+  end)
+
+  it("keeps the class alone when the title extracts to nothing", function()
+    assert.are.equal("kitty", spec.from_window(window("kitty", "")))
+    assert.are.equal("kitty", spec.from_window(window("kitty", " | nvim")))
+  end)
+
+  it("uses a strip rule as a title rule too", function()
+    local tm = spec.title_matching({ strip_patterns = { ssh = "%[SSH:.-%]" } })
+    assert.are.equal("ssh/box", spec.from_window(window("ssh", "[SSH:root] box"), tm))
+  end)
+
+  it("is a tag, with the profile when the title ends in one, for a browser", function()
+    assert.are.equal("[Docs]/Work", spec.from_window(window("chromium", "[Docs] - Reference - Me (Work)")))
+    assert.are.equal("[Docs]", spec.from_window(window("chromium", "[Docs] - Reference")))
+    assert.are.equal("chromium", spec.from_window(window("chromium", "Reference")))
+  end)
+
+  it("is what matches the window back", function()
+    for _, w in ipairs({ window("kitty", "deltaf | nvim"), window("chromium", "[Docs] - R - Me (Work)"), window("foot", "x") }) do
+      assert.is_true(spec.match(assert(spec.parse(spec.from_window(w))), w))
+    end
+  end)
+
+  it("is nil for a window with no class", function()
+    assert.is_nil(spec.from_window(window(nil, "x")))
+  end)
+end)
