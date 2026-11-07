@@ -21,3 +21,6 @@ build/
 .DS_Store
 .vscode/
 .idea/
+
+# e2e harness scratch (per-test temp dirs, logs, built shim)
+/.e2e-tmp/
