@@ -26,6 +26,7 @@ function M.activate(engine, desk)
     return nil, "no focused monitor"
   end
 
+  engine.active_desk = desk
   local screens = M.screens(engine, origin)
   engine.log:info("desk %d on %s", desk, #screens > 0 and table.concat(screens, ", ") or "no screen")
   for _, monitor in ipairs(screens) do
@@ -59,6 +60,36 @@ function M.screens(engine, origin)
     out[#out + 1] = origin
   end
   return out
+end
+
+-- Show the active desk (the last one switched to) on screens that were just
+-- plugged in, unless they are pinned, then refocus the focused screen.
+-- `monitors` is a set of connector names. Does nothing before the first desk
+-- switch or with no active arrangement.
+function M.show_active(engine, monitors)
+  local desk, active = engine.active_desk, engine.active
+  if not desk or not active or engine.refused then
+    return
+  end
+  local pinned = engine.cfg and engine.cfg.pinned or {}
+  local shown = {}
+  for _, role in ipairs(active.arrangement.roles) do
+    local monitor = active.monitors[role]
+    if monitors[monitor] and not pinned[role] then
+      shown[#shown + 1] = monitor
+    end
+  end
+  if #shown == 0 then
+    return
+  end
+  local origin = adapter.active_monitor_name()
+  engine.log:info("desk %d on returning %s", desk, table.concat(shown, ", "))
+  for _, monitor in ipairs(shown) do
+    adapter.focus_desk(desk, monitor)
+  end
+  if origin then
+    adapter.focus_monitor(origin)
+  end
 end
 
 -- The action bound to SUPER + N in place of o.workspaces.focus(N).
