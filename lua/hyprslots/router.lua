@@ -42,7 +42,10 @@ function M.route(engine, window)
   end
 
   if window.workspace_id == target then
+    -- A generated window rule opened it there, possibly on a workspace it
+    -- created on the focused screen.
     engine.log:info("open %s: slot %s, already on workspace %d", window.class, assignment.slot, target)
+    M.keep_on_screen(engine, target)
     return
   end
 
@@ -57,6 +60,11 @@ end
 -- over afterwards; it is hidden, so neither screen's view nor focus changes.
 function M.place(engine, address, target)
   adapter.move_window(address, target)
+  M.keep_on_screen(engine, target)
+end
+
+-- Move a desk workspace to its screen when it is on another one.
+function M.keep_on_screen(engine, target)
   local desk = engine.workspaces[target]
   local monitor = desk and desk.monitor
   local actual = adapter.workspace_monitor(target)
