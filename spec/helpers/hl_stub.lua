@@ -232,6 +232,31 @@ function M.new(opts)
     end,
   }
 
+  -- Keyboard resize (slice 5): the focused window and workspace are whatever
+  -- the test sets as hl.active_window / hl.active_workspace; hl.binds maps
+  -- keys -> { dispatcher, opts } and hl.unbound lists every hl.unbind.
+  hl.binds, hl.unbound = {}, {}
+
+  function hl.get_active_window()
+    return hl.active_window
+  end
+
+  function hl.get_active_workspace()
+    return hl.active_workspace
+  end
+
+  function hl.bind(keys, dispatcher, bind_opts)
+    hl.binds[keys] = { dispatcher = dispatcher, opts = bind_opts }
+    return {}
+  end
+
+  function hl.unbind(keys)
+    hl.unbound[#hl.unbound + 1] = keys
+    hl.binds[keys] = nil
+  end
+
+  hl.dsp.window.resize = dispatcher("window.resize")
+
   return hl
 end
 
