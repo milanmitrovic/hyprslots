@@ -7,6 +7,7 @@
 -- overflow leaf until slice 4). Any error is caught, logged, and the targets
 -- are tiled in plain columns instead, so a bug never leaves windows unplaced.
 
+local resize = require("hyprslots.resize")
 local tree = require("hyprslots.tree")
 
 local M = {}
@@ -72,8 +73,9 @@ local function place_slots(engine, ctx)
     return
   end
 
+  local branch = resize.branch(engine, desk)
   local in_branch = {}
-  for _, slot in ipairs(tree.slots(desk.branch)) do
+  for _, slot in ipairs(tree.slots(branch)) do
     in_branch[slot] = true
   end
 
@@ -96,7 +98,7 @@ local function place_slots(engine, ctx)
   for _, target in ipairs(overflow) do
     present[target.index] = true
   end
-  local boxes = tree.boxes(with_overflow(desk.branch, overflow), ctx.area, present)
+  local boxes = tree.boxes(with_overflow(branch, overflow), ctx.area, present)
   for slot, target in pairs(slotted) do
     target:place(boxes[slot])
   end
@@ -114,6 +116,22 @@ function M.provider(engine)
         engine.log:error("recalculate failed, tiling in columns: %s", tostring(err))
         place_columns(ctx)
       end
+    end,
+
+    -- Keyboard resize (resize.lua). Hyprland sends layout messages to the
+    -- focused workspace's algorithm only. Returns true, or the reason the
+    -- message did nothing (Hyprland shows a string reply as the error).
+    layout_msg = function(ctx, msg)
+      local ok, handled, err = pcall(resize.message, engine, ctx, msg)
+      if not ok then
+        engine.log:error("layout message '%s' failed: %s", tostring(msg), tostring(handled))
+        return tostring(handled)
+      end
+      if not handled then
+        engine.log:warn("layout message '%s': %s", tostring(msg), tostring(err))
+        return err
+      end
+      return true
     end,
   }
 end

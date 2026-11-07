@@ -123,4 +123,10 @@ function M.bind_expression(action, expression)
   return action
 end
 
+-- The focused window as a plain table (see M.window), or nil.
+function M.active_window()
+  local window = hl().get_active_window()
+  return window and M.window(window)
+end
+
 return M
