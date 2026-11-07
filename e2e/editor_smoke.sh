@@ -360,7 +360,7 @@ test_body() {
   eventually 5 bash -c "[[ \$($watch selection) == 'none - t-stray' ]]"
   expect_eq "Down x3 selects the stray" "none - t-stray" "$(smoke selection)"
   eventually 3 bash -c "[[ \$($watch message) == 'Assign to slot:'* ]]" || fail "a opened no prompt: $(smoke message)"
-  expect_eq "a prompts with the desk's slots" "Assign to slot: (m)ain, (r)ight, (s)ide? [Esc] cancel" "$(smoke message)"
+  expect_eq "a prompts with the desk's slots" "Assign to slot: (m)ain, (r)ight, (s)ide? [Esc] cancel   → main" "$(smoke message)"
   wait "$SMOKE_WTYPE_PID" 2>/dev/null
   if eventually 5 assigned_to_side "$stray"; then
     pass "keys a, s assigned the stray to side by hand"

@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { load } from "./load.mjs";
 
 const A = load("Assignment.js");
+const P = load("Prompts.js");
 
 // Plain copies, so deepEqual does not trip over the vm context's prototypes.
 const plain = (value) => JSON.parse(JSON.stringify(value));
@@ -122,16 +123,19 @@ test("on the every-window page, assign offers the window's desk, or every desk f
 });
 
 test("the prompt names each option the way aerolayout's does", () => {
-  const options = A.slotOptions(fixture(), 3, null);
-  assert.equal(A.promptText(options, false), "Assign to slot: (m)ain, (r)ight, (l)eft? [Esc] cancel");
+  const ask = (state, desk, row, multiDesk) =>
+    P.display(P.choice("Assign to slot", A.promptOptions(A.slotOptions(state, desk, row), multiDesk)));
+  assert.equal(ask(fixture(), 3, null, false), "Assign to slot: (m)ain, (r)ight, (l)eft? [Esc] cancel   → main");
   const state = fixture();
   state.slots[3] = { main: "a", menu: "b" };
   state.arrangements.dual.desks[3] = { big: { slots: ["main", "menu"] } };
-  assert.equal(A.promptText(A.slotOptions(state, 3, null), false), "Assign to slot: (m)ain, (1) menu? [Esc] cancel");
+  assert.equal(ask(state, 3, null, false), "Assign to slot: (m)ain, (1) menu? [Esc] cancel   → main");
   assert.equal(
-    A.promptText(A.slotOptions(fixture(), null, { workspace: 1 }), true),
-    "Assign to slot: (m) 3/main, (r) 3/right, (l) 3/left, (1) 4/mail? [Esc] cancel",
+    ask(fixture(), null, { workspace: 1 }, true),
+    "Assign to slot: (m) 3/main, (r) 3/right, (l) 3/left, (1) 4/mail? [Esc] cancel   → 3/main",
   );
+  const picked = A.promptOptions(A.slotOptions(fixture(), 3, null), false)[1].value;
+  assert.deepEqual([picked.desk, picked.slot], [3, "right"], "an option's value is the slot option itself");
 });
 
 test("the first page shown is the focused workspace's desk, else every window", () => {

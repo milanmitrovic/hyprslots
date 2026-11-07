@@ -1,6 +1,6 @@
 .pragma library
 
-// The prompts of the Slots and Arrangements views, after aerolayout's
+// The prompts of every view of the panel, after aerolayout's
 // prompt_input / prompt_key: a line of text typed in place, a pick among
 // keyed options, a yes/no question. While one is open it owns the keyboard
 // (the panel routes every key to it, Tab, q and Esc included); Esc cancels.

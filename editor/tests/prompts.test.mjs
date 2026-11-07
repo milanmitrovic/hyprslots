@@ -1,4 +1,4 @@
-// The Slots and Arrangements views' prompts (Prompts.js): a line of text
+// The panel's prompts, every view's (Prompts.js): a line of text
 // typed in place, a pick among keyed options, a yes/no question. Keys come
 // in as names ("Return", "Backspace", ...) with the text they type.
 import { test } from "node:test";

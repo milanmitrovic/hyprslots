@@ -3,6 +3,7 @@ import QtQuick
 import qs.Commons
 import qs.Commons as Commons
 import "Assignment.js" as Assignment
+import "Prompts.js" as Prompts
 
 // Which live window fills which slot (aerolayout's AssignmentView). A table
 // of the windows on a desk with the screen, slot, app and title of each,
@@ -34,9 +35,10 @@ Item {
   readonly property int selected: indexOfKey(selectedKey)
   readonly property var selectedRow: selected >= 0 && selected < rows.length ? rows[selected] : null
 
-  // The prompt in progress: null, { kind: "assign", row, options, index }
-  // or { kind: "unassign", row }.
+  // The prompt in progress (Prompts.js's, as in the other views) and what
+  // to do with its answer.
   property var prompt: null
+  property var _answer: null
   readonly property bool prompting: prompt !== null
   property string message: ""
   property bool messageIsError: false
@@ -55,8 +57,7 @@ Item {
   }
   readonly property bool showDesk: currentPage.desk === null
 
-  readonly property string helpText: prompting
-    ? (prompt.kind === "assign" ? "letter/digit pick   ·   ↑/↓ Return pick   ·   Esc cancel" : "y unassign   ·   n / Esc cancel")
+  readonly property string helpText: prompting ? Prompts.help(prompt)
     : "↑/↓ select  ←/→ prev/next desk   ·   Slots: a assign  u unassign   ·   Ctrl+S save   ·   Tab switch view  q close"
 
   function keyOf(row) {
@@ -91,6 +92,7 @@ Item {
   // Back to the opening page: the focused workspace's desk.
   function reset() {
     prompt = null
+    _answer = null
     message = ""
     page = Assignment.initialPage(state, focusedWorkspace)
     selectedKey = ""
@@ -119,14 +121,19 @@ Item {
     }
     var multiDesk = false
     for (var i = 1; i < options.length; i++) if (options[i].desk !== options[0].desk) multiDesk = true
-    prompt = { kind: "assign", row: row, options: options, index: 0, multiDesk: multiDesk,
-      text: Assignment.promptText(options, multiDesk) }
+    ask(Prompts.choice("Assign to slot", Assignment.promptOptions(options, multiDesk)), function(option) {
+      root.assign(row, option)
+    })
+  }
+
+  // Open a prompt; answer(value) runs on its answer.
+  function ask(p, answer) {
+    prompt = p
+    _answer = answer
     message = ""
   }
 
-  function assign(option) {
-    var row = prompt.row
-    prompt = null
+  function assign(row, option) {
     if (!engine) return
     say("Assigning " + row.cls + " to " + option.slot + "…", false)
     engine.call("assign", { address: row.address, desk: option.desk, slot: option.slot }, function(reply) {
@@ -158,15 +165,14 @@ Item {
       say(row.cls + " is in no slot.", true)
       return
     }
-    prompt = { kind: "unassign", row: row,
-      text: row.status === "overflow" ? "Take " + row.cls + " out of the overflow of " + row.slot + "? (y/n)"
-        : "Unassign " + row.cls + " from " + row.slot + " slot? (y/n)" }
-    message = ""
+    ask(Prompts.confirm(row.status === "overflow" ? "Take " + row.cls + " out of the overflow of " + row.slot + "?"
+      : "Unassign " + row.cls + " from " + row.slot + " slot?"), function(yes) {
+      if (yes) root.unassign(row)
+      else root.message = ""
+    })
   }
 
-  function unassign() {
-    var row = prompt.row
-    prompt = null
+  function unassign(row) {
     if (!engine) return
     engine.call("unassign", { address: row.address }, function(reply) {
       if (!reply.ok) say(reply.error, true)
@@ -174,39 +180,19 @@ Item {
     })
   }
 
-  function handlePrompt(key, text) {
-    if (key === Qt.Key_Escape) {
-      prompt = null
-      say("Cancelled.", false)
-      return true
-    }
-    if (prompt.kind === "unassign") {
-      if (text === "y" || text === "Y") unassign()
-      else if (text === "n" || text === "N") {
-        prompt = null
-        message = ""
-      }
-      return true
-    }
-    var options = prompt.options
-    for (var i = 0; i < options.length; i++) {
-      if (text !== "" && options[i].key === text) {
-        assign(options[i])
-        return true
-      }
-    }
-    if (key === Qt.Key_Up || key === Qt.Key_Down) {
-      var next = Object.assign({}, prompt)
-      next.index = Math.max(0, Math.min(options.length - 1, prompt.index + (key === Qt.Key_Up ? -1 : 1)))
-      prompt = next
-    } else if (key === Qt.Key_Return || key === Qt.Key_Enter) {
-      assign(options[prompt.index])
-    }
+  function handlePrompt(key, text, modifiers) {
+    var out = Prompts.key(prompt, Prompts.keyName(key, modifiers, Qt), Prompts.typed(text))
+    var answer = _answer
+    prompt = out.prompt
+    if (!out.result) return true
+    _answer = null
+    if (out.result.cancel) say("Cancelled.", false)
+    else if (answer) answer(out.result.value)
     return true // the prompt owns the keyboard
   }
 
   function handleKey(key, text, modifiers) {
-    if (prompting) return handlePrompt(key, text)
+    if (prompting) return handlePrompt(key, text, modifiers)
     if (key === Qt.Key_Up || text === "k") select(selected - 1)
     else if (key === Qt.Key_Down || text === "j") select(selected + 1)
     else if (key === Qt.Key_Left || text === "h" || text === "p") turnPage(-1)
@@ -433,9 +419,7 @@ Item {
       width: parent.width
       textFormat: Text.PlainText
       wrapMode: Text.WordWrap
-      text: root.prompting ? root.prompt.text
-        + (root.prompt.kind === "assign" ? "   → " + root.prompt.options[root.prompt.index].slot : "")
-        : (root.message !== "" ? root.message : " ")
+      text: root.prompting ? Prompts.display(root.prompt) : (root.message !== "" ? root.message : " ")
       color: root.prompting ? Commons.Color.accent : (root.messageIsError ? Commons.Color.urgent : root.foreground)
       font.family: root.fontFamily
       font.pixelSize: Style.font.body

@@ -176,7 +176,7 @@ Item {
     if (root.tab === 1) return root.promptText(layoutView.prompt, layoutView.message)
     if (root.tab === 2) return root.promptText(slotsView.prompt, slotsView.message)
     if (root.tab === 3) return root.promptText(arrangementsView.prompt, arrangementsView.message)
-    return assignmentView.prompting ? assignmentView.prompt.text : assignmentView.message
+    return root.promptText(assignmentView.prompt, assignmentView.message)
   }
 
   Loader {

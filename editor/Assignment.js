@@ -247,17 +247,12 @@ function slotOptions(state, desk, row) {
   return out
 }
 
-// The prompt line for `a`, as aerolayout words it.
-function promptText(options, multiDesk) {
-  var labels = []
-  for (var i = 0; i < options.length; i++) {
-    var o = options[i]
-    var name = multiDesk ? o.desk + "/" + o.slot : o.slot
-    if (o.key === "") labels.push(name)
-    else if (!multiDesk && o.key === o.slot.charAt(0).toLowerCase()) labels.push("(" + o.key + ")" + o.slot.slice(1))
-    else labels.push("(" + o.key + ") " + name)
-  }
-  return "Assign to slot: " + labels.join(", ") + "? [Esc] cancel"
+// The slot options as Prompts.js choice options ({ key, label, value }),
+// labelled "desk/slot" when they span desks; the value is the slot option.
+function promptOptions(options, multiDesk) {
+  return options.map(function(o) {
+    return { key: o.key, label: multiDesk ? o.desk + "/" + o.slot : o.slot, value: o }
+  })
 }
 
 // The page to open on: the focused workspace's desk, else every window.
