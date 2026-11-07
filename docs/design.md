@@ -135,6 +135,16 @@ Both run the same function: remember the focused monitor (the origin), run
 `o.workspaces.focus(n, name)` for every connected, non-pinned screen, then
 refocus the origin monitor.
 
+The screens are the active arrangement's roles minus the `pinned` ones, in
+role order with the origin last, so the origin's view changes last; the
+origin is refocused even when it is pinned and so did not switch. With no
+active arrangement only the origin switches, as Omarchy's Super+N does.
+
+`setup()` leaves Omarchy's Super+1..0 alone. `hyprslots.bind_desk_keys()`
+rebinds `SUPER + code:10..19` to `hyprslots.desk(1..10)` through `o.rebind`
+(so the keybindings menu keeps a description); the cutover calls it from the
+user's config.
+
 **hyprmoncfg.** hyprmoncfg keeps owning monitor modes and positions, but its
 workspace planner must be Off. Its generated `hyprmoncfg-monitors.lua`, when
 the planner is on, sets `o.workspaces.enabled = false` and replaces
@@ -191,6 +201,11 @@ has neither problem.
   the event callback, never in `recalculate`.
 - Class-only specs additionally generate `hl.window_rule`s so the window maps
   directly on the right workspace without a visible jump.
+- Hyprland creates a workspace that does not exist yet on the **focused**
+  monitor, and cannot create one elsewhere without showing it. So the router
+  moves the window first and then, when the target workspace is on another
+  monitor than its screen role's, moves the (hidden) workspace there with
+  `hl.dsp.workspace.move`. Neither screen's view nor focus changes.
 
 ## 8. Arrangement selection and hotplug
 
@@ -201,6 +216,18 @@ every role matched by a distinct monitor and no monitor left over). The
 recomputation is deferred with a oneshot timer, as Omarchy does for
 `monitor.removed`, because Hyprland reports removal from inside the monitor's
 teardown. Afterwards each desk's windows are re-placed under the new trees.
+
+Order (module `hotplug`): the event itself does nothing; a oneshot hop
+re-selects the arrangement, and a second hop, created inside the first,
+re-routes every assigned window (assignments are kept by window address) to
+its slot's workspace under the new arrangement, the same way the router
+places a new window. Omarchy reconciles on `monitor.added` inside the event
+and on `monitor.removed` from a oneshot timer created in the same event, which
+merges an unplugged screen's workspaces into the block of the screen they
+landed on (13 becomes 4). The second hop is created after that timer has come
+due, so it always sees the workspaces as Omarchy left them. Hotplug never
+focuses a monitor or changes a screen's view, so pinned screens are never
+refocused; a pinned role that disappears only changes the selection.
 
 ## 9. Editor
 
