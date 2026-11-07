@@ -262,6 +262,12 @@ function M.desk(n)
   return desks.action(current, n)
 end
 
+-- Bind SUPER + 1..0 to hyprslots.desk(1..10) in place of Omarchy's
+-- per-screen workspace keys. Call it from the config after setup().
+function M.bind_desk_keys()
+  desks.bind_keys(current)
+end
+
 M.api = {
   call = function(name, text)
     return api.call(engine, name, text)

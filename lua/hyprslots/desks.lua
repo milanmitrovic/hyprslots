@@ -76,4 +76,14 @@ function M.action(engine_ref, desk)
   return adapter.bind_expression(action, "hyprslots.desk(" .. tostring(desk) .. ")")
 end
 
+-- Rebind SUPER + 1..0 (key codes 10..19, as Omarchy binds them) to desk
+-- switching. Not called by setup(): the cutover calls it from the user's
+-- config once hyprslots should own those keys.
+function M.bind_keys(engine_ref)
+  for desk = 1, 10 do
+    local keys = "SUPER + code:" .. tostring(desk + 9)
+    adapter.rebind(keys, "Switch to desk " .. desk .. " on every screen", M.action(engine_ref, desk))
+  end
+end
+
 return M

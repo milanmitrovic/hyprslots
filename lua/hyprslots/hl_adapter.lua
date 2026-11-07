@@ -119,6 +119,17 @@ function M.focus_monitor(monitor_name)
   return hl().dispatch(hl().dsp.focus({ monitor = monitor_name }))
 end
 
+-- Replace whatever is bound to `keys`: through Omarchy's o.rebind when it is
+-- loaded (so its keybindings menu lists the description), else hl directly.
+function M.rebind(keys, description, action)
+  local o = rawget(_G, "o")
+  if type(o) == "table" and type(o.rebind) == "function" then
+    return o.rebind(keys, description, action)
+  end
+  hl().unbind(keys)
+  return hl().bind(keys, action, { description = description })
+end
+
 -- Register a bind action's replay expression with Omarchy's keybindings menu.
 function M.bind_expression(action, expression)
   local o = rawget(_G, "o")

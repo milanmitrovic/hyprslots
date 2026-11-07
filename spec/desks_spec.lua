@@ -77,4 +77,43 @@ describe("desks across screens", function()
     engine.call(hyprslots, "desk", '{"desk": 3}')
     assert.are.same({ { desk = 3, monitor = "HEADLESS-2" } }, o.workspaces.focused)
   end)
+
+  describe("bind_desk_keys", function()
+    before_each(function()
+      hl, o = engine.stub({ "HEADLESS-2", "HEADLESS-3" }, BLOCKS)
+    end)
+
+    it("rebinds Super+1..0 to desk switching through Omarchy's o.rebind", function()
+      local rebound = {}
+      o.rebind = function(keys, description, dispatcher)
+        rebound[#rebound + 1] = { keys = keys, description = description, dispatcher = dispatcher }
+      end
+      hyprslots = engine.setup(engine.TWO_SCREENS)
+      assert.are.same({}, rebound, "setup alone leaves Omarchy's bindings alone")
+
+      hyprslots.bind_desk_keys()
+      assert.are.equal(10, #rebound)
+      assert.are.equal("SUPER + code:10", rebound[1].keys)
+      assert.are.equal("SUPER + code:19", rebound[10].keys)
+      assert.matches("desk 1", rebound[1].description)
+
+      hl.dispatch(rebound[10].dispatcher)
+      assert.are.same({
+        { desk = 10, monitor = "HEADLESS-3" },
+        { desk = 10, monitor = "HEADLESS-2" },
+      }, o.workspaces.focused)
+      assert.are.equal("hyprslots.desk(10)", o.bind_expressions[rebound[10].dispatcher])
+    end)
+
+    it("falls back to hl.unbind and hl.bind without o.rebind", function()
+      local calls = {}
+      hl.unbind = function(keys) calls[#calls + 1] = { "unbind", keys } end
+      hl.bind = function(keys, dispatcher) calls[#calls + 1] = { "bind", keys, type(dispatcher) } end
+      hyprslots = engine.setup(engine.TWO_SCREENS)
+      hyprslots.bind_desk_keys()
+      assert.are.equal(20, #calls)
+      assert.are.same({ "unbind", "SUPER + code:12" }, calls[5])
+      assert.are.same({ "bind", "SUPER + code:12", "function" }, calls[6])
+    end)
+  end)
 end)
