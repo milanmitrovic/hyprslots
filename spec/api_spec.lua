@@ -357,40 +357,96 @@ return { slots = data.slots, arrangements = arrangements }
     end)
   end)
 
-  describe("the effective tree hook", function()
-    -- feature/resize keeps nudged trees in memory; api.effective_branch is
-    -- the one place that says which tree is in force.
-    local api_module, original
+  describe("keyboard-resized trees", function()
+    -- A nudge (resize.lua) holds its tree in memory; it is the tree in force
+    -- for state, set_ratio, record and save until it is saved or dropped.
+    local windows
+
+    -- Focus t-a and nudge its right edge by 0.1 of the split:
+    -- h[a:1, b:2, c:1] becomes h[a:7, b:8, c:5] (600 + 240 px for a).
+    local function nudge_a()
+      hl.active_window = windows[1]
+      local ctx = hl_stub.layout_ctx(AREA, windows)
+      assert.is_true(hl.layouts.slots.layout_msg(ctx, "nudge r 0.1"))
+    end
 
     before_each(function()
       setup()
-      api_module = require("hyprslots.api")
-      original = api_module.effective_branch
-      api_module.effective_branch = function(engine, arrangement, desk, role)
-        if arrangement == "solo" and desk == 3 and role == "main" then
-          return assert(require("hyprslots.tree").parse("h[v[a:5, b], c]"))
-        end
-        return original(engine, arrangement, desk, role)
-      end
+      windows = laid_out_windows({ "t-a", "t-b", "t-c" })
+      nudge_a()
     end)
 
-    after_each(function()
-      api_module.effective_branch = original
+    it("is what state reports, as an unsaved override", function()
+      local s = state()
+      assert.are.equal("h[a:7, b:8, c:5]", s.arrangements.solo.desks["3"].main.tree)
+      assert.is_true(s.arrangements.solo.desks["3"].main.resized)
+      assert.are.same({ ["solo/3/main"] = { arrangement = "solo", desk = 3, role = "main",
+        tree = "h[a:7, b:8, c:5]", ratio = "7:8:5" } }, s.resized)
+      assert.is_true(s.dirty)
     end)
 
-    it("is what state reports", function()
-      assert.are.equal("h[v[a:5, b], c]", state().arrangements.solo.desks["3"].main.tree)
+    it("is what the layout places", function()
+      local placed = recalculate(windows)
+      assert.are.same({ x = 0, y = 0, w = 840, h = 1350 }, placed["t-a"])
+      assert.are.same({ x = 840, y = 0, w = 960, h = 1350 }, placed["t-b"])
     end)
 
-    it("is what set_ratio starts from", function()
-      local reply = call("set_ratio", { desk = 3, role = "main", ratio = "1[1:2]:1" })
+    it("announces itself with a change event", function()
+      -- Three window opens, then the nudge.
+      assert.are.same({ "hyprslots changed 1", "hyprslots changed 2", "hyprslots changed 3",
+        "hyprslots changed 4" }, events())
+      assert.are.equal(4, state().seq)
+    end)
+
+    it("is what set_ratio starts from, and set_ratio replaces it", function()
+      local reply = call("set_ratio", { desk = 3, role = "main", ratio = "7:8:10" })
       assert.is_true(reply.ok, reply.error)
-      assert.are.equal("h[v[a, b:2], c]", reply.tree)
+      assert.are.equal("h[a:7, b:8, c:10]", reply.tree)
+      assert.are.same({}, state().resized)
+      assert.are.same({ x = 0, y = 0, w = 672, h = 1350 }, recalculate(windows)["t-a"])
     end)
 
-    it("is what save writes", function()
-      assert.is_true(call("save").ok)
-      assert.matches('main = "h%[v%[a:5, b%], c%]"', read(dir .. "/slots.lua"))
+    it("is what record compares against", function()
+      for _, window in ipairs(windows) do
+        local box = recalculate(windows)[window.class]
+        window.at, window.size = { x = box.x, y = box.y }, { x = box.w, y = box.h }
+      end
+      local reply = call("record", { apply = false })
+      assert.is_true(reply.ok, reply.error)
+      assert.are.equal("h[a:7, b:8, c:5]", reply.tree)
+      assert.are.same({}, reply.missing)
+    end)
+
+    it("is written by save, which then holds it as the config and clears the override", function()
+      local reply = call("save")
+      assert.is_true(reply.ok, reply.error)
+      assert.matches('main = "h%[a:7, b:8, c:5%]"', read(dir .. "/slots.lua"))
+      local s = state()
+      assert.are.same({}, s.resized)
+      assert.is_false(s.dirty)
+      assert.are.equal("h[a:7, b:8, c:5]", s.arrangements.solo.desks["3"].main.tree)
+      assert.is_nil(s.arrangements.solo.desks["3"].main.resized)
+      assert.are.same({ x = 0, y = 0, w = 840, h = 1350 }, recalculate(windows)["t-a"])
+      -- A reset now has nothing to go back to: the saved tree is the config.
+      hl.active_window = windows[1]
+      hl.layouts.slots.layout_msg(hl_stub.layout_ctx(AREA, windows), "reset")
+      assert.are.same({ x = 0, y = 0, w = 840, h = 1350 }, recalculate(windows)["t-a"])
+    end)
+
+    it("survives a reload once saved", function()
+      call("save")
+      assert.is_true(call("reload").ok)
+      assert.are.equal("h[a:7, b:8, c:5]", state().arrangements.solo.desks["3"].main.tree)
+      assert.are.same({ x = 0, y = 0, w = 840, h = 1350 }, recalculate(windows)["t-a"])
+    end)
+
+    it("is dropped by a reload without a save", function()
+      assert.is_true(call("reload").ok)
+      local s = state()
+      assert.are.same({}, s.resized)
+      assert.is_false(s.dirty)
+      assert.are.equal("h[a, b:2, c]", s.arrangements.solo.desks["3"].main.tree)
+      assert.are.same({ x = 0, y = 0, w = 600, h = 1350 }, recalculate(windows)["t-a"])
     end)
   end)
 

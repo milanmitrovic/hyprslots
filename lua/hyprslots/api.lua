@@ -15,6 +15,7 @@ local desks = require("hyprslots.desks")
 local edit = require("hyprslots.edit")
 local ratio = require("hyprslots.ratio")
 local record = require("hyprslots.record")
+local resize = require("hyprslots.resize")
 local serialize = require("hyprslots.serialize")
 local tree = require("hyprslots.tree")
 
@@ -47,14 +48,12 @@ local function sorted_keys(t)
   return keys
 end
 
--- The tree in force for an arrangement's desk on a screen role: the config's,
--- unless something holds an in-memory override (feature/resize's nudged
--- trees are meant to plug in here). state reports it, set_ratio starts from
--- it, record compares against it and save writes it.
+-- The tree in force for an arrangement's desk on a screen role: a keyboard
+-- resize's in-memory override (resize.lua), else the config's. The layout
+-- places the same tree. state reports it, set_ratio starts from it, record
+-- compares against it and save writes it.
 function M.effective_branch(engine, arrangement, desk, role)
-  local entry = engine.cfg and engine.cfg.arrangements[arrangement]
-  local branches = entry and entry.desks[desk]
-  return branches and branches[role]
+  return resize.effective_branch(engine, arrangement, desk, role)
 end
 
 local function read_only_paths(cfg)
@@ -65,9 +64,21 @@ local function read_only_paths(cfg)
   return edit.read_only(cfg.raw, file and file.given)
 end
 
--- { tree, ratio, slots } for one parsed branch.
-local function branch_info(node)
-  return object({ tree = serialize.tree(node), ratio = ratio.format(node), slots = array(tree.slots(node)) })
+-- { tree, ratio, slots, resized? } for one parsed branch.
+local function branch_info(node, resized)
+  return object({ tree = serialize.tree(node), ratio = ratio.format(node), slots = array(tree.slots(node)),
+    resized = resized or nil })
+end
+
+-- "<arrangement>/<desk>/<role>" -> { arrangement, desk, role, tree, ratio }
+-- for every unsaved keyboard-resized tree.
+local function resized_info(engine)
+  local out = object()
+  for _, override in ipairs(resize.overrides(engine)) do
+    out[override.key] = object({ arrangement = override.arrangement, desk = override.desk, role = override.role,
+      tree = serialize.tree(override.tree), ratio = ratio.format(override.tree) })
+  end
+  return out
 end
 
 local function arrangements_info(engine, read_only)
@@ -82,7 +93,9 @@ local function arrangements_info(engine, read_only)
     for _, desk in ipairs(sorted_keys(arrangement.desks)) do
       local branches = object()
       for _, role in ipairs(sorted_keys(arrangement.desks[desk])) do
-        branches[role] = branch_info(M.effective_branch(engine, name, desk, role) or arrangement.desks[desk][role])
+        local configured = arrangement.desks[desk][role]
+        local effective = M.effective_branch(engine, name, desk, role) or configured
+        branches[role] = branch_info(effective, not rawequal(effective, configured))
       end
       deskmap[tostring(desk)] = branches
     end
@@ -202,7 +215,8 @@ function M.snapshot(engine)
     desks = desks_list(engine),
     pinned = pinned,
     windows = windows_info(engine),
-    dirty = engine.dirty == true,
+    dirty = engine.dirty == true or next(engine.resized or {}) ~= nil,
+    resized = resized_info(engine),
     config = object({
       dir = dir,
       data_file = dir .. "/" .. DATA_FILE,
@@ -266,8 +280,14 @@ local function set_tree(engine, name, desk, role, text)
   if not data then
     return nil, err
   end
+  -- The new tree replaces a keyboard-resized one; it is kept if the edit fails.
+  local nudged = engine.resized and engine.resized[resize.key(name, desk, role)]
+  resize.clear(engine, name, desk, role)
   local cfg, apply_err = apply_data(engine, data)
   if not cfg then
+    if nudged then
+      engine.resized[resize.key(name, desk, role)] = nudged
+    end
     return nil, apply_err
   end
   return cfg.arrangements[name].desks[desk][role]
@@ -408,6 +428,7 @@ function handlers.save(engine)
   end
   local data = edit.copy(engine.data)
   local read_only = read_only_paths(engine.cfg)
+  local written = {} -- override keys save makes part of the config
   for _, name in ipairs(engine.cfg.arrangement_names) do
     local entry = engine.cfg.arrangements[name]
     local target = type(data.arrangements) == "table" and data.arrangements[name]
@@ -419,6 +440,7 @@ function handlers.save(engine)
             target.desks = target.desks or {}
             target.desks[desk] = target.desks[desk] or {}
             target.desks[desk][role] = serialize.tree(effective)
+            written[#written + 1] = { name, desk, role }
           end
         end
       end
@@ -429,10 +451,19 @@ function handlers.save(engine)
   if not ok then
     return fail(err)
   end
-  engine.data = data
-  engine.dirty = false
   engine.log:info("saved %s", path)
-  engine:changed()
+  -- The written overrides are config now: run the saved data, then drop them.
+  local cfg = #written > 0 and config.load(engine.config_dir, { data = { [DATA_FILE] = data } })
+  if cfg then
+    for _, w in ipairs(written) do
+      resize.clear(engine, w[1], w[2], w[3])
+    end
+    engine:apply_config(cfg, data, false)
+  else
+    engine.data = data
+    engine.dirty = false
+    engine:changed()
+  end
   return { path = path, seq = engine.seq }
 end
 

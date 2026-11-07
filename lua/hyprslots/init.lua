@@ -53,6 +53,7 @@ local function new_engine()
     data = nil, -- the editor-owned slots.lua data the running config came from
     dirty = false, -- data differs from slots.lua on disk
     ruled = {}, -- workspace ids given lua:slots
+    resized = {}, -- "<arrangement>/<desk>/<role>" -> keyboard-resized tree (resize.lua)
   }, Engine)
 end
 
@@ -303,6 +304,7 @@ function Engine:reload()
     return nil, err
   end
   local file = cfg.data_files["slots.lua"]
+  resize.clear(self) -- keyboard-resized trees are unsaved edits too
   self:apply_config(cfg, file and file.data, false)
   self.log:info("config reloaded: %d arrangement(s)", #cfg.arrangement_names)
   return true
