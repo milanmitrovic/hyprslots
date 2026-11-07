@@ -259,3 +259,60 @@ describe("config.validate", function()
     assert.matches("desks%[3%]%.big", err)
   end)
 end)
+
+describe("config.load with the data file in memory", function()
+  local dir
+  after_each(function()
+    if dir then remove_dir(dir) end
+    dir = nil
+  end)
+
+  it("hands config.lua the given data instead of reading slots.lua", function()
+    dir = config_dir({ ["config.lua"] = CONFIG_LUA, ["slots.lua"] = SLOTS_LUA })
+    local data = assert(load(SLOTS_LUA, "=slots", "t", {}))()
+    data.arrangements.single.desks[3].big = "v[left, main, right]"
+    local cfg = assert(config.load(dir, { data = { ["slots.lua"] = data } }))
+    assert.are.equal("v", cfg.arrangements.single.desks[3].big.split)
+  end)
+
+  it("keeps what slots.lua held, untouched by config.lua", function()
+    dir = config_dir({
+      ["config.lua"] = [[
+local data = load_data("slots.lua")
+data.slots[3].main = "changed-by-code"
+return { slots = data.slots, arrangements = data.arrangements }
+]],
+      ["slots.lua"] = SLOTS_LUA,
+    })
+    local cfg = assert(config.load(dir))
+    assert.are.equal("changed-by-code", cfg.slots[3].main.class)
+    local loaded = cfg.data_files["slots.lua"]
+    assert.are.equal("t-main", loaded.data.slots[3].main, "the file's own content")
+    assert.are.equal("changed-by-code", loaded.given.slots[3].main, "what config.lua was handed")
+  end)
+
+  it("never lets config.lua change the data it was given", function()
+    dir = config_dir({
+      ["config.lua"] = [[
+local data = load_data("slots.lua")
+data.slots[3].main = "changed-by-code"
+return { slots = data.slots, arrangements = data.arrangements }
+]],
+    })
+    local data = assert(load(SLOTS_LUA, "=slots", "t", {}))()
+    assert(config.load(dir, { data = { ["slots.lua"] = data } }))
+    assert.are.equal("t-main", data.slots[3].main)
+  end)
+
+  it("keeps the table config.lua returned", function()
+    dir = config_dir({ ["config.lua"] = CONFIG_LUA, ["slots.lua"] = SLOTS_LUA })
+    local cfg = assert(config.load(dir))
+    assert.are.same({ "laptop" }, cfg.raw.pinned)
+    assert.are.equal(cfg.data_files["slots.lua"].given.slots, cfg.raw.slots)
+  end)
+
+  it("remembers the directory it loaded from", function()
+    dir = config_dir({ ["config.lua"] = CONFIG_LUA, ["slots.lua"] = SLOTS_LUA })
+    assert.are.equal(dir, assert(config.load(dir)).dir)
+  end)
+end)
