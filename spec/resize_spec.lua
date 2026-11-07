@@ -114,14 +114,15 @@ describe("keyboard resize", function()
       assert.are.same({ 1300, 1100 }, { placed()["t-a"].w, placed()["t-b"].w })
     end)
 
-    it("moves the left edge of the rightmost slot", function()
-      assert.is_true(msg("resize 100 0", windows[2]))
+    it("moves the left edge of the rightmost slot the same way, as dwindle does", function()
+      -- Omarchy's "Expand window left" (dx = -100) widens the rightmost window.
+      assert.is_true(msg("resize -100 0", windows[2]))
       assert.are.same({ 1100, 1300 }, { placed()["t-a"].w, placed()["t-b"].w })
     end)
 
-    it("shrinks the bottom slot from its top edge", function()
+    it("moves the top edge of the bottom slot", function()
       assert.is_true(msg("resize 0 -100", windows[3]))
-      assert.are.same({ 775, 575 }, { placed()["t-a"].h, placed()["t-c"].h })
+      assert.are.same({ 575, 775 }, { placed()["t-a"].h, placed()["t-c"].h })
     end)
   end)
 

@@ -86,8 +86,10 @@ local function reset(engine)
 end
 
 -- "resize <dx> <dy>" in pixels, as Omarchy's hl.dsp.window.resize binds say
--- it: the focused slot's width changes by dx (moving its right edge, or its
--- left edge when nothing is to its right), its height by dy likewise.
+-- it, with dwindle's feel: an edge of the focused slot moves by dx (its right
+-- edge, or its left edge when nothing is to its right) and by dy (its bottom
+-- edge, or its top edge). So dx = -100 ("Expand window left") narrows a slot
+-- with a neighbour on its right and widens the rightmost slot.
 local function resize(engine, ctx, dx, dy)
   dx, dy = math.tointeger(tonumber(dx)), math.tointeger(tonumber(dy))
   if not dx or not dy then
@@ -100,7 +102,7 @@ local function resize(engine, ctx, dx, dy)
       local ok
       ok, err = nudge(engine, ctx, forward, delta .. "px")
       if not ok then
-        ok, err = nudge(engine, ctx, backward, delta .. "px")
+        ok, err = nudge(engine, ctx, backward, -delta .. "px")
       end
       changed = changed or ok == true
     end
