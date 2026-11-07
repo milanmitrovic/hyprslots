@@ -1,7 +1,7 @@
 # hyprslots design
 
-Status: slices 1, 2, 4, 5 and 6 implemented and integrated (§11); slice 3
-(specs) is merged separately, then the cutover. Targets Hyprland 0.56.2
+Status: slices 1 to 6 implemented and integrated on `feature/engine` (§11);
+next is the cutover. Targets Hyprland 0.56.2
 (Lua config) on Omarchy 4.5.
 
 ## 1. Purpose
@@ -335,6 +335,17 @@ order `hyprland.lua` loads them in.
   of the active desk set, assign it to a slot (assignment is sticky), and
   move it to the slot's workspace when it opened elsewhere. Moves happen in
   the event callback, never in `recalculate`.
+- **Sticky.** An assignment is kept until the window closes. When the engine
+  re-solves every assignment (config reload, an api edit, hotplug), a
+  window keeps its slot while the slot exists and its spec still admits the
+  window's class, whatever its title says now.
+- **Overflow.** A window that matches a spec while every slot it matches is
+  taken goes to the desk workspace of the first of those slots (precedence
+  below), where the layout stacks it in that branch's overflow leaf (§6).
+  It follows that desk on hotplug and edits, and the oldest such window
+  takes a matching slot as soon as one is freed. Overflowing windows count
+  as having no slot, so a late title can still win them a title slot. A
+  window that matches no spec at all stays where it opened.
 - **Late titles.** Many apps set their real title after mapping (a terminal
   starting zellij, a browser loading its profile). On `window.title` a window
   with **no slot** is matched again once its title has been quiet for 150 ms
@@ -391,17 +402,19 @@ title_matching = {
 For every class some class-only spec names, hyprslots registers one rule,
 `hyprslots-<class>`, matching `^(<class>)$` (regex-escaped) with
 `workspace = "<id> silent"`: the workspace of the first free slot, in the
-precedence order above, that could take a window of that class. The rule is
-**disabled** when that first candidate is a title or tag spec (only the
-title can decide, so the router does), when every slot of the class is
-taken, or when the slot is on no screen of the active arrangement.
+precedence order above, that could take a window of that class, or, when
+every such slot is taken, of the first of them (the desk whose overflow
+leaf the router sends an extra window to). The rule is **disabled** when
+that candidate is a title or tag spec (only the title can decide, so the
+router does) or when its slot is on no screen of the active arrangement.
 
 Hyprland cannot remove a window rule at runtime; registering one under an
 existing `name` replaces it, and `{ name = ..., enabled = false }` turns it
 off (Omarchy's workspace-modes does the same). So rules are re-registered,
 only when their target changed, after every arrangement selection, every
-slot taken and every slot freed. A config reload starts from scratch on both
-sides.
+slot taken and every slot freed, and after every api edit or reload (which
+can move a slot to another screen). A Hyprland config reload starts from
+scratch on both sides.
 
 The rule is only an optimisation. The router does the same placement with or
 without it; when a rule opened the window on its workspace already, the
@@ -570,18 +583,19 @@ cannot go after hyprmoncfg's `dofile`, which stays last.
 |---|---|---|
 | 1 Tracer | one screen, one desk tree via `lua:slots`; config, arrangement, tree, spec-by-class, layout, route, dump | done |
 | 2 Desks | desks across screens, synced Super+N, pinned screens, hotplug; turns the completion test green | done |
-| 3 Specs | full spec grammar, late titles, generated window rules | merged after slices 4-6 |
+| 3 Specs | full spec grammar, late titles, generated window rules | done |
 | 4 Containers | accordion (groups) and overflow | done |
 | 5 Resize | keyboard resize via `layout_msg`; `lua:slots` in the Super+L layout cycle, focused screen only | done (Super+L patches applied at cutover) |
 | 6 Protocol | record, api protocol, serializer, ratio grammar | done |
 | 7 Cutover | install on the user's machine, retire the old setup | next |
 | Editor | skeleton + Assignment view; Layout view; Slots + Arrangements views | not started |
 
-Slices 2, 4, 5 and 6 were built in parallel on top of slice 1 and
+Slices 2 to 6 were built in parallel on top of slices 1 and 2 and
 integrated on `feature/engine`; the cross-slice behaviour (keyboard-resized
 trees as the api's tree in force, nudges on the laid-out tree, re-routing
-after edits, the group pass after hotplug's re-route) is described in the
-sections above and covered by `e2e/accordion_replug_test.sh` and
+and window-rule sync after edits, the group pass after hotplug's re-route,
+matched extras in their desk's overflow, sticky re-solves) is described in
+the sections above and covered by `e2e/accordion_replug_test.sh` and
 `e2e/resize_save_test.sh`.
 
 Parked: mouse-resize workaround, upstream Hyprland PR for a resize hook,
