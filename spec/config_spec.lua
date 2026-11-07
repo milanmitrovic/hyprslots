@@ -1,4 +1,5 @@
 local config = require("hyprslots.config")
+local spec = require("hyprslots.spec")
 
 -- A fresh directory holding the given files (name -> content).
 local function config_dir(files)
@@ -208,8 +209,8 @@ describe("config.validate", function()
 
   it("rejects a bad spec with its path", function()
     local raw = valid()
-    raw.slots[3].main = "kitty/deltaf"
-    rejects(raw, "slots%[3%]%.main: spec 'kitty/deltaf'")
+    raw.slots[3].main = "kitty/"
+    rejects(raw, "slots%[3%]%.main: spec 'kitty/'")
   end)
 
   it("rejects an arrangement without screens", function()
@@ -271,6 +272,59 @@ describe("config.validate", function()
     assert.is_nil(cfg)
     assert.matches("slots%[3%]%.main", err)
     assert.matches("desks%[3%]%.big", err)
+  end)
+  describe("title_matching", function()
+    it("matches title specs through the configured extractors", function()
+      local raw = valid()
+      raw.slots[3].main = "MyEditor/hyprslots"
+      raw.title_matching = { extractors = { MyEditor = " — " } }
+      local cfg = assert(config.validate(raw))
+      local main = cfg.slots[3].main
+      assert.is_true(spec.match(main, { class = "MyEditor", title = "hyprslots — init.lua" }))
+      assert.is_false(spec.match(main, { class = "MyEditor", title = "x — hyprslots" }))
+    end)
+
+    it("restricts tag specs to the configured browsers", function()
+      local raw = valid()
+      raw.slots[3].main = "[Docs]"
+      raw.title_matching = { browser_apps = { "firefox" } }
+      local cfg = assert(config.validate(raw))
+      assert.is_true(spec.match(cfg.slots[3].main, { class = "firefox", title = "[Docs] x" }))
+      assert.is_false(spec.match(cfg.slots[3].main, { class = "chromium", title = "[Docs] x" }))
+    end)
+
+    it("uses the defaults when absent", function()
+      local raw = valid()
+      raw.slots[3].main = "kitty/build"
+      local cfg = assert(config.validate(raw))
+      assert.is_true(spec.match(cfg.slots[3].main, { class = "kitty", title = "build | fish" }))
+    end)
+
+    it("rejects an unknown key", function()
+      local raw = valid()
+      raw.title_matching = { extractor = {} }
+      rejects(raw, "title_matching: unknown key 'extractor'")
+    end)
+
+    it("rejects a separator that is not a non-empty string", function()
+      local raw = valid()
+      raw.title_matching = { extractors = { kitty = 7 } }
+      rejects(raw, "title_matching%.extractors%.kitty")
+    end)
+
+    it("rejects a malformed Lua strip pattern", function()
+      local raw = valid()
+      raw.title_matching = { strip_patterns = { App = "[" } }
+      rejects(raw, "title_matching%.strip_patterns%.App: .*Lua pattern")
+    end)
+
+    it("rejects browser_apps that is not a list of classes", function()
+      local raw = valid()
+      raw.title_matching = { browser_apps = { 1 } }
+      rejects(raw, "title_matching%.browser_apps")
+      raw.title_matching = { browser_apps = "chromium" }
+      rejects(raw, "title_matching%.browser_apps")
+    end)
   end)
 end)
 

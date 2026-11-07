@@ -32,6 +32,9 @@ local function candidates(cfg)
   return out
 end
 
+-- The (desk, slot, spec) candidates in precedence order (for window_rules).
+M.candidates = candidates
+
 local function key(desk, slot)
   return desk .. "\0" .. slot
 end

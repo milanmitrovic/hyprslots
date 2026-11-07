@@ -154,7 +154,7 @@ local function key_path(prefix, key)
   return prefix .. "[" .. tostring(key) .. "]"
 end
 
-local function validate_slots(raw, fail)
+local function validate_slots(raw, fail, title_matching)
   local slots = {}
   if raw == nil then
     return slots
@@ -177,7 +177,7 @@ local function validate_slots(raw, fail)
         if type(name) ~= "string" or not name:match(SLOT_NAME) then
           fail(slot_path, "a slot name must be letters, digits, '_' or '-', got '" .. tostring(name) .. "'")
         else
-          local parsed, err = spec.parse(entries[name])
+          local parsed, err = spec.parse(entries[name], title_matching)
           if parsed then
             slots[desk][name] = parsed
           else
@@ -284,7 +284,60 @@ local function validate_pinned(raw, fail)
   return pinned
 end
 
-local KNOWN = { slots = true, arrangements = true, pinned = true, title_rules = true }
+-- title_matching (docs/design.md §7a): extractors and strip_patterns map a
+-- class to a string (a plain separator; a Lua pattern), browser_apps lists
+-- classes. Errors are reported; spec.title_matching fills in the defaults.
+local function validate_title_matching(raw, fail)
+  if raw == nil then
+    return spec.title_matching(nil)
+  end
+  local path = "title_matching"
+  if type(raw) ~= "table" then
+    fail(path, "must be a table { extractors, strip_patterns, browser_apps }")
+    return spec.title_matching(nil)
+  end
+  for _, key in ipairs(sorted_keys(raw)) do
+    if key ~= "extractors" and key ~= "strip_patterns" and key ~= "browser_apps" then
+      fail(path, "unknown key '" .. tostring(key) .. "'")
+    end
+  end
+  for _, key in ipairs({ "extractors", "strip_patterns" }) do
+    local map = raw[key]
+    if map ~= nil and type(map) ~= "table" then
+      fail(path .. "." .. key, "must be a table of class -> string")
+    elseif map then
+      for _, class in ipairs(sorted_keys(map)) do
+        local value = map[class]
+        local entry = key_path(path .. "." .. key, class)
+        if type(class) ~= "string" or type(value) ~= "string" or value == "" then
+          fail(entry, "must map a class name to a non-empty string")
+        elseif key == "strip_patterns" then
+          local ok, err = pcall(string.find, "", value)
+          if not ok then
+            fail(entry, "not a valid Lua pattern (" .. tostring(err) .. "); Lua patterns are not regexes: escape magic characters with %")
+          end
+        end
+      end
+    end
+  end
+  local browsers = raw.browser_apps
+  if browsers ~= nil then
+    local ok = type(browsers) == "table"
+    if ok then
+      for key, class in pairs(browsers) do
+        if math.type(key) ~= "integer" or type(class) ~= "string" or class == "" then
+          ok = false
+        end
+      end
+    end
+    if not ok then
+      fail(path .. ".browser_apps", "must be a list of class names")
+    end
+  end
+  return spec.title_matching(raw)
+end
+
+local KNOWN = { slots = true, arrangements = true, pinned = true, title_rules = true, title_matching = true }
 
 -- Normalize a raw config table. Returns the config, or nil and every error
 -- found (one per line).
@@ -301,8 +354,10 @@ function M.validate(raw)
     end
   end
 
+  local title_matching = validate_title_matching(raw.title_matching, fail)
   local cfg = {
-    slots = validate_slots(raw.slots, fail),
+    slots = validate_slots(raw.slots, fail, title_matching),
+    title_matching = title_matching,
     arrangements = {},
     arrangement_names = {},
     pinned = validate_pinned(raw.pinned, fail),

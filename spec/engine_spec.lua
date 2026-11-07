@@ -99,10 +99,10 @@ describe("hyprslots engine", function()
     end)
 
     it("never raises, and reports a broken config with a notification", function()
-      setup({ ["config.lua"] = "return { slots = { [3] = { a = 'kitty/x' } } }" })
+      setup({ ["config.lua"] = "return { slots = { [3] = { a = '[x' } } }" })
       assert.are.equal(1, #hl.notifications)
       assert.matches("hyprslots", hl.notifications[1].text)
-      assert.matches("kitty/x", state().config_error)
+      assert.matches("%[x", state().config_error)
       assert.is_function(hl.layouts.slots.recalculate, "the layout still exists so lua:slots never dangles")
     end)
 

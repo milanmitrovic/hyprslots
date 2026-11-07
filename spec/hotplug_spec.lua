@@ -116,6 +116,29 @@ describe("hotplug", function()
       assert.are.equal(1, #hl.dispatched_of("window.move"), "t-main was already in place")
     end)
 
+    local function plug_side()
+      hl.monitors[2] = side
+      hl.emit("monitor.added", side)
+      hl.run_timers()
+      hl.run_timers()
+    end
+
+    it("shows the active desk on the screen that came back, keeping focus", function()
+      engine.call(hyprslots, "desk", '{"desk": 3}')
+      o.workspaces.focused = {}
+      hl.dispatched = {}
+      plug_side()
+      assert.are.same({ { desk = 3, monitor = "HEADLESS-3" } }, o.workspaces.focused)
+      local focused = hl.dispatched_of("focus")
+      assert.are.same({ monitor = "HEADLESS-2" }, focused[#focused])
+    end)
+
+    it("shows no desk on the new screen before any desk switch", function()
+      plug_side()
+      assert.are.same({}, o.workspaces.focused)
+      assert.are.same({}, hl.dispatched_of("focus"))
+    end)
+
     it("leaves windows with no slot alone", function()
       window_on(9, "firefox", 3)
       hl.monitors[2] = side
@@ -127,6 +150,21 @@ describe("hotplug", function()
   end)
 
   describe("with a pinned screen", function()
+    it("leaves a pinned screen that came back on its own desk", function()
+      hl.monitors = { hl.monitors[1] }
+      hyprslots = engine.setup(PINNED_SIDE)
+      engine.call(hyprslots, "desk", '{"desk": 3}')
+      o.workspaces.focused = {}
+      hl.dispatched = {}
+      hl.monitors[2] = side
+      hl.emit("monitor.added", side)
+      hl.run_timers()
+      hl.run_timers()
+      assert.are.equal("dual", engine.state(hyprslots).arrangement)
+      assert.are.same({}, o.workspaces.focused)
+      assert.are.same({}, hl.dispatched_of("focus"))
+    end)
+
     it("just re-selects when the pinned screen goes, refocusing nothing", function()
       omarchy_reconcile_on_removal()
       window_on(1, "t-left", 13)

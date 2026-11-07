@@ -1,6 +1,7 @@
 # Hotplug both ways (docs/design.md §8): unplugging side gathers desk 3 on
-# big; plugging it back re-selects dual and sends t-left back to side's
-# desk-3 workspace, after Omarchy's own reconcile.
+# big; plugging it back re-selects dual, sends t-left back to side's
+# desk-3 workspace after Omarchy's own reconcile, and shows the active desk
+# (3) on side again without moving focus.
 #
 # Screens and config as in desk_across_screens_test.sh.
 
@@ -35,7 +36,13 @@ test_body() {
   eventually 10 is_arrangement dual || fail "arrangement never became dual: $(arrangement)"
   settle
 
-  # Then t-left is back on side's desk 3, big keeps main:right at 2:1.
+  # Then side shows the active desk again (desk 3 was the last switched
+  # to), and focus stays on big.
+  expect_monitor_workspace HEADLESS-3 13
+  expect_eq "focus stays on HEADLESS-2" "HEADLESS-2" \
+    "$(hc monitors -j | jq -r 'first(.[] | select(.focused)) | .name')"
+
+  # And t-left is back on side's desk 3, big keeps main:right at 2:1.
   expect_eq "workspace 13 is on HEADLESS-3" "HEADLESS-3" "$(workspace_monitor 13)"
   expect_eq "t-left is on workspace 13" "13" \
     "$(hc clients -j | jq -r 'first(.[] | select(.class == "t-left")) | .workspace.id')"

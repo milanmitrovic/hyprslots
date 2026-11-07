@@ -21,6 +21,7 @@ local log = require("hyprslots.log")
 local resize = require("hyprslots.resize")
 local router = require("hyprslots.router")
 local tree = require("hyprslots.tree")
+local window_rules = require("hyprslots.window_rules")
 
 local M = {}
 
@@ -236,6 +237,7 @@ local function start(self, opts)
       self:check_omarchy()
       self:reselect()
       self:assign_all()
+      window_rules.sync(self)
     end)
   end
   adapter.on("hyprland.start", on_start)
@@ -251,9 +253,13 @@ local function start(self, opts)
     self:guard("window.destroy", router.window_destroyed, self, window)
     self:guard("change event", self.changed, self)
   end)
+  adapter.on("window.title", function(window)
+    self:guard("window.title", router.window_title, self, window)
+  end)
 
   self:reselect()
   self:assign_all()
+  window_rules.sync(self)
 
   -- Accordions: group moves run deferred, after the events above.
   groups.attach(self)

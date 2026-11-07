@@ -51,4 +51,13 @@ describe("routing across screens", function()
     assert.are.equal("HEADLESS-2", hl.get_workspace(3).monitor.name)
     assert.are.same({}, hl.dispatched_of("workspace.move"))
   end)
+  it("moves the workspace to its screen when a window rule opened the window on it elsewhere", function()
+    -- A generated rule sends t-left to workspace 13; Hyprland creates it on
+    -- the focused screen.
+    hl.add_workspace(13, "HEADLESS-2")
+    open(1, "t-left", 13)
+    assert.are.equal(13, hl.windows[1].workspace.id)
+    assert.are.equal("HEADLESS-3", hl.get_workspace(13).monitor.name)
+    assert.are.same({}, hl.dispatched_of("window.move"))
+  end)
 end)

@@ -52,7 +52,7 @@ Lua inside Hyprland's own config VM.
   `main` slot holding the same window), trees belong to the **arrangement**
   (where `main` sits and how big it is depends on which screens exist).
 - **Spec**: the window matcher a slot carries: `class`, `class/title-pattern`,
-  `[Tag]/Profile` and similar forms (full grammar arrives in slice 3).
+  `[Tag]` and `[Tag]/Profile` (grammar in §7a).
 - **Accordion**: a container whose children stack in one Hyprland group.
   Leaves only (no nested splits inside a group).
 - **Overflow leaf**: where windows matched to the desk but to no free slot go.
@@ -81,6 +81,7 @@ return {
   arrangements = data.arrangements,   -- name -> { screens = {...}, desks = {...} }
   pinned = { "laptop" },              -- screen roles excluded from desk switching
   title_rules = { ... },              -- code: functions over window titles
+  title_matching = { ... },           -- per-class title extraction (§7a)
 }
 ```
 
@@ -332,17 +333,81 @@ order `hyprland.lua` loads them in.
 ## 7. Routing
 
 - `window.open` and `window.title` events: match the window against the specs
-  of the active desk set, assign it to a slot (assignment is sticky; a late
-  title change re-routes only within a short debounce window after open), and
+  of the active desk set, assign it to a slot (assignment is sticky), and
   move it to the slot's workspace when it opened elsewhere. Moves happen in
   the event callback, never in `recalculate`.
+- **Late titles.** Many apps set their real title after mapping (a terminal
+  starting zellij, a browser loading its profile). On `window.title` a window
+  with **no slot** is matched again once its title has been quiet for 150 ms
+  (one `hl.timer` oneshot per window, replaced on every change), against the
+  title it has then; on a match it is routed and placed exactly as on
+  `window.open`. A window that already holds a slot is never moved because
+  its title changed.
 - Class-only specs additionally generate `hl.window_rule`s so the window maps
-  directly on the right workspace without a visible jump.
+  directly on the right workspace without a visible jump (§7b).
+- **Precedence.** A window takes the first free slot whose spec matches it,
+  trying desks in ascending order and, within a desk, slots by name. So when
+  two desks list the same spec, the lower desk wins until its slot is taken,
+  then the next one (aerolayout: "first workspace in config order").
 - Hyprland creates a workspace that does not exist yet on the **focused**
   monitor, and cannot create one elsewhere without showing it. So the router
   moves the window first and then, when the target workspace is on another
   monitor than its screen role's, moves the (hidden) workspace there with
   `hl.dsp.workspace.move`. Neither screen's view nor focus changes.
+
+### 7a. Spec grammar and title matching
+
+| Form | Matches |
+|---|---|
+| `App` | class (Wayland app-id) equal to `App` |
+| `App/pat` | class `App` and `pat` in the window's extracted title: a case-insensitive **plain substring**; everything after the first `/` is `pat` |
+| `[Tag]` | a window of a `browser_apps` class whose title contains `[Tag]` |
+| `[Tag]/Profile` | ... and `(Profile)` after it: Chromium's profile title `[Tag] - Page - Person (Profile)` |
+
+Title extraction is configured per class under `title_matching` in
+`config.lua` (ported from aerolayout):
+
+```lua
+title_matching = {
+  extractors = { MyEditor = " — " },          -- keep the part before (plain text)
+  strip_patterns = { ssh = "%[SSH:.-%]" },     -- then delete this LUA PATTERN
+  browser_apps = { "chromium" },               -- classes [Tag] specs may match
+}
+```
+
+- `extractors` and `strip_patterns` extend the defaults (`kitty`,
+  `Alacritty`, `foot` extract on `" | "`, the session name a zellij/tmux
+  title puts first; no strip rules). `browser_apps` replaces its default
+  (`google-chrome`, `chromium`, `brave-browser`, `microsoft-edge`), since it
+  is a whitelist; an empty list means the default.
+- `strip_patterns` are **Lua patterns, not regexes** (aerolayout used Python
+  `re`): `%` escapes (`%[`, `%(`, `%d`), `.-` is the lazy `.*?`, and there is
+  no alternation (`a|b`) or `{n}` counts. A malformed pattern is a config
+  error at load.
+- Config errors are loud (unknown key, a non-string separator, a non-list
+  `browser_apps`), where aerolayout silently dropped bad YAML values.
+
+### 7b. Generated window rules
+
+For every class some class-only spec names, hyprslots registers one rule,
+`hyprslots-<class>`, matching `^(<class>)$` (regex-escaped) with
+`workspace = "<id> silent"`: the workspace of the first free slot, in the
+precedence order above, that could take a window of that class. The rule is
+**disabled** when that first candidate is a title or tag spec (only the
+title can decide, so the router does), when every slot of the class is
+taken, or when the slot is on no screen of the active arrangement.
+
+Hyprland cannot remove a window rule at runtime; registering one under an
+existing `name` replaces it, and `{ name = ..., enabled = false }` turns it
+off (Omarchy's workspace-modes does the same). So rules are re-registered,
+only when their target changed, after every arrangement selection, every
+slot taken and every slot freed. A config reload starts from scratch on both
+sides.
+
+The rule is only an optimisation. The router does the same placement with or
+without it; when a rule opened the window on its workspace already, the
+router still moves that workspace to its screen when Hyprland created it on
+the focused one.
 
 ## 8. Arrangement selection and hotplug
 
@@ -367,8 +432,12 @@ re-route is done it asks for the accordion group pass (§6), so groups are
 formed on the workspaces the windows now sit on. Keyboard-resized trees are
 kept per arrangement, so returning to an arrangement brings its nudges
 back. Hotplug never
-focuses a monitor or changes a screen's view, so pinned screens are never
-refocused; a pinned role that disappears only changes the selection.
+changes a connected screen's view, so pinned screens are never refocused; a
+pinned role that disappears only changes the selection. One exception: a
+**non-pinned screen that is plugged (back) in shows the active desk**, the
+one last switched to with `hyprslots.desk(n)` / `api.call("desk")`, after
+the re-route, and focus returns to the screen that had it. Before the first
+desk switch a new screen keeps whatever Omarchy shows on it.
 
 ## 9. Editor
 
