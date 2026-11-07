@@ -1,7 +1,8 @@
 # hyprslots design
 
-Status: settled design, pre-implementation. Targets Hyprland 0.56.2 (Lua
-config) on Omarchy 4.5.
+Status: slices 1, 2, 4, 5 and 6 implemented and integrated (§11); slice 3
+(specs) is merged separately, then the cutover. Targets Hyprland 0.56.2
+(Lua config) on Omarchy 4.5.
 
 ## 1. Purpose
 
@@ -169,18 +170,45 @@ and workspaces use it as `lua:slots` (see `/usr/share/hypr/stubs/hl.meta.lua`
 for `HL.LayoutContext` / `HL.LayoutTarget`, upstream `example/layouts/manual.lua`,
 and the wiki's custom-layouts page).
 
+### Tree syntax
+
+A branch is tree text (`tree.lua`):
+
+```
+node      := slot | '*' | split | accordion
+split     := ('h' | 'v') '[' child (',' child)* ']'     -- side by side / stacked
+accordion := 'a' '[' slot (',' slot)* ']'               -- one Hyprland group
+child     := node (':' weight)?                         -- weight: integer >= 1, default 1
+```
+
+`h`, `v` and `a` open a container only when `[` follows; otherwise they are
+plain slot names. The root takes no weight. A slot appears at most once per
+tree. An accordion holds slots only: a split, accordion, `*` or weight inside
+it is rejected with its position, under the branch's config path. `*` is the
+**overflow leaf** (`h[main:2, v[right, *]]`): it takes a weight like any
+leaf and appears at most once per tree. `serialize.tree` writes the same
+syntax back (weights of 1 left out), which is what `save` and `state` use.
+
+### Placement
+
 `recalculate(ctx)` is pure arithmetic: look up the active arrangement and the
-workspace's desk and screen role, take that branch of the tree, divide
+workspace's desk and screen role, take the tree in force for that branch
+(the configured one, or a keyboard-resized override, see below), divide
 `ctx.area` by integer weights (remainder pixels go to the last child, so
 sizes are exact and deterministic), and `place` each target whose window is
-assigned to a slot. Targets with no slot go to the overflow leaf.
+assigned to a slot of the branch.
+
+Targets with no slot in the branch (unmatched windows, extra windows of a
+class, windows whose slot is on another screen's branch) stack in equal rows
+in the overflow leaf. A tree without `*` gets one appended as
+`h[tree:3, *:1]`, a column at the right.
 
 Slots with no window close up: the tree is pruned to the slots present and
 the survivors keep their configured ratio (three slots at 1:2:1 with two
-windows present tile 1:2), as aerolayout does. Until slice 4 brings the
-overflow leaf, unslotted targets share a column at the right (tree 3 :
-overflow 1, one row each), and a workspace that is no desk of the active
-arrangement tiles its targets in equal columns.
+windows present tile 1:2), as aerolayout does; an empty overflow leaf closes
+up the same way. A workspace that is no desk of the active arrangement, or
+a desk workspace where no target has a slot, tiles its targets in equal
+columns.
 
 Workspace rules apply when a workspace is created, so `setup()` gives
 `lua:slots` to desk N's workspace in every Omarchy block (N, 10+N, ... 90+N)
@@ -192,17 +220,7 @@ result depends on window open order and focus at the moment each split
 happens, and the dispatches race with window mapping. Arithmetic placement
 has neither problem.
 
-### Accordions and the overflow leaf (slice 4)
-
-Tree syntax: an accordion is `a[left, main, right]` (a letter opening a
-container, like `h` and `v`; `a` is still a plain slot name when no `[`
-follows). It holds slots only; a split, accordion, `*` or weight inside it
-is rejected with its position, under the branch's config path. The overflow
-leaf is `*` (`h[main:2, v[right, *]]`), takes a weight like any leaf, and
-appears at most once per tree. This supersedes the interim column above: a
-tree without `*` gets one appended as `h[tree:3, *:1]`, the same geometry,
-now as a real leaf. Unmatched windows stack in it in equal rows; an empty
-overflow leaf closes up like an empty slot.
+### Accordions
 
 Every present member of an accordion gets the accordion's box. Realized as a
 Hyprland group, the group is one layout target (`target.window` is its
@@ -211,10 +229,12 @@ meanwhile. A group showing a window that is no member still gets the box.
 
 Group membership (`groups.lua`) changes only in a deferred pass (20 ms
 timer), never in `recalculate`. The pass runs after `window.open`,
-`window.destroy`, `window.move_to_workspace`, start and monitor events, and
-when a layout pass sees an accordion split over several targets or a
-stranger in its group (a drag-out fires no event, so this is what catches
-it). It plans pure moves per desk workspace with an accordion: a group
+`window.destroy`, `window.move_to_workspace` and start; after every
+`router.reroute_all` (hotplug, editor edits, reload), which asks for it
+once it has moved the windows, so it never races hotplug's timer hops
+(§8); and when a layout pass sees an accordion split over several targets
+or a stranger in its group (a drag-out fires no event, so this is what
+catches it). It plans pure moves per desk workspace with an accordion: a group
 holding a member is the accordion's (first wins), strangers are taken out
 (`hl.dsp.window.move{out_of_group}`), a missing group is made with
 `hl.dsp.group.toggle`, and members join with `HL.Group:add`: Hyprland has no
@@ -226,7 +246,7 @@ Layout-triggered passes stop after three in a row that still had moves to
 make (an error is logged), so a refused move cannot loop; any window event
 re-arms them.
 
-### Keyboard resize (slice 5)
+### Keyboard resize
 
 The provider's `layout_msg(ctx, msg)` (`resize.lua`) takes:
 
@@ -234,9 +254,8 @@ The provider's `layout_msg(ctx, msg)` (`resize.lua`) takes:
   side. The nearest ancestor split in that axis with a neighbour on that
   side is adjusted, and only that neighbour gives up space (a negative
   amount shrinks the slot instead). The amount is a fraction of that
-  split (`0.1`) or exact pixels (`100px`, measured over `ctx.area` with
-  the full branch; with empty slots or the interim overflow column the
-  pixel count is approximate). Neither side drops below 5% of the split.
+  split (`0.1`) or exact pixels (`100px`). Neither side drops below 5% of
+  the split.
 - `resize <dx> <dy>`: pixels, the shape of Omarchy's
   `hl.dsp.window.resize({ x, y, relative = true })` binds, with dwindle's
   feel: the slot's right (bottom) edge moves by dx (dy), or its left (top)
@@ -250,13 +269,29 @@ extent, so the edge moves by exactly that many pixels), then divided by
 their gcd: `h[a, b]` nudged by 0.1 becomes `h[a:3, b:2]`. `boxes` is
 unchanged, so placement stays exact-pixel.
 
+A nudge acts on the tree as the layout shows it: `layout.present` reports
+the slots the layout pass would place (plus `*` when windows overflow), and
+`tree.nudge` finds the hinge and measures on the pruned tree with the
+overflow column appended. So the neighbour is the nearest slot that is
+present, `100px` is exact with empty slots closed up or the overflow
+column showing, and the appended column never gives up space (an explicit
+`*` is a neighbour like any leaf). The two weights change on the matching
+children of the configured split; absent siblings keep their share. An
+accordion member resizes its container: a Hyprland group is one target
+standing for one member, so every member of a present accordion counts as
+present, whichever is focused.
+
 Hyprland sends a layout message to the focused workspace's algorithm only,
 so resize always acts on the focused window (`hl.dsp.layout("…")` from a
 bind or `hyprctl dispatch`); Hyprland recalculates afterwards. A string
 reply (why nothing changed) surfaces as the dispatch's error. A nudged
-tree overrides the branch per arrangement, desk and screen role in memory
-only: it survives hotplug back to the same arrangement but not a config
-reload. Persisting it comes with slice 6's record and serializer.
+tree overrides the branch per arrangement, desk and screen role, in memory
+(`engine.resized["<arrangement>/<desk>/<role>"]`): it survives hotplug back
+to the same arrangement but not a config reload. `resize.effective_branch`
+is the one lookup for the tree in force; the layout and the api (§9) both
+use it. The api's `save` writes overrides to `slots.lua` and clears them,
+its `reload` drops them, and `set_tree` / `set_ratio` / `record` replace
+the one they edit. A nudge or reset emits the editor's change event.
 
 `hyprslots.bind_resize_keys()` rebinds Omarchy's twelve resize keys
 (`SUPER [+ SHIFT] [+ ALT|CTRL] + code:20/21`, from
@@ -266,7 +301,7 @@ keep Omarchy's window resize. Each action is registered for the
 keybindings menu as `hyprslots.resize_key(dx, dy)`. `setup()` does not call
 it; the cutover's `bindings.lua` does, after Omarchy's bindings.
 
-### Super+L: slots in the layout cycle (slice 5, applied at cutover)
+### Super+L: slots in the layout cycle (applied at cutover)
 
 `contrib/super-l/` holds patches (`patch -d ~ -p1 < …`) for the user's
 `~/.local/bin/workspace-layout-cycle`, `~/.local/bin/workspace-layout-current`
@@ -327,7 +362,11 @@ places a new window. Omarchy reconciles on `monitor.added` inside the event
 and on `monitor.removed` from a oneshot timer created in the same event, which
 merges an unplugged screen's workspaces into the block of the screen they
 landed on (13 becomes 4). The second hop is created after that timer has come
-due, so it always sees the workspaces as Omarchy left them. Hotplug never
+due, so it always sees the workspaces as Omarchy left them. When the
+re-route is done it asks for the accordion group pass (§6), so groups are
+formed on the workspaces the windows now sit on. Keyboard-resized trees are
+kept per arrangement, so returning to an arrangement brings its nudges
+back. Hotplug never
 focuses a monitor or changes a screen's view, so pinned screens are never
 refocused; a pinned role that disappears only changes the selection.
 
@@ -343,13 +382,13 @@ the running engine only through Hyprland:
   shell sees as a `custom>>` event on socket2 and answers with a fresh
   `state()` read.
 
-### Api contract (slice 6)
+### Api contract
 
 `hyprslots.api.call(name, json)` returns a JSON object string, never `""`:
 `{"ok": true, ...}` or `{"ok": false, "error": "..."}`. Every change bumps
 `seq` and emits `hl.dsp.event("hyprslots changed <seq>")` (socket2:
 `custom>>hyprslots changed <seq>`): api edits, save, reload, window open /
-destroy, and an arrangement change on hotplug. `seq` restarts at 0 when
+destroy, a keyboard nudge or reset, and an arrangement change on hotplug. `seq` restarts at 0 when
 Hyprland reloads its config (Lua state is discarded), so the editor treats
 any event as "re-read state", not as an ordering.
 
@@ -363,20 +402,35 @@ any event as "re-read state", not as an ordering.
 | `save` | — | `path, seq` |
 | `reload` | — | `arrangement, seq` |
 
-`state`: `seq`, `dirty` (unsaved edits), `arrangement` (active name),
-`screens` (role -> connector), `workspaces` (id -> desk, role, monitor),
-`assignments` (address -> desk, slot), `arrangements` (name -> `screens`,
-`roles[]`, `desks` ("3" -> role -> `{tree, ratio, slots[]}`), `active`,
-`read_only`), `slots` ("3" -> slot -> spec text), `desks[]`, `pinned[]`,
-`windows[]` (`address, class, title, workspace, floating, box{x,y,w,h},
-desk?, slot?`), `config` (`dir, data_file, editable, read_only[]`),
-`refused`, `config_error`, `log_seq`.
+`state`: `seq`, `dirty` (unsaved edits, keyboard-resized trees included),
+`arrangement` (active name), `screens` (role -> connector), `workspaces`
+(id -> desk, role, monitor), `assignments` (address -> desk, slot),
+`arrangements` (name -> `screens`, `roles[]`, `desks` ("3" -> role ->
+`{tree, ratio, slots[], resized?}`), `active`, `read_only`), `resized`
+(`"<arrangement>/<desk>/<role>"` -> `arrangement, desk, role, tree, ratio`
+for every unsaved keyboard-resized tree), `groups[]` (one per accordion on a
+desk workspace: `workspace, desk, role, slots[], members` (slot -> window
+address), `group[]` (the live Hyprland group holding a member, in group
+order), `formed`), `slots` ("3" -> slot -> spec text), `desks[]`,
+`pinned[]`, `windows[]` (`address, class, title, workspace, floating,
+box{x,y,w,h}, desk?, slot?`), `config` (`dir, data_file, editable,
+read_only[]`), `refused`, `config_error`, `log_seq`.
+
+**The tree in force** for a branch is `api.effective_branch`, which is
+`resize.effective_branch`: a keyboard-resized override (§6) if there is
+one, else the config's. `state` reports it, `set_ratio` starts from it,
+`record` compares against it, `save` writes it.
 
 Edits never write files: they re-run `config.lua` over the edited
-`slots.lua` data in memory and take effect only when the result validates
-(the windows are re-laid out at once). `save` writes `slots.lua` through
-`serialize` (temp file + rename); `reload` / `hyprslots.reload_config()`
-re-reads both files in place, dropping unsaved edits.
+`slots.lua` data in memory and take effect only when the result validates.
+The new config is then applied like a hotplug: re-select, re-assign,
+re-route every assigned window to its slot's workspace (a slot moved to
+another screen role takes its open window along), group pass, relayout.
+An edit to a branch replaces that branch's keyboard-resized override.
+`save` writes `slots.lua` through `serialize` (temp file + rename), then
+runs the saved data as the config and clears the overrides it wrote;
+`reload` / `hyprslots.reload_config()` re-reads both files in place,
+dropping unsaved edits and every override.
 
 **Read-only fields.** A config field is the editor's only when `config.lua`
 passes the data file's own table through (identity check, at the top level
@@ -412,22 +466,23 @@ Under `lua/hyprslots/`:
 | Kind | Module | Role |
 |---|---|---|
 | pure | `spec` | parse and match window specs |
-| pure | `tree` | parse `h[main:2, right:1]`, split boxes by integer weights |
-| pure | `ratio` | ratio grammar for resize and record |
+| pure | `tree` | parse tree text (§6), split boxes by integer weights, nudge |
+| pure | `ratio` | ratio grammar for the editor's `set_ratio` and `state` |
 | pure | `record` | rebuild a tree from live window frames |
 | pure | `config` | load and validate `config.lua` / `slots.lua` (sandboxed) |
+| pure | `edit` | edits to the `slots.lua` data; which fields code owns |
 | pure | `arrangement` | pick the arrangement matching the monitor set |
 | pure | `assign` | windows → slots |
-| pure | `plan` | the moves needed to reach the target state |
-| pure | `serialize` | write `slots.lua` deterministically |
+| pure | `serialize` | write `slots.lua` and tree text deterministically |
 | pure | `dkjson` | vendored JSON |
 | adapter | `init` | `setup()`, wrapped in `pcall`, never takes Hyprland down |
 | adapter | `hl_adapter` | the only module that touches `hl` |
 | adapter | `layout` | `hl.layout.register("slots", …)` |
 | adapter | `router` | window events → assignment and moves |
 | adapter | `desks` | desk switching on top of `o.workspaces` |
-| adapter | `hotplug` | monitor events → arrangement selection |
-| adapter | `resize` | keyboard resize via `layout_msg` |
+| adapter | `hotplug` | monitor events → arrangement selection, then re-route |
+| adapter | `groups` | accordions as Hyprland groups (pure `plan`, deferred reconcile) |
+| adapter | `resize` | keyboard resize via `layout_msg`; the tree in force |
 | adapter | `api` | `state()` / `call(name, json)` for the editor |
 | adapter | `log` | ring buffer; `hyprslots.dump()` prints it with the state |
 
@@ -443,16 +498,23 @@ cannot go after hyprmoncfg's `dofile`, which stays last.
 
 ## 11. Roadmap
 
-| Slice | Content |
-|---|---|
-| 1 Tracer | one screen, one desk tree via `lua:slots`; config, arrangement, tree, spec-by-class, layout, route, dump |
-| 2 Desks | desks across screens, synced Super+N, pinned screens, hotplug; turns the completion test green |
-| 3 Specs | full spec grammar, late titles, generated window rules |
-| 4 Containers | accordion (groups) and overflow |
-| 5 Resize | keyboard resize via `layout_msg`; `lua:slots` in the Super+L layout cycle, focused screen only |
-| 6 Protocol | record, api protocol, serializer, ratio grammar |
-| 7 Cutover | install on the user's machine, retire the old setup |
-| Editor | skeleton + Assignment view; Layout view; Slots + Arrangements views |
+| Slice | Content | Status |
+|---|---|---|
+| 1 Tracer | one screen, one desk tree via `lua:slots`; config, arrangement, tree, spec-by-class, layout, route, dump | done |
+| 2 Desks | desks across screens, synced Super+N, pinned screens, hotplug; turns the completion test green | done |
+| 3 Specs | full spec grammar, late titles, generated window rules | merged after slices 4-6 |
+| 4 Containers | accordion (groups) and overflow | done |
+| 5 Resize | keyboard resize via `layout_msg`; `lua:slots` in the Super+L layout cycle, focused screen only | done (Super+L patches applied at cutover) |
+| 6 Protocol | record, api protocol, serializer, ratio grammar | done |
+| 7 Cutover | install on the user's machine, retire the old setup | next |
+| Editor | skeleton + Assignment view; Layout view; Slots + Arrangements views | not started |
+
+Slices 2, 4, 5 and 6 were built in parallel on top of slice 1 and
+integrated on `feature/engine`; the cross-slice behaviour (keyboard-resized
+trees as the api's tree in force, nudges on the laid-out tree, re-routing
+after edits, the group pass after hotplug's re-route) is described in the
+sections above and covered by `e2e/accordion_replug_test.sh` and
+`e2e/resize_save_test.sh`.
 
 Parked: mouse-resize workaround, upstream Hyprland PR for a resize hook,
 spanning windows, public release / AUR package, QML tests.
