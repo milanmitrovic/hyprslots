@@ -13,6 +13,7 @@ local adapter = require("hyprslots.hl_adapter")
 local config = require("hyprslots.config")
 local desks = require("hyprslots.desks")
 local edit = require("hyprslots.edit")
+local groups = require("hyprslots.groups")
 local ratio = require("hyprslots.ratio")
 local record = require("hyprslots.record")
 local resize = require("hyprslots.resize")
@@ -147,6 +148,21 @@ local function desks_list(engine)
   return array(sorted_keys(seen))
 end
 
+-- The accordions of the desk workspaces and their live groups (groups.lua).
+local function groups_info(engine)
+  local out = array()
+  local ok, described = pcall(groups.describe, engine)
+  if not ok then
+    engine.log:error("state: groups: %s", tostring(described))
+    return out
+  end
+  for _, g in ipairs(described) do
+    out[#out + 1] = object({ workspace = g.workspace, desk = g.desk, role = g.role, slots = array(g.slots),
+      members = object(g.members), group = array(g.group), formed = g.formed })
+  end
+  return out
+end
+
 local function windows_info(engine)
   local out = array()
   local ok, windows = pcall(adapter.windows)
@@ -217,6 +233,7 @@ function M.snapshot(engine)
     windows = windows_info(engine),
     dirty = engine.dirty == true or next(engine.resized or {}) ~= nil,
     resized = resized_info(engine),
+    groups = groups_info(engine),
     config = object({
       dir = dir,
       data_file = dir .. "/" .. DATA_FILE,

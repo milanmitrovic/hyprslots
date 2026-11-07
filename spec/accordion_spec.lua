@@ -135,6 +135,22 @@ describe("accordions and overflow", function()
       assert.are.same(box(1200, 0, 1200, 1350), placed["t-d"])
     end)
 
+    it("shows in the api state, with its live group", function()
+      setup(TREE)
+      local x, y = opened(1, "t-x"), opened(2, "t-y")
+      opened(4, "t-d")
+      local function groups()
+        return require("hyprslots.dkjson").decode(hyprslots.api.state()).groups
+      end
+      assert.are.same({ {
+        workspace = 3, desk = 3, role = "main", slots = { "x", "y", "z" },
+        members = { x = x.address, y = y.address }, group = {}, formed = false,
+      } }, groups())
+      hl.run_timers()
+      assert.are.same({ x.address, y.address }, groups()[1].group)
+      assert.is_true(groups()[1].formed)
+    end)
+
     it("resizes as one box from whichever member is focused", function()
       setup(TREE)
       local x, y, z, d = opened(1, "t-x"), opened(2, "t-y"), opened(3, "t-z"), opened(4, "t-d")

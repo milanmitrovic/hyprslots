@@ -189,6 +189,59 @@ function M.reconcile(engine)
   return moves
 end
 
+-- Every accordion on a desk workspace of the active arrangement, for the
+-- api's state: { workspace, desk, role, slots = member slots, members =
+-- slot -> address of its window there, group = addresses of the Hyprland
+-- group holding a member (group order; empty when none), formed = whether
+-- that group is exactly the members (trivially so for fewer than two) }.
+function M.describe(engine)
+  local out = {}
+  if engine.refused or not engine.cfg then
+    return out
+  end
+  local ids = {}
+  for id, desk in pairs(engine.workspaces) do
+    if #tree.accordions(desk.branch) > 0 then
+      ids[#ids + 1] = id
+    end
+  end
+  table.sort(ids)
+  local all = #ids > 0 and adapter.group_windows() or {}
+  for _, id in ipairs(ids) do
+    local desk = engine.workspaces[id]
+    local windows = workspace_windows(engine, id, desk, all)
+    for _, slots in ipairs(tree.accordions(desk.branch)) do
+      local is_member, members, addresses, group = {}, {}, {}, {}
+      for _, slot in ipairs(slots) do
+        is_member[slot] = true
+      end
+      for _, window in ipairs(windows) do
+        if window.slot and is_member[window.slot] then
+          members[window.slot] = window.address
+          addresses[#addresses + 1] = window.address
+          if #group == 0 and window.group then
+            group = window.group
+          end
+        end
+      end
+      local formed = #addresses < 2
+      if not formed and #group == #addresses then
+        local in_group = {}
+        for _, address in ipairs(group) do
+          in_group[address] = true
+        end
+        formed = true
+        for _, address in ipairs(addresses) do
+          formed = formed and in_group[address] == true
+        end
+      end
+      out[#out + 1] = { workspace = id, desk = desk.desk, role = desk.role, slots = slots,
+        members = members, group = group, formed = formed }
+    end
+  end
+  return out
+end
+
 -- Give the engine `engine.regroup(reason)`, which schedules one deferred
 -- reconcile pass (reason "layout" from recalculate, anything else from an
 -- event), and ask for a pass on every window event that can change
