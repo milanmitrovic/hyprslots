@@ -208,8 +208,8 @@ describe("config.validate", function()
 
   it("rejects a bad spec with its path", function()
     local raw = valid()
-    raw.slots[3].main = "kitty/deltaf"
-    rejects(raw, "slots%[3%]%.main: spec 'kitty/deltaf'")
+    raw.slots[3].main = "kitty/"
+    rejects(raw, "slots%[3%]%.main: spec 'kitty/'")
   end)
 
   it("rejects an arrangement without screens", function()
