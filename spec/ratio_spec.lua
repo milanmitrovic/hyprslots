@@ -283,3 +283,21 @@ describe("ratio.format", function()
     end)
   end
 end)
+
+describe("ratio with an overflow leaf", function()
+  local function with_overflow()
+    return { split = "h", weight = 1, children = { { slot = "a", weight = 1 }, { overflow = true, weight = 1 } } }
+  end
+
+  it("weighs the overflow leaf like any cell", function()
+    local applied = assert(ratio.apply(with_overflow(), "3:1"))
+    assert.are.same({ 3, 1 }, weights(applied))
+    assert.are.equal("3:1", ratio.format(applied))
+  end)
+
+  it("refuses nesting into the overflow leaf", function()
+    local applied, err = ratio.apply(with_overflow(), "1:1[1:1]")
+    assert.is_nil(applied)
+    assert.is_truthy(err:find("the overflow is a window", 1, true), err)
+  end)
+end)

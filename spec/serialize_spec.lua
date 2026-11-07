@@ -208,3 +208,11 @@ describe("serialize.write", function()
     assert.is_nil(read(path))
   end)
 end)
+
+describe("serialize.tree with sibling node kinds", function()
+  it("writes a childless leaf with no slot as the overflow leaf *", function()
+    local node = { split = "h", weight = 1, children = {
+      { slot = "a", weight = 1 }, { overflow = true, weight = 2 } } }
+    assert.are.equal("h[a, *:2]", serialize.tree(node))
+  end)
+end)

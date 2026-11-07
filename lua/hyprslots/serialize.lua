@@ -15,11 +15,14 @@
 local M = {}
 
 -- The text of a parsed tree: weights of 1 are left out, children are joined
--- with ", ". Any split kind (h, v, or a container kind) is written as
--- kind[children].
+-- with ", ". Any split kind (h, v, or a container kind such as `a`) is
+-- written as kind[children]; a leaf without a slot is the overflow leaf `*`.
 function M.tree(node)
   if node.slot then
     return node.slot
+  end
+  if node.children == nil then
+    return "*" -- the overflow leaf (feature/accordion's tree syntax)
   end
   local parts = {}
   for i, child in ipairs(node.children) do

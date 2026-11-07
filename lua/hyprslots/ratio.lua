@@ -25,8 +25,9 @@ M.STAR = "*"
 
 local ROOT_SUBJECT = "the outer container"
 
+-- A leaf is a slot or the overflow leaf (no children either way).
 local function is_leaf(node)
-  return node.slot ~= nil
+  return node.children == nil
 end
 
 function M.is_accordion(node)
@@ -192,7 +193,7 @@ end
 -- How an error names one cell: its slot when it is a window, else its position
 -- under its parent ("cell 1 > cell 2").
 local function cell_label(child, index, parent)
-  local own = child.slot or ("cell " .. index)
+  local own = child.slot or (is_leaf(child) and "the overflow") or ("cell " .. index)
   if parent == ROOT_SUBJECT then
     return own
   end
