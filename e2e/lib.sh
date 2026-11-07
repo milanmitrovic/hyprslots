@@ -158,8 +158,11 @@ expect_eq() {
 }
 
 # The error hyprland-test.lua caught while loading hyprslots, or empty.
+# (`hyprctl repl` answers an empty string with "unknown request", so the
+# no-error case travels as a sentinel.)
 hyprslots_load_error() {
   local reply
-  reply=$(repl 'return hyprslots_load_error or ""')
+  reply=$(repl 'return hyprslots_load_error or "<none>"')
+  [[ $reply == "<none>" ]] && reply=''
   printf '%s' "$reply"
 }
