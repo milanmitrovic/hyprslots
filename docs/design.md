@@ -488,6 +488,8 @@ any event as "re-read state", not as an ordering.
 `state`: `seq`, `dirty` (unsaved edits, keyboard-resized trees included),
 `arrangement` (active name), `screens` (role -> connector), `workspaces`
 (id -> desk, role, monitor), `assignments` (address -> desk, slot),
+`overflow` (address -> desk, slot: a window that matches that slot's spec
+while every slot it matches is taken, laid out in that desk's overflow leaf),
 `arrangements` (name -> `screens`, `roles[]`, `desks` ("3" -> role ->
 `{tree, ratio, slots[], resized?}`), `active`, `read_only`), `resized`
 (`"<arrangement>/<desk>/<role>"` -> `arrangement, desk, role, tree, ratio`
@@ -496,7 +498,7 @@ desk workspace: `workspace, desk, role, slots[], members` (slot -> window
 address), `group[]` (the live Hyprland group holding a member, in group
 order), `formed`), `slots` ("3" -> slot -> spec text), `desks[]`,
 `pinned[]`, `windows[]` (`address, class, title, workspace, floating,
-box{x,y,w,h}, desk?, slot?`), `config` (`dir, data_file, editable,
+box{x,y,w,h}, desk?, slot?, overflow?{desk, slot}`), `config` (`dir, data_file, editable,
 read_only[]`), `refused`, `config_error`, `log_seq`.
 
 **The tree in force** for a branch is `api.effective_branch`, which is

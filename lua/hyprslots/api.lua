@@ -172,6 +172,7 @@ local function windows_info(engine)
   table.sort(windows, function(a, b) return tostring(a.address) < tostring(b.address) end)
   for _, window in ipairs(windows) do
     local assignment = engine.assignments[window.address]
+    local overflow = engine.overflow and engine.overflow[window.address]
     out[#out + 1] = object({
       address = window.address,
       class = window.class,
@@ -181,6 +182,7 @@ local function windows_info(engine)
       box = window.box and object(window.box) or nil,
       desk = assignment and assignment.desk or nil,
       slot = assignment and assignment.slot or nil,
+      overflow = overflow and object({ desk = overflow.desk, slot = overflow.slot }) or nil,
     })
   end
   return out
@@ -197,7 +199,7 @@ end
 
 -- The engine's state as a plain table.
 function M.snapshot(engine)
-  local screens, workspaces, assignments = object(), object(), object()
+  local screens, workspaces, assignments, overflow = object(), object(), object(), object()
   if engine.active then
     for role, monitor in pairs(engine.active.monitors) do
       screens[role] = monitor
@@ -208,6 +210,9 @@ function M.snapshot(engine)
   end
   for address, assignment in pairs(engine.assignments) do
     assignments[address] = object({ desk = assignment.desk, slot = assignment.slot })
+  end
+  for address, match in pairs(engine.overflow or {}) do
+    overflow[address] = object({ desk = match.desk, slot = match.slot })
   end
   local read_only = read_only_paths(engine.cfg)
   local dir = engine.config_dir or config.dir()
@@ -225,6 +230,7 @@ function M.snapshot(engine)
     screens = screens,
     workspaces = workspaces,
     assignments = assignments,
+    overflow = overflow,
     log_seq = engine.log.seq,
     arrangements = arrangements_info(engine, read_only),
     slots = slots_info(engine),
