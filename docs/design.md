@@ -1,7 +1,8 @@
 # hyprslots design
 
 Status: slices 1 to 6 implemented and integrated on `feature/engine` (§11);
-editor slice D1 on `feature/editor`; next is the cutover. Targets Hyprland 0.56.2
+editor slice D1 on `feature/editor`, D3 (Slots, Arrangements) on
+`feature/editor-slots`; next is the cutover. Targets Hyprland 0.56.2
 (Lua config) on Omarchy 4.5.
 
 ## 1. Purpose
@@ -109,6 +110,11 @@ return {
 
 Each `screens` value is a monitor description, serial, or connector name,
 tried in that order of precedence against each connected monitor.
+
+`slots.lua` may also hold `descriptions = { [3] = { main = "the editor" } }`
+(desk -> slot -> text): the editor's notes on slots (aerolayout's logical
+slot descriptions). The engine ignores them; `config.lua` need not pass them
+through, and may (the key is valid in the config it returns).
 
 ## 5. Desks on top of Omarchy's per-monitor workspaces
 
@@ -476,8 +482,9 @@ the running engine only through Hyprland:
 | `Engine.qml` | the service: runs the api through `hyprctl repl` (one `Process` per command, in order, 3 s watchdog), reads `state` debounced (60 ms) on `custom>>hyprslots changed` and on window events (`openwindow`, `closewindow`, `movewindowv2`, `windowtitlev2`, monitor events, `configreloaded`) via `Quickshell.Hyprland`'s `rawEvent`, only while the panel is open; keeps `error` (last state read) and `lastError` (last call) |
 | `Panel.qml` | the panel: an `OverlayWindow` card (`qs.Ui`), themed through `qs.Commons` (`Color.menu.*`, `Style`) like Omarchy's own panels; tabs Assignment, Layout, Slots, Arrangements (Tab / Shift+Tab), Esc or q closes; `press(key)` feeds a key by name |
 | `AssignmentView.qml` | aerolayout's Assignment view (below) |
-| `PlaceholderView.qml` | Layout, Slots, Arrangements: their data, read-only, until D2/D3 |
-| `Protocol.js`, `Assignment.js`, `Summary.js` | pure logic, tested under node (`editor/tests/`) |
+| `SlotsView.qml`, `ArrangementsView.qml` | aerolayout's logical slots and monitors views (below) |
+| `PlaceholderView.qml` | Layout: its data, read-only, until D2 |
+| `Protocol.js`, `Assignment.js`, `Summary.js`, `Slots.js`, `Arrangements.js`, `Prompts.js` | pure logic, tested under node (`editor/tests/`) |
 
 **Assignment view** (aerolayout `views.py` AssignmentView). Pages: every
 window, then each desk; it opens on the focused workspace's desk. A desk's
@@ -494,8 +501,62 @@ else the first free digit; ↑/↓ and Return also pick) and calls `assign`;
 (`{ok:false,error}`, hyprctl failing, hyprslots not loaded, the engine off,
 a config error) shows in the urgent colour. Unlike aerolayout's `a`, which
 wrote the window's spec into the slot, `assign` is a sticky assignment in
-memory; writing specs belongs to the Slots view (D3). aerolayout's `n`
-(name a workspace) has no counterpart: desks have no names.
+memory; writing a window's spec into a slot is the Slots view's `t`.
+aerolayout's `n` (name a workspace) has no counterpart: desks have no names.
+
+**Prompts** (`Prompts.js`, the Slots and Arrangements views): a line of text
+typed in place (←/→ Home End move, Backspace Delete, Ctrl+U clears, ↑/↓
+step through suggestions, Return answers), a pick among keyed options (first
+letter, else the first free digit; ↑/↓ and Return), or y/n. While one is
+open the panel routes every key to it (Tab, q, Esc included); Esc cancels.
+Edits go to the engine as they are answered and stay in memory until `w`
+saves (the header says "unsaved edits"); when the engine refuses one (the
+spec grammar, config.lua's validation, a field config.lua owns) the prompt
+opens again with the answer kept and the refusal under it.
+
+**Slots view** (aerolayout `views.py` LogicalView, per desk). ←/→ (h/l)
+page through desks 1 to 10 (it opens on the focused workspace's desk), ↑/↓
+(k/j) select. A row per slot, by name (the order windows claim them in):
+Slot, Spec, Screen (the role the running arrangement places it on, `—` for
+none), Window (the one holding it, or `Missing`), Description; under the
+table, every arrangement/role whose tree places the selected slot. Keys:
+`a` add (name, spec, description), `r` rename (every tree of every
+arrangement that places it is rewritten, keyboard-resized ones and
+assignments too, as aerolayout's rename_slot_everywhere), `s` or Return
+set the spec (the current one to edit; ↑/↓ steps through the windows'
+classes), `t` take the spec from a window (aerolayout's Assignment `a`:
+`class`, `class/identifier` for a class with title rules, `[Tag]` or
+`[Tag]/Profile` for a browser; the desk's windows are offered first), `e`
+describe, `d` delete (asks, naming the trees it leaves), `w` save. A desk
+whose slots config.lua builds in code says so and takes no edit. No
+reorder (aerolayout's J/K): slots claim windows by name, so their order is
+not the editor's to set.
+
+**Arrangements view** (aerolayout MonitorsView). A header names the
+connected monitors and what they run; the arrangements are listed by name
+with their screen count, `● in use here` on the running one, dim when
+these monitors could not run it, `(set in config.lua)` when read-only;
+below, the highlighted one's screens (role, selector, the monitor it finds,
+pinned) and the connected monitors with their description and serial.
+hyprslots picks the arrangement itself (the one whose screens are exactly
+the connected monitors, §8), so aerolayout's "map these monitors to this
+arrangement" becomes "point this arrangement's screens at these monitors".
+Keys: ↑/↓ select; `a` use on these monitors (a monitor for each role,
+when the counts agree); `n` new: a name, then a role for each connected
+monitor (suggested from what the running arrangement calls it, else
+`laptop` for eDP, else `screenN`), each selected by its description, else
+its serial, else its connector, then its trees: the default (each desk's
+slots side by side on the first role), none, or another arrangement's
+(roles of the same name map; others are asked); `r` rename; `x` delete
+(asks, naming its desks; the running one too, after which these monitors
+run nothing); `e` edit a screen (role name, then selector, ↑/↓ stepping
+through the monitors' descriptions, serials and connectors; a renamed role
+keeps its trees); `+` add a screen; `-` remove one (its trees go); `p` pin
+or unpin a role (pinned is one list for every arrangement); `c` copy trees
+from the default or another arrangement (asks first); `w` save. Every reply
+says what the monitors run afterwards: a new arrangement for screens
+another one already names runs only when its name sorts first (§8's tie
+rule), and the message says which one runs.
 
 **Install** (the user's machine; not done by the slices):
 
@@ -535,6 +596,18 @@ any event as "re-read state", not as an ordering.
 | `record` | `workspace?` (default focused), `apply?` | `arrangement, desk, role, workspace, tree, ratio, missing[], applied, seq` |
 | `assign` | `address`, `desk`, `slot` | `address, desk, slot, displaced?, seq` |
 | `unassign` | `address` | `address, desk?, slot?, seq` |
+| `set_spec` | `desk`, `slot`, `spec` | `desk, slot, spec` (normalized), `seq` |
+| `add_slot` | `desk`, `slot`, `spec`, `description?` | `desk, slot, spec, seq` |
+| `remove_slot` | `desk`, `slot` | `desk, slot, seq` |
+| `rename_slot` | `desk`, `slot`, `to` | `desk, slot, to, trees` (how many were rewritten), `seq` |
+| `describe_slot` | `desk`, `slot`, `description` (`""` removes it) | `desk, slot, description, seq` |
+| `take_spec` | `desk`, `slot`, `address` | `desk, slot, spec, address, seq` |
+| `add_arrangement` | `name`, `screens` (role -> selector), `from?` + `roles?` or `default?` | `arrangement, screens, active, seq` |
+| `rename_arrangement` | `arrangement`, `to` | `arrangement, to, active, seq` |
+| `delete_arrangement` | `arrangement` | `arrangement, active, seq` |
+| `set_screens` | `arrangement?`, `screens`, `renames?` (old role -> new) | `arrangement, screens, active, seq` |
+| `set_pinned` | `pinned[]` | `pinned, seq` |
+| `copy_trees` | `arrangement?`, `from` + `roles?` or `default: true` | `arrangement, from, seq` |
 | `save` | — | `path, seq` |
 | `reload` | — | `arrangement, seq` |
 
@@ -545,7 +618,9 @@ any event as "re-read state", not as an ordering.
 `overflow` (address -> desk, slot: a window that matches that slot's spec
 while every slot it matches is taken, laid out in that desk's overflow leaf), `unassigned[]` (addresses taken out of their slot by `unassign`),
 `arrangements` (name -> `screens`, `roles[]`, `desks` ("3" -> role ->
-`{tree, ratio, slots[], resized?}`), `active`, `read_only`), `resized`
+`{tree, ratio, slots[], resized?}`), `active`, `read_only`), `monitors[]`
+(`name, description, serial, focused`: what a screen selector can name),
+`descriptions` ("3" -> slot -> text), `resized`
 (`"<arrangement>/<desk>/<role>"` -> `arrangement, desk, role, tree, ratio`
 for every unsaved keyboard-resized tree), `groups[]` (one per accordion on a
 desk workspace: `workspace, desk, role, slots[], members` (slot -> window
@@ -569,6 +644,28 @@ re-solve, until it is assigned again or closes. Both live in memory only
 (neither touches `slots.lua`), survive `reload` and hotplug, and are lost on
 a Hyprland config reload like every assignment. Both refuse a window that is
 not open; `assign` refuses a slot the desk does not have.
+
+**Slot and arrangement edits** (the Slots and Arrangements views). Each
+builds new data with `edit.lua` (pure), re-runs `config.lua` over it, and
+refuses the edit, changing nothing, when the result does not validate or
+does not show the edit (a field `config.lua` builds in code, or does not
+take from `slots.lua` at all: `set_pinned` under a `config.lua` that never
+reads `pinned`). Otherwise it is applied like `set_tree` (re-assign,
+re-route, window rules, relayout, change event) and stays in memory until
+`save`. `rename_slot` rewrites the slot's name in every tree of the desk in
+every arrangement, in the keyboard-resized overrides, and in the
+assignments (a hand-made one stays hand-made); `remove_slot` takes the slot
+out of those trees (a container left with one child is replaced by it, a
+branch left empty goes). `rename_arrangement` / `delete_arrangement` /
+`set_screens` move or drop the overrides they touch, and `copy_trees` drops
+the target's. `set_screens` replaces the whole role -> selector map; a role
+in `renames` keeps its trees, a role it drops loses them. `copy_trees` maps
+each target role to `roles[role]` (default: the source role of the same
+name) and replaces every tree of the target; `default` lays each desk's
+slots side by side, by name, on the target's first role. `active` in a
+reply is the arrangement running afterwards (the new one runs only when it
+is the first by name to match the monitors). `describe_slot` changes only
+the data (descriptions are no config). Arrangement names hold no `/`.
 
 **The tree in force** for a branch is `api.effective_branch`, which is
 `resize.effective_branch`: a keyboard-resized override (§6) if there is
@@ -619,12 +716,12 @@ Under `lua/hyprslots/`:
 
 | Kind | Module | Role |
 |---|---|---|
-| pure | `spec` | parse and match window specs |
+| pure | `spec` | parse and match window specs; the spec naming a window |
 | pure | `tree` | parse tree text (§6), split boxes by integer weights, nudge |
 | pure | `ratio` | ratio grammar for the editor's `set_ratio` and `state` |
 | pure | `record` | rebuild a tree from live window frames |
 | pure | `config` | load and validate `config.lua` / `slots.lua` (sandboxed) |
-| pure | `edit` | edits to the `slots.lua` data; which fields code owns |
+| pure | `edit` | edits to the `slots.lua` data (trees, slots, arrangements); which fields code owns |
 | pure | `arrangement` | pick the arrangement matching the monitor set |
 | pure | `assign` | windows → slots |
 | pure | `serialize` | write `slots.lua` and tree text deterministically |
@@ -663,7 +760,7 @@ cannot go after hyprmoncfg's `dofile`, which stays last.
 | 7 Cutover | install on the user's machine, retire the old setup | next |
 | Editor D1 | plugin skeleton (Engine service, panel, tabs) + Assignment view; api `assign` / `unassign`, `overflow` in `state` | done |
 | Editor D2 | Layout view | next |
-| Editor D3 | Slots + Arrangements views | — |
+| Editor D3 | Slots + Arrangements views; their api edits; slot descriptions | done |
 
 Slices 2 to 6 were built in parallel on top of slices 1 and 2 and
 integrated on `feature/engine`; the cross-slice behaviour (keyboard-resized
@@ -691,7 +788,7 @@ spanning windows, public release / AUR package, QML tests.
 - **S3 — pure modules**: busted specs; aerolayout's unittest cases are ported
   where the logic carries over (tree parsing, weights, assignment, record).
 - **Editor**: the api it relies on is S2 (`spec/assignment_api_spec.lua`,
-  `spec/api_spec.lua`); its pure JavaScript runs under `node --test`
+  `spec/slots_api_spec.lua`, `spec/api_spec.lua`); its pure JavaScript runs under `node --test`
   (`editor/tests/`, part of `make test`); `make editor-lint` runs Qt 6's
   qmllint. `make e2e-editor` (`e2e/editor_smoke.sh`, opt-in, needs qs, grim
   and wtype) runs the plugin in Quickshell on the nested Hyprland through
@@ -699,8 +796,11 @@ spanning windows, public release / AUR package, QML tests.
   the service and adds an IPC target), drives the panel with real keys from
   one wtype session (a fresh virtual keyboard loses its first key, and a
   second wtype's keys did not arrive, so the sequence is one session starting
-  with an ignored F13) and with `press()`, asserts through api `state`, and
-  writes screenshots to `.e2e-tmp/editor-smoke-*.png`.
+  with an ignored F13) and with `press()`, asserts through api `state` and
+  the saved `slots.lua` (Slots: rename, a refused then a good spec, add, take
+  from a window, delete, describe; Arrangements: create from the connected
+  screen, rename, a refused pin, copy the default trees, rename a role,
+  delete), and writes screenshots to `.e2e-tmp/editor-smoke-*.png`.
 
 ### Completion test
 
