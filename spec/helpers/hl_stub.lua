@@ -68,7 +68,7 @@ end
 function M.placed_by_class(ctx)
   local out = {}
   for _, target in ipairs(ctx.targets) do
-    out[target.window.class] = target.placed
+    out[rawget(target.window, "class") or target.index] = target.placed
   end
   return out
 end
