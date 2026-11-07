@@ -32,7 +32,9 @@ Item {
   property var state: null // the last state reply that read fine
   property string error: "" // why the last state read failed, "" when it worked
   property string lastError: "" // the last failed call's error
-  property bool busy: _current !== null || _queue.length > 0
+  // Also while a re-read is pending (the debounce after a reply or event):
+  // until it lands, a view's state lags what the engine already did.
+  property bool busy: _current !== null || _queue.length > 0 || debounce.running
 
   property int debounceMs: 60
   property int timeoutMs: 3000
