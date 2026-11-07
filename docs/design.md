@@ -165,6 +165,18 @@ workspace's desk and screen role, take that branch of the tree, divide
 sizes are exact and deterministic), and `place` each target whose window is
 assigned to a slot. Targets with no slot go to the overflow leaf.
 
+Slots with no window close up: the tree is pruned to the slots present and
+the survivors keep their configured ratio (three slots at 1:2:1 with two
+windows present tile 1:2), as aerolayout does. Until slice 4 brings the
+overflow leaf, unslotted targets share a column at the right (tree 3 :
+overflow 1, one row each), and a workspace that is no desk of the active
+arrangement tiles its targets in equal columns.
+
+Workspace rules apply when a workspace is created, so `setup()` gives
+`lua:slots` to desk N's workspace in every Omarchy block (N, 10+N, ... 90+N)
+for each desk that has a tree, rather than tracking which blocks are
+connected.
+
 Rejected alternative: driving dwindle with dispatched splits. Dwindle's
 result depends on window open order and focus at the moment each split
 happens, and the dispatches race with window mapping. Arithmetic placement
