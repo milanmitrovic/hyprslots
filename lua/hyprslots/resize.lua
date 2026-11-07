@@ -48,7 +48,8 @@ end
 -- The tree recalculate lays out for a desk entry ({ desk, role, branch }) of
 -- the active arrangement: effective_branch, else the entry's own branch.
 function M.branch(engine, desk)
-  return overrides(engine)[key(engine, desk)] or desk.branch
+  local name = engine.active and engine.active.name
+  return (name and M.effective_branch(engine, name, desk.desk, desk.role)) or desk.branch
 end
 
 -- Each override as { key, arrangement, desk, role, tree }, sorted by key.
