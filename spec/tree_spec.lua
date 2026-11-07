@@ -244,3 +244,75 @@ describe("accordion containers", function()
     assert.are.same({ { "x", "y" }, { "p", "q" } }, tree.accordions(parse("h[a[x, y], v[d, a[p, q]]]")))
   end)
 end)
+
+describe("the overflow leaf", function()
+  local function rejects(text, pattern)
+    local node, err = tree.parse(text)
+    assert.is_nil(node)
+    assert.matches(pattern, err)
+  end
+
+  it("is written * and is not a slot", function()
+    local node = parse("h[main:2, v[right, *]]")
+    assert.are.same({ "main", "right" }, tree.slots(node))
+    assert.is_true(tree.has_overflow(node))
+    assert.is_false(tree.has_overflow(parse("h[main, right]")))
+  end)
+
+  it("takes a weight like any leaf", function()
+    local boxes = tree.boxes(parse("h[main:3, *:1]"), area(0, 0, 2400, 1350))
+    assert.are.same({ main = area(0, 0, 1800, 1350), [tree.OVERFLOW] = area(1800, 0, 600, 1350) }, boxes)
+  end)
+
+  it("closes up when no window overflows", function()
+    local boxes = tree.boxes(parse("h[main:3, *:1]"), area(0, 0, 2400, 1350), { main = true })
+    assert.are.same({ main = area(0, 0, 2400, 1350) }, boxes)
+  end)
+
+  it("is laid out when present", function()
+    local boxes = tree.boxes(parse("h[*, main]"), area(0, 0, 2400, 1350), { main = true, [tree.OVERFLOW] = true })
+    assert.are.same({ [tree.OVERFLOW] = area(0, 0, 1200, 1350), main = area(1200, 0, 1200, 1350) }, boxes)
+  end)
+
+  -- aerolayout: validate_tree, "more than one overflow slot".
+  it("rejects a second overflow leaf", function()
+    rejects("h[*, v[main, *]]", "more than one overflow leaf")
+  end)
+
+  it("rejects an overflow leaf inside an accordion", function()
+    rejects("a[x, *]", "an accordion holds slots only, found '%*'")
+  end)
+
+  describe("tree.with_overflow", function()
+    -- aerolayout TestOverflowGuarantee: a tree with no overflow leaf still
+    -- places extra windows, at the end; an explicit position is respected.
+    it("appends a column at 3 : 1 to a tree without one", function()
+      local node = tree.with_overflow(parse("h[a, b]"))
+      local boxes = tree.boxes(node, area(0, 0, 2400, 1350))
+      assert.are.same({
+        a = area(0, 0, 900, 1350),
+        b = area(900, 0, 900, 1350),
+        [tree.OVERFLOW] = area(1800, 0, 600, 1350),
+      }, boxes)
+    end)
+
+    it("wraps a lone slot too", function()
+      local boxes = tree.boxes(tree.with_overflow(parse("main")), area(0, 0, 2400, 1350))
+      assert.are.same({ main = area(0, 0, 1800, 1350), [tree.OVERFLOW] = area(1800, 0, 600, 1350) }, boxes)
+    end)
+
+    it("respects an explicit overflow leaf", function()
+      local node = parse("h[*, a]")
+      assert.are.equal(node, tree.with_overflow(node))
+    end)
+
+    it("does not modify the tree it is given", function()
+      local node = parse("h[a:2, b]")
+      tree.with_overflow(node)
+      assert.are.same({ "a", "b" }, tree.slots(node))
+      assert.are.equal(2, node.children[1].weight)
+      assert.are.equal(1, node.weight)
+      assert.is_false(tree.has_overflow(node))
+    end)
+  end)
+end)
