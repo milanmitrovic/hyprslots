@@ -3,15 +3,14 @@
 -- recalculate(ctx) is arithmetic only: find the workspace's desk and screen
 -- role, take that branch of the active arrangement's tree, divide ctx.area by
 -- its integer weights, and place each target in its window's slot. It never
--- dispatches. Targets with no slot share an overflow column (an interim
--- overflow leaf until slice 4). Any error is caught, logged, and the targets
+-- dispatches. Targets with no slot in the branch stack equally in its
+-- overflow leaf (`*`), or in a column appended at 3 : 1 when it has none; an
+-- empty overflow leaf closes up. Any error is caught, logged, and the targets
 -- are tiled in plain columns instead, so a bug never leaves windows unplaced.
 
 local tree = require("hyprslots.tree")
 
 local M = {}
-
-local OVERFLOW_WEIGHT, TREE_WEIGHT = 1, 3
 
 local function columns(n)
   local children = {}
@@ -39,26 +38,13 @@ local function workspace_of(ctx)
   return nil
 end
 
--- The tree to lay out: the branch alone, or the branch beside an overflow
--- column holding `overflow` rows keyed by target index.
-local function with_overflow(branch, overflow)
-  if #overflow == 0 then
-    return branch
+-- Boxes for `n` rows stacked equally in `area`.
+local function rows(area, n)
+  local children = {}
+  for i = 1, n do
+    children[i] = { slot = i, weight = 1 }
   end
-  local rows = {}
-  for i, target in ipairs(overflow) do
-    rows[i] = { slot = target.index, weight = 1 }
-  end
-  local kept = {}
-  for key, value in pairs(branch) do
-    kept[key] = value
-  end
-  kept.weight = TREE_WEIGHT
-  return {
-    split = "h",
-    weight = 1,
-    children = { kept, { split = "v", weight = OVERFLOW_WEIGHT, children = rows } },
-  }
+  return tree.boxes({ split = "v", weight = 1, children = children }, area)
 end
 
 local function place_slots(engine, ctx)
@@ -93,15 +79,18 @@ local function place_slots(engine, ctx)
     return
   end
 
-  for _, target in ipairs(overflow) do
-    present[target.index] = true
+  if #overflow > 0 then
+    present[tree.OVERFLOW] = true
   end
-  local boxes = tree.boxes(with_overflow(desk.branch, overflow), ctx.area, present)
+  local boxes = tree.boxes(tree.with_overflow(desk.branch), ctx.area, present)
   for slot, target in pairs(slotted) do
     target:place(boxes[slot])
   end
-  for _, target in ipairs(overflow) do
-    target:place(boxes[target.index])
+  if #overflow > 0 then
+    local stacked = rows(boxes[tree.OVERFLOW], #overflow)
+    for i, target in ipairs(overflow) do
+      target:place(stacked[i])
+    end
   end
 end
 
