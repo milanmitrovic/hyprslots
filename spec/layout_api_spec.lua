@@ -249,4 +249,35 @@ return { slots = data.slots, arrangements = arrangements }
       assert.are.same({ "hyprslots changed 1", "hyprslots changed 2" }, events())
     end)
   end)
+
+  -- The Slots and Arrangements views rename what the Layout view's calls
+  -- name: set_trees targets the renamed arrangement.
+  describe("after slot and arrangement edits", function()
+    it("set_trees after rename_arrangement edits the renamed one and replaces its resized tree", function()
+      setup()
+      local windows = {}
+      for i, class in ipairs({ "t-a", "t-b" }) do
+        windows[i] = hl_stub.window(i, class, { workspace = 3 })
+        hl.emit("window.open", windows[i])
+      end
+      hl.windows = windows
+      hl.active_window = windows[1]
+      assert.is_true(hl.layouts.slots.layout_msg(hl_stub.layout_ctx(AREA, windows), "nudge r 0.1"))
+      assert.is_true(call("rename_arrangement", { arrangement = "dual", to = "duo" }).ok)
+      assert.is_true(branch("duo", "big").resized, "the resized tree moved with the rename")
+
+      local reply = call("set_trees", { arrangement = "duo", desk = 3, trees = { big = "v[a, b, c]", side = "*" } })
+      assert.is_true(reply.ok, reply.error)
+      assert.are.equal("duo", reply.arrangement)
+      assert.are.equal("v[a, b, c]", branch("duo", "big").tree)
+      assert.is_nil(branch("duo", "big").resized)
+      assert.are.same({}, call("state").resized)
+
+      assert.is_true(call("save").ok)
+      local saved = read(dir .. "/slots.lua")
+      assert.matches('duo = {', saved, 1, true)
+      assert.matches('big = "v[a, b, c]"', saved, 1, true)
+      assert.is_nil(saved:find("dual = {", 1, true))
+    end)
+  end)
 end)
