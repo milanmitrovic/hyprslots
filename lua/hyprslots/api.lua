@@ -911,7 +911,7 @@ function handlers.add_arrangement(engine, args)
   if not cfg then
     return fail(apply_err)
   end
-  return { arrangement = name, screens = object(data.arrangements[name].screens), active = active_name(engine),
+  return { arrangement = name, screens = object(shallow(data.arrangements[name].screens)), active = active_name(engine),
     seq = engine.seq }
 end
 
@@ -1005,7 +1005,7 @@ function handlers.set_screens(engine, args)
   if not cfg then
     return fail(apply_err)
   end
-  return { arrangement = name, screens = object(screens), active = active_name(engine), seq = engine.seq }
+  return { arrangement = name, screens = object(shallow(screens)), active = active_name(engine), seq = engine.seq }
 end
 
 -- set_pinned { pinned[] }: the screen roles excluded from desk switching.
