@@ -1,7 +1,7 @@
 # hyprslots design
 
 Status: slices 1 to 6 implemented and integrated on `feature/engine` (§11);
-next is the cutover. Targets Hyprland 0.56.2
+editor slice D1 on `feature/editor`; next is the cutover. Targets Hyprland 0.56.2
 (Lua config) on Omarchy 4.5.
 
 ## 1. Purpose
@@ -467,6 +467,55 @@ the running engine only through Hyprland:
   shell sees as a `custom>>` event on socket2 and answers with a fresh
   `state()` read.
 
+### The plugin
+
+`editor/` is the plugin folder (manifest `kinds: ["panel", "service"]`):
+
+| File | Role |
+|---|---|
+| `Engine.qml` | the service: runs the api through `hyprctl repl` (one `Process` per command, in order, 3 s watchdog), reads `state` debounced (60 ms) on `custom>>hyprslots changed` and on window events (`openwindow`, `closewindow`, `movewindowv2`, `windowtitlev2`, monitor events, `configreloaded`) via `Quickshell.Hyprland`'s `rawEvent`, only while the panel is open; keeps `error` (last state read) and `lastError` (last call) |
+| `Panel.qml` | the panel: an `OverlayWindow` card (`qs.Ui`), themed through `qs.Commons` (`Color.menu.*`, `Style`) like Omarchy's own panels; tabs Assignment, Layout, Slots, Arrangements (Tab / Shift+Tab), Esc or q closes; `press(key)` feeds a key by name |
+| `AssignmentView.qml` | aerolayout's Assignment view (below) |
+| `PlaceholderView.qml` | Layout, Slots, Arrangements: their data, read-only, until D2/D3 |
+| `Protocol.js`, `Assignment.js`, `Summary.js` | pure logic, tested under node (`editor/tests/`) |
+
+**Assignment view** (aerolayout `views.py` AssignmentView). Pages: every
+window, then each desk; it opens on the focused workspace's desk. A desk's
+table lists its slots in tree order, screen role by screen role of the
+active arrangement (then slots no tree shows): the window in each, or a
+`Missing` row with the spec it waits for; then the windows overflowing on
+the desk and any other windows on its workspaces. Columns: Desk (every-window
+page), Screen (when more than one), Slot (`main`, `main (by hand)`,
+`overflow (main)`, `unassigned`, `—`), App, Title. Keys as in the TUI:
+↑/↓ or k/j select, ←/→ or h/l (and p) page; `a` prompts
+`Assign to slot: (m)ain, (r)ight, (1) more? [Esc] cancel` (first letter,
+else the first free digit; ↑/↓ and Return also pick) and calls `assign`;
+`u` asks `Unassign … from … slot? (y/n)` and calls `unassign`. A failure
+(`{ok:false,error}`, hyprctl failing, hyprslots not loaded, the engine off,
+a config error) shows in the urgent colour. Unlike aerolayout's `a`, which
+wrote the window's spec into the slot, `assign` is a sticky assignment in
+memory; writing specs belongs to the Slots view (D3). aerolayout's `n`
+(name a workspace) has no counterpart: desks have no names.
+
+**Install** (the user's machine; not done by the slices):
+
+```sh
+ln -s ~/Projects/hyprslots/master/editor ~/.config/omarchy/plugins/milan.hyprslots
+omarchy-shell shell rescanPlugins
+omarchy plugin enable milan.hyprslots
+omarchy-shell shell toggle milan.hyprslots       # open / close
+```
+
+and a key in `~/.config/hypr/bindings.lua`:
+`o.bind("SUPER + CTRL + Y", "Hyprslots", { panel = "milan.hyprslots" })` (any free key;
+Omarchy uses SUPER + CTRL + S for Share)
+(third-party panels go through `omarchy-shell shell toggle`). Validate with
+`omarchy plugin validate <the real editor/ path>` (it refuses symlinks).
+Caveats: the shell's plugin watcher does not follow a symlinked folder, so
+after editing run `omarchy-shell shell rescanPlugins`; an imported `.js`
+can stay cached across that reload, and then only `omarchy-restart-shell`
+picks it up.
+
 ### Api contract
 
 `hyprslots.api.call(name, json)` returns a JSON object string, never `""`:
@@ -591,7 +640,7 @@ Under `lua/hyprslots/`:
 | adapter | `api` | `state()` / `call(name, json)` for the editor |
 | adapter | `log` | ring buffer; `hyprslots.dump()` prints it with the state |
 
-Other top-level directories: `editor/` (QML plugin), `spec/` (busted specs and
+Other top-level directories: `editor/` (QML plugin, §9), `spec/` (busted specs and
 `spec/helpers/hl_stub.lua`), `e2e/` (headless Hyprland harness).
 
 **Loading.** A shim `~/.config/hypr/hyprslots.lua` prepends the repo's
@@ -612,7 +661,9 @@ cannot go after hyprmoncfg's `dofile`, which stays last.
 | 5 Resize | keyboard resize via `layout_msg`; `lua:slots` in the Super+L layout cycle, focused screen only | done (Super+L patches applied at cutover) |
 | 6 Protocol | record, api protocol, serializer, ratio grammar | done |
 | 7 Cutover | install on the user's machine, retire the old setup | next |
-| Editor | skeleton + Assignment view; Layout view; Slots + Arrangements views | not started |
+| Editor D1 | plugin skeleton (Engine service, panel, tabs) + Assignment view; api `assign` / `unassign`, `overflow` in `state` | done |
+| Editor D2 | Layout view | next |
+| Editor D3 | Slots + Arrangements views | — |
 
 Slices 2 to 6 were built in parallel on top of slices 1 and 2 and
 integrated on `feature/engine`; the cross-slice behaviour (keyboard-resized
@@ -639,6 +690,17 @@ spanning windows, public release / AUR package, QML tests.
   `hl` (`spec/helpers/hl_stub.lua`) under busted.
 - **S3 — pure modules**: busted specs; aerolayout's unittest cases are ported
   where the logic carries over (tree parsing, weights, assignment, record).
+- **Editor**: the api it relies on is S2 (`spec/assignment_api_spec.lua`,
+  `spec/api_spec.lua`); its pure JavaScript runs under `node --test`
+  (`editor/tests/`, part of `make test`); `make editor-lint` runs Qt 6's
+  qmllint. `make e2e-editor` (`e2e/editor_smoke.sh`, opt-in, needs qs, grim
+  and wtype) runs the plugin in Quickshell on the nested Hyprland through
+  `e2e/editor/shell.qml` (which stands in for the Omarchy shell: it injects
+  the service and adds an IPC target), drives the panel with real keys from
+  one wtype session (a fresh virtual keyboard loses its first key, and a
+  second wtype's keys did not arrive, so the sequence is one session starting
+  with an ignored F13) and with `press()`, asserts through api `state`, and
+  writes screenshots to `.e2e-tmp/editor-smoke-*.png`.
 
 ### Completion test
 
