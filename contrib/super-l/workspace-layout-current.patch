@@ -1,0 +1,24 @@
+--- a/.local/bin/workspace-layout-current
++++ b/.local/bin/workspace-layout-current
+@@ -1,13 +1,19 @@
+ #!/bin/bash
+ # Print a workspace's layout like omarchy-hyprland-workspace-layout-current,
+-# but say "scrolling-wide" for full-width scrolling (see workspace-layout-cycle).
++# but say "scrolling-wide" for full-width scrolling (see workspace-layout-cycle)
++# and "slots" for hyprslots' lua:slots layout.
+ # Usage: workspace-layout-current [workspace-id]
+ 
+ MODE=$(omarchy-hyprland-workspace-layout-current "$@")
+ ID=${1:-$(hyprctl activeworkspace -j | jq -r '.id')}
+ WIDE_FILE="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/wide-scrolling"
+ 
+-if [[ $MODE == scrolling && -f $WIDE_FILE ]] && grep -qx "$ID" "$WIDE_FILE"; then
++# hyprslots' lua:slots layout, unless the workspace floats on top of it.
++TILED=$(hyprctl workspaces -j | jq -r --arg id "$ID" 'first(.[] | select((.id | tostring) == $id) | .tiledLayout) // empty')
++
++if [[ $MODE != floating && $TILED == lua:slots ]]; then
++  echo slots
++elif [[ $MODE == scrolling && -f $WIDE_FILE ]] && grep -qx "$ID" "$WIDE_FILE"; then
+   echo scrolling-wide
+ else
+   echo "$MODE"

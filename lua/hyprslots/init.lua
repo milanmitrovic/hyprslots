@@ -18,6 +18,7 @@ local groups = require("hyprslots.groups")
 local hotplug = require("hyprslots.hotplug")
 local layout = require("hyprslots.layout")
 local log = require("hyprslots.log")
+local resize = require("hyprslots.resize")
 local router = require("hyprslots.router")
 local tree = require("hyprslots.tree")
 
@@ -264,6 +265,18 @@ end
 -- per-screen workspace keys. Call it from the config after setup().
 function M.bind_desk_keys()
   desks.bind_keys(current)
+end
+
+-- Point Omarchy's keyboard resize binds at the slots layout on lua:slots
+-- workspaces (Omarchy's resize elsewhere). Call after Omarchy's bindings load;
+-- setup() leaves the binds alone.
+function M.bind_resize_keys()
+  resize.bind_keys()
+end
+
+-- One rebound resize key's action (what the keybindings menu replays).
+function M.resize_key(dx, dy)
+  return resize.key_action(dx, dy)
 end
 
 M.api = {

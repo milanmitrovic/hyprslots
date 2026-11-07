@@ -206,4 +206,26 @@ function M.group_add(address, into)
   anchor.group:add(window)
 end
 
+-- The focused window as a plain table (see M.window), or nil.
+function M.active_window()
+  local window = hl().get_active_window()
+  return window and M.window(window)
+end
+
+-- The focused workspace's tiled layout ("dwindle", "lua:slots", ...), or nil.
+function M.active_layout()
+  local workspace = hl().get_active_workspace()
+  return workspace and workspace.tiled_layout
+end
+
+-- Send a message to the focused workspace's layout.
+function M.layout_msg(msg)
+  return hl().dispatch(hl().dsp.layout(msg))
+end
+
+-- Hyprland's own relative resize of the focused window.
+function M.resize_window(dx, dy)
+  return hl().dispatch(hl().dsp.window.resize({ x = dx, y = dy, relative = true }))
+end
+
 return M

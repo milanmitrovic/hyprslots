@@ -226,6 +226,74 @@ Layout-triggered passes stop after three in a row that still had moves to
 make (an error is logged), so a refused move cannot loop; any window event
 re-arms them.
 
+### Keyboard resize (slice 5)
+
+The provider's `layout_msg(ctx, msg)` (`resize.lua`) takes:
+
+- `nudge <l|r|u|d> <amount>`: grow the focused window's slot toward that
+  side. The nearest ancestor split in that axis with a neighbour on that
+  side is adjusted, and only that neighbour gives up space (a negative
+  amount shrinks the slot instead). The amount is a fraction of that
+  split (`0.1`) or exact pixels (`100px`, measured over `ctx.area` with
+  the full branch; with empty slots or the interim overflow column the
+  pixel count is approximate). Neither side drops below 5% of the split.
+- `resize <dx> <dy>`: pixels, the shape of Omarchy's
+  `hl.dsp.window.resize({ x, y, relative = true })` binds, with dwindle's
+  feel: the slot's right (bottom) edge moves by dx (dy), or its left (top)
+  edge when nothing is to its right (below).
+- `reset`: back to the configured branch.
+
+Weights stay exact integers (`tree.nudge`): the split's weights are scaled
+so the nudge is a whole number of units (fractions are quantised to
+1/10000 of the split; pixels scale the total to a multiple of the split's
+extent, so the edge moves by exactly that many pixels), then divided by
+their gcd: `h[a, b]` nudged by 0.1 becomes `h[a:3, b:2]`. `boxes` is
+unchanged, so placement stays exact-pixel.
+
+Hyprland sends a layout message to the focused workspace's algorithm only,
+so resize always acts on the focused window (`hl.dsp.layout("…")` from a
+bind or `hyprctl dispatch`); Hyprland recalculates afterwards. A string
+reply (why nothing changed) surfaces as the dispatch's error. A nudged
+tree overrides the branch per arrangement, desk and screen role in memory
+only: it survives hotplug back to the same arrangement but not a config
+reload. Persisting it comes with slice 6's record and serializer.
+
+`hyprslots.bind_resize_keys()` rebinds Omarchy's twelve resize keys
+(`SUPER [+ SHIFT] [+ ALT|CTRL] + code:20/21`, from
+`default/hypr/bindings/tiling.lua`) through `o.rebind`: on a workspace whose
+tiled layout is `lua:slots` they send `resize <dx> <dy>`, elsewhere they
+keep Omarchy's window resize. Each action is registered for the
+keybindings menu as `hyprslots.resize_key(dx, dy)`. `setup()` does not call
+it; the cutover's `bindings.lua` does, after Omarchy's bindings.
+
+### Super+L: slots in the layout cycle (slice 5, applied at cutover)
+
+`contrib/super-l/` holds patches (`patch -d ~ -p1 < …`) for the user's
+`~/.local/bin/workspace-layout-cycle`, `~/.local/bin/workspace-layout-current`
+and `~/.config/omarchy/plugins/milan.layout/Layout.qml`. They are not applied
+before the cutover.
+
+- The cycle acts on the focused workspace only. On a hyprslots desk
+  workspace (one in `hyprslots.api.call("state").workspaces`) it gains a
+  slots stop between floating and tiling:
+  slots → tiling → side-by-side → full-width → floating → slots
+  (`back` reverses). Elsewhere it is unchanged.
+- Omarchy's mode files know nothing of `lua:slots`, so "slots" is read from
+  the workspace's `tiledLayout` unless the mode file says floating (floating
+  keeps the tiled layout underneath).
+- Entering slots from floating first applies `dwindle` through
+  `o.workspace_mode` to tile the windows again, then sets the
+  `lua:slots` workspace rule and removes the workspace's mode file, so the
+  rule hyprslots sets at load brings slots back after a reload. Leaving slots
+  applies and saves the mode the way Omarchy's toggle does.
+- The bar widget shows a grid glyph (nf-md-view_grid) and "Slots".
+
+To verify at cutover: whether a saved mode file for a desk workspace (from
+leaving slots for a non-default mode) or Omarchy's default-layout command
+(`omarchy-hyprland-workspace-layout-default`, which saves busy workspaces'
+current mode) wins over hyprslots' load-time rule, which depends on the
+order `hyprland.lua` loads them in.
+
 ## 7. Routing
 
 - `window.open` and `window.title` events: match the window against the specs

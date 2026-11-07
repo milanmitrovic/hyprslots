@@ -1,0 +1,27 @@
+--- a/.config/omarchy/plugins/milan.layout/Layout.qml
++++ b/.config/omarchy/plugins/milan.layout/Layout.qml
+@@ -7,7 +7,7 @@
+ 
+ // The focused workspace's layout as one icon, next to the Spaces widget:
+ //   square = tiling, circle = side-by-side scrolling,
+-//   |<->| = full-width scrolling, triangle = floating.
++//   |<->| = full-width scrolling, triangle = floating, grid = hyprslots' slots.
+ // Clicking cycles it like Super + L, right-click goes back (~/.local/bin/workspace-layout-cycle).
+ // The mode comes from ~/.local/bin/workspace-layout-current, which knows the
+ // full-width mode set up in ~/.config/hypr/wide-scrolling.lua.
+@@ -30,6 +30,7 @@
+   property bool modeStale: false
+ 
+   function modeGlyph(mode) {
++    if (mode === "slots") return "󰕰"
+     if (mode === "scrolling-wide") return "󰡎"
+     if (mode === "scrolling") return "󰝥"
+     if (mode === "floating") return "󰔶"
+@@ -37,6 +38,7 @@
+   }
+ 
+   function modeName(mode) {
++    if (mode === "slots") return "Slots"
+     if (mode === "scrolling-wide") return "Full-width scrolling"
+     if (mode === "scrolling") return "Side-by-side scrolling"
+     if (mode === "floating") return "Floating"
