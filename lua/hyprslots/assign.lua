@@ -102,6 +102,18 @@ function M.solve(cfg, windows, previous)
   return result
 end
 
+-- The first (desk, slot), in precedence order, whose spec matches the window,
+-- taken or not, or nil: where a window that matches but finds every such
+-- slot taken overflows (that desk's overflow leaf).
+function M.first_match(cfg, window)
+  for _, candidate in ipairs(candidates(cfg)) do
+    if spec.match(candidate.spec, window) then
+      return { desk = candidate.desk, slot = candidate.slot }
+    end
+  end
+  return nil
+end
+
 -- The slot for one window given the current assignments: its own when it has
 -- one, else the first free matching slot, else nil. `current` is not modified.
 function M.claim(cfg, current, window)

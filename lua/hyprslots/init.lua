@@ -48,6 +48,7 @@ local function new_engine()
     active = nil,
     workspaces = {}, -- workspace id -> { desk, role, monitor, branch }
     assignments = {}, -- window address -> { desk, slot }
+    overflow = {}, -- window address -> { desk, slot }: matches that slot, which is taken
     seq = 0, -- bumped on every change the editor should see
     started = false,
     config_dir = nil,
@@ -109,7 +110,14 @@ function Engine:assign_all()
   if not self.cfg then
     return
   end
-  self.assignments = assign.solve(self.cfg, adapter.windows(), self.assignments)
+  local windows = adapter.windows()
+  self.assignments = assign.solve(self.cfg, windows, self.assignments)
+  self.overflow = {}
+  for _, window in ipairs(windows) do
+    if window.address and not self.assignments[window.address] then
+      self.overflow[window.address] = assign.first_match(self.cfg, window)
+    end
+  end
 end
 
 -- The slot of a plain window ({ address, class, stable_id }), claiming one

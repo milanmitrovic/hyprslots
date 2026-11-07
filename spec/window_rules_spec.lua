@@ -68,12 +68,14 @@ describe("generated window rules", function()
       assert.are.equal("3 silent", rule("hyprslots-t-left").workspace)
     end)
 
-    it("turns a rule off while its slot is taken, and back on when it is free", function()
+    it("keeps sending a class to its desk while its slot is taken, for that desk's overflow", function()
+      local count = #hl.window_rules
       local window = open(1, "t-main", 1)
-      assert.are.same({ name = "hyprslots-t-main", enabled = false }, rule("hyprslots-t-main"))
+      assert.are.equal(count, #hl.window_rules, "nothing to re-register")
+      assert.are.same({ name = "hyprslots-t-main", enabled = true, match = { class = "^(t-main)$" },
+        workspace = "3 silent" }, rule("hyprslots-t-main"))
       hl.windows = {}
       hl.emit("window.destroy", window)
-      assert.is_true(rule("hyprslots-t-main").enabled)
       assert.are.equal("3 silent", rule("hyprslots-t-main").workspace)
     end)
 
@@ -135,6 +137,11 @@ return {
 
     open(1, "foot", 1, "deltaf | zellij")
     assert.are.equal("3 silent", rule("hyprslots-foot").workspace)
+
+    -- With every foot slot taken, the first of them is a title spec: where an
+    -- extra foot window overflows depends on its title, so the router decides.
+    open(2, "foot", 1, "notes | x")
+    assert.is_false(rule("hyprslots-foot").enabled)
   end)
 
   it("leaves a class to the router when a browser tag spec comes first", function()

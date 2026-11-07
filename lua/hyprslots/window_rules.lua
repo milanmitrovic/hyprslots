@@ -9,10 +9,12 @@
 -- rule with nothing to do is registered as { name, enabled = false }.
 --
 -- The rule for class C goes to the first free slot, in assignment precedence
--- order (desk, then slot name), whose spec could match a C window:
+-- order (desk, then slot name), whose spec could match a C window, or, when
+-- every such slot is taken, to the first of them (the router sends an extra
+-- C window to that desk's overflow leaf):
 --   class-only spec  -> enabled, "<workspace> silent"
 --   title or tag     -> disabled: only the title decides, so the router does
---   no free slot, or the slot is on no screen of the arrangement -> disabled
+--   the slot is on no screen of the arrangement -> disabled
 -- A rule is only an optimisation: the router places a window the same way
 -- with or without it, and checks the workspace's screen either way.
 
@@ -52,19 +54,29 @@ function M.desired(engine)
     end
   end
 
-  for _, candidate in ipairs(candidates) do
+  local function consider(candidate)
     local spec = candidate.spec
-    if not taken[candidate.desk .. "\0" .. candidate.slot] then
-      if spec.kind == "class" then
-        decide(spec.class, engine.active and engine:workspace_for(candidate) or false)
-      elseif spec.kind == "title" then
-        decide(spec.class, false)
-      elseif spec.kind == "tag" then
-        for class in pairs(spec.tm.browser_apps) do
-          decide(class, false)
-        end
+    if spec.kind == "class" then
+      decide(spec.class, engine.active and engine:workspace_for(candidate) or false)
+    elseif spec.kind == "title" then
+      decide(spec.class, false)
+    elseif spec.kind == "tag" then
+      for class in pairs(spec.tm.browser_apps) do
+        decide(class, false)
       end
     end
+  end
+
+  -- The first free slot that could take a window of the class ...
+  for _, candidate in ipairs(candidates) do
+    if not taken[candidate.desk .. "\0" .. candidate.slot] then
+      consider(candidate)
+    end
+  end
+  -- ... else, every such slot being taken, the first of them, whose desk's
+  -- overflow leaf the router sends the window to (router.route).
+  for _, candidate in ipairs(candidates) do
+    consider(candidate)
   end
   return classes
 end
