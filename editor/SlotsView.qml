@@ -10,8 +10,8 @@ import "Prompts.js" as Prompts
 // holds and its description. ←/→ page through desks 1-10, ↑/↓ select.
 // a adds a slot, r renames it (every tree that places it is rewritten),
 // s sets its spec, t takes the spec from a window (what aerolayout's
-// Assignment `a` did), e describes it, d deletes it; w saves. Edits stay in
-// memory until saved (the header says "unsaved edits"); the engine
+// Assignment `a` did), e describes it, d deletes it; Ctrl+S (the panel's)
+// saves. Edits stay in memory until saved (the header says "unsaved edits"); the engine
 // validates each by re-running config.lua, and a refusal shows in the
 // prompt it answered, which opens again. The model is Slots.js; the calls
 // are the api's slot edits (docs/design.md §9).
@@ -46,7 +46,7 @@ Item {
 
   readonly property string helpText: prompting ? Prompts.help(prompt)
     : "↑/↓ select  ←/→ prev/next desk   ·   Slot: a add  r rename  s spec  t spec from window  e describe  d delete"
-      + "   ·   w save   ·   Tab switch view  q close"
+      + "   ·   Ctrl+S save   ·   Tab switch view  q close"
 
   function indexOfSlot(name) {
     for (var i = 0; i < rows.length; i++) if (rows[i].slot === name) return i
@@ -213,10 +213,6 @@ Item {
     })
   }
 
-  function save() {
-    run("save", {}, function(reply) { return "Saved " + reply.path + "." })
-  }
-
   function handlePrompt(key, text, modifiers) {
     var out = Prompts.key(prompt, Prompts.keyName(key, modifiers, Qt), Prompts.typed(text))
     var answer = _answer
@@ -240,7 +236,6 @@ Item {
     else if (text === "t") startTake()
     else if (text === "e") startDescribe()
     else if (text === "d") startDelete()
-    else if (text === "w") save()
     else return false
     return true
   }

@@ -57,7 +57,7 @@ Item {
 
   readonly property string helpText: prompting
     ? (prompt.kind === "assign" ? "letter/digit pick   ·   ↑/↓ Return pick   ·   Esc cancel" : "y unassign   ·   n / Esc cancel")
-    : "↑/↓ select  ←/→ prev/next desk   ·   Slots: a assign  u unassign   ·   Tab switch view  q close"
+    : "↑/↓ select  ←/→ prev/next desk   ·   Slots: a assign  u unassign   ·   Ctrl+S save   ·   Tab switch view  q close"
 
   function keyOf(row) {
     if (!row) return ""

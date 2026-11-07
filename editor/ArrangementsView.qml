@@ -15,7 +15,8 @@ import "Prompts.js" as Prompts
 // another arrangement's), r renames, x deletes (saying when these monitors
 // will run nothing), e edits a screen (role name, selector), + adds one,
 // - removes one, p pins or unpins a role, c copies trees from another
-// arrangement or the default; w saves. Edits stay in memory until saved.
+// arrangement or the default; Ctrl+S (the panel's) saves. Edits stay in
+// memory until saved.
 // The model is Arrangements.js; the calls are the api's arrangement edits
 // (docs/design.md §9).
 Item {
@@ -45,7 +46,7 @@ Item {
 
   readonly property string helpText: prompting ? Prompts.help(prompt)
     : "↑/↓ select   ·   a use on these monitors  n new  r rename  x delete   ·   Screens: e edit  + add  - remove  p pin"
-      + "   ·   c copy trees   ·   w save   ·   Tab switch view  q close"
+      + "   ·   c copy trees   ·   Ctrl+S save   ·   Tab switch view  q close"
 
   function indexOfName(name) {
     for (var i = 0; i < rows.length; i++) if (rows[i].name === name) return i
@@ -384,10 +385,6 @@ Item {
       })
   }
 
-  function save() {
-    run("save", {}, function(reply) { return "Saved " + reply.path + "." })
-  }
-
   function handlePrompt(key, text, modifiers) {
     var out = Prompts.key(prompt, Prompts.keyName(key, modifiers, Qt), Prompts.typed(text))
     var answer = _answer
@@ -412,7 +409,6 @@ Item {
     else if (text === "-") startRemoveScreen()
     else if (text === "p") startPin()
     else if (text === "c") startCopy()
-    else if (text === "w") save()
     else return false
     return true
   }

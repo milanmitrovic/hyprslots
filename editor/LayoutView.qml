@@ -10,10 +10,11 @@ import "Prompts.js" as Prompts
 // of the arrangement, each a scale model of its screen: boxes proportional
 // to the weights, nested containers titled with their kind and ratio,
 // accordions as tabs over the open member, then the tree text and ratio
-// string. Edits go to a draft; `w` applies it (api set_trees), `s` saves
-// (api save), `d` puts a screen's tree back to what slots.lua holds (api
-// reset), `R` records the windows on screen (api record, previewed). The
-// model is Layout.js; the calls are in docs/design.md §9.
+// string. Edits go to a draft; `w` applies it (api set_trees), Ctrl+S (the
+// panel's) applies it and saves (api save), `d` puts a screen's tree back
+// to what slots.lua holds (api reset), `R` records the windows on screen
+// (api record, previewed). The model is Layout.js; the calls are in
+// docs/design.md §9.
 Item {
   id: root
 
@@ -60,7 +61,7 @@ Item {
   readonly property string helpText: {
     if (prompting) return Prompts.help(prompt)
     return "arrows select   ·   Tree: hjkl move  HJKL force move  / flip  t " + toggleLabel
-      + "  r ratios  o overflow   ·   Layout: w apply  s save  d default  R record   ·   g desk  c arrangement"
+      + "  r ratios  o overflow   ·   Layout: w apply  Ctrl+S apply+save  d default  R record   ·   g desk  c arrangement"
       + "   ·   Tab switch view  q close"
   }
 
@@ -159,7 +160,7 @@ Item {
   }
 
   function draftNote() {
-    return " Not applied: w applies, s saves."
+    return " Not applied: w applies, Ctrl+S applies and saves."
   }
 
   // --- keys -----------------------------------------------------------------
@@ -263,7 +264,6 @@ Item {
     else if (text === "o") toggleOverflow()
     else if (text === "r") startRatio()
     else if (text === "w") apply(null)
-    else if (text === "s") save()
     else if (text === "d") startReset()
     else if (text === "R") startRecord()
     else if (text === "g") startPick("desk")
@@ -366,7 +366,7 @@ Item {
   // --- engine calls ---------------------------------------------------------
 
   // w: every edited pane of the desk in one set_trees. `then` runs after it
-  // worked (save uses it).
+  // worked (Ctrl+S's save, through applyThen).
   function apply(then) {
     if (refuseEdit()) return
     var roles = editedRoles()
@@ -403,19 +403,16 @@ Item {
       }
       var parts = []
       for (var r2 in reply.trees) parts.push(r2 + " " + reply.trees[r2].tree)
-      root.say("Applied desk " + reply.desk + ": " + parts.join(", ") + (then ? "" : ". s saves."), false)
+      root.say("Applied desk " + reply.desk + ": " + parts.join(", ") + (then ? "" : ". Ctrl+S saves."), false)
       if (then) then()
     })
   }
 
-  function save() {
-    if (refuseEdit()) return
-    apply(function() {
-      root.engine.call("save", {}, function(reply) {
-        if (!reply.ok) root.say(reply.error, true)
-        else root.say("Saved " + reply.path + ".", false)
-      })
-    })
+  // Ctrl+S (the panel's): apply the edited panes first, then `then()`
+  // saves. With nothing edited it saves straight away.
+  function applyThen(then) {
+    if (editedRoles().length === 0) then()
+    else apply(then)
   }
 
   function startReset() {
@@ -479,7 +476,7 @@ Item {
           next[r] = { node: Layout.parse(set.trees[r].tree).node, base: set.trees[r].tree, memory: null }
           root.drafts = next
           root.keepSelection()
-          root.say("Applied the recorded tree " + set.trees[r].tree + ". s saves.", false)
+          root.say("Applied the recorded tree " + set.trees[r].tree + ". Ctrl+S saves.", false)
         })
       })
     })
@@ -547,7 +544,7 @@ Item {
         textFormat: Text.PlainText
         readonly property int pending: root.editedRoles().length
         text: (pending > 0 ? "edited, not applied (w)   " : "")
-          + (root.state && root.state.dirty ? "● unsaved (s)" : "saved")
+          + (root.state && root.state.dirty ? "● unsaved (Ctrl+S)" : "saved")
         color: root.state && root.state.dirty || pending > 0 ? Commons.Color.urgent : root.foreground
         opacity: root.state && root.state.dirty || pending > 0 ? 1 : 0.6
         font.family: root.fontFamily

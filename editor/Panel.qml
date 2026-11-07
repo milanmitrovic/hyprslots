@@ -12,7 +12,8 @@ import "Prompts.js" as Prompts
 // an Omarchy shell panel. Four tabs, cycled with Tab / Shift+Tab as in the
 // TUI: Assignment (which window fills which slot), Layout (one desk's
 // trees), Slots and Arrangements. Esc or q closes it (while a view's prompt
-// is open, every key is the prompt's).
+// is open, every key is the prompt's). Ctrl+S saves in every tab; in the
+// Layout tab it applies the edited panes first.
 //
 //   omarchy-shell shell toggle milan.hyprslots
 //   omarchy-shell shell call milan.hyprslots press a   (a key, for scripts and tests)
@@ -87,6 +88,10 @@ Item {
     if (layoutView.prompting && root.tab === 1) return layoutView.handleKey(key, text, modifiers)
     if (slotsView.prompting && root.tab === 2) return slotsView.handleKey(key, text, modifiers)
     if (arrangementsView.prompting && root.tab === 3) return arrangementsView.handleKey(key, text, modifiers)
+    if (key === Qt.Key_S && (modifiers & Qt.ControlModifier)) {
+      root.save()
+      return true
+    }
     if (key === Qt.Key_Backtab || (key === Qt.Key_Tab && (modifiers & Qt.ShiftModifier))) {
       root.tab = (root.tab + root.tabs.length - 1) % root.tabs.length
       return true
@@ -106,8 +111,24 @@ Item {
     return false
   }
 
-  // A key by name ("a", "Tab", "Escape", "Down", ...), as if pressed: for
-  // `omarchy-shell shell call milan.hyprslots press <key>` and the e2e smoke.
+  // Ctrl+S, one save for every view: the engine's `save`, said in the current
+  // view; the Layout view applies its edited panes first.
+  function save() {
+    var view = [assignmentView, layoutView, slotsView, arrangementsView][root.tab]
+    if (!root.engine) return
+    var write = function() {
+      root.engine.call("save", {}, function(reply) {
+        if (reply.ok) view.say("Saved " + reply.path + ".", false)
+        else view.say(reply.error, true)
+      })
+    }
+    if (root.tab === 1) layoutView.applyThen(write)
+    else write()
+  }
+
+  // A key by name ("a", "Tab", "Escape", "Down", ...), or with "Ctrl+" before
+  // it ("Ctrl+s"), as if pressed: for `omarchy-shell shell call
+  // milan.hyprslots press <key>` and the e2e smoke.
   function press(name) {
     var named = {
       Tab: Qt.Key_Tab, Backtab: Qt.Key_Backtab, Escape: Qt.Key_Escape, Return: Qt.Key_Return,
@@ -115,14 +136,19 @@ Item {
       BackSpace: Qt.Key_Backspace, Backspace: Qt.Key_Backspace, Delete: Qt.Key_Delete, Home: Qt.Key_Home, End: Qt.Key_End,
     }
     var s = String(name)
+    var modifiers = 0
+    if (s.length > 5 && s.slice(0, 5) === "Ctrl+") {
+      modifiers = Qt.ControlModifier
+      s = s.slice(5)
+    }
     var key = named[s]
     var text = ""
     if (key === undefined) {
-      if (s.length !== 1) return "unknown key " + s
-      text = s
+      if (s.length !== 1) return "unknown key " + name
+      text = modifiers ? "" : s // Ctrl+<letter> types a control character, which nothing reads
       key = s.toUpperCase().charCodeAt(0) // Qt.Key_A..Key_Z and Key_0..Key_9 are their ASCII codes
     }
-    return root.handleKey(key, text, 0) ? "ok" : "ignored"
+    return root.handleKey(key, text, modifiers) ? "ok" : "ignored"
   }
 
   // What the Assignment view has selected, "<status> <slot> <class>", and

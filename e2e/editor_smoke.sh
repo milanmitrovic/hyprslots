@@ -155,7 +155,7 @@ slots_view() {
   else
     fail "right was not renamed: $(api_state | jq -c '.slots'); $(smoke message); errors: $(smoke errors)"
   fi
-  expect_eq "the tree is rewritten" "v[main:2, h[aside, side:3]]" \
+  expect_eq "the tree is rewritten" "h[main:2, v[aside, side:3]]" \
     "$(api_state | jq -r '.arrangements.solo.desks["3"].main.tree')"
   expect_eq "the edit is unsaved" "true" "$(api_state | jq -r .dirty)"
   eventually 5 smoke_idle || true
@@ -248,7 +248,7 @@ arrangements_view() {
   local selector
   selector=$(api_state | jq -r '.monitors[0] | if .description != "" then .description elif .serial != "" then .serial else .name end')
   expect_eq "desk selects the monitor by $selector" "$selector" "$(api_state | jq -r '.arrangements.desk.screens.main')"
-  expect_eq "desk has solo's trees" "v[main:2, h[aside, side:3]]" \
+  expect_eq "desk has solo's trees" "h[main:2, v[aside, side:3]]" \
     "$(api_state | jq -r '.arrangements.desk.desks["3"].main.tree')"
   eventually 5 smoke_idle || true
   log "message: $(smoke message)"
@@ -258,15 +258,16 @@ arrangements_view() {
 
 save_and_check() {
   local file=$E2E_CONFIG_HOME/hyprslots/slots.lua
-  press_keys w
+  expect_eq "w does not save" "ignored" "$(smoke press w)"
+  press_keys Ctrl+s
   if eventually 5 state_is .dirty false; then
-    pass "w saved"
+    pass "Ctrl+S saved"
   else
     fail "still unsaved: $(smoke message)"
   fi
   local saved
   saved=$(cat "$file")
-  for want in 'aside = "t-right"' 'side = "foot/notes"' 'main = "v[main:2, h[aside, side:3]]"' 'desk = {' 'solo = {' \
+  for want in 'aside = "t-right"' 'side = "foot/notes"' 'main = "h[main:2, v[aside, side:3]]"' 'desk = {' 'solo = {' \
     'descriptions = {' 'main = "the editor"'; do
     if grep -qF "$want" <<<"$saved"; then
       pass "slots.lua holds $want"
@@ -387,7 +388,8 @@ test_body() {
   shot 3-unassigned
 
   # The Layout tab edits desk 3's tree as a draft: / flips it, r takes a
-  # typed ratio, t refuses what an accordion cannot hold, w applies, s saves.
+  # typed ratio, t refuses what an accordion cannot hold, w applies, Ctrl+S
+  # saves (s is no key of the view any more).
   expect_eq "Tab" "ok" "$(smoke press Tab)"
   sleep 0.3
   shot 4-layout-tab
@@ -439,11 +441,12 @@ test_body() {
   sleep 0.3
   shot 6-layout-applied
 
-  expect_eq "s" "ok" "$(smoke press s)"
+  expect_eq "s does not save" "ignored" "$(smoke press s)"
+  expect_eq "Ctrl+S" "ok" "$(smoke press Ctrl+s)"
   if eventually 5 saved; then
-    pass "s saved"
+    pass "Ctrl+S saved"
   else
-    fail "still dirty after s: $(smoke message) $(smoke errors)"
+    fail "still dirty after Ctrl+S: $(smoke message) $(smoke errors)"
   fi
   if grep -qF 'main = "v[main:2, h[right, side:3]]"' "$E2E_CONFIG_HOME/hyprslots/slots.lua"; then
     pass "slots.lua holds the edited tree"
@@ -472,6 +475,24 @@ test_body() {
     fail "after d, y the draft is $(smoke layout): $(smoke message) $(smoke errors)"
   fi
   expect_eq "nothing unsaved" "false" "$(api_state | jq -r .dirty)"
+  eventually 5 smoke_idle || true
+
+  # Ctrl+S with an edited draft applies it first, then saves.
+  expect_eq "/" "ok" "$(smoke press /)"
+  expect_eq "/ flips the draft back" "main: h[main:2, v[right, side:3]] *" "$(smoke layout)"
+  expect_eq "Ctrl+S" "ok" "$(smoke press Ctrl+s)"
+  if eventually 5 bash -c "[[ \$($watch layout) == 'main: h[main:2, v[right, side:3]]' ]]" && eventually 5 saved; then
+    pass "Ctrl+S applied the draft and saved it"
+  else
+    fail "after Ctrl+S: draft $(smoke layout), tree $(tree_in_force), dirty $(api_state | jq -r .dirty): $(smoke message)"
+  fi
+  expect_eq "the tree in force is the draft" "h[main:2, v[right, side:3]]" "$(tree_in_force)"
+  if grep -qF 'main = "h[main:2, v[right, side:3]]"' "$E2E_CONFIG_HOME/hyprslots/slots.lua"; then
+    pass "slots.lua holds it"
+  else
+    fail "slots.lua: $(cat "$E2E_CONFIG_HOME/hyprslots/slots.lua")"
+  fi
+  eventually 5 smoke_idle || true
 
   slots_view
   arrangements_view
