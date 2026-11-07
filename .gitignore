@@ -1,0 +1,24 @@
+# Lua
+luacov.stats.out
+luacov.report.out
+luacov.*.out
+*.rock
+/lua_modules/
+/.luarocks/
+.busted
+.busted_cache/
+
+# QML / Qt
+*.qmlc
+*.jsc
+.qmlls.ini
+*.pro.user
+*.qmlproject.user
+build/
+
+# Editors / OS
+*.swp
+*~
+.DS_Store
+.vscode/
+.idea/
