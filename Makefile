@@ -5,7 +5,7 @@ BUSTED ?= $(shell command -v busted 2>/dev/null || echo $(HOME)/.luarocks/bin/bu
 # test runner; `make test` skips it, saying so, where node is missing.
 NODE ?= $(shell command -v node 2>/dev/null)
 
-.PHONY: test lua-test editor-test editor-lint e2e
+.PHONY: test lua-test editor-test editor-lint e2e e2e-editor
 test: lua-test editor-test
 
 lua-test:
@@ -33,3 +33,8 @@ editor-lint:
 # One test: make e2e TESTS=e2e/smoke_test.sh
 e2e:
 	./e2e/run.sh $(TESTS)
+
+# The editor plugin in Quickshell on the nested Hyprland (opt-in: not part of
+# `make e2e`); needs qs, grim and wtype. Screenshots: .e2e-tmp/editor-smoke-*.png
+e2e-editor:
+	./e2e/run.sh e2e/editor_smoke.sh
