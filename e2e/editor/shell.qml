@@ -47,6 +47,11 @@ ShellRoot {
       return panel.messageText()
     }
 
+    // The Layout view's draft trees.
+    function layout(): string {
+      return panel.layoutText()
+    }
+
     function press(key: string): string {
       return panel.press(key)
     }

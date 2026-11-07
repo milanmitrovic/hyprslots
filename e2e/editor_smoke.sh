@@ -8,8 +8,10 @@
 # of the nested Hyprland and the harness's private XDG_RUNTIME_DIR. The panel
 # is opened, a stray window is put into a slot with real key presses (wtype,
 # through the panel's keyboard handling), then taken out again with the
-# panel's press() hook, and api state must show both. Screenshots of the
-# nested compositor go to .e2e-tmp/editor-smoke-*.png.
+# panel's press() hook, and api state must show both. Then the Layout tab
+# flips desk 3's tree, takes a typed ratio, applies it (api state and the
+# windows' geometry must follow) and saves it (slots.lua must hold it).
+# Screenshots of the nested compositor go to .e2e-tmp/editor-smoke-*.png.
 #
 # Screen: HEADLESS-2, 1920x1080, Omarchy block 0 (desk N = workspace N).
 # Desk 3, arrangement "solo": h[main:2, v[right, side]]; t-side never opens.
@@ -60,6 +62,11 @@ assignment_of() {
 }
 
 assigned_to_side() { [[ $(assignment_of "$1") == '{"desk":3,"manual":true,"slot":"side"}' ]]; }
+# Desk 3's tree in force on the main screen, and whether all is saved.
+tree_in_force() { api_state | jq -r '.arrangements.solo.desks["3"].main.tree'; }
+tree_in_force_is() { [[ $(tree_in_force) == "$1" ]]; }
+saved() { [[ $(api_state | jq -r .dirty) == false ]]; }
+
 unassigned() { api_state | jq -e --arg a "$1" '(.assignments[$a] == null) and (.unassigned | index($a) != null)' >/dev/null; }
 
 # Real key presses into the nested compositor (the panel holds the keyboard).
@@ -170,10 +177,86 @@ test_body() {
   sleep 0.3
   shot 3-unassigned
 
-  # The other tabs show, read-only, what D2/D3 will edit; Esc closes.
+  # The Layout tab edits desk 3's tree as a draft: / flips it, r takes a
+  # typed ratio, t refuses what an accordion cannot hold, w applies, s saves.
   expect_eq "Tab" "ok" "$(smoke press Tab)"
   sleep 0.3
   shot 4-layout-tab
+  expect_eq "the Layout view opens on desk 3's main screen, main selected" "main main" "$(smoke selection)"
+  expect_eq "its draft is the tree in force" "main: h[main:2, v[right, side]]" "$(smoke layout)"
+  expect_eq "/" "ok" "$(smoke press /)"
+  expect_eq "/ flips every split, in the draft" "main: v[main:2, h[right, side]] *" "$(smoke layout)"
+  smoke press t >/dev/null
+  expect_eq "t on main refuses: its container holds a split" \
+    "an accordion holds slots only, found 'h[' inside it" "$(smoke message)"
+  expect_eq "r" "ok" "$(smoke press r)"
+  expect_eq "r prompts with the current ratio" \
+    "Ratios for the whole tree (current 2:1[1:1]; empty clears all) [Enter] set  [Esc] cancel: " "$(smoke message)"
+  local c ratio_entry='2:1[1:3]'
+  for ((i = 0; i < ${#ratio_entry}; i++)); do
+    c=${ratio_entry:i:1}
+    [[ $(smoke press "$c") == ok ]] || fail "typing $c into the ratio prompt"
+  done
+  expect_eq "the prompt shows what was typed" \
+    "Ratios for the whole tree (current 2:1[1:1]; empty clears all) [Enter] set  [Esc] cancel: 2:1[1:3]" "$(smoke message)"
+  expect_eq "Return" "ok" "$(smoke press Return)"
+  expect_eq "the ratio lands in the draft" "main: v[main:2, h[right, side:3]] *" "$(smoke layout)"
+  expect_eq "nothing is applied yet" "h[main:2, v[right, side]]" "$(tree_in_force)"
+  sleep 0.3
+  shot 5-layout-draft
+
+  expect_eq "w" "ok" "$(smoke press w)"
+  if eventually 5 tree_in_force_is 'v[main:2, h[right, side:3]]'; then
+    pass "w applied the draft (set_trees)"
+  else
+    fail "the tree in force is $(tree_in_force); editor: $(smoke message) $(smoke errors)"
+  fi
+  expect_eq "applied, not saved" "true" "$(api_state | jq -r '.dirty')"
+  eventually 5 smoke_idle || true
+  settle
+  # h[v[main:2, h[right, side:3]]:3, *:1] with side absent: the tree takes
+  # 1440 px, the overflow column (the unassigned stray) 480.
+  expect_client t-main 3 0 0 1440 720
+  expect_client t-right 3 0 720 1440 360
+  expect_client t-stray 3 1440 0 480 1080
+  expect_eq "the draft is clean again" "main: v[main:2, h[right, side:3]]" "$(smoke layout)"
+  sleep 0.3
+  shot 6-layout-applied
+
+  expect_eq "s" "ok" "$(smoke press s)"
+  if eventually 5 saved; then
+    pass "s saved"
+  else
+    fail "still dirty after s: $(smoke message) $(smoke errors)"
+  fi
+  if grep -qF 'main = "v[main:2, h[right, side:3]]"' "$E2E_CONFIG_HOME/hyprslots/slots.lua"; then
+    pass "slots.lua holds the edited tree"
+  else
+    fail "slots.lua: $(cat "$E2E_CONFIG_HOME/hyprslots/slots.lua")"
+  fi
+  log "message: $(smoke message)"
+  sleep 0.3
+  shot 7-layout-saved
+
+  # An accordion in the draft (Down selects right, t stacks its container),
+  # then d, y puts the screen back to what slots.lua holds (api reset).
+  smoke press Down >/dev/null
+  expect_eq "Down selects right" "main right" "$(smoke selection)"
+  smoke press t >/dev/null
+  expect_eq "t stacks right's container" "main: v[main:2, a[right, side]] *" "$(smoke layout)"
+  sleep 0.3
+  shot 8-layout-accordion
+  smoke press d >/dev/null
+  expect_eq "d asks first" "Put desk 3 on main back to the tree slots.lua holds? (y/n)" "$(smoke message)"
+  smoke press y >/dev/null
+  local clean='main: v[main:2, h[right, side:3]]'
+  if eventually 5 bash -c "[[ \$($watch layout) == '$clean' ]]"; then
+    pass "d, y dropped the draft: back to slots.lua"
+  else
+    fail "after d, y the draft is $(smoke layout): $(smoke message) $(smoke errors)"
+  fi
+  expect_eq "nothing unsaved" "false" "$(api_state | jq -r .dirty)"
+
   expect_eq "Escape" "ok" "$(smoke press Escape)"
   expect_eq "the panel is closed" "no" "$(smoke ready)"
 
