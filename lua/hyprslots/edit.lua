@@ -103,4 +103,52 @@ function M.set_tree(data, arrangement, desk, role, text)
   return out
 end
 
+-- The data with several of a desk's trees set at once (`trees`: role ->
+-- text), so a slot can move from one screen role to another in one edit.
+-- Returns the new data, or nil and why not (the first refusal).
+function M.set_trees(data, arrangement, desk, trees)
+  if type(trees) ~= "table" or next(trees) == nil then
+    return nil, "no trees to set: give \"trees\" as an object of screen role -> tree"
+  end
+  local out = data
+  for _, role in ipairs(sorted_keys(trees)) do
+    local err
+    out, err = M.set_tree(out, arrangement, desk, role, trees[role])
+    if not out then
+      return nil, err
+    end
+  end
+  return out
+end
+
+-- The data with arrangement's tree for desk and screen role put back to the
+-- one `saved` (the data as slots.lua holds it) has: the same text, or no tree
+-- at all when `saved` has none. Returns the new data, or nil and why not.
+function M.reset_tree(data, saved, arrangement, desk, role)
+  local entry = data and type(data.arrangements) == "table" and data.arrangements[arrangement]
+  if type(entry) ~= "table" then
+    return nil, "no arrangement '" .. tostring(arrangement) .. "' in slots.lua"
+  end
+  if type(entry.screens) ~= "table" or entry.screens[role] == nil then
+    return nil, string.format("arrangement '%s' has no screen role '%s'", arrangement, tostring(role))
+  end
+  local saved_entry = saved and type(saved.arrangements) == "table" and saved.arrangements[arrangement]
+  local saved_desk = type(saved_entry) == "table" and type(saved_entry.desks) == "table" and saved_entry.desks[desk]
+  local text = type(saved_desk) == "table" and saved_desk[role] or nil
+
+  local out = M.copy(data)
+  local target = out.arrangements[arrangement]
+  if text ~= nil then
+    target.desks = target.desks or {}
+    target.desks[desk] = target.desks[desk] or {}
+    target.desks[desk][role] = text
+  elseif type(target.desks) == "table" and type(target.desks[desk]) == "table" then
+    target.desks[desk][role] = nil
+    if next(target.desks[desk]) == nil and saved_desk == nil then
+      target.desks[desk] = nil
+    end
+  end
+  return out
+end
+
 return M
