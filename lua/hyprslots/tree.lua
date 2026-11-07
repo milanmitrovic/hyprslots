@@ -337,7 +337,7 @@ local function path_to(node, slot, path)
       return path
     end
   else
-    for _, child in ipairs(node.children) do
+    for _, child in ipairs(node.children or {}) do
       if path_to(child, slot, path) then
         return path
       end
@@ -373,12 +373,47 @@ end
 local SIDE = { l = "left of", r = "right of", u = "above", d = "below" }
 local MIN_SHARE = 20 -- no child of a nudged split drops below 1/MIN_SHARE (5%) of it
 
+-- `node` as `boxes` lays it out: pruned to `present` (every node when nil),
+-- each copy keeping its node in the given tree as `source`.
+local function mirror(node, present)
+  if node.slot or node.overflow then
+    if present and not present[node.slot or M.OVERFLOW] then
+      return nil
+    end
+    return { slot = node.slot, overflow = node.overflow, weight = node.weight, source = node }
+  end
+  local children = {}
+  for _, child in ipairs(node.children) do
+    local kept = mirror(child, present)
+    if kept then
+      children[#children + 1] = kept
+    end
+  end
+  if #children == 0 then
+    return nil
+  end
+  return { split = node.split, accordion = node.accordion, weight = node.weight, children = children, source = node }
+end
+
+-- The tree the layout shows for `root` with these slots present: the
+-- appended overflow column when windows overflow a tree with no `*`, then
+-- pruned. Nodes keep `source`; the appended column and its parent have none.
+local function laid_out(root, present)
+  local view = mirror(root, present)
+  if view and present and present[M.OVERFLOW] and not find_overflow(root) then
+    view.weight = TREE_WEIGHT
+    view = { split = "h", weight = 1, children = { view, { overflow = true, weight = OVERFLOW_WEIGHT } } }
+  end
+  return view
+end
+
 -- The nearest split on `path` in `axis` where the path's child has a
 -- neighbour `step` away: depth of the split on the path, child index, neighbour index.
+-- Splits the layout added (no `source`) are passed over.
 local function hinge(path, axis, step)
   for depth = #path - 1, 1, -1 do
     local split = path[depth]
-    if split.split == axis then
+    if split.split == axis and split.source then
       local i = index_of(split.children, path[depth + 1])
       local j = i + step
       if split.children[j] then
@@ -438,7 +473,7 @@ local function scaled(split, delta, extent)
   end
   total = total * scale
   local units = extent and delta * total / extent or delta * total
-  return weights, total, math.floor(units + 0.5)
+  return weights, total, math.floor(units + 0.5), scale
 end
 
 -- Grow `slot` toward `dir` (l, r, u, d) by `delta`, a fraction of the nearest
@@ -451,8 +486,14 @@ end
 -- h[a, b] nudged by 0.1 becomes h[a:3, b:2].
 --
 -- With `opts.area`, `delta` is in pixels instead: the split's extent when the
--- tree is laid over that area (absent slots are not pruned first), and the
--- edge moves by exactly that many pixels.
+-- tree is laid over that area, and the edge moves by exactly that many pixels.
+--
+-- With `opts.present` (slot names, plus tree.OVERFLOW when windows overflow),
+-- the nudge acts on the tree as the layout shows it (`boxes` over
+-- `with_overflow`, pruned to `present`): the neighbour is the nearest present
+-- one, fractions and pixels are of the split as laid out, so pixels stay
+-- exact with empty slots or overflow showing, and the appended overflow
+-- column never gives up space. Absent siblings keep their share of the split.
 --
 -- Returns a new tree sharing untouched subtrees with `root` (which is never
 -- modified), or nil and why not.
@@ -464,26 +505,40 @@ function M.nudge(root, slot, dir, delta, opts)
   if type(delta) ~= "number" or delta ~= delta then
     return nil, "a nudge must be a number, got '" .. tostring(delta) .. "'"
   end
-  local path = path_to(root, slot)
+  local view = laid_out(root, opts and opts.present)
+  local path = view and path_to(view, slot)
   if not path then
-    return nil, "no slot '" .. tostring(slot) .. "' in this tree"
+    if not path_to(root, slot) then
+      return nil, "no slot '" .. tostring(slot) .. "' in this tree"
+    end
+    return nil, "slot '" .. tostring(slot) .. "' is not laid out"
   end
   local depth, i, j = hinge(path, axis, step)
   if not depth then
     return nil, string.format("nothing %s '%s' to take space from", SIDE[dir], slot)
   end
 
-  local split = path[depth]
+  -- Measure and limit on the split as laid out ...
+  local shown = path[depth]
   local extent = opts and opts.area and extent_of(path, depth, opts.area)
   if extent and extent <= 0 then
     return nil, "the area has no room to nudge in"
   end
-  local weights, total, change = scaled(split, delta, extent)
+  local visible, total, change, scale = scaled(shown, delta, extent)
   local floor = (total + MIN_SHARE - 1) // MIN_SHARE
-  change = math.min(change, math.max(weights[j] - floor, 0))
-  change = math.max(change, -math.max(weights[i] - floor, 0))
-  weights[i] = weights[i] + change
-  weights[j] = weights[j] - change
+  change = math.min(change, math.max(visible[j] - floor, 0))
+  change = math.max(change, -math.max(visible[i] - floor, 0))
+
+  -- ... and change the same two children of the split in `root`.
+  local split = shown.source
+  local weights = {}
+  for k, child in ipairs(split.children) do
+    weights[k] = child.weight * scale
+  end
+  local si = index_of(split.children, shown.children[i].source)
+  local sj = index_of(split.children, shown.children[j].source)
+  weights[si] = weights[si] + change
+  weights[sj] = weights[sj] - change
 
   local common = 0
   for _, weight in ipairs(weights) do
@@ -499,12 +554,15 @@ function M.nudge(root, slot, dir, delta, opts)
 
   -- Rebuild the ancestors above the split, sharing everything else.
   for d = depth - 1, 1, -1 do
-    local parent = copy(path[d])
-    parent.children = {}
-    for k, child in ipairs(path[d].children) do
-      parent.children[k] = child == path[d + 1] and node or child
+    local parent = path[d].source
+    if parent then
+      local rebuilt = copy(parent)
+      rebuilt.children = {}
+      for k, child in ipairs(parent.children) do
+        rebuilt.children[k] = child == path[d + 1].source and node or child
+      end
+      node = rebuilt
     end
-    node = parent
   end
   return node
 end

@@ -113,3 +113,62 @@ describe("tree.nudge", function()
     end)
   end)
 end)
+
+describe("tree.nudge over the laid-out tree (opts.present)", function()
+  -- Boxes the way the layout computes them: overflow column appended when the
+  -- tree has no *, then pruned to the slots present.
+  local function laid(node, present, slots, axis)
+    local boxes = tree.boxes(tree.with_overflow(node), SCREEN, present)
+    local out = {}
+    for i, slot in ipairs(slots) do
+      out[i] = boxes[slot][axis or "w"]
+    end
+    return out
+  end
+
+  it("moves the edge by exact pixels with the appended overflow column showing", function()
+    -- h[h[a, b]:3, *:1]: the tree gets 1800 px, a and b 900 each.
+    local present = { a = true, b = true, [tree.OVERFLOW] = true }
+    local node = nudged("h[a, b]", "a", "r", 100, { area = SCREEN, present = present })
+    assert.are.same({ 1000, 800, 600 }, laid(node, present, { "a", "b", tree.OVERFLOW }))
+  end)
+
+  it("moves the edge by exact pixels with an empty slot closed up", function()
+    -- c is absent: a and b share 2400 px, 1200 each.
+    local present = { a = true, b = true }
+    local node = nudged("h[a, b, c]", "a", "r", 100, { area = SCREEN, present = present })
+    assert.are.same({ 1300, 1100 }, laid(node, present, { "a", "b" }))
+  end)
+
+  it("takes from the next present neighbour, past an empty slot", function()
+    local present = { a = true, c = true }
+    local node = nudged("h[a, b, c]", "a", "r", 100, { area = SCREEN, present = present })
+    assert.are.same({ 1300, 1100 }, laid(node, present, { "a", "c" }))
+  end)
+
+  it("never takes from the appended overflow column", function()
+    local present = { a = true, b = true, [tree.OVERFLOW] = true }
+    local node, err = tree.nudge(parse("h[a, b]"), "b", "r", 100, { area = SCREEN, present = present })
+    assert.is_nil(node)
+    assert.matches("nothing right of 'b'", err)
+  end)
+
+  it("takes from an explicit overflow leaf like any neighbour", function()
+    local present = { a = true, [tree.OVERFLOW] = true }
+    local node = nudged("h[*, a]", "a", "l", 100, { area = SCREEN, present = present })
+    assert.are.same({ 1100, 1300 }, laid(node, present, { tree.OVERFLOW, "a" }))
+  end)
+
+  it("resizes an accordion member's whole container", function()
+    local present = { x = true, y = true, z = true }
+    local node = nudged("h[a[x, y], z]", "y", "r", 100, { area = SCREEN, present = present })
+    assert.are.same({ 1300, 1300, 1100 }, laid(node, present, { "x", "y", "z" }))
+    assert.is_true(node.children[1].accordion)
+  end)
+
+  it("takes a fraction of the split as laid out", function()
+    local present = { a = true, b = true }
+    local node = nudged("h[a, b, c]", "a", "r", 0.1, { present = present })
+    assert.are.same({ 1440, 960 }, laid(node, present, { "a", "b" }))
+  end)
+end)
