@@ -129,6 +129,11 @@ function M.new(opts)
     return hl.monitors[1]
   end
 
+  function hl.get_active_workspace()
+    local monitor = hl.get_active_monitor()
+    return monitor and monitor.active_workspace
+  end
+
   function hl.get_windows()
     return hl.windows
   end
@@ -157,7 +162,7 @@ function M.new(opts)
     exit = dispatcher("exit"),
     event = dispatcher("event"),
     layout = dispatcher("layout"),
-    window = { move = dispatcher("window.move") },
+    window = { move = dispatcher("window.move"), resize = dispatcher("window.resize") },
     workspace = { move = dispatcher("workspace.move") },
   }
 
