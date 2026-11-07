@@ -137,6 +137,15 @@ function M.new(opts)
     return hl.workspaces
   end
 
+  function hl.get_workspace(selector)
+    for _, workspace in ipairs(hl.workspaces) do
+      if workspace.id == tonumber(selector) then
+        return workspace
+      end
+    end
+    return nil
+  end
+
   function hl.dispatch(dispatcher)
     hl.dispatched[#hl.dispatched + 1] = dispatcher
     if type(dispatcher) == "function" then
