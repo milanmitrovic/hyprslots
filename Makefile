@@ -5,7 +5,7 @@ BUSTED ?= $(shell command -v busted 2>/dev/null || echo $(HOME)/.luarocks/bin/bu
 # test runner; `make test` skips it, saying so, where node is missing.
 NODE ?= $(shell command -v node 2>/dev/null)
 
-.PHONY: test lua-test editor-test e2e
+.PHONY: test lua-test editor-test editor-lint e2e
 test: lua-test editor-test
 
 lua-test:
@@ -17,6 +17,17 @@ ifeq ($(NODE),)
 else
 	$(NODE) --test editor/tests/
 endif
+
+# qmllint (Qt 6's; /usr/bin/qmllint is Qt 5's) over the plugin, with qs.Commons
+# and qs.Ui resolved against Omarchy's shell. qmllint cannot see into
+# Style's nested QtObjects, so its "not found on type QObject" warnings are
+# filtered out.
+QMLLINT ?= /usr/lib/qt6/bin/qmllint
+OMARCHY_PATH ?= /usr/share/omarchy
+editor-lint:
+	@mkdir -p .e2e-tmp/lint-imports && ln -sfn $(OMARCHY_PATH)/shell .e2e-tmp/lint-imports/qs
+	@$(QMLLINT) -I .e2e-tmp/lint-imports editor/*.qml 2>&1 \
+	  | grep -E '^(Warning|Error)' | grep -v 'not found on type "QObject"' || true
 
 # Nested Hyprland on a headless sway host; needs sway, foot, jq, gcc.
 # One test: make e2e TESTS=e2e/smoke_test.sh

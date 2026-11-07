@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "milan.hyprslots",
+  "name": "Hyprslots",
+  "version": "0.1.0",
+  "author": "milan",
+  "description": "Editor for hyprslots: which window fills which slot, the layout trees, slots and arrangements",
+  "kinds": [
+    "panel",
+    "service"
+  ],
+  "entryPoints": {
+    "panel": "Panel.qml",
+    "service": "Engine.qml"
+  }
+}
