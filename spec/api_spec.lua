@@ -328,6 +328,22 @@ return { slots = data.slots, arrangements = arrangements }
       assert.matches("workspace 7", reply.error)
     end)
 
+    it("does not apply a record over a tree with an overflow leaf", function()
+      setup()
+      laid_out_windows({ "t-a", "t-b", "t-c" })
+      local api_module = require("hyprslots.api")
+      local original = api_module.effective_branch
+      api_module.effective_branch = function()
+        return { split = "h", weight = 1, children = {
+          { slot = "a", weight = 1 }, { slot = "b", weight = 2 }, { slot = "c", weight = 1 }, { overflow = true, weight = 1 } } }
+      end
+      local reply = call("record")
+      api_module.effective_branch = original
+      assert.is_true(reply.ok, reply.error)
+      assert.is_false(reply.applied)
+      assert.are.same({ "*" }, reply.missing)
+    end)
+
     it("refuses overlapping windows", function()
       setup()
       local windows = laid_out_windows({ "t-a", "t-b" })
@@ -338,6 +354,43 @@ return { slots = data.slots, arrangements = arrangements }
       local reply = call("record")
       assert.is_false(reply.ok)
       assert.matches("overlap", reply.error)
+    end)
+  end)
+
+  describe("the effective tree hook", function()
+    -- feature/resize keeps nudged trees in memory; api.effective_branch is
+    -- the one place that says which tree is in force.
+    local api_module, original
+
+    before_each(function()
+      setup()
+      api_module = require("hyprslots.api")
+      original = api_module.effective_branch
+      api_module.effective_branch = function(engine, arrangement, desk, role)
+        if arrangement == "solo" and desk == 3 and role == "main" then
+          return assert(require("hyprslots.tree").parse("h[v[a:5, b], c]"))
+        end
+        return original(engine, arrangement, desk, role)
+      end
+    end)
+
+    after_each(function()
+      api_module.effective_branch = original
+    end)
+
+    it("is what state reports", function()
+      assert.are.equal("h[v[a:5, b], c]", state().arrangements.solo.desks["3"].main.tree)
+    end)
+
+    it("is what set_ratio starts from", function()
+      local reply = call("set_ratio", { desk = 3, role = "main", ratio = "1[1:2]:1" })
+      assert.is_true(reply.ok, reply.error)
+      assert.are.equal("h[v[a, b:2], c]", reply.tree)
+    end)
+
+    it("is what save writes", function()
+      assert.is_true(call("save").ok)
+      assert.matches('main = "h%[v%[a:5, b%], c%]"', read(dir .. "/slots.lua"))
     end)
   end)
 

@@ -47,6 +47,16 @@ local function sorted_keys(t)
   return keys
 end
 
+-- The tree in force for an arrangement's desk on a screen role: the config's,
+-- unless something holds an in-memory override (feature/resize's nudged
+-- trees are meant to plug in here). state reports it, set_ratio starts from
+-- it, record compares against it and save writes it.
+function M.effective_branch(engine, arrangement, desk, role)
+  local entry = engine.cfg and engine.cfg.arrangements[arrangement]
+  local branches = entry and entry.desks[desk]
+  return branches and branches[role]
+end
+
 local function read_only_paths(cfg)
   if not cfg or not cfg.raw then
     return {}
@@ -72,7 +82,7 @@ local function arrangements_info(engine, read_only)
     for _, desk in ipairs(sorted_keys(arrangement.desks)) do
       local branches = object()
       for _, role in ipairs(sorted_keys(arrangement.desks[desk])) do
-        branches[role] = branch_info(arrangement.desks[desk][role])
+        branches[role] = branch_info(M.effective_branch(engine, name, desk, role) or arrangement.desks[desk][role])
       end
       deskmap[tostring(desk)] = branches
     end
@@ -285,8 +295,7 @@ function handlers.set_ratio(engine, args)
     return fail(err)
   end
   local desk = as_desk(args.desk)
-  local branches = engine.cfg.arrangements[name].desks[desk]
-  local current = branches and branches[args.role]
+  local current = M.effective_branch(engine, name, desk, args.role)
   if not current then
     return fail(string.format("arrangement '%s' has no tree for desk %s on '%s'", name, tostring(desk), tostring(args.role)))
   end
@@ -302,6 +311,33 @@ function handlers.set_ratio(engine, args)
     ratio = ratio.format(node), seq = engine.seq }
 end
 
+local function leaves(node, out)
+  out = out or {}
+  if node.children == nil then
+    out[#out + 1] = node
+  else
+    for _, child in ipairs(node.children) do
+      leaves(child, out)
+    end
+  end
+  return out
+end
+
+local function has_accordion(node)
+  if node.children == nil then
+    return false
+  end
+  if node.split ~= "h" and node.split ~= "v" then
+    return true
+  end
+  for _, child in ipairs(node.children) do
+    if has_accordion(child) then
+      return true
+    end
+  end
+  return false
+end
+
 -- record { workspace?, apply? }: the tree the windows on a workspace (default:
 -- the focused one) show, for that desk and screen of the active arrangement.
 -- It is applied when it places every slot of the current tree, or when
@@ -312,9 +348,17 @@ function handlers.record(engine, args)
   if not desk then
     return fail("workspace " .. tostring(id) .. " is no desk of the active arrangement")
   end
+  local name = engine.active.name
+  local branch = M.effective_branch(engine, name, desk.desk, desk.role) or desk.branch
+  if has_accordion(branch) then
+    return fail("cannot record workspace " .. tostring(id) .. ": its tree holds an accordion, whose windows "
+      .. "overlap (aerolayout cannot record one either); set its tree or ratio instead")
+  end
   local in_branch = {}
-  for _, slot in ipairs(tree.slots(desk.branch)) do
-    in_branch[slot] = true
+  for _, leaf in ipairs(leaves(branch)) do
+    if leaf.slot then
+      in_branch[leaf.slot] = true
+    end
   end
   local boxes = {}
   for _, window in ipairs(adapter.windows()) do
@@ -329,12 +373,13 @@ function handlers.record(engine, args)
     return fail("cannot record workspace " .. tostring(id) .. ": " .. err)
   end
   local missing = array()
-  for _, slot in ipairs(tree.slots(desk.branch)) do
-    if not boxes[slot] then
-      missing[#missing + 1] = slot
+  for _, leaf in ipairs(leaves(branch)) do
+    if leaf.slot == nil then
+      missing[#missing + 1] = "*" -- the overflow leaf: a record has no windows for it
+    elseif not boxes[leaf.slot] then
+      missing[#missing + 1] = leaf.slot
     end
   end
-  local name = engine.active.name
   local apply = args.apply
   if apply == nil then
     apply = #missing == 0
@@ -361,11 +406,30 @@ function handlers.save(engine)
   if not engine.data then
     return fail("config.lua loads no " .. DATA_FILE .. ", so there is nothing to save")
   end
+  local data = edit.copy(engine.data)
+  local read_only = read_only_paths(engine.cfg)
+  for _, name in ipairs(engine.cfg.arrangement_names) do
+    local entry = engine.cfg.arrangements[name]
+    local target = type(data.arrangements) == "table" and data.arrangements[name]
+    if type(target) == "table" and edit.editable(read_only, "arrangements", name) then
+      for desk, branches in pairs(entry.desks) do
+        for role, node in pairs(branches) do
+          local effective = M.effective_branch(engine, name, desk, role)
+          if effective and not rawequal(effective, node) then
+            target.desks = target.desks or {}
+            target.desks[desk] = target.desks[desk] or {}
+            target.desks[desk][role] = serialize.tree(effective)
+          end
+        end
+      end
+    end
+  end
   local path = (engine.config_dir or config.dir()) .. "/" .. DATA_FILE
-  local ok, err = serialize.write(path, engine.data)
+  local ok, err = serialize.write(path, data)
   if not ok then
     return fail(err)
   end
+  engine.data = data
   engine.dirty = false
   engine.log:info("saved %s", path)
   engine:changed()
