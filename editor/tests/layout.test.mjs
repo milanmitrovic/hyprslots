@@ -298,3 +298,126 @@ end`;
     assert.equal(js, lua[i], `${text} at ${JSON.stringify(entry)}`);
   });
 });
+
+// --- the view's model: which trees, drawn how --------------------------------
+
+function fixture() {
+  return {
+    ok: true,
+    arrangement: "dual",
+    dirty: false,
+    desks: [3, 4],
+    screens: { big: "HEADLESS-2", side: "HEADLESS-3" },
+    workspaces: { 3: { desk: 3, role: "big" }, 13: { desk: 3, role: "side" }, 4: { desk: 4, role: "big" } },
+    arrangements: {
+      dual: {
+        roles: ["big", "side"], screens: { big: "HEADLESS-2", side: "HEADLESS-3" }, active: true, read_only: false,
+        desks: {
+          3: { big: { tree: "h[main:2, v[right, *]]", ratio: "2:1[1:1]", slots: ["main", "right"], resized: true },
+            side: { tree: "left", ratio: "", slots: ["left"] } },
+          4: { big: { tree: "mail", ratio: "", slots: ["mail"] } },
+        },
+      },
+      single: { roles: ["big"], screens: { big: "HEADLESS-2" }, active: false, read_only: true, desks: {} },
+    },
+    windows: [
+      { address: "0xa", class: "t-main", title: "editor", workspace: 3, desk: 3, slot: "main" },
+      { address: "0xb", class: "t-left", title: "notes", workspace: 13, desk: 3, slot: "left" },
+    ],
+    config: { editable: true, read_only: ["arrangements.single"] },
+  };
+}
+
+test("a desk shows one pane per screen role of the arrangement, with its tree in force", () => {
+  assert.deepEqual(plain(L.panes(fixture(), "dual", 3)), [
+    { role: "big", tree: "h[main:2, v[right, *]]", ratio: "2:1[1:1]", resized: true, screen: "HEADLESS-2" },
+    { role: "side", tree: "left", ratio: "", resized: false, screen: "HEADLESS-3" },
+  ]);
+  assert.deepEqual(plain(L.panes(fixture(), "dual", 4))[1], { role: "side", tree: null, ratio: "", resized: false,
+    screen: "HEADLESS-3" });
+  assert.deepEqual(plain(L.panes(fixture(), "nope", 3)), []);
+});
+
+test("the view opens on the active arrangement, at the focused workspace's desk and screen", () => {
+  assert.deepEqual(plain(L.initialTarget(fixture(), 13)), { arrangement: "dual", desk: 3, role: "side" });
+  assert.deepEqual(plain(L.initialTarget(fixture(), 1)), { arrangement: "dual", desk: 3, role: "big" });
+  const none = fixture();
+  delete none.arrangement;
+  assert.deepEqual(plain(L.initialTarget(none, 3)), { arrangement: "dual", desk: 3, role: "big" });
+});
+
+test("what may not be edited says why", () => {
+  assert.equal(L.editBlock(fixture(), "dual"), "");
+  assert.match(L.editBlock(fixture(), "single"), /set by code in config\.lua/);
+  const noData = fixture();
+  noData.config.editable = false;
+  assert.match(L.editBlock(noData, "dual"), /loads no slots\.lua/);
+  const off = fixture();
+  off.refused = "hyprmoncfg's workspace planner is on";
+  assert.match(L.editBlock(off, "dual"), /hyprslots is off: hyprmoncfg/);
+  assert.match(L.editBlock(null, "dual"), /no state/);
+});
+
+test("the slot -> window title map for a pane: what sits in each slot on that screen", () => {
+  assert.deepEqual(plain(L.titles(fixture(), 3, "big")), { main: "editor" });
+  assert.deepEqual(plain(L.titles(fixture(), 3, "side")), { left: "notes" });
+});
+
+test("boxes are proportional to the weights, the remainder to the last child", () => {
+  const rects = plain(L.rects(tree("h[a:2, b]"), { x: 0, y: 0, w: 301, h: 100 }, { pad: 0 }));
+  assert.deepEqual(rects.map((r) => [r.kind, r.key, r.x, r.y, r.w, r.h, r.label]), [
+    ["slot", "a", 0, 0, 200, 100, "a ×2"],
+    ["slot", "b", 200, 0, 101, 100, "b"],
+  ]);
+});
+
+test("a nested container is drawn as a titled box, its children inside it", () => {
+  const rects = plain(L.rects(tree("h[main:2, v[right, *]]"), { x: 0, y: 0, w: 300, h: 100 }, { pad: 4, title: 10 }));
+  assert.deepEqual(rects.map((r) => [r.kind, r.key || "", r.x, r.y, r.w, r.h, r.label, r.depth]), [
+    ["slot", "main", 0, 0, 200, 100, "main ×2", 1],
+    ["v", "", 200, 0, 100, 100, "v 1:1", 1],
+    ["slot", "right", 204, 14, 92, 41, "right", 2],
+    ["overflow", "*", 204, 55, 92, 41, "* overflow", 2],
+  ]);
+});
+
+test("an accordion shows a tab per member, and the open one's box: the selected, else the first", () => {
+  const shown = (selected) => plain(L.rects(tree("h[a[x, y], z]"), { x: 0, y: 0, w: 200, h: 100 },
+    { pad: 0, title: 0, tab: 20, selected }));
+  assert.deepEqual(shown("z").map((r) => [r.kind, r.key || "", r.x, r.y, r.w, r.h, !!r.open]), [
+    ["a", "", 0, 0, 100, 100, false],
+    ["tab", "x", 0, 0, 50, 20, true],
+    ["tab", "y", 50, 0, 50, 20, false],
+    ["slot", "x", 0, 20, 100, 80, false],
+    ["slot", "z", 100, 0, 100, 100, false],
+  ]);
+  assert.deepEqual(shown("y").filter((r) => r.kind === "slot").map((r) => r.key), ["y", "z"]);
+  assert.equal(shown("y").find((r) => r.key === "y" && r.kind === "slot").selected, true);
+});
+
+test("the ratio prompt names the current ratio, and refuses a tree with nothing to divide", () => {
+  assert.equal(L.ratioPrompt(tree("h[main:2, v[right, *]]")).text,
+    "Ratios for the whole tree (current 2:1[1:1]; empty clears all) [Enter] set  [Esc] cancel: ");
+  assert.equal(L.ratioPrompt(tree("h[a, b]")).text,
+    "Ratios for the whole tree (current 1:1; empty clears all) [Enter] set  [Esc] cancel: ");
+  assert.equal(L.ratioPrompt(tree("h[a, a[x, y]]")).text,
+    "Ratios for the whole tree (current 1:1[*:*]; * = an accordion pane, leave it; empty clears all) [Enter] set  [Esc] cancel: ");
+  assert.match(L.ratioPrompt(tree("main")).error, /Nothing to divide/);
+  assert.match(L.ratioPrompt(tree("a[x, y]")).error, /accordion all the way down/);
+});
+
+test("the order strip lists the leaves in order once the tree nests", () => {
+  assert.equal(L.order(tree("h[a, b]")), "");
+  assert.equal(L.order(tree("h[main, v[right, *]]")), "1.main → 2.right → 3.overflow");
+});
+
+test("a one-key prompt gives each choice its first letter, else the first free digit", () => {
+  assert.deepEqual(plain(L.keyedOptions(["dual", "single", "solo"])),
+    [{ key: "d", name: "dual" }, { key: "s", name: "single" }, { key: "1", name: "solo" }]);
+  assert.equal(L.keyedPrompt("Edit arrangement", L.keyedOptions(["dual", "single", "solo"])),
+    "Edit arrangement: (d)ual, (s)ingle, (1) solo? [Esc] cancel");
+  assert.deepEqual(plain(L.keyedOptions(["aa", "a"])), [{ key: "a", name: "aa" }, { key: "1", name: "a" }]);
+  assert.equal(L.keyedPrompt("Edit arrangement", L.keyedOptions(["dual", "single"])),
+    "Edit arrangement: (d)ual, (s)ingle? [Esc] cancel");
+  assert.equal(L.keyedPrompt("Desk", [{ key: "3", name: "3" }]), "Desk: (3)? [Esc] cancel");
+});

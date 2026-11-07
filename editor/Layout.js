@@ -644,3 +644,200 @@ function crossMove(source, target, key, direction) {
   }
   return { source: rest, target: rooted(into) }
 }
+
+// --- the view's model -------------------------------------------------------
+
+function sortedNames(object) {
+  return Object.keys(object || {}).sort()
+}
+
+// The trees of one desk of an arrangement, one pane per screen role (the
+// arrangement's role order): { role, tree (text in force, or null when the
+// desk has none on that screen), ratio, resized, screen (its selector) }.
+function panes(state, arrangement, desk) {
+  var entry = state && state.arrangements ? state.arrangements[arrangement] : null
+  if (!entry) return []
+  var branches = (entry.desks || {})[String(desk)] || {}
+  return (entry.roles || []).map(function(role) {
+    var branch = branches[role]
+    return { role: role, tree: branch ? branch.tree : null, ratio: branch ? branch.ratio || "" : "",
+      resized: !!(branch && branch.resized), screen: (entry.screens || {})[role] || "" }
+  })
+}
+
+// Where the view opens: the active arrangement (else the first), at the
+// focused workspace's desk and screen role (else the first desk and role).
+function initialTarget(state, workspaceId) {
+  var names = sortedNames(state && state.arrangements)
+  var arrangement = state && state.arrangement && state.arrangements[state.arrangement] ? state.arrangement : names[0]
+  var entry = arrangement ? state.arrangements[arrangement] : null
+  var desks = state && Array.isArray(state.desks) ? state.desks : []
+  var roles = entry && entry.roles ? entry.roles : []
+  var ws = state && state.workspaces ? state.workspaces[String(workspaceId)] : null
+  if (ws && arrangement === state.arrangement) return { arrangement: arrangement, desk: ws.desk, role: ws.role }
+  return { arrangement: arrangement || null, desk: desks.length ? desks[0] : 1, role: roles.length ? roles[0] : null }
+}
+
+// Why the trees of an arrangement may not be edited, "" when they may.
+function editBlock(state, arrangement) {
+  if (!state) return "no state from hyprslots yet"
+  if (state.refused) return "hyprslots is off: " + state.refused
+  if (!state.config || !state.config.editable) {
+    return "config.lua loads no slots.lua, so there is nothing the editor may change"
+  }
+  var entry = state.arrangements ? state.arrangements[arrangement] : null
+  if (!entry) return "no arrangement '" + arrangement + "'"
+  if (entry.read_only) return "arrangement '" + arrangement + "' is set by code in config.lua; edit it there"
+  return ""
+}
+
+// slot -> title of the window in it, for a desk's screen role.
+function titles(state, desk, role) {
+  var out = {}
+  var windows = state && Array.isArray(state.windows) ? state.windows : []
+  for (var i = 0; i < windows.length; i++) {
+    var w = windows[i]
+    if (w.desk !== desk || !w.slot) continue
+    var ws = state.workspaces ? state.workspaces[String(w.workspace)] : null
+    if (role && ws && ws.role !== role) continue
+    if (out[w.slot] === undefined) out[w.slot] = w.title || ""
+  }
+  return out
+}
+
+function containerLabel(node) {
+  if (node.kind === "a") return "accordion"
+  return node.kind + " " + integers(node.children.map(function(c) { return c.weight })).join(":")
+}
+
+// The picture of a tree laid over `area`, as rectangles in drawing order:
+//   { kind: "slot" | "overflow" | "h" | "v" | "a" | "tab", key?, x, y, w, h,
+//     depth, label, title?, selected?, open? }
+// Boxes are proportional to the weights in whole pixels (tree.lua's
+// arithmetic: the remainder goes to the last child). A nested container is a
+// box titled with its kind and ratio, its children inset by `pad` (and
+// `title` more at the top). An accordion shows a `tab` row (`tab` high) and
+// the box of its open member: the selected one, else the first.
+// opts: { pad, title, tab, selected, titles }.
+function rects(root, area, opts) {
+  opts = opts || {}
+  var pad = opts.pad || 0
+  var titleHeight = opts.title || 0
+  var tabHeight = opts.tab || 0
+  var out = []
+
+  function leaf(node, box, depth, cell) {
+    var key = keyOf(node)
+    var label = node.kind === "overflow" ? "* overflow" : node.slot
+    if (cell !== undefined && cell !== 1) label += " ×" + cell
+    var r = { kind: node.kind, key: key, x: box.x, y: box.y, w: box.w, h: box.h, depth: depth, label: label,
+      selected: key === opts.selected }
+    if (opts.titles && opts.titles[key]) r.title = opts.titles[key]
+    out.push(r)
+  }
+
+  function inside(node, box, depth) {
+    if (node.kind === "a") {
+      var keys = leaves(node)
+      var open = keys.indexOf(opts.selected) >= 0 ? opts.selected : keys[0]
+      var tab = Math.min(tabHeight, box.h)
+      var offset = 0
+      keys.forEach(function(key, i) {
+        var w = i === keys.length - 1 ? box.w - offset : Math.floor(box.w / keys.length)
+        out.push({ kind: "tab", key: key, x: box.x + offset, y: box.y, w: w, h: tab, depth: depth, label: key,
+          selected: key === opts.selected, open: key === open })
+        offset += w
+      })
+      var member = node.children[keys.indexOf(open)]
+      leaf(member, { x: box.x, y: box.y + tab, w: box.w, h: box.h - tab }, depth)
+      return
+    }
+    var total = node.children.reduce(function(s, c) { return s + c.weight }, 0)
+    var cells = integers(node.children.map(function(c) { return c.weight }))
+    var extent = node.kind === "h" ? box.w : box.h
+    var offset2 = 0
+    node.children.forEach(function(child, i) {
+      var size = i === node.children.length - 1 ? extent - offset2 : Math.floor(extent * child.weight / total)
+      var childBox = node.kind === "h"
+        ? { x: box.x + offset2, y: box.y, w: size, h: box.h }
+        : { x: box.x, y: box.y + offset2, w: box.w, h: size }
+      offset2 += size
+      place(child, childBox, depth, cells[i])
+    })
+  }
+
+  function place(node, box, depth, cell) {
+    if (isLeaf(node)) {
+      leaf(node, box, depth, cell)
+      return
+    }
+    out.push({ kind: node.kind, x: box.x, y: box.y, w: box.w, h: box.h, depth: depth,
+      label: containerLabel(node) + (cell !== undefined && cell !== 1 ? "  ×" + cell : "") })
+    inside(node, { x: box.x + pad, y: box.y + pad + titleHeight, w: Math.max(0, box.w - 2 * pad),
+      h: Math.max(0, box.h - 2 * pad - titleHeight) }, depth + 1)
+  }
+
+  if (isLeaf(root)) leaf(root, area, 0)
+  else inside(root, area, 1)
+  return out
+}
+
+function hasTiles(node) {
+  if (isLeaf(node)) return false
+  if (node.kind !== "a") return true
+  return node.children.some(hasTiles)
+}
+
+// The ratio prompt for a tree (aerolayout's [r]): { text } or { error } when
+// there is nothing a ratio could divide.
+function ratioPrompt(root) {
+  if (isLeaf(root)) return { error: "Nothing to divide — this layout is one window." }
+  var current = ratio(root)
+  if (!hasTiles(root)) {
+    return { error: "Ratios don't apply to an accordion — its panes each get the whole container (" + current
+      + "), and this tree is accordion all the way down. Press t for tiles first." }
+  }
+  var hints = ["current " + current]
+  if (current.indexOf(STAR) >= 0) hints.push("* = an accordion pane, leave it")
+  hints.push("empty clears all")
+  return { text: "Ratios for the whole tree (" + hints.join("; ") + ") [Enter] set  [Esc] cancel: " }
+}
+
+// The leaves in the order the tree holds them, once it nests (a flat tree's
+// picture already is the order): "1.main → 2.right → 3.overflow".
+function order(root) {
+  if (isLeaf(root) || !root.children.some(function(c) { return !isLeaf(c) })) return ""
+  return leaves(root).map(function(key, i) {
+    return (i + 1) + "." + (key === OVERFLOW ? "overflow" : key)
+  }).join(" → ")
+}
+
+// One key per choice, as the Assignment view's prompt: the first letter,
+// else the first digit not taken.
+function keyedOptions(names) {
+  var used = {}
+  return names.map(function(name) {
+    var key = String(name).charAt(0).toLowerCase()
+    if (used[key] || key === "") {
+      key = ""
+      for (var n = 1; n <= 9; n++) {
+        if (!used[String(n)]) {
+          key = String(n)
+          break
+        }
+      }
+    }
+    if (key !== "") used[key] = true
+    return { key: key, name: String(name) }
+  })
+}
+
+function keyedPrompt(question, options) {
+  var labels = options.map(function(o) {
+    if (o.key === "") return o.name
+    if (o.key === o.name.charAt(0).toLowerCase() && o.name.length > 1) return "(" + o.key + ")" + o.name.slice(1)
+    if (o.key === o.name) return "(" + o.key + ")"
+    return "(" + o.key + ") " + o.name
+  })
+  return question + ": " + labels.join(", ") + "? [Esc] cancel"
+}
