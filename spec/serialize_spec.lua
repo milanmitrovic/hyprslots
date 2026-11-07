@@ -27,6 +27,14 @@ describe("serialize.tree", function()
     end
   end)
 
+  it("writes an accordion as a[...] and the overflow leaf as *, as tree.parse reads them", function()
+    for _, text in ipairs({ "a[x, y]", "h[a[x, y, z]:2, v[d, *]]", "v[*:3, a[p, q]]" }) do
+      local node = assert(tree.parse(text))
+      assert.are.equal(text, serialize.tree(node))
+      assert.are.same(node, assert(tree.parse(serialize.tree(node))))
+    end
+  end)
+
   it("writes any other split kind the same way", function()
     local node = { split = "a", weight = 1, children = { { slot = "x", weight = 1 }, { slot = "y", weight = 1 } } }
     assert.are.equal("a[x, y]", serialize.tree(node))

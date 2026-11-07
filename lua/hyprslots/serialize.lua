@@ -15,8 +15,9 @@
 local M = {}
 
 -- The text of a parsed tree: weights of 1 are left out, children are joined
--- with ", ". Any split kind (h, v, or a container kind such as `a`) is
--- written as kind[children]; a leaf without a slot is the overflow leaf `*`.
+-- with ", ". A split is written as h[...] or v[...], an accordion
+-- ({ accordion = true }, tree.lua) as a[...], and a leaf without a slot is
+-- the overflow leaf `*`. Any other split kind is written as kind[children].
 function M.tree(node)
   if node.slot then
     return node.slot
@@ -32,7 +33,8 @@ function M.tree(node)
     end
     parts[i] = text
   end
-  return node.split .. "[" .. table.concat(parts, ", ") .. "]"
+  local kind = node.accordion and "a" or node.split
+  return kind .. "[" .. table.concat(parts, ", ") .. "]"
 end
 
 M.HEADER = [[
