@@ -214,6 +214,68 @@ the running engine only through Hyprland:
   shell sees as a `custom>>` event on socket2 and answers with a fresh
   `state()` read.
 
+### Api contract (slice 6)
+
+`hyprslots.api.call(name, json)` returns a JSON object string, never `""`:
+`{"ok": true, ...}` or `{"ok": false, "error": "..."}`. Every change bumps
+`seq` and emits `hl.dsp.event("hyprslots changed <seq>")` (socket2:
+`custom>>hyprslots changed <seq>`): api edits, save, reload, window open /
+destroy, and an arrangement change on hotplug. `seq` restarts at 0 when
+Hyprland reloads its config (Lua state is discarded), so the editor treats
+any event as "re-read state", not as an ordering.
+
+| Call | Arguments | Reply (besides `ok`) |
+|---|---|---|
+| `state` | — | see below |
+| `desk` | `desk` | `desk` |
+| `set_tree` | `arrangement?` (default active), `desk`, `role`, `tree` | `arrangement, desk, role, tree, ratio, seq` |
+| `set_ratio` | `arrangement?`, `desk`, `role`, `ratio` (grammar below) | same as `set_tree` |
+| `record` | `workspace?` (default focused), `apply?` | `arrangement, desk, role, workspace, tree, ratio, missing[], applied, seq` |
+| `save` | — | `path, seq` |
+| `reload` | — | `arrangement, seq` |
+
+`state`: `seq`, `dirty` (unsaved edits), `arrangement` (active name),
+`screens` (role -> connector), `workspaces` (id -> desk, role, monitor),
+`assignments` (address -> desk, slot), `arrangements` (name -> `screens`,
+`roles[]`, `desks` ("3" -> role -> `{tree, ratio, slots[]}`), `active`,
+`read_only`), `slots` ("3" -> slot -> spec text), `desks[]`, `pinned[]`,
+`windows[]` (`address, class, title, workspace, floating, box{x,y,w,h},
+desk?, slot?`), `config` (`dir, data_file, editable, read_only[]`),
+`refused`, `config_error`, `log_seq`.
+
+Edits never write files: they re-run `config.lua` over the edited
+`slots.lua` data in memory and take effect only when the result validates
+(the windows are re-laid out at once). `save` writes `slots.lua` through
+`serialize` (temp file + rename); `reload` / `hyprslots.reload_config()`
+re-reads both files in place, dropping unsaved edits.
+
+**Read-only fields.** A config field is the editor's only when `config.lua`
+passes the data file's own table through (identity check, at the top level
+and one level down). Anything built in code is listed in
+`config.read_only` (`"pinned"`, `"arrangements.work"`, `"slots.4"`) and
+refused by the edit calls.
+
+**Ratio grammar** (`ratio.lua`, from aerolayout): `ratio := term (':'
+term)*`, `term := (number | '*') ('[' ratio ']')?`. `2[1:2]:1` sets a
+split and its first cell's split in one string; spaces separate like `:`;
+decimals become the smallest integer ratio (1.5:1 -> 3:2); `*` is an
+accordion pane (accordion cells take `*` or `1` and write nothing; a `*`
+among tiles is refused). The `ratio` in `state` is always in this grammar
+and can be sent back unchanged. This `*` is the ratio grammar's own and is
+unrelated to the overflow leaf `*` of tree text.
+
+**Record** (`record.lua`, from aerolayout's record.py): guillotine cuts
+over the windows' boxes (3 px epsilon), weights snapped to integers (8%
+snap, else a small integer multiple within 2%, else hundredths). A tree
+holding an accordion cannot be recorded (its windows overlap), as in
+aerolayout. A record that would drop a slot with no window, or the
+overflow leaf, is returned with `missing` and not applied unless
+`apply: true`.
+
+**Relayout.** After an edit the engine sends a zero `hl.dsp.window.resize`
+to one tiled window per desk workspace: a lua layout recalculates on any
+resize request.
+
 ## 10. Modules
 
 Under `lua/hyprslots/`:
