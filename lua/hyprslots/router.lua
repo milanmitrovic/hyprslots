@@ -4,7 +4,8 @@
 -- when it opened on another workspace, moved to the slot's: desk N on the
 -- screen whose tree holds the slot in the active arrangement. Moves happen
 -- here, in the event callback, never in recalculate. window.destroy frees the
--- slot. Title-based re-routing arrives with the full spec grammar (slice 3).
+-- slot. A target workspace that does not exist yet is created where Hyprland
+-- puts it (the focused monitor) and then moved to its screen. Title-based re-routing arrives with the full spec grammar (slice 3).
 
 local adapter = require("hyprslots.hl_adapter")
 
@@ -36,7 +37,22 @@ function M.window_opened(engine, hl_window)
 
   engine.log:info("open %s: slot %s, workspace %s -> %d", window.class, assignment.slot,
     tostring(window.workspace_id), target)
-  adapter.move_window(window.address, target)
+  M.place(engine, window.address, target)
+end
+
+-- Move a window to a desk workspace and make sure that workspace sits on its
+-- screen. Hyprland creates a missing workspace on the FOCUSED monitor, and
+-- there is no way to create one elsewhere without showing it, so it is moved
+-- over afterwards; it is hidden, so neither screen's view nor focus changes.
+function M.place(engine, address, target)
+  adapter.move_window(address, target)
+  local desk = engine.workspaces[target]
+  local monitor = desk and desk.monitor
+  local actual = adapter.workspace_monitor(target)
+  if monitor and actual and actual ~= monitor then
+    engine.log:info("workspace %d: %s -> %s", target, actual, monitor)
+    adapter.move_workspace(target, monitor)
+  end
 end
 
 function M.window_destroyed(engine, hl_window)

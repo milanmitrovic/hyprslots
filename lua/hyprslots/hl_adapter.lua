@@ -114,6 +114,19 @@ function M.focus_desk(desk, monitor_name)
   return hl().dispatch(M.omarchy_workspaces().focus(desk, monitor_name))
 end
 
+-- The connector of the monitor a workspace is on, or nil when it does not
+-- exist.
+function M.workspace_monitor(workspace_id)
+  local workspace = hl().get_workspace(workspace_id)
+  local monitor = workspace and workspace.monitor
+  return monitor and monitor.name
+end
+
+-- Put a workspace on a monitor. A hidden workspace stays hidden there.
+function M.move_workspace(workspace_id, monitor_name)
+  return hl().dispatch(hl().dsp.workspace.move({ workspace = tostring(workspace_id), monitor = monitor_name }))
+end
+
 -- Focus a monitor (by connector name).
 function M.focus_monitor(monitor_name)
   return hl().dispatch(hl().dsp.focus({ monitor = monitor_name }))
