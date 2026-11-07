@@ -130,4 +130,45 @@ function M.message(engine, ctx, msg)
   return nil, "unknown layout message '" .. tostring(msg) .. "' (nudge <l|r|u|d> <fraction|Npx>, resize <dx> <dy>, reset)"
 end
 
+-- Omarchy's keyboard resize binds (default/hypr/bindings/tiling.lua):
+-- keys, description, dx, dy. Kept in step with Omarchy by hand.
+M.OMARCHY_KEYS = {
+  { "SUPER + code:20", "Expand window left", -100, 0 },
+  { "SUPER + code:21", "Shrink window left", 100, 0 },
+  { "SUPER + SHIFT + code:20", "Shrink window up", 0, -100 },
+  { "SUPER + SHIFT + code:21", "Expand window down", 0, 100 },
+  { "SUPER + ALT + code:20", "Expand window left a little", -25, 0 },
+  { "SUPER + ALT + code:21", "Shrink window left a little", 25, 0 },
+  { "SUPER + SHIFT + ALT + code:20", "Shrink window up a little", 0, -25 },
+  { "SUPER + SHIFT + ALT + code:21", "Expand window down a little", 0, 25 },
+  { "SUPER + CTRL + code:20", "Expand window left a lot", -300, 0 },
+  { "SUPER + CTRL + code:21", "Shrink window left a lot", 300, 0 },
+  { "SUPER + CTRL + SHIFT + code:20", "Shrink window up a lot", 0, -300 },
+  { "SUPER + CTRL + SHIFT + code:21", "Expand window down a lot", 0, 300 },
+}
+
+local SLOTS_LAYOUT = "lua:slots"
+
+-- The action for one resize key: a "resize dx dy" layout message on a
+-- lua:slots workspace (whatever its desk), Omarchy's own relative window
+-- resize everywhere else.
+function M.key_action(dx, dy)
+  local action = function()
+    if adapter.active_layout() == SLOTS_LAYOUT then
+      adapter.layout_msg(string.format("resize %d %d", dx, dy))
+    else
+      adapter.resize_window(dx, dy)
+    end
+  end
+  return adapter.bind_expression(action, string.format("hyprslots.resize_key(%d, %d)", dx, dy))
+end
+
+-- Rebind Omarchy's resize keys to key_action. For the cutover's bindings,
+-- after Omarchy's own; setup() does not call it.
+function M.bind_keys()
+  for _, key in ipairs(M.OMARCHY_KEYS) do
+    adapter.rebind(key[1], key[2], M.key_action(key[3], key[4]))
+  end
+end
+
 return M

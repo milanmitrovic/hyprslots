@@ -44,11 +44,12 @@ local function fresh_module()
 end
 
 describe("keyboard resize", function()
-  local hl, dir, hyprslots, windows
+  local hl, o, dir, hyprslots, windows
 
   before_each(function()
     hl = hl_stub.new({ monitors = { hl_stub.monitor("HEADLESS-2", { focused = true }) } })
-    _G.hl, _G.o = hl, hl_stub.omarchy({ ["HEADLESS-2"] = 0 })
+    o = hl_stub.omarchy({ ["HEADLESS-2"] = 0 })
+    _G.hl, _G.o = hl, o
     windows = {
       hl_stub.window(1, "t-a", { workspace = 3 }),
       hl_stub.window(2, "t-b", { workspace = 3 }),
@@ -168,6 +169,83 @@ describe("keyboard resize", function()
       assert.matches("active window exploded", hl.layouts.slots.layout_msg(ctx(), "nudge r 0.1"))
       assert.matches("active window exploded", hyprslots.dump())
       unchanged()
+    end)
+  end)
+  describe("Omarchy's resize keys", function()
+    local OMARCHY_KEYS = {
+      ["SUPER + code:20"] = { -100, 0 },
+      ["SUPER + code:21"] = { 100, 0 },
+      ["SUPER + SHIFT + code:20"] = { 0, -100 },
+      ["SUPER + SHIFT + code:21"] = { 0, 100 },
+      ["SUPER + ALT + code:20"] = { -25, 0 },
+      ["SUPER + ALT + code:21"] = { 25, 0 },
+      ["SUPER + SHIFT + ALT + code:20"] = { 0, -25 },
+      ["SUPER + SHIFT + ALT + code:21"] = { 0, 25 },
+      ["SUPER + CTRL + code:20"] = { -300, 0 },
+      ["SUPER + CTRL + code:21"] = { 300, 0 },
+      ["SUPER + CTRL + SHIFT + code:20"] = { 0, -300 },
+      ["SUPER + CTRL + SHIFT + code:21"] = { 0, 300 },
+    }
+
+    before_each(function()
+      -- Omarchy's o.bind / o.rebind (default/hypr/helpers.lua), over the stub.
+      function o.bind(keys, description, dispatcher, options)
+        local opts = options or {}
+        opts.description = description
+        hl.bind(keys, dispatcher, opts)
+      end
+      function o.rebind(keys, description, dispatcher, options)
+        hl.unbind(keys)
+        o.bind(keys, description, dispatcher, options)
+      end
+    end)
+
+    local function press(keys)
+      hl.dispatched = {}
+      hl.binds[keys].dispatcher()
+    end
+
+    it("rebinds all twelve of them, keeping their descriptions' keys", function()
+      hyprslots.bind_resize_keys()
+      local rebound = {}
+      for keys in pairs(OMARCHY_KEYS) do
+        assert.is_function(hl.binds[keys] and hl.binds[keys].dispatcher, keys)
+        assert.is_string(hl.binds[keys].opts.description, keys)
+        rebound[#rebound + 1] = keys
+      end
+      table.sort(rebound)
+      table.sort(hl.unbound)
+      assert.are.same(rebound, hl.unbound)
+    end)
+
+    it("sends a resize layout message on a lua:slots workspace", function()
+      hyprslots.bind_resize_keys()
+      hl.active_workspace = { id = 3, tiled_layout = "lua:slots" }
+      for keys, delta in pairs(OMARCHY_KEYS) do
+        press(keys)
+        assert.are.same({ string.format("resize %d %d", delta[1], delta[2]) }, hl.dispatched_of("layout"), keys)
+        assert.are.same({}, hl.dispatched_of("window.resize"), keys)
+      end
+    end)
+
+    it("keeps Omarchy's own resize everywhere else", function()
+      hyprslots.bind_resize_keys()
+      hl.active_workspace = { id = 1, tiled_layout = "dwindle" }
+      for keys, delta in pairs(OMARCHY_KEYS) do
+        press(keys)
+        assert.are.same({ { x = delta[1], y = delta[2], relative = true } }, hl.dispatched_of("window.resize"), keys)
+        assert.are.same({}, hl.dispatched_of("layout"), keys)
+      end
+    end)
+
+    it("lets Omarchy's keybindings menu replay a rebound key", function()
+      hyprslots.bind_resize_keys()
+      local action = hl.binds["SUPER + code:21"].dispatcher
+      assert.are.equal("hyprslots.resize_key(100, 0)", o.bind_expressions[action])
+    end)
+
+    it("is not done by setup", function()
+      assert.are.same({}, hl.binds)
     end)
   end)
 end)
