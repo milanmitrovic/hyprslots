@@ -84,3 +84,30 @@ describe("assign.claim", function()
     assert.is_nil(assign.claim(cfg, current, win(2, "t-left")))
   end)
 end)
+
+describe("assign precedence with title specs", function()
+  local titled = cfg_with({
+    [2] = { term = "foot" },
+    [3] = { main = "foot/deltaf", notes = "foot/notes" },
+  })
+
+  local function titled_win(id, title)
+    return { address = "0x" .. id, class = "foot", title = title, stable_id = id }
+  end
+
+  it("gives a window matching several specs the first desk's slot, in config order", function()
+    assert.are.same({ desk = 2, slot = "term" }, assign.claim(titled, {}, titled_win(1, "deltaf | zellij")))
+  end)
+
+  it("falls through to the next desk's matching spec when the first is taken", function()
+    local current = { ["0x9"] = { desk = 2, slot = "term" } }
+    assert.are.same({ desk = 3, slot = "main" }, assign.claim(titled, current, titled_win(1, "deltaf | zellij")))
+    assert.are.same({ desk = 3, slot = "notes" }, assign.claim(titled, current, titled_win(2, "notes | x")))
+    assert.is_nil(assign.claim(titled, current, titled_win(3, "other | x")))
+  end)
+
+  it("keeps an assignment when the title changes (claim never re-matches)", function()
+    local current = { ["0x1"] = { desk = 3, slot = "main" } }
+    assert.are.same({ desk = 3, slot = "main" }, assign.claim(titled, current, titled_win(1, "notes | x")))
+  end)
+end)
