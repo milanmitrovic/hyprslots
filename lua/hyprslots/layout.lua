@@ -5,8 +5,12 @@
 -- its integer weights, and place each target in its window's slot. It never
 -- dispatches. Targets with no slot in the branch stack equally in its
 -- overflow leaf (`*`), or in a column appended at 3 : 1 when it has none; an
--- empty overflow leaf closes up. Any error is caught, logged, and the targets
--- are tiled in plain columns instead, so a bug never leaves windows unplaced.
+-- empty overflow leaf closes up. An accordion's group is one target and gets
+-- the accordion's box; a layout pass that finds an accordion split over
+-- several targets, or a stranger in its group, asks groups.lua for a deferred
+-- regroup (it never dispatches itself). Any error is caught, logged, and the
+-- targets are tiled in plain columns instead, so a bug never leaves windows
+-- unplaced.
 
 local tree = require("hyprslots.tree")
 
@@ -47,6 +51,33 @@ local function rows(area, n)
   return tree.boxes({ split = "v", weight = 1, children = children }, area)
 end
 
+-- The slot a target's window stands for. A group is one target showing its
+-- current window; it stands for the first accordion member among its windows,
+-- so a group showing a stranger still fills the accordion's box.
+local function target_slot(window, slot_in_branch, accordion_of)
+  local group = window.group
+  if group then
+    for _, member in ipairs(group.members or {}) do
+      local slot = slot_in_branch(member)
+      if slot and accordion_of[slot] then
+        return slot
+      end
+    end
+  end
+  return slot_in_branch(window)
+end
+
+-- Whether a target's window (or group) holds only members of `accordion`.
+local function group_is_accordion(window, slot_in_branch, accordion_of, accordion)
+  for _, member in ipairs(window.group and window.group.members or {}) do
+    local slot = slot_in_branch(member)
+    if not slot or accordion_of[slot] ~= accordion then
+      return false
+    end
+  end
+  return true
+end
+
 local function place_slots(engine, ctx)
   if #ctx.targets == 0 then
     return
@@ -63,15 +94,42 @@ local function place_slots(engine, ctx)
     in_branch[slot] = true
   end
 
+  local accordion_of = {}
+  for i, members in ipairs(tree.accordions(desk.branch)) do
+    for _, slot in ipairs(members) do
+      accordion_of[slot] = i
+    end
+  end
+
+  -- A window's slot when it is in this branch, else nil.
+  local function slot_in_branch(window)
+    local assignment = engine:slot_of(window)
+    if assignment and assignment.desk == desk.desk and in_branch[assignment.slot] then
+      return assignment.slot
+    end
+    return nil
+  end
+
   local slotted, overflow, present = {}, {}, {}
+  local targets_of_accordion, regroup = {}, false
   for _, target in ipairs(ctx.targets) do
-    local assignment = target.window and engine:slot_of(target.window)
-    if assignment and assignment.desk == desk.desk and in_branch[assignment.slot] and not present[assignment.slot] then
-      slotted[assignment.slot] = target
-      present[assignment.slot] = true
+    local slot = target.window and target_slot(target.window, slot_in_branch, accordion_of)
+    local accordion = slot and accordion_of[slot]
+    if accordion then
+      targets_of_accordion[accordion] = (targets_of_accordion[accordion] or 0) + 1
+      if targets_of_accordion[accordion] > 1 or not group_is_accordion(target.window, slot_in_branch, accordion_of, accordion) then
+        regroup = true
+      end
+    end
+    if slot and not present[slot] then
+      slotted[slot] = target
+      present[slot] = true
     else
       overflow[#overflow + 1] = target
     end
+  end
+  if regroup and engine.regroup then
+    engine.regroup("layout")
   end
 
   if next(slotted) == nil then

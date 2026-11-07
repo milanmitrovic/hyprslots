@@ -14,6 +14,7 @@ local arrangement = require("hyprslots.arrangement")
 local assign = require("hyprslots.assign")
 local config = require("hyprslots.config")
 local desks = require("hyprslots.desks")
+local groups = require("hyprslots.groups")
 local layout = require("hyprslots.layout")
 local log = require("hyprslots.log")
 local router = require("hyprslots.router")
@@ -239,6 +240,9 @@ local function start(self, opts)
 
   self:reselect()
   self:assign_all()
+
+  -- Accordions: group moves run deferred, after the events above.
+  groups.attach(self)
 end
 
 -- Set up hyprslots. opts.config_dir overrides $XDG_CONFIG_HOME/hyprslots.

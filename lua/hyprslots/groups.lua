@@ -22,7 +22,19 @@
 -- out. A lone member is left as it is, and so is a group of windows with no
 -- accordion slot.
 
+local adapter = require("hyprslots.hl_adapter")
+local tree = require("hyprslots.tree")
+
 local M = {}
+
+-- Reconcile passes in a row, asked for by layout passes alone, that still
+-- found moves to make before hyprslots stops asking (Hyprland refusing a
+-- move must not become a loop). Any window event starts the count again.
+local LAYOUT_RETRIES = 3
+
+-- Deferral for the reconcile pass: after the event that asked for it, and
+-- after the 1 ms arrangement re-selection a monitor event schedules.
+local DEFER_MS = 20
 
 local function group_key(group)
   return table.concat(group, ",")
@@ -111,6 +123,112 @@ function M.plan(accordions, windows)
   end
 
   return ops
+end
+
+-- The tiled windows on desk workspace `id`, as plan() wants them, oldest first.
+local function workspace_windows(engine, id, desk, all)
+  local in_branch = {}
+  for _, slot in ipairs(tree.slots(desk.branch)) do
+    in_branch[slot] = true
+  end
+  local out = {}
+  for _, window in ipairs(all) do
+    if window.workspace_id == id and not window.floating then
+      local assignment = engine.assignments[window.address]
+      local slot = assignment and assignment.desk == desk.desk and in_branch[assignment.slot] and assignment.slot or nil
+      out[#out + 1] = {
+        address = window.address,
+        slot = slot,
+        group = window.group,
+        stable_id = window.stable_id or 0,
+      }
+    end
+  end
+  table.sort(out, function(a, b)
+    if a.stable_id ~= b.stable_id then
+      return a.stable_id < b.stable_id
+    end
+    return a.address < b.address
+  end)
+  return out
+end
+
+local RUN = {
+  out = function(op) adapter.group_leave(op.window) end,
+  create = function(op) adapter.group_create(op.window) end,
+  add = function(op) adapter.group_add(op.window, op.into) end,
+}
+
+-- Plan and run the group moves for every desk workspace whose tree has an
+-- accordion. Returns the number of moves made.
+function M.reconcile(engine)
+  if engine.refused or not engine.cfg then
+    return 0
+  end
+  local ids = {}
+  for id, desk in pairs(engine.workspaces) do
+    if #tree.accordions(desk.branch) > 0 then
+      ids[#ids + 1] = id
+    end
+  end
+  if #ids == 0 then
+    return 0
+  end
+  table.sort(ids)
+
+  local all = adapter.group_windows()
+  local moves = 0
+  for _, id in ipairs(ids) do
+    local desk = engine.workspaces[id]
+    for _, op in ipairs(M.plan(tree.accordions(desk.branch), workspace_windows(engine, id, desk, all))) do
+      engine.log:info("accordion on workspace %d: %s %s%s", id, op.op, op.window,
+        op.into and (" into " .. op.into) or "")
+      engine:guard("accordion " .. op.op, RUN[op.op], op)
+      moves = moves + 1
+    end
+  end
+  return moves
+end
+
+-- Give the engine `engine.regroup(reason)`, which schedules one deferred
+-- reconcile pass (reason "layout" from recalculate, anything else from an
+-- event), and ask for a pass on every event that can change membership.
+function M.attach(engine)
+  local pending, streak, gave_up = false, 0, false
+
+  local function run()
+    pending = false
+    local moves = 0
+    engine:guard("accordion groups", function()
+      moves = M.reconcile(engine)
+    end)
+    streak = moves > 0 and streak + 1 or 0
+  end
+
+  function engine.regroup(reason)
+    if reason ~= "layout" then
+      streak, gave_up = 0, false
+    elseif streak >= LAYOUT_RETRIES then
+      if not gave_up then
+        gave_up = true
+        engine.log:error("accordion groups still not formed after %d passes; waiting for a window event", streak)
+      end
+      return
+    end
+    if not pending then
+      pending = true
+      adapter.defer(run, DEFER_MS)
+    end
+  end
+
+  for _, event in ipairs({
+    "window.open", "window.destroy", "window.move_to_workspace",
+    "hyprland.start", "config.reloaded", "monitor.added", "monitor.removed",
+  }) do
+    adapter.on(event, function()
+      engine.regroup("event")
+    end)
+  end
 end
 
 return M
