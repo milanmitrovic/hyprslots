@@ -70,10 +70,11 @@ function M.stub(names, blocks)
   return hl, o
 end
 
--- setup() hyprslots with slots.lua = `slots` (and the standard config.lua).
-function M.setup(slots)
+-- setup() hyprslots with slots.lua = `slots` and config.lua = `config`
+-- (default: the standard M.CONFIG).
+function M.setup(slots, config)
   local hyprslots = fresh_module()
-  hyprslots.setup({ config_dir = config_dir({ ["config.lua"] = M.CONFIG, ["slots.lua"] = slots }) })
+  hyprslots.setup({ config_dir = config_dir({ ["config.lua"] = config or M.CONFIG, ["slots.lua"] = slots }) })
   return hyprslots
 end
 
