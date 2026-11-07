@@ -286,8 +286,9 @@ function Engine:relayout()
   end
 end
 
--- Run a newly loaded config: rules, arrangement, assignments, re-routing
--- (an edit may have put a slot on another screen), layout, event. `data` is
+-- Run a newly loaded config: workspace rules, arrangement, assignments,
+-- window rules and re-routing (an edit may have put a slot on another
+-- screen), layout, event. `data` is
 -- the slots.lua data it came from; `dirty` whether that differs from the
 -- file.
 function Engine:apply_config(cfg, data, dirty)
@@ -298,6 +299,7 @@ function Engine:apply_config(cfg, data, dirty)
   workspace_rules(cfg, self.ruled)
   self:reselect()
   self:assign_all()
+  window_rules.sync(self)
   router.reroute_all(self)
   self:relayout()
   self:changed()

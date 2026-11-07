@@ -77,6 +77,27 @@ describe("generated window rules", function()
       assert.are.equal("3 silent", rule("hyprslots-t-main").workspace)
     end)
 
+    it("follows a slot that an editor edit moved to the other screen", function()
+      local function call(name, args)
+        local reply = engine.call(hyprslots, name, require("hyprslots.dkjson").encode(args))
+        assert.is_true(reply.ok, reply.error)
+      end
+      call("set_tree", { arrangement = "dual", desk = 3, role = "big", tree = "main" })
+      call("set_tree", { arrangement = "dual", desk = 3, role = "side", tree = "h[left, right]" })
+      assert.are.equal("13 silent", rule("hyprslots-t-right").workspace)
+    end)
+
+    it("follows slots that a reload moved", function()
+      local slots = engine.TWO_SCREENS
+        :gsub('side = "left", big = "h%[main:2, right:1%]"', 'side = "right", big = "h[main:2, left:1]"')
+      local file = assert(io.open(engine.state(hyprslots).config.data_file, "w"))
+      file:write(slots)
+      file:close()
+      assert.is_true(engine.call(hyprslots, "reload", "{}").ok)
+      assert.are.equal("3 silent", rule("hyprslots-t-left").workspace)
+      assert.are.equal("13 silent", rule("hyprslots-t-right").workspace)
+    end)
+
     it("does not register a rule again when nothing about it changed", function()
       local count = #hl.window_rules
       assert.are.equal(3, count)
