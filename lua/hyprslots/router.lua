@@ -55,6 +55,24 @@ function M.place(engine, address, target)
   end
 end
 
+-- Move every assigned window to its slot's workspace under the active
+-- arrangement (after hotplug). Windows with no slot, or whose slot no screen
+-- of the arrangement holds, stay where they are.
+function M.reroute_all(engine)
+  if engine.refused or not engine.active then
+    return
+  end
+  for _, window in ipairs(adapter.windows()) do
+    local assignment = window.address and engine.assignments[window.address]
+    local target = assignment and engine:workspace_for(assignment)
+    if target and window.workspace_id ~= target then
+      engine.log:info("re-route %s: slot %s, workspace %s -> %d", tostring(window.class), assignment.slot,
+        tostring(window.workspace_id), target)
+      M.place(engine, window.address, target)
+    end
+  end
+end
+
 function M.window_destroyed(engine, hl_window)
   local address = hl_window and hl_window.address
   if address and engine.assignments[address] then

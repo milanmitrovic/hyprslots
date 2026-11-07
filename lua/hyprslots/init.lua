@@ -14,6 +14,7 @@ local arrangement = require("hyprslots.arrangement")
 local assign = require("hyprslots.assign")
 local config = require("hyprslots.config")
 local desks = require("hyprslots.desks")
+local hotplug = require("hyprslots.hotplug")
 local layout = require("hyprslots.layout")
 local log = require("hyprslots.log")
 local router = require("hyprslots.router")
@@ -221,14 +222,7 @@ local function start(self, opts)
   adapter.on("hyprland.start", on_start)
   adapter.on("config.reloaded", on_start)
 
-  -- Hyprland reports monitor changes from inside them; re-select afterwards.
-  local function on_monitors()
-    adapter.defer(function()
-      self:guard("arrangement selection", self.reselect, self)
-    end)
-  end
-  adapter.on("monitor.added", on_monitors)
-  adapter.on("monitor.removed", on_monitors)
+  hotplug.attach(self)
 
   adapter.on("window.open", function(window)
     self:guard("window.open", router.window_opened, self, window)
