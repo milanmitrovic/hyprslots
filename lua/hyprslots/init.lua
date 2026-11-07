@@ -19,6 +19,7 @@ local layout = require("hyprslots.layout")
 local log = require("hyprslots.log")
 local router = require("hyprslots.router")
 local tree = require("hyprslots.tree")
+local window_rules = require("hyprslots.window_rules")
 
 local M = {}
 
@@ -217,6 +218,7 @@ local function start(self, opts)
       self:check_omarchy()
       self:reselect()
       self:assign_all()
+      window_rules.sync(self)
     end)
   end
   adapter.on("hyprland.start", on_start)
@@ -236,6 +238,7 @@ local function start(self, opts)
 
   self:reselect()
   self:assign_all()
+  window_rules.sync(self)
 end
 
 -- Set up hyprslots. opts.config_dir overrides $XDG_CONFIG_HOME/hyprslots.

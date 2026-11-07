@@ -14,6 +14,7 @@
 -- because its title changed: assignment is sticky.
 
 local adapter = require("hyprslots.hl_adapter")
+local window_rules = require("hyprslots.window_rules")
 
 local M = {}
 
@@ -28,7 +29,11 @@ end
 
 -- Assign a plain window to a slot and move it to the slot's workspace.
 function M.route(engine, window)
+  local had = engine.assignments[window.address]
   local assignment = engine:assign(window)
+  if assignment and not had then
+    window_rules.sync(engine)
+  end
   if not assignment then
     engine.log:info("open %s (%s): no slot", tostring(window.class), tostring(window.address))
     return
@@ -137,6 +142,7 @@ function M.window_destroyed(engine, hl_window)
     local assignment = engine.assignments[address]
     engine.assignments[address] = nil
     engine.log:info("destroy %s: slot %s on desk %d is free", address, assignment.slot, assignment.desk)
+    window_rules.sync(engine)
   end
 end
 

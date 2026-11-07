@@ -78,6 +78,11 @@ function M.workspace_layout(workspace_id, layout)
   return hl().workspace_rule({ workspace = tostring(workspace_id), layout = layout })
 end
 
+-- Register (or, under a name Hyprland already has, replace) a window rule.
+function M.window_rule(spec)
+  return hl().window_rule(spec)
+end
+
 -- Move a window to a workspace without following it.
 function M.move_window(address, workspace_id)
   return hl().dispatch(hl().dsp.window.move({

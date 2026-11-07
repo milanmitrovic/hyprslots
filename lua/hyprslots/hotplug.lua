@@ -16,12 +16,14 @@
 
 local adapter = require("hyprslots.hl_adapter")
 local router = require("hyprslots.router")
+local window_rules = require("hyprslots.window_rules")
 
 local M = {}
 
 function M.monitors_changed(engine, event)
   adapter.defer(function()
     engine:guard(event .. ": arrangement selection", engine.reselect, engine)
+    engine:guard(event .. ": window rules", window_rules.sync, engine)
     adapter.defer(function()
       engine:guard(event .. ": re-route", router.reroute_all, engine)
     end)
