@@ -338,4 +338,246 @@ function M.describe_slot(data, desk, slot, text)
   return out
 end
 
+local function arrangement_entry(data, name)
+  local entry = data and type(data.arrangements) == "table" and data.arrangements[name]
+  if type(entry) ~= "table" then
+    return nil, "no arrangement '" .. tostring(name) .. "' in slots.lua"
+  end
+  return entry
+end
+
+local function arrangement_name(name)
+  if type(name) ~= "string" or name:match("^%s*$") then
+    return nil, "an arrangement needs a name"
+  end
+  if name:find("/", 1, true) or name ~= name:match("^%s*(.-)%s*$") then
+    return nil, "an arrangement name has no '/' and no spaces around it, got '" .. name .. "'"
+  end
+  return name
+end
+
+-- A copy of a screens map (role -> selector), or nil and why it is no good.
+local function screens_copy(screens)
+  if type(screens) ~= "table" or next(screens) == nil then
+    return nil, "an arrangement must name at least one screen: { role = \"description|serial|connector\" }"
+  end
+  local out, by_selector = {}, {}
+  for role, selector in pairs(screens) do
+    local ok, err = check_name(role, "screen role")
+    if not ok then
+      return nil, err
+    end
+    if type(selector) ~= "string" or selector == "" then
+      return nil, string.format("screen role '%s' needs a selector (a monitor description, serial or connector)", role)
+    end
+    if by_selector[selector] then
+      local a, b = by_selector[selector], role
+      if b < a then
+        a, b = b, a
+      end
+      return nil, string.format("screen roles '%s' and '%s' both select '%s'", a, b, selector)
+    end
+    by_selector[selector] = role
+    out[role] = selector
+  end
+  return out
+end
+
+-- The data with a new arrangement for `screens` (role -> selector), with no
+-- trees yet (copy_trees fills them).
+function M.add_arrangement(data, name, screens)
+  local ok, err = arrangement_name(name)
+  if not ok then
+    return nil, err
+  end
+  if data and type(data.arrangements) == "table" and data.arrangements[name] ~= nil then
+    return nil, "an arrangement called '" .. name .. "' already exists"
+  end
+  local copied, screens_err = screens_copy(screens)
+  if not copied then
+    return nil, screens_err
+  end
+  local out = M.copy(data or {})
+  out.arrangements = type(out.arrangements) == "table" and out.arrangements or {}
+  out.arrangements[name] = { screens = copied, desks = {} }
+  return out
+end
+
+function M.rename_arrangement(data, old, new)
+  local entry, err = arrangement_entry(data, old)
+  if not entry then
+    return nil, err
+  end
+  local ok, name_err = arrangement_name(new)
+  if not ok then
+    return nil, name_err
+  end
+  if new == old then
+    return M.copy(data)
+  end
+  if data.arrangements[new] ~= nil then
+    return nil, "an arrangement called '" .. new .. "' already exists"
+  end
+  local out = M.copy(data)
+  out.arrangements[new], out.arrangements[old] = out.arrangements[old], nil
+  return out
+end
+
+function M.delete_arrangement(data, name)
+  local entry, err = arrangement_entry(data, name)
+  if not entry then
+    return nil, err
+  end
+  local out = M.copy(data)
+  out.arrangements[name] = nil
+  return out
+end
+
+-- The data with an arrangement's screens replaced by `screens` (role ->
+-- selector). `renames` (old role -> new role) carries trees to a renamed
+-- role; the trees of a role that is in neither go.
+function M.set_screens(data, name, screens, renames)
+  local entry, err = arrangement_entry(data, name)
+  if not entry then
+    return nil, err
+  end
+  local copied, screens_err = screens_copy(screens)
+  if not copied then
+    return nil, screens_err
+  end
+  renames = type(renames) == "table" and renames or {}
+  for old, new in pairs(renames) do
+    if copied[new] == nil then
+      return nil, string.format("cannot rename screen role '%s' to '%s': '%s' is not among the new screens",
+        tostring(old), tostring(new), tostring(new))
+    end
+  end
+  local out = M.copy(data)
+  local target = out.arrangements[name]
+  target.screens = copied
+  local desks = {}
+  for desk, branches in pairs(type(target.desks) == "table" and target.desks or {}) do
+    local kept = {}
+    if type(branches) == "table" then
+      for role, text in pairs(branches) do
+        local now = renames[role]
+        if now == nil and copied[role] ~= nil then
+          now = role
+        end
+        if now ~= nil then
+          kept[now] = text
+        end
+      end
+    end
+    if next(kept) ~= nil then
+      desks[desk] = kept
+    end
+  end
+  target.desks = desks
+  return out
+end
+
+-- The data with `pinned` (screen roles excluded from desk switching) set,
+-- sorted and once each.
+function M.set_pinned(data, roles)
+  if type(roles) ~= "table" then
+    return nil, "pinned must be a list of screen roles"
+  end
+  local seen, list = {}, {}
+  for _, role in ipairs(roles) do
+    local ok, err = check_name(role, "screen role")
+    if not ok then
+      return nil, err
+    end
+    if not seen[role] then
+      seen[role] = true
+      list[#list + 1] = role
+    end
+  end
+  table.sort(list)
+  local out = M.copy(data or {})
+  out.pinned = list
+  return out
+end
+
+local function sorted_strings(t)
+  local out = {}
+  for key in pairs(t) do
+    out[#out + 1] = key
+  end
+  table.sort(out, function(a, b)
+    if type(a) == type(b) then
+      return a < b
+    end
+    return type(a) == "number"
+  end)
+  return out
+end
+
+-- The data with arrangement `name`'s trees replaced by those of `source`.
+-- `roles` maps each of name's screen roles to the source role whose trees it
+-- takes (default: the role of the same name). With no source (the default),
+-- each desk's slots go side by side, by name, on name's first screen role.
+function M.copy_trees(data, name, source, roles)
+  local entry, err = arrangement_entry(data, name)
+  if not entry then
+    return nil, err
+  end
+  local target_roles = sorted_strings(type(entry.screens) == "table" and entry.screens or {})
+  local desks = {}
+  if source == nil then
+    local first = target_roles[1]
+    if first == nil then
+      return nil, "arrangement '" .. name .. "' has no screens"
+    end
+    for desk, slots in pairs(type(data.slots) == "table" and data.slots or {}) do
+      local names = type(slots) == "table" and sorted_strings(slots) or {}
+      if #names == 1 then
+        desks[desk] = { [first] = names[1] }
+      elseif #names > 1 then
+        desks[desk] = { [first] = "h[" .. table.concat(names, ", ") .. "]" }
+      end
+    end
+  else
+    local from, from_err = arrangement_entry(data, source)
+    if not from then
+      return nil, from_err
+    end
+    local map = {}
+    if type(roles) == "table" then
+      for role, source_role in pairs(roles) do
+        if entry.screens[role] == nil then
+          return nil, string.format("arrangement '%s' has no screen role '%s'", name, tostring(role))
+        end
+        if type(from.screens) ~= "table" or from.screens[source_role] == nil then
+          return nil, string.format("arrangement '%s' has no screen role '%s'", source, tostring(source_role))
+        end
+        map[role] = source_role
+      end
+    else
+      for _, role in ipairs(target_roles) do
+        if type(from.screens) == "table" and from.screens[role] ~= nil then
+          map[role] = role
+        end
+      end
+    end
+    for desk, branches in pairs(type(from.desks) == "table" and from.desks or {}) do
+      local copied = {}
+      for role, source_role in pairs(map) do
+        local text = type(branches) == "table" and branches[source_role]
+        if text ~= nil and text ~= false then
+          local node = tree.parse(text)
+          copied[role] = node and serialize.tree(node) or text
+        end
+      end
+      if next(copied) ~= nil then
+        desks[desk] = copied
+      end
+    end
+  end
+  local out = M.copy(data)
+  out.arrangements[name].desks = M.copy(desks)
+  return out
+end
+
 return M
