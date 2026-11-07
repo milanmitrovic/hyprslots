@@ -1,10 +1,18 @@
 -- Layout trees: `h[main:2, right:1]`, `v[top, h[a, b:3]:2]`, or a bare slot.
 --
 -- Inner nodes are `h` (side by side) or `v` (stacked) splits; each child may
--- carry an integer weight (default 1). Leaves are slot names. A parsed node is
+-- carry an integer weight (default 1). Leaves are slot names. An accordion,
+-- `a[left, main, right]`, stacks its members in one Hyprland group: it holds
+-- slots only (no splits, no weights) and all of its members share its box. A
+-- parsed node is
 --
---   { slot = "main", weight = 2 }                          -- leaf
---   { split = "h", weight = 1, children = { node, ... } }  -- split
+--   { slot = "main", weight = 2 }                               -- leaf
+--   { split = "h", weight = 1, children = { node, ... } }       -- split
+--   { accordion = true, weight = 1, children = { leaf, ... } }  -- accordion
+--   { overflow = true, weight = 1 }                             -- overflow leaf
+--
+-- The overflow leaf, written `*` (at most one per tree, never inside an
+-- accordion), is where windows with no slot in the tree go.
 --
 -- `boxes` divides an area by those weights in whole pixels: every child but the
 -- last gets floor(extent * weight / total), the last gets the remainder, so the
@@ -14,6 +22,15 @@
 local M = {}
 
 local NAME = "^[%w_%-%.]+"
+
+-- The key tree.boxes gives the overflow leaf's box (never a slot name).
+M.OVERFLOW = "*"
+
+-- An appended overflow column's share beside the tree.
+local TREE_WEIGHT, OVERFLOW_WEIGHT = 3, 1
+
+-- Letters that open a container when a '[' follows them.
+local CONTAINER = { h = true, v = true, a = true }
 
 local function parser(text)
   local p = { text = text, pos = 1 }
@@ -66,22 +83,56 @@ local function parser(text)
     return weight
   end
 
-  function p.node()
+  -- `[child, child:w, ...]`, after the container's letter.
+  function p.children(child, weightless)
+    p.pos = p.pos + 1
+    local children = {}
+    repeat
+      local node = child()
+      if weightless and p.peek() == ":" then
+        p.fail("accordion members take no weight (the accordion shares one box)")
+      end
+      node.weight = p.weight()
+      children[#children + 1] = node
+      local more = p.peek() == ","
+      if more then
+        p.pos = p.pos + 1
+      end
+    until not more
+    p.expect("]")
+    return children
+  end
+
+  -- An accordion member: a slot, never a container.
+  function p.member()
+    if p.peek() == "*" then
+      p.fail("an accordion holds slots only, found '*' inside it")
+    end
+    local start = p.pos
     local name = p.name()
-    if (name == "h" or name == "v") and p.peek() == "[" then
+    if CONTAINER[name] and p.peek() == "[" then
+      p.pos = start
+      p.skip()
+      p.fail("an accordion holds slots only, found '" .. name .. "[' inside it")
+    end
+    return { slot = name }
+  end
+
+  function p.node()
+    if p.peek() == "*" then
+      if p.overflow then
+        p.fail("more than one overflow leaf '*'")
+      end
+      p.overflow = true
       p.pos = p.pos + 1
-      local children = {}
-      repeat
-        local child = p.node()
-        child.weight = p.weight()
-        children[#children + 1] = child
-        local more = p.peek() == ","
-        if more then
-          p.pos = p.pos + 1
-        end
-      until not more
-      p.expect("]")
-      return { split = name, children = children }
+      return { overflow = true }
+    end
+    local name = p.name()
+    if CONTAINER[name] and p.peek() == "[" then
+      if name == "a" then
+        return { accordion = true, children = p.children(p.member, true) }
+      end
+      return { split = name, children = p.children(p.node) }
     end
     return { slot = name }
   end
@@ -92,7 +143,7 @@ end
 local function collect(node, out)
   if node.slot then
     out[#out + 1] = node.slot
-  else
+  elseif node.children then
     for _, child in ipairs(node.children) do
       collect(child, out)
     end
@@ -103,6 +154,58 @@ end
 -- The slot names of a tree, in reading order.
 function M.slots(node)
   return collect(node, {})
+end
+
+local function collect_accordions(node, out)
+  if node.accordion then
+    out[#out + 1] = collect(node, {})
+  elseif node.children then
+    for _, child in ipairs(node.children) do
+      collect_accordions(child, out)
+    end
+  end
+  return out
+end
+
+local function find_overflow(node)
+  if node.overflow then
+    return true
+  end
+  for _, child in ipairs(node.children or {}) do
+    if find_overflow(child) then
+      return true
+    end
+  end
+  return false
+end
+
+-- Whether a tree places the overflow leaf itself.
+function M.has_overflow(node)
+  return find_overflow(node)
+end
+
+-- The tree with somewhere for unmatched windows: itself when it has an
+-- overflow leaf, else `h[tree:3, *:1]` (a column at the right). The tree given
+-- is not modified.
+function M.with_overflow(node)
+  if find_overflow(node) then
+    return node
+  end
+  local kept = {}
+  for key, value in pairs(node) do
+    kept[key] = value
+  end
+  kept.weight = TREE_WEIGHT
+  return {
+    split = "h",
+    weight = 1,
+    children = { kept, { overflow = true, weight = OVERFLOW_WEIGHT } },
+  }
+end
+
+-- The member slots of each accordion in a tree, in reading order.
+function M.accordions(node)
+  return collect_accordions(node, {})
 end
 
 -- Parse tree text. Returns the root node, or nil and an error message.
@@ -150,6 +253,9 @@ local function prune(node, present)
   if node.slot then
     return present[node.slot] and node or nil
   end
+  if node.overflow then
+    return present[M.OVERFLOW] and node or nil
+  end
   local children = {}
   for _, child in ipairs(node.children) do
     local kept = prune(child, present)
@@ -160,12 +266,18 @@ local function prune(node, present)
   if #children == 0 then
     return nil
   end
-  return { split = node.split, weight = node.weight, children = children }
+  return { split = node.split, accordion = node.accordion, weight = node.weight, children = children }
 end
 
 local function divide(node, x, y, w, h, out)
-  if node.slot then
-    out[node.slot] = { x = x, y = y, w = w, h = h }
+  if node.slot or node.overflow then
+    out[node.slot or M.OVERFLOW] = { x = x, y = y, w = w, h = h }
+    return
+  end
+  if node.accordion then
+    for _, child in ipairs(node.children) do
+      divide(child, x, y, w, h, out)
+    end
     return
   end
 

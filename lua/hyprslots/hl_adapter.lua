@@ -152,4 +152,58 @@ function M.bind_expression(action, expression)
   return action
 end
 
+-- Groups (accordions, see groups.lua). ------------------------------------
+
+-- The member addresses of an HL.Window's group, in group order, or nil.
+function M.group_of(window)
+  local group = window.group
+  if not group then
+    return nil
+  end
+  local out = {}
+  for _, member in ipairs(group.members or {}) do
+    out[#out + 1] = member.address
+  end
+  return out
+end
+
+-- Every window as { address, class, stable_id, workspace_id, floating, group }
+-- (group: member addresses or nil), for planning group moves.
+function M.group_windows()
+  local out = {}
+  for _, window in ipairs(hl().get_windows() or {}) do
+    local plain = M.window(window)
+    plain.floating = window.floating
+    plain.group = M.group_of(window)
+    out[#out + 1] = plain
+  end
+  return out
+end
+
+-- Make an ungrouped window a group of one.
+function M.group_create(address)
+  return hl().dispatch(hl().dsp.group.toggle({ window = "address:" .. address }))
+end
+
+-- Take a window out of its group.
+function M.group_leave(address)
+  return hl().dispatch(hl().dsp.window.move({ out_of_group = true, window = "address:" .. address }))
+end
+
+-- Add a window to the group `into` is in. Hyprland has no dispatcher that
+-- adds a named window to a named group (window.move{into_group} takes a
+-- direction), so this uses HL.Group:add. Raises when either is gone or
+-- `into` has no group.
+function M.group_add(address, into)
+  local window = hl().get_window("address:" .. address)
+  local anchor = hl().get_window("address:" .. into)
+  if not window or not anchor then
+    error(string.format("no window %s", window and into or address), 0)
+  end
+  if not anchor.group then
+    error(string.format("window %s has no group", into), 0)
+  end
+  anchor.group:add(window)
+end
+
 return M

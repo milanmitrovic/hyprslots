@@ -14,6 +14,10 @@
 --   hl.workspace_rules  every hl.workspace_rule spec
 --   hl.timers           every hl.timer; hl.run_timers() fires the pending ones
 --   hl.notifications    every hl.notification.create spec
+--
+-- Groups: M.group({ w1, w2 }) puts windows in an HL.Group-like group;
+-- dispatching group.toggle / window.move{out_of_group} changes membership the
+-- way Hyprland would, and HL.Group:add is recorded in hl.group_adds.
 
 local M = {}
 
@@ -150,6 +154,8 @@ function M.new(opts)
     hl.dispatched[#hl.dispatched + 1] = dispatcher
     if type(dispatcher) == "function" then
       dispatcher()
+    elseif type(dispatcher) == "table" and M.effects[dispatcher.dsp] then
+      M.effects[dispatcher.dsp](hl, dispatcher.args or {})
     end
     return true
   end
@@ -167,6 +173,7 @@ function M.new(opts)
     event = dispatcher("event"),
     layout = dispatcher("layout"),
     window = { move = dispatcher("window.move") },
+    group = { toggle = dispatcher("group.toggle") },
     workspace = { move = dispatcher("workspace.move") },
   }
 
@@ -240,6 +247,19 @@ function M.new(opts)
       return {}
     end,
   }
+
+  hl.group_adds = {}
+
+  -- HL.WindowSelector "address:0x..." over hl.windows.
+  function hl.get_window(selector)
+    local address = type(selector) == "string" and selector:match("^address:(.+)$")
+    for _, window in ipairs(hl.windows) do
+      if window.address == address then
+        return window
+      end
+    end
+    return nil
+  end
 
   return hl
 end
@@ -321,5 +341,76 @@ function M.simulate(hl)
 
   return hl
 end
+
+-- An HL.Group-like group. `size` and `current` are derived from `members`,
+-- as Hyprland's are live.
+local Group = {}
+
+local function group_index(self, key)
+  if key == "size" then
+    return #rawget(self, "members")
+  elseif key == "current" then
+    return rawget(self, "members")[rawget(self, "current_index")]
+  end
+  return Group[key]
+end
+
+function Group.add(self, window, index)
+  local members = rawget(self, "members")
+  table.insert(members, index or (#members + 1), window)
+  window.group = self
+  if self.hl then
+    self.hl.group_adds[#self.hl.group_adds + 1] = { window = window.address, into = members[1].address }
+  end
+end
+
+function Group.remove(self, window)
+  local members = rawget(self, "members")
+  for i, member in ipairs(members) do
+    if member == window then
+      table.remove(members, i)
+      window.group = nil
+      if rawget(self, "current_index") > #members then
+        rawset(self, "current_index", math.max(1, #members))
+      end
+      return
+    end
+  end
+end
+
+-- Group `windows` (HL.Window-like tables); `current` is the index shown.
+function M.group(windows, current, hl)
+  local group = setmetatable({ members = {}, current_index = current or 1, hl = hl }, { __index = group_index })
+  for _, window in ipairs(windows) do
+    rawget(group, "members")[#rawget(group, "members") + 1] = window
+    window.group = group
+  end
+  return group
+end
+
+-- What dispatching a described dispatcher does to the stub's windows.
+M.effects = {
+  ["group.toggle"] = function(hl, args)
+    local window = hl.get_window(args.window)
+    if not window then
+      return
+    end
+    if window.group then
+      for _, member in ipairs(rawget(window.group, "members")) do
+        member.group = nil
+      end
+    else
+      M.group({ window }, 1, hl)
+    end
+  end,
+  ["window.move"] = function(hl, args)
+    if args.out_of_group then
+      local window = hl.get_window(args.window)
+      if window and window.group then
+        window.group:remove(window)
+      end
+    end
+  end,
+}
 
 return M
