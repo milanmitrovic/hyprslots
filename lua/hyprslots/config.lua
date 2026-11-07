@@ -337,7 +337,7 @@ local function validate_title_matching(raw, fail)
   return spec.title_matching(raw)
 end
 
-local KNOWN = { slots = true, arrangements = true, pinned = true, title_rules = true, title_matching = true }
+local KNOWN = { slots = true, arrangements = true, pinned = true, title_matching = true }
 
 -- Normalize a raw config table. Returns the config, or nil and every error
 -- found (one per line).
@@ -361,7 +361,6 @@ function M.validate(raw)
     arrangements = {},
     arrangement_names = {},
     pinned = validate_pinned(raw.pinned, fail),
-    title_rules = raw.title_rules,
   }
 
   if raw.arrangements ~= nil and type(raw.arrangements) ~= "table" then

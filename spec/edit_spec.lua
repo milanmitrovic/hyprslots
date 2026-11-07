@@ -24,8 +24,8 @@ describe("edit.read_only", function()
 
   it("reports a field config.lua sets by code", function()
     local given = data()
-    local raw = { slots = given.slots, arrangements = given.arrangements, pinned = { "laptop" }, title_rules = {} }
-    assert.are.same({ "pinned", "title_rules" }, edit.read_only(raw, given))
+    local raw = { slots = given.slots, arrangements = given.arrangements, pinned = { "laptop" }, title_matching = {} }
+    assert.are.same({ "pinned", "title_matching" }, edit.read_only(raw, given))
   end)
 
   it("reports an arrangement built in code among ones from the data", function()

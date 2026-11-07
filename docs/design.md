@@ -64,7 +64,7 @@ Lua inside Hyprland's own config VM.
 Two files under `$XDG_CONFIG_HOME/hyprslots/` (default `~/.config/hyprslots/`):
 
 - `config.lua` — hand-written by the user. Real Lua: may branch on hostname,
-  define title rules as functions, and so on. Loaded with `loadfile` into a
+  compute `title_matching` (§7a), and so on. Loaded with `loadfile` into a
   sandboxed environment (no `os.execute`, `io.popen`, or `hl` dispatchers).
   It returns a table and normally loads `slots.lua`.
 - `slots.lua` — data only, owned by the editor (§9). The editor rewrites it
@@ -80,7 +80,6 @@ return {
   slots = data.slots,                 -- desk -> slot name -> spec
   arrangements = data.arrangements,   -- name -> { screens = {...}, desks = {...} }
   pinned = { "laptop" },              -- screen roles excluded from desk switching
-  title_rules = { ... },              -- code: functions over window titles
   title_matching = { ... },           -- per-class title extraction (§7a)
 }
 ```

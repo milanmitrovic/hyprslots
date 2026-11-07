@@ -195,6 +195,12 @@ describe("config.validate", function()
     rejects(raw, "unknown key 'arangements'")
   end)
 
+  it("rejects title_rules, which nothing reads (title_matching configures titles)", function()
+    local raw = valid()
+    raw.title_rules = {}
+    rejects(raw, "unknown key 'title_rules'")
+  end)
+
   it("rejects a desk that is not 1-10", function()
     local raw = valid()
     raw.slots[11] = { x = "y" }
