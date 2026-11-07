@@ -1,8 +1,9 @@
 -- Desk switching on top of Omarchy's per-monitor workspaces (docs/design.md §5).
 --
--- Slice 1 switches the focused screen only: desk N there is
--- o.workspaces.focus(N, <focused monitor>). Slice 2 extends this to every
--- connected, non-pinned screen, refocusing the origin afterwards.
+-- Desk N on a screen is o.workspaces.focus(N, <its connector>). A desk switch
+-- shows desk N on every non-pinned screen of the active arrangement, the
+-- focused screen (the origin) last, then refocuses the origin. With no
+-- arrangement it switches the focused screen alone, as Omarchy's Super+N does.
 
 local adapter = require("hyprslots.hl_adapter")
 
@@ -20,13 +21,44 @@ function M.activate(engine, desk)
   if engine.refused then
     return nil, "hyprslots is not running: " .. engine.refused
   end
-  local monitor = adapter.active_monitor_name()
-  if not monitor then
+  local origin = adapter.active_monitor_name()
+  if not origin then
     return nil, "no focused monitor"
   end
-  engine.log:info("desk %d on %s", desk, monitor)
-  adapter.focus_desk(desk, monitor)
+
+  local screens = M.screens(engine, origin)
+  engine.log:info("desk %d on %s", desk, #screens > 0 and table.concat(screens, ", ") or "no screen")
+  for _, monitor in ipairs(screens) do
+    adapter.focus_desk(desk, monitor)
+  end
+  adapter.focus_monitor(origin)
   return true
+end
+
+-- The connectors a desk switch shows the desk on, in order: every non-pinned
+-- screen of the active arrangement by role name, the origin last; or just
+-- the origin when no arrangement is active.
+function M.screens(engine, origin)
+  local active = engine.active
+  if not active then
+    return { origin }
+  end
+  local pinned = engine.cfg and engine.cfg.pinned or {}
+  local out, origin_switches = {}, false
+  for _, role in ipairs(active.arrangement.roles) do
+    local monitor = active.monitors[role]
+    if not pinned[role] then
+      if monitor == origin then
+        origin_switches = true
+      else
+        out[#out + 1] = monitor
+      end
+    end
+  end
+  if origin_switches then
+    out[#out + 1] = origin
+  end
+  return out
 end
 
 -- The action bound to SUPER + N in place of o.workspaces.focus(N).

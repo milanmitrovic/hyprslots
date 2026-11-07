@@ -114,6 +114,11 @@ function M.focus_desk(desk, monitor_name)
   return hl().dispatch(M.omarchy_workspaces().focus(desk, monitor_name))
 end
 
+-- Focus a monitor (by connector name).
+function M.focus_monitor(monitor_name)
+  return hl().dispatch(hl().dsp.focus({ monitor = monitor_name }))
+end
+
 -- Register a bind action's replay expression with Omarchy's keybindings menu.
 function M.bind_expression(action, expression)
   local o = rawget(_G, "o")
