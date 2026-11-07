@@ -121,3 +121,18 @@ function deleteQuestion(row, desk) {
   if (row.places.length) q += " It goes from " + row.places.join(", ") + "."
   return q
 }
+
+// Why the editor may not change a desk's slots, "" when it may (the engine
+// refuses the same; saying so first spares typing an answer it will refuse).
+function readOnlyReason(state, desk) {
+  var cfg = state && state.config
+  if (!cfg) return ""
+  if (cfg.editable === false) return "config.lua loads no slots.lua, so there is nothing the editor may change"
+  var paths = Array.isArray(cfg.read_only) ? cfg.read_only : []
+  for (var i = 0; i < paths.length; i++) {
+    if (paths[i] === "slots" || paths[i] === "slots." + desk) {
+      return "desk " + desk + "'s slots are set by code in config.lua; edit them there"
+    }
+  }
+  return ""
+}

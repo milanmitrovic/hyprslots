@@ -80,3 +80,14 @@ test("deleting a slot says which trees lose it", () => {
 test("no state, no rows", () => {
   assert.deepEqual(plain(S.rows(null, 3)), []);
 });
+
+test("a desk whose slots config.lua builds in code, or no data file, is read-only, and says why", () => {
+  const state = fixture();
+  state.config = { editable: true, read_only: ["slots.4"] };
+  assert.equal(S.readOnlyReason(state, 3), "");
+  assert.equal(S.readOnlyReason(state, 4), "desk 4's slots are set by code in config.lua; edit them there");
+  state.config.read_only = ["slots"];
+  assert.equal(S.readOnlyReason(state, 3), "desk 3's slots are set by code in config.lua; edit them there");
+  state.config = { editable: false, read_only: [] };
+  assert.equal(S.readOnlyReason(state, 3), "config.lua loads no slots.lua, so there is nothing the editor may change");
+});
