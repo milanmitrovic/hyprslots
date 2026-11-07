@@ -14,6 +14,7 @@
 --   hl.workspace_rules  every hl.workspace_rule spec
 --   hl.timers           every hl.timer; hl.run_timers() fires the pending ones
 --   hl.notifications    every hl.notification.create spec
+--   hl.window_rules     every hl.window_rule spec
 
 local M = {}
 
@@ -226,6 +227,12 @@ function M.new(opts)
   function hl.workspace_rule(spec)
     hl.workspace_rules[#hl.workspace_rules + 1] = spec
     return { is_enabled = function() return true end, set_enabled = function() end }
+  end
+
+  hl.window_rules = {}
+  function hl.window_rule(spec)
+    hl.window_rules[#hl.window_rules + 1] = spec
+    return { is_enabled = function() return spec.enabled ~= false end, set_enabled = function() end }
   end
 
   hl.layout = {
