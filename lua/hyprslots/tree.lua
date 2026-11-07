@@ -1,10 +1,14 @@
 -- Layout trees: `h[main:2, right:1]`, `v[top, h[a, b:3]:2]`, or a bare slot.
 --
 -- Inner nodes are `h` (side by side) or `v` (stacked) splits; each child may
--- carry an integer weight (default 1). Leaves are slot names. A parsed node is
+-- carry an integer weight (default 1). Leaves are slot names. An accordion,
+-- `a[left, main, right]`, stacks its members in one Hyprland group: it holds
+-- slots only (no splits, no weights) and all of its members share its box. A
+-- parsed node is
 --
---   { slot = "main", weight = 2 }                          -- leaf
---   { split = "h", weight = 1, children = { node, ... } }  -- split
+--   { slot = "main", weight = 2 }                               -- leaf
+--   { split = "h", weight = 1, children = { node, ... } }       -- split
+--   { accordion = true, weight = 1, children = { leaf, ... } }  -- accordion
 --
 -- `boxes` divides an area by those weights in whole pixels: every child but the
 -- last gets floor(extent * weight / total), the last gets the remainder, so the
@@ -14,6 +18,9 @@
 local M = {}
 
 local NAME = "^[%w_%-%.]+"
+
+-- Letters that open a container when a '[' follows them.
+local CONTAINER = { h = true, v = true, a = true }
 
 local function parser(text)
   local p = { text = text, pos = 1 }
@@ -66,22 +73,45 @@ local function parser(text)
     return weight
   end
 
+  -- `[child, child:w, ...]`, after the container's letter.
+  function p.children(child, weightless)
+    p.pos = p.pos + 1
+    local children = {}
+    repeat
+      local node = child()
+      if weightless and p.peek() == ":" then
+        p.fail("accordion members take no weight (the accordion shares one box)")
+      end
+      node.weight = p.weight()
+      children[#children + 1] = node
+      local more = p.peek() == ","
+      if more then
+        p.pos = p.pos + 1
+      end
+    until not more
+    p.expect("]")
+    return children
+  end
+
+  -- An accordion member: a slot, never a container.
+  function p.member()
+    local start = p.pos
+    local name = p.name()
+    if CONTAINER[name] and p.peek() == "[" then
+      p.pos = start
+      p.skip()
+      p.fail("an accordion holds slots only, found '" .. name .. "[' inside it")
+    end
+    return { slot = name }
+  end
+
   function p.node()
     local name = p.name()
-    if (name == "h" or name == "v") and p.peek() == "[" then
-      p.pos = p.pos + 1
-      local children = {}
-      repeat
-        local child = p.node()
-        child.weight = p.weight()
-        children[#children + 1] = child
-        local more = p.peek() == ","
-        if more then
-          p.pos = p.pos + 1
-        end
-      until not more
-      p.expect("]")
-      return { split = name, children = children }
+    if CONTAINER[name] and p.peek() == "[" then
+      if name == "a" then
+        return { accordion = true, children = p.children(p.member, true) }
+      end
+      return { split = name, children = p.children(p.node) }
     end
     return { slot = name }
   end
@@ -103,6 +133,22 @@ end
 -- The slot names of a tree, in reading order.
 function M.slots(node)
   return collect(node, {})
+end
+
+local function collect_accordions(node, out)
+  if node.accordion then
+    out[#out + 1] = collect(node, {})
+  elseif node.children then
+    for _, child in ipairs(node.children) do
+      collect_accordions(child, out)
+    end
+  end
+  return out
+end
+
+-- The member slots of each accordion in a tree, in reading order.
+function M.accordions(node)
+  return collect_accordions(node, {})
 end
 
 -- Parse tree text. Returns the root node, or nil and an error message.
@@ -160,12 +206,18 @@ local function prune(node, present)
   if #children == 0 then
     return nil
   end
-  return { split = node.split, weight = node.weight, children = children }
+  return { split = node.split, accordion = node.accordion, weight = node.weight, children = children }
 end
 
 local function divide(node, x, y, w, h, out)
   if node.slot then
     out[node.slot] = { x = x, y = y, w = w, h = h }
+    return
+  end
+  if node.accordion then
+    for _, child in ipairs(node.children) do
+      divide(child, x, y, w, h, out)
+    end
     return
   end
 
