@@ -3,9 +3,10 @@
 -- On window.open a window matching a slot is assigned to it (sticky) and,
 -- when it opened on another workspace, moved to the slot's: desk N on the
 -- screen whose tree holds the slot in the active arrangement. Moves happen
--- here, in the event callback, never in recalculate. window.destroy frees the
--- slot. A target workspace that does not exist yet is created where Hyprland
--- puts it (the focused monitor) and then moved to its screen.
+-- here, in the event callback, never in recalculate. window.close frees the
+-- slot (window.destroy's window has no address left in Hyprland 0.56.2). A
+-- target workspace that does not exist yet is created where Hyprland puts it
+-- (the focused monitor) and then moved to its screen.
 --
 -- Overflow: a window that matches some slot's spec while every such slot is
 -- taken goes to the desk workspace of the first slot that matches it, in

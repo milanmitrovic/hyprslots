@@ -26,6 +26,18 @@ describe("routing across screens", function()
     return window
   end
 
+  it("frees a slot on window.close, while the window still has its address", function()
+    -- Hyprland 0.56.2 passes window.destroy a window whose address is gone
+    -- already; window.close still has it.
+    local first = open(1, "t-left", 1)
+    hl.windows = {}
+    hl.emit("window.close", first)
+    hl.emit("window.destroy", setmetatable({}, { __index = function() return nil end }))
+    assert.are.same({}, engine.state(hyprslots).assignments)
+    local again = open(2, "t-left", 1)
+    assert.are.same({ desk = 3, slot = "left" }, engine.state(hyprslots).assignments[again.address])
+  end)
+
   it("creates a missing workspace on the screen that holds the slot, not the focused one", function()
     local window = open(1, "t-left", 1)
     assert.are.equal(13, window.workspace.id)

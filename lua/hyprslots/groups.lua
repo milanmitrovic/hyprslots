@@ -278,7 +278,7 @@ function M.attach(engine)
   end
 
   for _, event in ipairs({
-    "window.open", "window.destroy", "window.move_to_workspace",
+    "window.open", "window.close", "window.destroy", "window.move_to_workspace",
     "hyprland.start", "config.reloaded",
   }) do
     adapter.on(event, function()

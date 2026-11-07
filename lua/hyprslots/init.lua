@@ -257,10 +257,17 @@ local function start(self, opts)
     self:guard("window.open", router.window_opened, self, window)
     self:guard("change event", self.changed, self)
   end)
-  adapter.on("window.destroy", function(window)
-    self:guard("window.destroy", router.window_destroyed, self, window)
-    self:guard("change event", self.changed, self)
-  end)
+  -- Hyprland 0.56.2 hands window.destroy a window whose address is already
+  -- gone, so slots are freed on window.close, which still has it; destroy is
+  -- handled the same way for any build that does pass it.
+  for _, event in ipairs({ "window.close", "window.destroy" }) do
+    adapter.on(event, function(window)
+      if window and window.address then
+        self:guard(event, router.window_destroyed, self, window)
+        self:guard("change event", self.changed, self)
+      end
+    end)
+  end
   adapter.on("window.title", function(window)
     self:guard("window.title", router.window_title, self, window)
   end)

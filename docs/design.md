@@ -229,7 +229,7 @@ meanwhile. A group showing a window that is no member still gets the box.
 
 Group membership (`groups.lua`) changes only in a deferred pass (20 ms
 timer), never in `recalculate`. The pass runs after `window.open`,
-`window.destroy`, `window.move_to_workspace` and start; after every
+`window.close` / `window.destroy`, `window.move_to_workspace` and start; after every
 `router.reroute_all` (hotplug, editor edits, reload), which asks for it
 once it has moved the windows, so it never races hotplug's timer hops
 (§8); and when a layout pass sees an accordion split over several targets
@@ -334,7 +334,9 @@ order `hyprland.lua` loads them in.
 - `window.open` and `window.title` events: match the window against the specs
   of the active desk set, assign it to a slot (assignment is sticky), and
   move it to the slot's workspace when it opened elsewhere. Moves happen in
-  the event callback, never in `recalculate`.
+  the event callback, never in `recalculate`. `window.close` frees the slot:
+  Hyprland 0.56.2 passes `window.destroy` a window whose address is already
+  gone.
 - **Sticky.** An assignment is kept until the window closes. When the engine
   re-solves every assignment (config reload, an api edit, hotplug), a
   window keeps its slot while the slot exists and its spec still admits the
@@ -469,7 +471,7 @@ the running engine only through Hyprland:
 `{"ok": true, ...}` or `{"ok": false, "error": "..."}`. Every change bumps
 `seq` and emits `hl.dsp.event("hyprslots changed <seq>")` (socket2:
 `custom>>hyprslots changed <seq>`): api edits, save, reload, window open /
-destroy, a keyboard nudge or reset, and an arrangement change on hotplug. `seq` restarts at 0 when
+close, a keyboard nudge or reset, and an arrangement change on hotplug. `seq` restarts at 0 when
 Hyprland reloads its config (Lua state is discarded), so the editor treats
 any event as "re-read state", not as an ordering.
 
