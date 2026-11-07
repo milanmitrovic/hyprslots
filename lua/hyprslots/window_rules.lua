@@ -88,7 +88,15 @@ function M.sync(engine)
   end
   engine.window_rules = engine.window_rules or {}
   local registered = engine.window_rules
-  for class, workspace in pairs(M.desired(engine)) do
+  local desired = M.desired(engine)
+  -- A class registered before an edit or reload and named by no spec now
+  -- keeps its rule (Hyprland cannot drop one), so turn it off.
+  for class in pairs(registered) do
+    if desired[class] == nil then
+      desired[class] = false
+    end
+  end
+  for class, workspace in pairs(desired) do
     if registered[class] ~= workspace then
       registered[class] = workspace
       local name = M.PREFIX .. class

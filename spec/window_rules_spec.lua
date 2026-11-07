@@ -100,6 +100,17 @@ describe("generated window rules", function()
       assert.are.equal("13 silent", rule("hyprslots-t-right").workspace)
     end)
 
+    it("turns off the rule of a class a reload no longer has a spec for", function()
+      local slots = engine.TWO_SCREENS
+        :gsub('right = "t%-right"', 'right = "t-other"')
+      local file = assert(io.open(engine.state(hyprslots).config.data_file, "w"))
+      file:write(slots)
+      file:close()
+      assert.is_true(engine.call(hyprslots, "reload", "{}").ok)
+      assert.are.same({ name = "hyprslots-t-right", enabled = false }, rule("hyprslots-t-right"))
+      assert.are.equal("3 silent", rule("hyprslots-t-other").workspace)
+    end)
+
     it("does not register a rule again when nothing about it changed", function()
       local count = #hl.window_rules
       assert.are.equal(3, count)
