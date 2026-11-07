@@ -5,7 +5,8 @@
 -- considered oldest first (by stable_id), so the result never depends on the
 -- order Hyprland lists them in. Assignment is sticky: a previous assignment
 -- whose slot still exists and whose spec still admits the window's class is
--- kept, whatever its title says now, before anything new is handed out. Pure.
+-- kept, whatever its title says now, before anything new is handed out; one
+-- made by hand is kept whatever the window is. Pure.
 
 local spec = require("hyprslots.spec")
 
@@ -42,10 +43,14 @@ end
 
 -- A previous assignment holds while its slot exists and its spec still
 -- admits the window's class: a title that changed after the window won its
--- slot does not take the slot away (assignment is sticky, as in claim).
+-- slot does not take the slot away (assignment is sticky, as in claim). One
+-- made by hand (`manual`, the editor's assign) holds while the slot exists.
 local function still_holds(cfg, assignment, window)
   local desk = cfg.slots[assignment.desk]
   local parsed = desk and desk[assignment.slot]
+  if parsed and assignment.manual then
+    return true
+  end
   return parsed and spec.admits(parsed, window) or false
 end
 
@@ -83,7 +88,7 @@ function M.solve(cfg, windows, previous)
   for _, window in ipairs(ordered) do
     local before = previous[window.address]
     if before and not taken[key(before.desk, before.slot)] and still_holds(cfg, before, window) then
-      result[window.address] = { desk = before.desk, slot = before.slot }
+      result[window.address] = { desk = before.desk, slot = before.slot, manual = before.manual }
       taken[key(before.desk, before.slot)] = true
     end
   end

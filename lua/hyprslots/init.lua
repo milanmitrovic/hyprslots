@@ -49,6 +49,7 @@ local function new_engine()
     workspaces = {}, -- workspace id -> { desk, role, monitor, branch }
     assignments = {}, -- window address -> { desk, slot }
     overflow = {}, -- window address -> { desk, slot }: matches that slot, which is taken
+    unassigned = {}, -- window address -> true: taken out of its slot by hand, takes none
     seq = 0, -- bumped on every change the editor should see
     started = false,
     config_dir = nil,
@@ -105,12 +106,26 @@ function Engine:reselect()
   end
 end
 
--- Assign every live window (on load: nothing survives a reload).
+-- Assign every live window (on load: nothing survives a reload), except
+-- those taken out of their slot by hand.
 function Engine:assign_all()
   if not self.cfg then
     return
   end
-  local windows = adapter.windows()
+  local windows, open = {}, {}
+  for _, window in ipairs(adapter.windows()) do
+    if window.address then
+      open[window.address] = true
+    end
+    if not self.unassigned[window.address] then
+      windows[#windows + 1] = window
+    end
+  end
+  for address in pairs(self.unassigned) do
+    if not open[address] then
+      self.unassigned[address] = nil
+    end
+  end
   self.assignments = assign.solve(self.cfg, windows, self.assignments)
   self.overflow = {}
   for _, window in ipairs(windows) do
@@ -121,9 +136,10 @@ function Engine:assign_all()
 end
 
 -- The slot of a plain window ({ address, class, stable_id }), claiming one
--- when it has none yet. Nil when it matches no free slot.
+-- when it has none yet. Nil when it matches no free slot, or was taken out
+-- of its slot by hand (the editor's unassign).
 function Engine:assign(window)
-  if not self.cfg or not window.address then
+  if not self.cfg or not window.address or self.unassigned[window.address] then
     return nil
   end
   local assignment = assign.claim(self.cfg, self.assignments, window)

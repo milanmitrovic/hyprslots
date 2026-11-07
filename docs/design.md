@@ -341,7 +341,8 @@ order `hyprland.lua` loads them in.
 - **Sticky.** An assignment is kept until the window closes. When the engine
   re-solves every assignment (config reload, an api edit, hotplug), a
   window keeps its slot while the slot exists and its spec still admits the
-  window's class, whatever its title says now.
+  window's class, whatever its title says now. An assignment made by hand
+  (the editor's `assign`, §9) is kept while the slot exists.
 - **Overflow.** A window that matches a spec while every slot it matches is
   taken goes to the desk workspace of the first of those slots (precedence
   below), where the layout stacks it in that branch's overflow leaf (§6).
@@ -483,14 +484,17 @@ any event as "re-read state", not as an ordering.
 | `set_tree` | `arrangement?` (default active), `desk`, `role`, `tree` | `arrangement, desk, role, tree, ratio, seq` |
 | `set_ratio` | `arrangement?`, `desk`, `role`, `ratio` (grammar below) | same as `set_tree` |
 | `record` | `workspace?` (default focused), `apply?` | `arrangement, desk, role, workspace, tree, ratio, missing[], applied, seq` |
+| `assign` | `address`, `desk`, `slot` | `address, desk, slot, displaced?, seq` |
+| `unassign` | `address` | `address, desk?, slot?, seq` |
 | `save` | — | `path, seq` |
 | `reload` | — | `arrangement, seq` |
 
 `state`: `seq`, `dirty` (unsaved edits, keyboard-resized trees included),
 `arrangement` (active name), `screens` (role -> connector), `workspaces`
-(id -> desk, role, monitor), `assignments` (address -> desk, slot),
+(id -> desk, role, monitor), `assignments` (address -> desk, slot,
+`manual` when made by `assign`),
 `overflow` (address -> desk, slot: a window that matches that slot's spec
-while every slot it matches is taken, laid out in that desk's overflow leaf),
+while every slot it matches is taken, laid out in that desk's overflow leaf), `unassigned[]` (addresses taken out of their slot by `unassign`),
 `arrangements` (name -> `screens`, `roles[]`, `desks` ("3" -> role ->
 `{tree, ratio, slots[], resized?}`), `active`, `read_only`), `resized`
 (`"<arrangement>/<desk>/<role>"` -> `arrangement, desk, role, tree, ratio`
@@ -499,8 +503,23 @@ desk workspace: `workspace, desk, role, slots[], members` (slot -> window
 address), `group[]` (the live Hyprland group holding a member, in group
 order), `formed`), `slots` ("3" -> slot -> spec text), `desks[]`,
 `pinned[]`, `windows[]` (`address, class, title, workspace, floating,
-box{x,y,w,h}, desk?, slot?, overflow?{desk, slot}`), `config` (`dir, data_file, editable,
+box{x,y,w,h}, desk?, slot?, overflow?{desk, slot}, unassigned?`), `config` (`dir, data_file, editable,
 read_only[]`), `refused`, `config_error`, `log_seq`.
+
+**Assignment by hand** (the Assignment view). `assign` puts an open
+window into a slot of a desk whatever the slot's spec says, and moves it to
+the slot's workspace. The window holding that slot is routed again as if it
+had just opened (another free slot it matches, else its desk's overflow) and
+is named as `displaced`; the slot the window left goes to the oldest window
+overflowing on it. A hand-made assignment is sticky like any other, and
+re-solves keep it while the slot exists, even though the spec does not
+match. `unassign` takes a window out of its slot: it stays where it is (on a
+desk workspace, in the overflow leaf), its slot goes to the oldest window
+overflowing on it, and it takes no slot, by routing, late title, layout or
+re-solve, until it is assigned again or closes. Both live in memory only
+(neither touches `slots.lua`), survive `reload` and hotplug, and are lost on
+a Hyprland config reload like every assignment. Both refuse a window that is
+not open; `assign` refuses a slot the desk does not have.
 
 **The tree in force** for a branch is `api.effective_branch`, which is
 `resize.effective_branch`: a keyboard-resized override (§6) if there is

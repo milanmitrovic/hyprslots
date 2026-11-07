@@ -5,8 +5,9 @@
 --
 -- Every reply is a JSON string: { "ok": true, ... } or { "ok": false, "error": "..." }.
 -- Nothing here raises into Hyprland. Calls: state, desk, set_tree, set_ratio,
--- record, save, reload (the contract is in docs/design.md §9). Every change
--- bumps `seq` and emits hl.dsp.event("hyprslots changed <seq>").
+-- record, assign, unassign, save, reload (the contract is in docs/design.md
+-- §9). Every change bumps `seq` and emits hl.dsp.event("hyprslots changed
+-- <seq>").
 
 local json = require("hyprslots.dkjson")
 local adapter = require("hyprslots.hl_adapter")
@@ -17,6 +18,7 @@ local groups = require("hyprslots.groups")
 local ratio = require("hyprslots.ratio")
 local record = require("hyprslots.record")
 local resize = require("hyprslots.resize")
+local router = require("hyprslots.router")
 local serialize = require("hyprslots.serialize")
 local tree = require("hyprslots.tree")
 
@@ -183,6 +185,7 @@ local function windows_info(engine)
       desk = assignment and assignment.desk or nil,
       slot = assignment and assignment.slot or nil,
       overflow = overflow and object({ desk = overflow.desk, slot = overflow.slot }) or nil,
+      unassigned = engine.unassigned[window.address] or nil,
     })
   end
   return out
@@ -209,11 +212,13 @@ function M.snapshot(engine)
     workspaces[tostring(id)] = object({ desk = desk.desk, role = desk.role, monitor = desk.monitor })
   end
   for address, assignment in pairs(engine.assignments) do
-    assignments[address] = object({ desk = assignment.desk, slot = assignment.slot })
+    assignments[address] = object({ desk = assignment.desk, slot = assignment.slot,
+      manual = assignment.manual or nil })
   end
   for address, match in pairs(engine.overflow or {}) do
     overflow[address] = object({ desk = match.desk, slot = match.slot })
   end
+  local unassigned = array(sorted_keys(engine.unassigned))
   local read_only = read_only_paths(engine.cfg)
   local dir = engine.config_dir or config.dir()
   local pinned = array()
@@ -231,6 +236,7 @@ function M.snapshot(engine)
     workspaces = workspaces,
     assignments = assignments,
     overflow = overflow,
+    unassigned = unassigned,
     log_seq = engine.log.seq,
     arrangements = arrangements_info(engine, read_only),
     slots = slots_info(engine),
@@ -497,6 +503,48 @@ function handlers.reload(engine)
     return fail(err)
   end
   return { arrangement = engine.active and engine.active.name or nil, seq = engine.seq }
+end
+
+local function live_window(address)
+  for _, window in ipairs(adapter.windows()) do
+    if window.address == address then
+      return window
+    end
+  end
+  return nil
+end
+
+-- assign { address, desk, slot }: put a window into a slot by hand.
+function handlers.assign(engine, args)
+  if engine.refused then
+    return fail("hyprslots is off: " .. engine.refused)
+  end
+  local window = live_window(args.address)
+  if not window then
+    return fail("no open window " .. tostring(args.address))
+  end
+  local desk = as_desk(args.desk)
+  local slots = engine.cfg and engine.cfg.slots[desk]
+  if not (slots and type(args.slot) == "string" and slots[args.slot]) then
+    return fail(string.format("desk %s has no slot '%s'", tostring(desk), tostring(args.slot)))
+  end
+  local assignment, displaced = router.assign(engine, window, desk, args.slot)
+  return { address = window.address, desk = assignment.desk, slot = assignment.slot, displaced = displaced,
+    seq = engine.seq }
+end
+
+-- unassign { address }: take a window out of its slot by hand.
+function handlers.unassign(engine, args)
+  if engine.refused then
+    return fail("hyprslots is off: " .. engine.refused)
+  end
+  local window = live_window(args.address)
+  if not window then
+    return fail("no open window " .. tostring(args.address))
+  end
+  local previous = router.unassign(engine, window.address)
+  return { address = window.address, desk = previous and previous.desk or nil,
+    slot = previous and previous.slot or nil, seq = engine.seq }
 end
 
 function handlers.desk(engine, args)

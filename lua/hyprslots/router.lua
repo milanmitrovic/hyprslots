@@ -20,6 +20,10 @@
 -- oneshot timer per window, replaced on every change), against the title it
 -- has then, and routed like a new window. A window with a slot never moves
 -- because its title changed: assignment is sticky.
+--
+-- By hand (the editor's assign / unassign): assign puts a window into a slot
+-- whatever its spec says; unassign takes it out, and it takes no slot until
+-- it is assigned again or closes (engine.unassigned).
 
 local adapter = require("hyprslots.hl_adapter")
 local assign = require("hyprslots.assign")
@@ -28,6 +32,15 @@ local window_rules = require("hyprslots.window_rules")
 local M = {}
 
 M.TITLE_DEBOUNCE_MS = 150
+
+local function find_window(address)
+  for _, window in ipairs(adapter.windows()) do
+    if window.address == address then
+      return window
+    end
+  end
+  return nil
+end
 
 function M.window_opened(engine, hl_window)
   if engine.refused or not engine.cfg then
@@ -40,6 +53,9 @@ end
 -- when every slot it matches is taken, to the first such slot's desk
 -- workspace (its overflow leaf).
 function M.route(engine, window)
+  if engine.unassigned[window.address] then
+    return -- taken out of its slot by hand: it stays where it is
+  end
   local had = engine.assignments[window.address]
   local assignment = engine:assign(window)
   if assignment and not had then
@@ -126,15 +142,6 @@ function M.reroute_all(engine)
   end
 end
 
-local function find_window(address)
-  for _, window in ipairs(adapter.windows()) do
-    if window.address == address then
-      return window
-    end
-  end
-  return nil
-end
-
 function M.window_title(engine, hl_window)
   local address = hl_window and hl_window.address
   if engine.refused or not engine.cfg or not address or engine.assignments[address] then
@@ -169,6 +176,7 @@ function M.window_destroyed(engine, hl_window)
   end
   if address then
     engine.overflow[address] = nil
+    engine.unassigned[address] = nil
   end
   if address and engine.assignments[address] then
     local assignment = engine.assignments[address]
@@ -177,6 +185,77 @@ function M.window_destroyed(engine, hl_window)
     M.promote(engine)
     window_rules.sync(engine)
   end
+end
+
+-- Put a window ({ address, workspace_id, ... }) into a slot by hand (the
+-- editor's assign): it holds the slot until it closes, through re-solves,
+-- whatever its spec says (assign.lua honours `manual`). It is moved to the
+-- slot's workspace like a routed window. The window that held the slot is
+-- routed again, as if it had just opened: into another free slot it matches,
+-- else its desk's overflow. The slot the window leaves goes to the oldest
+-- window overflowing on it. Returns the new assignment and the displaced
+-- window's address.
+function M.assign(engine, window, desk, slot)
+  local address = window.address
+  local displaced
+  for other, held in pairs(engine.assignments) do
+    if other ~= address and held.desk == desk and held.slot == slot then
+      displaced = other
+    end
+  end
+  if displaced then
+    engine.assignments[displaced] = nil
+  end
+  local previous = engine.assignments[address]
+  local assignment = { desk = desk, slot = slot, manual = true }
+  engine.assignments[address] = assignment
+  engine.overflow[address] = nil
+  engine.unassigned[address] = nil
+  local target = engine:workspace_for(assignment)
+  if target and window.workspace_id ~= target then
+    engine.log:info("assign %s (%s) to slot %s on desk %d, workspace %s -> %d", tostring(window.class), address,
+      slot, desk, tostring(window.workspace_id), target)
+    M.place(engine, address, target)
+  elseif target then
+    M.keep_on_screen(engine, target)
+  end
+  local other = displaced and find_window(displaced)
+  if other then
+    engine.log:info("assign: %s (%s) gives up slot %s on desk %d", tostring(other.class), displaced, slot, desk)
+    M.route(engine, other)
+  end
+  if previous and (previous.desk ~= desk or previous.slot ~= slot) then
+    M.promote(engine) -- the slot it left
+  end
+  window_rules.sync(engine)
+  if engine.regroup then
+    engine.regroup("event")
+  end
+  engine:relayout()
+  engine:changed()
+  return assignment, displaced
+end
+
+-- Take a window out of its slot by hand (the editor's unassign). It stays
+-- where it is and takes no slot until it closes or is assigned again
+-- (engine.unassigned); the slot it held goes to the oldest window
+-- overflowing on it. Returns the assignment it had, if any.
+function M.unassign(engine, address)
+  local previous = engine.assignments[address]
+  engine.assignments[address] = nil
+  engine.overflow[address] = nil
+  engine.unassigned[address] = true
+  if previous then
+    engine.log:info("unassign %s: slot %s on desk %d is free", address, previous.slot, previous.desk)
+    M.promote(engine)
+  end
+  window_rules.sync(engine)
+  if engine.regroup then
+    engine.regroup("event")
+  end
+  engine:relayout()
+  engine:changed()
+  return previous
 end
 
 -- Give freed slots to overflowing windows, oldest first, and route them.
