@@ -54,6 +54,8 @@ Item {
     var monitor = Hyprland.focusedMonitor
     assignmentView.focusedWorkspace = monitor && monitor.activeWorkspace ? monitor.activeWorkspace.id : -1
     assignmentView.reset()
+    layoutView.focusedWorkspace = assignmentView.focusedWorkspace
+    layoutView.reset()
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
@@ -77,6 +79,7 @@ Item {
   // panel used it.
   function handleKey(key, text, modifiers) {
     if (assignmentView.prompting && root.tab === 0) return assignmentView.handleKey(key, text, modifiers)
+    if (layoutView.prompting && root.tab === 1) return layoutView.handleKey(key, text, modifiers)
     if (key === Qt.Key_Backtab || (key === Qt.Key_Tab && (modifiers & Qt.ShiftModifier))) {
       root.tab = (root.tab + root.tabs.length - 1) % root.tabs.length
       return true
@@ -90,6 +93,7 @@ Item {
       return true
     }
     if (root.tab === 0) return assignmentView.handleKey(key, text, modifiers)
+    if (root.tab === 1) return layoutView.handleKey(key, text, modifiers)
     return false
   }
 
@@ -99,6 +103,7 @@ Item {
     var named = {
       Tab: Qt.Key_Tab, Backtab: Qt.Key_Backtab, Escape: Qt.Key_Escape, Return: Qt.Key_Return,
       Up: Qt.Key_Up, Down: Qt.Key_Down, Left: Qt.Key_Left, Right: Qt.Key_Right,
+      BackSpace: Qt.Key_Backspace, Backspace: Qt.Key_Backspace,
     }
     var s = String(name)
     var key = named[s]
@@ -114,11 +119,19 @@ Item {
   // What the Assignment view has selected, "<status> <slot> <class>", and
   // its message or prompt line: for scripts and the e2e smoke.
   function selectionText() {
+    if (root.tab === 1) return layoutView.selectionText()
     var row = assignmentView.selectedRow
     return row ? row.status + " " + (row.slot || "-") + " " + (row.cls || row.spec) : ""
   }
 
+  // The Layout view's draft trees, "big: h[a, b]; side: c" (edited ones
+  // marked *): for the e2e smoke.
+  function layoutText() {
+    return layoutView.draftText()
+  }
+
   function messageText() {
+    if (root.tab === 1) return layoutView.messageText()
     return assignmentView.prompting ? assignmentView.prompt.text : assignmentView.message
   }
 
@@ -224,9 +237,20 @@ Item {
             fontFamily: root.fontFamily
           }
 
+          LayoutView {
+            id: layoutView
+            anchors.fill: parent
+            visible: root.tab === 1
+            engine: root.engine
+            foreground: root.foreground
+            selectedBackground: root.selectedBackground
+            selectedText: root.selectedText
+            fontFamily: root.fontFamily
+          }
+
           PlaceholderView {
             anchors.fill: parent
-            visible: root.tab > 0
+            visible: root.tab > 1
             view: root.tabs[root.tab]
             engine: root.engine
             foreground: root.foreground
@@ -241,6 +265,7 @@ Item {
           textFormat: Text.PlainText
           wrapMode: Text.WordWrap
           text: root.tab === 0 ? assignmentView.helpText
+            : root.tab === 1 ? layoutView.helpText
             : "Tab switch view   ·   q close"
           color: root.foreground
           opacity: 0.7
