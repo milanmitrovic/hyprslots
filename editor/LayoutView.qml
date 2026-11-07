@@ -4,6 +4,7 @@ import Quickshell.Hyprland
 import qs.Commons
 import qs.Commons as Commons
 import "Layout.js" as Layout
+import "Prompts.js" as Prompts
 
 // One desk's trees, edited (aerolayout's LayoutView). A pane per screen role
 // of the arrangement, each a scale model of its screen: boxes proportional
@@ -45,7 +46,10 @@ Item {
   readonly property string block: Layout.editBlock(state, arrangement)
   readonly property bool isActive: state !== null && state.arrangement === arrangement
 
+  // A Prompts.js prompt and what to do with its answer, as in the Slots and
+  // Arrangements views.
   property var prompt: null
+  property var _answer: null
   readonly property bool prompting: prompt !== null
   property string message: ""
   property bool messageIsError: false
@@ -54,11 +58,7 @@ Item {
   readonly property var activeNode: activeDraft ? activeDraft.node : null
 
   readonly property string helpText: {
-    if (prompting) {
-      if (prompt.kind === "ratio") return "type a ratio   ·   Return set   ·   Backspace   ·   Esc cancel"
-      if (prompt.kind === "confirm") return "y yes   ·   n / Esc no"
-      return "letter/digit pick   ·   Esc cancel"
-    }
+    if (prompting) return Prompts.help(prompt)
     return "arrows select   ·   Tree: hjkl move  HJKL force move  / flip  t " + toggleLabel
       + "  r ratios  o overflow   ·   Layout: w apply  s save  d default  R record   ·   g desk  c arrangement"
       + "   ·   Tab switch view  q close"
@@ -89,6 +89,7 @@ Item {
   // Back to the opening target: the focused workspace's desk and screen.
   function reset() {
     prompt = null
+    _answer = null
     message = ""
     drafts = ({})
     selectedKey = ""
@@ -251,7 +252,7 @@ Item {
   }
 
   function handleKey(key, text, modifiers) {
-    if (prompting) return handlePrompt(key, text)
+    if (prompting) return handlePrompt(key, text, modifiers)
     var arrow = arrowOf(key)
     if (arrow !== "") select(arrow)
     else if (moveKeys[text]) moveSelected(moveKeys[text], false)
@@ -286,6 +287,13 @@ Item {
       : "Overflow leaf back — move it like any node to choose where they go.") + draftNote(), false)
   }
 
+  // Open a prompt; answer(value) runs on its answer.
+  function ask(p, answer) {
+    prompt = p
+    _answer = answer
+    message = ""
+  }
+
   function startRatio() {
     if (!activeNode || refuseEdit()) return
     var p = Layout.ratioPrompt(activeNode)
@@ -293,10 +301,11 @@ Item {
       say(p.error, true)
       return
     }
-    prompt = { kind: "ratio", text: p.text, input: "" }
-    message = ""
+    ask(Prompts.text(p.text), submitRatio)
   }
 
+  // A ratio the grammar refuses opens the prompt again, the entry kept and
+  // the refusal under it.
   function submitRatio(input) {
     var entry = input.trim()
     if (entry === "" || entry.toLowerCase() === "clear") {
@@ -306,26 +315,28 @@ Item {
     }
     var result = Layout.applyRatio(activeNode, entry)
     if (result.error) {
-      say(result.error, true)
+      ask(Prompts.withError(Prompts.text(Layout.ratioPrompt(activeNode).text, { value: input }), result.error), submitRatio)
       return
     }
     setDraft(role, result.node)
     say("Set ratios " + Layout.ratio(result.node) + "." + draftNote(), false)
   }
 
+  // A y/n question; action() runs on y.
   function confirm(text, action) {
-    prompt = { kind: "confirm", text: text, action: action }
-    message = ""
+    ask(Prompts.confirm(text), function(yes) {
+      if (yes) action()
+      else root.message = ""
+    })
   }
 
   function startPick(what) {
     if (!state) return
     var names = what === "desk" ? (state.desks || []).map(String) : Object.keys(state.arrangements || {}).sort()
     if (names.length === 0) return
-    var options = Layout.keyedOptions(names)
-    prompt = { kind: "pick", what: what, options: options,
-      text: Layout.keyedPrompt(what === "desk" ? "Edit desk" : "Edit arrangement", options) }
-    message = ""
+    ask(Prompts.choice(what === "desk" ? "Edit desk" : "Edit arrangement", Prompts.options(names)), function(name) {
+      root.pick(what, name)
+    })
   }
 
   function pick(what, name) {
@@ -341,41 +352,14 @@ Item {
       dropped.length > 0)
   }
 
-  function handlePrompt(key, text) {
-    var p = prompt
-    if (key === Qt.Key_Escape) {
-      prompt = null
-      say("Cancelled.", false)
-      return true
-    }
-    if (p.kind === "ratio") {
-      if (key === Qt.Key_Return || key === Qt.Key_Enter) {
-        prompt = null
-        submitRatio(p.input)
-      } else if (key === Qt.Key_Backspace) {
-        prompt = Object.assign({}, p, { input: p.input.slice(0, -1) })
-      } else if (text !== "" && text.charCodeAt(0) >= 32) {
-        prompt = Object.assign({}, p, { input: p.input + text })
-      }
-      return true
-    }
-    if (p.kind === "confirm") {
-      if (text === "y" || text === "Y") {
-        prompt = null
-        p.action()
-      } else if (text === "n" || text === "N") {
-        prompt = null
-        message = ""
-      }
-      return true
-    }
-    for (var i = 0; i < p.options.length; i++) {
-      if (text !== "" && p.options[i].key === text) {
-        prompt = null
-        pick(p.what, p.options[i].name)
-        return true
-      }
-    }
+  function handlePrompt(key, text, modifiers) {
+    var out = Prompts.key(prompt, Prompts.keyName(key, modifiers, Qt), Prompts.typed(text))
+    var answer = _answer
+    prompt = out.prompt
+    if (!out.result) return true
+    _answer = null
+    if (out.result.cancel) say("Cancelled.", false)
+    else if (answer) answer(out.result.value)
     return true // the prompt owns the keyboard
   }
 
@@ -437,7 +421,7 @@ Item {
   function startReset() {
     if (refuseEdit()) return
     var r = role
-    confirm("Put desk " + desk + " on " + r + " back to the tree slots.lua holds? (y/n)", function() {
+    confirm("Put desk " + desk + " on " + r + " back to the tree slots.lua holds?", function() {
       root.engine.call("reset", { arrangement: root.arrangement, desk: root.desk, role: r }, function(reply) {
         if (!reply.ok) {
           root.say(reply.error, true)
@@ -482,7 +466,7 @@ Item {
       var missing = reply.missing || []
       var text = "Recorded " + reply.tree + " (" + reply.ratio + ") from workspace " + reply.workspace
         + (missing.length ? "; missing " + missing.join(", ") + ": applying drops " + (missing.length === 1 ? "it" : "them")
-          + " from the tree" : "") + ". Apply it? (y/n)"
+          + " from the tree" : "") + ". Apply it?"
       root.confirm(text, function() {
         var trees = {}
         trees[r] = reply.tree
@@ -505,10 +489,6 @@ Item {
 
   function selectionText() {
     return role + " " + selectedKey
-  }
-
-  function messageText() {
-    return prompting ? prompt.text + (prompt.kind === "ratio" ? prompt.input : "") : message
   }
 
   // The draft trees, "big: h[a, b]; side: c" (edited ones marked *).
@@ -804,15 +784,17 @@ Item {
       font.pixelSize: Style.font.bodySmall
     }
 
-    // The prompt (with what has been typed), or the last outcome.
+    // The prompt (with the refusal under it), or the last outcome.
     Text {
       id: footerText
       width: parent.width
       textFormat: Text.PlainText
       wrapMode: Text.WordWrap
-      text: root.prompting ? root.prompt.text + (root.prompt.kind === "ratio" ? root.prompt.input + "▏" : "")
+      text: root.prompting
+        ? Prompts.display(root.prompt) + (root.prompt.error ? "\n" + root.prompt.error : "")
         : (root.message !== "" ? root.message : " ")
-      color: root.prompting ? Commons.Color.accent : (root.messageIsError ? Commons.Color.urgent : root.foreground)
+      color: root.prompting ? (root.prompt.error ? Commons.Color.urgent : Commons.Color.accent)
+        : (root.messageIsError ? Commons.Color.urgent : root.foreground)
       font.family: root.fontFamily
       font.pixelSize: Style.font.body
       font.bold: root.prompting

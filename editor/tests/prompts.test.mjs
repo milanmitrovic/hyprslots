@@ -89,6 +89,23 @@ test("keys get letters by first letter, then the first free digit", () => {
   assert.deepEqual(plain(P.keys(["main", "menu", "right", "Mail"])), ["m", "1", "r", "2"]);
 });
 
+test("the Layout view's desk and arrangement picks read as one-key prompts", () => {
+  assert.equal(P.display(P.choice("Edit arrangement", P.options(["dual", "single", "solo"]))),
+    "Edit arrangement: (d)ual, (s)ingle, (1) solo? [Esc] cancel   → dual");
+  const desks = P.options(["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]);
+  assert.deepEqual(plain(desks.map((o) => o.key)), ["1", "2", "3", "4", "5", "6", "7", "8", "9", ""]);
+  assert.equal(P.display(P.choice("Edit desk", desks.slice(2, 3))), "Edit desk: (3)? [Esc] cancel   → 3");
+  assert.deepEqual(feed(P.choice("Edit desk", desks), "3").result, { value: "3" });
+});
+
+test("a refused ratio reopens with the entry kept and the refusal under it", () => {
+  const again = P.withError(P.text("Ratios: ", { value: "2:x" }), "bad ratio");
+  assert.equal(P.display(again), "Ratios: 2:x▏");
+  const { prompt, result } = feed(again, ["Backspace"], "1", ["Return"]);
+  assert.equal(prompt, null);
+  assert.deepEqual(result, { value: "2:1" });
+});
+
 test("a prompt can carry an error from the engine and keep its line", () => {
   const prompt = P.withError(P.text("Spec: ", { value: "[Tag" }), "spec '[Tag': a tag needs a closing ']'");
   assert.equal(prompt.value, "[Tag");

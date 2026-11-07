@@ -400,14 +400,21 @@ test_body() {
     "an accordion holds slots only, found 'h[' inside it" "$(smoke message)"
   expect_eq "r" "ok" "$(smoke press r)"
   expect_eq "r prompts with the current ratio" \
-    "Ratios for the whole tree (current 2:1[1:1]; empty clears all) [Enter] set  [Esc] cancel: " "$(smoke message)"
-  local c ratio_entry='2:1[1:3]'
+    "Ratios for the whole tree (current 2:1[1:1]; empty clears all) [Enter] set  [Esc] cancel: ▏" "$(smoke message)"
+  # A ratio the grammar refuses opens the prompt again, the entry kept.
+  press_text 2:1:1
+  press_keys Return
+  expect_eq "a refused ratio reopens its prompt with the refusal" \
+    "Ratios for the whole tree (current 2:1[1:1]; empty clears all) [Enter] set  [Esc] cancel: 2:1:1▏ | expected 2 values for the outer container, got 3" \
+    "$(smoke message)"
+  press_keys Backspace Backspace
+  local c ratio_entry='[1:3]'
   for ((i = 0; i < ${#ratio_entry}; i++)); do
     c=${ratio_entry:i:1}
     [[ $(smoke press "$c") == ok ]] || fail "typing $c into the ratio prompt"
   done
   expect_eq "the prompt shows what was typed" \
-    "Ratios for the whole tree (current 2:1[1:1]; empty clears all) [Enter] set  [Esc] cancel: 2:1[1:3]" "$(smoke message)"
+    "Ratios for the whole tree (current 2:1[1:1]; empty clears all) [Enter] set  [Esc] cancel: 2:1[1:3]▏" "$(smoke message)"
   expect_eq "Return" "ok" "$(smoke press Return)"
   expect_eq "the ratio lands in the draft" "main: v[main:2, h[right, side:3]] *" "$(smoke layout)"
   expect_eq "nothing is applied yet" "h[main:2, v[right, side]]" "$(tree_in_force)"

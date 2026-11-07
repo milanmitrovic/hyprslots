@@ -410,14 +410,3 @@ test("the order strip lists the leaves in order once the tree nests", () => {
   assert.equal(L.order(tree("h[a, b]")), "");
   assert.equal(L.order(tree("h[main, v[right, *]]")), "1.main → 2.right → 3.overflow");
 });
-
-test("a one-key prompt gives each choice its first letter, else the first free digit", () => {
-  assert.deepEqual(plain(L.keyedOptions(["dual", "single", "solo"])),
-    [{ key: "d", name: "dual" }, { key: "s", name: "single" }, { key: "1", name: "solo" }]);
-  assert.equal(L.keyedPrompt("Edit arrangement", L.keyedOptions(["dual", "single", "solo"])),
-    "Edit arrangement: (d)ual, (s)ingle, (1) solo? [Esc] cancel");
-  assert.deepEqual(plain(L.keyedOptions(["aa", "a"])), [{ key: "a", name: "aa" }, { key: "1", name: "a" }]);
-  assert.equal(L.keyedPrompt("Edit arrangement", L.keyedOptions(["dual", "single"])),
-    "Edit arrangement: (d)ual, (s)ingle? [Esc] cancel");
-  assert.equal(L.keyedPrompt("Desk", [{ key: "3", name: "3" }]), "Desk: (3)? [Esc] cancel");
-});

@@ -811,33 +811,3 @@ function order(root) {
     return (i + 1) + "." + (key === OVERFLOW ? "overflow" : key)
   }).join(" → ")
 }
-
-// One key per choice, as the Assignment view's prompt: the first letter,
-// else the first digit not taken.
-function keyedOptions(names) {
-  var used = {}
-  return names.map(function(name) {
-    var key = String(name).charAt(0).toLowerCase()
-    if (used[key] || key === "") {
-      key = ""
-      for (var n = 1; n <= 9; n++) {
-        if (!used[String(n)]) {
-          key = String(n)
-          break
-        }
-      }
-    }
-    if (key !== "") used[key] = true
-    return { key: key, name: String(name) }
-  })
-}
-
-function keyedPrompt(question, options) {
-  var labels = options.map(function(o) {
-    if (o.key === "") return o.name
-    if (o.key === o.name.charAt(0).toLowerCase() && o.name.length > 1) return "(" + o.key + ")" + o.name.slice(1)
-    if (o.key === o.name) return "(" + o.key + ")"
-    return "(" + o.key + ") " + o.name
-  })
-  return question + ": " + labels.join(", ") + "? [Esc] cancel"
-}

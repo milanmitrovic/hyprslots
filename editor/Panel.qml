@@ -139,15 +139,15 @@ Item {
     return layoutView.draftText()
   }
 
-  // A Slots or Arrangements prompt as one line, the engine's refusal after
-  // " | "; the view's message when no prompt is open.
+  // A view's prompt as one line, the refusal after " | "; the view's
+  // message when no prompt is open.
   function promptText(prompt, message) {
     if (!prompt) return message
     return Prompts.display(prompt) + (prompt.error ? " | " + prompt.error : "")
   }
 
   function messageText() {
-    if (root.tab === 1) return layoutView.messageText()
+    if (root.tab === 1) return root.promptText(layoutView.prompt, layoutView.message)
     if (root.tab === 2) return root.promptText(slotsView.prompt, slotsView.message)
     if (root.tab === 3) return root.promptText(arrangementsView.prompt, arrangementsView.message)
     return assignmentView.prompting ? assignmentView.prompt.text : assignmentView.message
