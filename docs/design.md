@@ -182,6 +182,40 @@ result depends on window open order and focus at the moment each split
 happens, and the dispatches race with window mapping. Arithmetic placement
 has neither problem.
 
+### Accordions and the overflow leaf (slice 4)
+
+Tree syntax: an accordion is `a[left, main, right]` (a letter opening a
+container, like `h` and `v`; `a` is still a plain slot name when no `[`
+follows). It holds slots only; a split, accordion, `*` or weight inside it
+is rejected with its position, under the branch's config path. The overflow
+leaf is `*` (`h[main:2, v[right, *]]`), takes a weight like any leaf, and
+appears at most once per tree. This supersedes the interim column above: a
+tree without `*` gets one appended as `h[tree:3, *:1]`, the same geometry,
+now as a real leaf. Unmatched windows stack in it in equal rows; an empty
+overflow leaf closes up like an empty slot.
+
+Every present member of an accordion gets the accordion's box. Realized as a
+Hyprland group, the group is one layout target (`target.window` is its
+current window) and so fills that box; members not yet grouped overlap in it
+meanwhile. A group showing a window that is no member still gets the box.
+
+Group membership (`groups.lua`) changes only in a deferred pass (20 ms
+timer), never in `recalculate`. The pass runs after `window.open`,
+`window.destroy`, `window.move_to_workspace`, start and monitor events, and
+when a layout pass sees an accordion split over several targets or a
+stranger in its group (a drag-out fires no event, so this is what catches
+it). It plans pure moves per desk workspace with an accordion: a group
+holding a member is the accordion's (first wins), strangers are taken out
+(`hl.dsp.window.move{out_of_group}`), a missing group is made with
+`hl.dsp.group.toggle`, and members join with `HL.Group:add`: Hyprland has no
+dispatcher that adds a named window to a named group (`into_group` takes a
+direction). Members are put back after a drag-out: the tree is the truth. A
+lone member stays ungrouped; groups with no accordion slot and groups on
+workspaces that are no desk are left alone; floating windows are ignored.
+Layout-triggered passes stop after three in a row that still had moves to
+make (an error is logged), so a refused move cannot loop; any window event
+re-arms them.
+
 ## 7. Routing
 
 - `window.open` and `window.title` events: match the window against the specs
