@@ -499,6 +499,14 @@ test_body() {
   save_and_check
   arrangement_edits
 
+  # The Layout tab was on solo, which is gone: it follows the running home,
+  # whose screen role is big now.
+  press_keys Tab Tab
+  expect_eq "the Layout tab follows the running arrangement" "big: h[aside, main, side]" "$(smoke layout)"
+  expect_eq "and says so" "Arrangement 'solo' is gone; editing desk 3 of home." "$(smoke message)"
+  sleep 0.3
+  shot 15-layout-follows
+
   expect_eq "Escape" "ok" "$(smoke press Escape)"
   expect_eq "the panel is closed" "no" "$(smoke ready)"
 

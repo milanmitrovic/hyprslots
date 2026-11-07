@@ -114,8 +114,21 @@ Item {
   }
 
   // Follow the trees in force: a pane whose draft is unedited takes the new
-  // tree; an edited one keeps the edit. Keep the selection on a leaf.
+  // tree; an edited one keeps the edit. Keep the selection on a leaf. When
+  // the arrangement being edited is gone (renamed or deleted in the
+  // Arrangements view), move to the running one.
   function sync() {
+    var moved = Layout.retarget(state, { arrangement: arrangement, desk: desk, role: role })
+    if (moved) {
+      var was = arrangement
+      arrangement = moved.arrangement
+      desk = moved.desk
+      role = moved.role
+      drafts = ({})
+      selectedKey = ""
+      if (was !== "") say("Arrangement '" + was + "' is gone; editing desk " + desk + " of "
+        + (arrangement !== "" ? arrangement : "nothing") + ".", false)
+    }
     var next = {}
     var list = currentPanes()
     for (var i = 0; i < list.length; i++) {

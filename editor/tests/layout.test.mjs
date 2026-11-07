@@ -346,6 +346,25 @@ test("the view opens on the active arrangement, at the focused workspace's desk 
   assert.deepEqual(plain(L.initialTarget(none, 3)), { arrangement: "dual", desk: 3, role: "big" });
 });
 
+test("an arrangement renamed or deleted under the view moves it to the running one, same desk", () => {
+  const here = { arrangement: "single", desk: 4, role: "big" };
+  assert.equal(L.retarget(fixture(), here), null, "still there: stay");
+  const renamed = fixture();
+  renamed.arrangements.solo = renamed.arrangements.single;
+  delete renamed.arrangements.single;
+  assert.deepEqual(plain(L.retarget(renamed, here)), { arrangement: "dual", desk: 4, role: "big" });
+  const gone = fixture();
+  delete gone.arrangements.dual;
+  delete gone.arrangement;
+  assert.deepEqual(plain(L.retarget(gone, { arrangement: "dual", desk: 9, role: "side" })),
+    { arrangement: "single", desk: 3, role: "big" }, "the first by name; a desk the state lacks goes to the first");
+  const empty = fixture();
+  empty.arrangements = {};
+  delete empty.arrangement;
+  assert.deepEqual(plain(L.retarget(empty, here)), { arrangement: "", desk: 4, role: "" });
+  assert.equal(L.retarget(null, here), null, "no state yet: stay");
+});
+
 test("what may not be edited says why", () => {
   assert.equal(L.editBlock(fixture(), "dual"), "");
   assert.match(L.editBlock(fixture(), "single"), /set by code in config\.lua/);

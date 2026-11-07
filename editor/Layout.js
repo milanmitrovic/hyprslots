@@ -678,6 +678,20 @@ function initialTarget(state, workspaceId) {
   return { arrangement: arrangement || null, desk: desks.length ? desks[0] : 1, role: roles.length ? roles[0] : null }
 }
 
+// Where the view goes when the arrangement it edits is no longer there (the
+// Arrangements view renamed or deleted it): the running arrangement (else
+// the first by name), at the same desk when the state still has it (else the
+// first), on its first role. null while it is still there, or with no state.
+function retarget(state, target) {
+  if (!state || !state.arrangements || state.arrangements[target.arrangement]) return null
+  var names = sortedNames(state.arrangements)
+  var arrangement = state.arrangement && state.arrangements[state.arrangement] ? state.arrangement : names[0] || ""
+  var desks = Array.isArray(state.desks) ? state.desks : []
+  var desk = desks.indexOf(target.desk) >= 0 || desks.length === 0 ? target.desk : desks[0]
+  var roles = arrangement ? state.arrangements[arrangement].roles || [] : []
+  return { arrangement: arrangement, desk: desk, role: roles.length ? roles[0] : "" }
+}
+
 // Why the trees of an arrangement may not be edited, "" when they may.
 function editBlock(state, arrangement) {
   if (!state) return "no state from hyprslots yet"
