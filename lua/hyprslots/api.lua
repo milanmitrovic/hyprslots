@@ -599,4 +599,92 @@ function M.dump(engine)
   return table.concat(lines, "\n")
 end
 
+-- Layout editing (the editor's Layout view) ---------------------------------
+
+-- set_trees { arrangement?, desk, trees = { role = tree, ... } }: several of a
+-- desk's trees in one edit, so a slot can move from one screen to another
+-- (a slot sits on one screen of a desk, so two set_tree calls could not do
+-- it). All or nothing; each tree set replaces that branch's keyboard-resized
+-- override, which is kept when the edit fails.
+function handlers.set_trees(engine, args)
+  local name, err = target_arrangement(engine, args)
+  if not name then
+    return fail(err)
+  end
+  if not engine.data then
+    return fail("config.lua loads no " .. DATA_FILE .. ", so there is nothing the editor may change")
+  end
+  local desk = as_desk(args.desk)
+  local data, set_err = edit.set_trees(engine.data, name, desk, args.trees)
+  if not data then
+    return fail(set_err)
+  end
+  local nudged = {}
+  for role in pairs(args.trees) do
+    local key = resize.key(name, desk, role)
+    nudged[key] = engine.resized and engine.resized[key]
+    resize.clear(engine, name, desk, role)
+  end
+  local cfg, apply_err = apply_data(engine, data)
+  if not cfg then
+    for key, override in pairs(nudged) do
+      engine.resized[key] = override
+    end
+    return fail(apply_err)
+  end
+  local trees = object()
+  for role in pairs(args.trees) do
+    local node = cfg.arrangements[name].desks[desk][role]
+    trees[role] = object({ tree = serialize.tree(node), ratio = ratio.format(node) })
+  end
+  return { arrangement = name, desk = desk, trees = trees, seq = engine.seq }
+end
+
+-- slots.lua as it is on disk (data only, read in an empty environment), or
+-- nil and why not.
+local function saved_data(engine)
+  local path = (engine.config_dir or config.dir()) .. "/" .. DATA_FILE
+  local chunk, err = loadfile(path, "t", {})
+  if not chunk then
+    return nil, "cannot read " .. DATA_FILE .. ": " .. tostring(err)
+  end
+  local ok, data = pcall(chunk)
+  if not ok or type(data) ~= "table" then
+    return nil, "cannot read " .. DATA_FILE .. ": " .. (ok and "it returns no table" or tostring(data))
+  end
+  return data
+end
+
+-- reset { arrangement?, desk, role }: a branch back to the tree slots.lua
+-- holds on disk (no tree when it has none), dropping both an unsaved edit and
+-- a keyboard-resized override of it. Other branches keep their edits; the
+-- engine is clean again when nothing differs from the file.
+function handlers.reset(engine, args)
+  local name, err = target_arrangement(engine, args)
+  if not name then
+    return fail(err)
+  end
+  if not engine.data then
+    return fail("config.lua loads no " .. DATA_FILE .. ", so there is nothing the editor may change")
+  end
+  local desk = as_desk(args.desk)
+  local saved, read_err = saved_data(engine)
+  if not saved then
+    return fail(read_err)
+  end
+  local data, reset_err = edit.reset_tree(engine.data, saved, name, desk, args.role)
+  if not data then
+    return fail(reset_err)
+  end
+  local cfg, load_err = config.load(engine.config_dir, { data = { [DATA_FILE] = data } })
+  if not cfg then
+    return fail(load_err)
+  end
+  resize.clear(engine, name, desk, args.role)
+  engine:apply_config(cfg, data, serialize.dump(data) ~= serialize.dump(saved))
+  local node = cfg.arrangements[name].desks[desk] and cfg.arrangements[name].desks[desk][args.role]
+  return { arrangement = name, desk = desk, role = args.role, tree = node and serialize.tree(node) or nil,
+    ratio = node and ratio.format(node) or nil, seq = engine.seq }
+end
+
 return M
