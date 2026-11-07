@@ -484,7 +484,7 @@ the running engine only through Hyprland:
 | `AssignmentView.qml` | aerolayout's Assignment view (below) |
 | `LayoutView.qml` | aerolayout's Layout view (below) |
 | `SlotsView.qml`, `ArrangementsView.qml` | aerolayout's logical slots and monitors views (below) |
-| `Protocol.js`, `Assignment.js`, `Layout.js`, `Summary.js`, `Slots.js`, `Arrangements.js`, `Prompts.js` | pure logic, tested under node (`editor/tests/`) |
+| `Protocol.js`, `Assignment.js`, `Layout.js`, `Slots.js`, `Arrangements.js`, `Prompts.js` | pure logic, tested under node (`editor/tests/`) |
 
 **Assignment view** (aerolayout `views.py` AssignmentView). Pages: every
 window, then each desk; it opens on the focused workspace's desk. A desk's
