@@ -95,3 +95,14 @@ test("a prompt can carry an error from the engine and keep its line", () => {
   assert.equal(prompt.error, "spec '[Tag': a tag needs a closing ']'");
   assert.equal(feed(prompt, "]").prompt.error, "", "typing clears it");
 });
+
+test("Qt keys become the names key() takes", () => {
+  const Q = { Key_Return: 1, Key_Enter: 2, Key_Escape: 3, Key_Backspace: 4, Key_Delete: 5, Key_Left: 6, Key_Right: 7,
+    Key_Home: 8, Key_End: 9, Key_Up: 10, Key_Down: 11, Key_U: 85, ControlModifier: 0x4000000 };
+  assert.equal(P.keyName(2, 0, Q), "Return");
+  assert.equal(P.keyName(4, 0, Q), "Backspace");
+  assert.equal(P.keyName(85, Q.ControlModifier, Q), "ClearLine");
+  assert.equal(P.keyName(85, 0, Q), "");
+  assert.equal(P.typed("\u0015"), "", "a control character types nothing");
+  assert.equal(P.typed("é"), "é");
+});

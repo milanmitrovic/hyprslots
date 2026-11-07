@@ -211,3 +211,23 @@ function numbered(items) {
     return { key: i < 9 ? String(i + 1) : "", label: item.label, value: item.value }
   })
 }
+
+// The name key() takes for a Qt key (`Q` is QML's Qt, or a stand-in), ""
+// for one that only types.
+function keyName(key, modifiers, Q) {
+  if ((modifiers & Q.ControlModifier) && key === Q.Key_U) return "ClearLine"
+  var names = [
+    ["Key_Return", "Return"], ["Key_Enter", "Return"], ["Key_Escape", "Escape"], ["Key_Backspace", "Backspace"],
+    ["Key_Delete", "Delete"], ["Key_Left", "Left"], ["Key_Right", "Right"], ["Key_Home", "Home"], ["Key_End", "End"],
+    ["Key_Up", "Up"], ["Key_Down", "Down"],
+  ]
+  for (var i = 0; i < names.length; i++) if (key === Q[names[i][0]]) return names[i][1]
+  return ""
+}
+
+// The text a key types: "" for control characters.
+function typed(text) {
+  if (!text) return ""
+  for (var i = 0; i < text.length; i++) if (text.charCodeAt(i) < 32 || text.charCodeAt(i) === 127) return ""
+  return text
+}
