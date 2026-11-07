@@ -44,6 +44,12 @@ local function new_engine()
     active = nil,
     workspaces = {}, -- workspace id -> { desk, role, monitor, branch }
     assignments = {}, -- window address -> { desk, slot }
+    seq = 0, -- bumped on every change the editor should see
+    started = false,
+    config_dir = nil,
+    data = nil, -- the editor-owned slots.lua data the running config came from
+    dirty = false, -- data differs from slots.lua on disk
+    ruled = {}, -- workspace ids given lua:slots
   }, Engine)
 end
 
@@ -81,6 +87,9 @@ function Engine:reselect()
   end
 
   local now = self.active and self.active.name
+  if now ~= previous and self.started then
+    self:changed()
+  end
   if now ~= previous then
     local names = {}
     for _, monitor in ipairs(monitors) do
@@ -162,9 +171,12 @@ function Engine:guard(what, fn, ...)
 end
 
 local function load_config(self, dir)
+  self.config_dir = dir
   local cfg, err, missing = config.load(dir)
   if cfg then
     self.cfg = cfg
+    local file = cfg.data_files["slots.lua"]
+    self.data = file and file.data
     self.log:info("config loaded: %d arrangement(s)", #cfg.arrangement_names)
     return
   end
@@ -180,7 +192,7 @@ end
 -- lua:slots for desk N's workspace in every monitor block, for every desk
 -- some arrangement has a tree for. Workspace rules apply when a workspace is
 -- created, so they are set once, up front.
-local function workspace_rules(cfg)
+local function workspace_rules(cfg, ruled)
   local desks_with_trees = {}
   for _, name in ipairs(cfg.arrangement_names) do
     for desk in pairs(cfg.arrangements[name].desks) do
@@ -194,7 +206,11 @@ local function workspace_rules(cfg)
   table.sort(list)
   for _, desk in ipairs(list) do
     for block = 0, BLOCKS - 1 do
-      adapter.workspace_layout(block * 10 + desk, "lua:" .. LAYOUT)
+      local id = block * 10 + desk
+      if not ruled[id] then
+        ruled[id] = true
+        adapter.workspace_layout(id, "lua:" .. LAYOUT)
+      end
     end
   end
 end
@@ -208,7 +224,7 @@ local function start(self, opts)
 
   load_config(self, opts.config_dir)
   if self.cfg then
-    workspace_rules(self.cfg)
+    workspace_rules(self.cfg, self.ruled)
   end
 
   local function on_start()
@@ -232,13 +248,65 @@ local function start(self, opts)
 
   adapter.on("window.open", function(window)
     self:guard("window.open", router.window_opened, self, window)
+    self:guard("change event", self.changed, self)
   end)
   adapter.on("window.destroy", function(window)
     self:guard("window.destroy", router.window_destroyed, self, window)
+    self:guard("change event", self.changed, self)
   end)
 
   self:reselect()
   self:assign_all()
+  self.started = true
+end
+
+-- Tell the editor something changed: hl.dsp.event("hyprslots changed <seq>"),
+-- which reaches socket2 as custom>>hyprslots changed <seq>.
+function Engine:changed()
+  self.seq = self.seq + 1
+  adapter.emit_event("hyprslots changed " .. self.seq)
+end
+
+-- Make Hyprland lay out every desk workspace of the active arrangement again
+-- (one zero resize per workspace holding a tiled window).
+function Engine:relayout()
+  local nudged = {}
+  for _, window in ipairs(adapter.windows()) do
+    local id = window.workspace_id
+    if id and self.workspaces[id] and not nudged[id] and not window.floating and window.address then
+      nudged[id] = true
+      adapter.nudge(window.address)
+    end
+  end
+end
+
+-- Run a newly loaded config: rules, arrangement, assignments, layout, event.
+-- `data` is the slots.lua data it came from; `dirty` whether that differs
+-- from the file.
+function Engine:apply_config(cfg, data, dirty)
+  self.cfg = cfg
+  self.config_error = nil
+  self.data = data
+  self.dirty = dirty and true or false
+  workspace_rules(cfg, self.ruled)
+  self:reselect()
+  self:assign_all()
+  self:relayout()
+  self:changed()
+end
+
+-- Re-read config.lua and slots.lua from disk, dropping unsaved edits. Returns
+-- true, or nil and the error (the running config stays).
+function Engine:reload()
+  local cfg, err = config.load(self.config_dir)
+  if not cfg then
+    self.log:error("reload: %s", err)
+    return nil, err
+  end
+  local file = cfg.data_files["slots.lua"]
+  self:apply_config(cfg, file and file.data, false)
+  self.log:info("config reloaded: %d arrangement(s)", #cfg.arrangement_names)
+  return true
 end
 
 -- Set up hyprslots. opts.config_dir overrides $XDG_CONFIG_HOME/hyprslots.
@@ -273,6 +341,15 @@ M.api = {
 
 function M.dump()
   return api.dump(engine)
+end
+
+-- Re-read the config files in place (no Hyprland config reload). Returns
+-- true, or nil and the error.
+function M.reload_config()
+  if not engine then
+    return nil, "hyprslots is not set up"
+  end
+  return engine:reload()
 end
 
 return M
