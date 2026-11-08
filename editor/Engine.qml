@@ -25,9 +25,13 @@ Item {
   property var shell: null
   property var manifest: null
 
-  // Whether anyone is looking (the panel is open). Events are only followed
-  // while active, so a closed panel costs nothing.
+  // Whether anyone is looking: the panel is open (`active`), or bar widgets
+  // show the state (`watchers`, one per widget instance, from watch() and
+  // unwatch()). Events are only followed while someone is, so a closed panel
+  // with no widget on the bar costs nothing.
   property bool active: false
+  property int watchers: 0
+  readonly property bool following: active || watchers > 0
 
   property var state: null // the last state reply that read fine
   property string error: "" // why the last state read failed, "" when it worked
@@ -50,6 +54,15 @@ Item {
   // Read state soon (debounced).
   function refresh() {
     debounce.restart()
+  }
+
+  // A bar widget starts / stops showing the state.
+  function watch() {
+    watchers = watchers + 1
+  }
+
+  function unwatch() {
+    watchers = Math.max(0, watchers - 1)
   }
 
   // Run an api call; `done(reply)` gets {ok:true,...} or {ok:false,error}.
@@ -168,9 +181,11 @@ Item {
   Connections {
     target: Hyprland
     function onRawEvent(event) {
-      if (root.active && event && Protocol.meansReread(String(event.name), String(event.data || ""))) root.refresh()
+      if (root.following && event && Protocol.meansReread(String(event.name), String(event.data || ""))) root.refresh()
     }
   }
 
+  onFollowingChanged: if (following) refresh()
+  // Opening the panel reads again even while a widget kept the state fresh.
   onActiveChanged: if (active) refresh()
 }
