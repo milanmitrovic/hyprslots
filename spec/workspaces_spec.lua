@@ -5,6 +5,8 @@ local engine = require("helpers.engine")
 
 local BLOCKS = { ["HEADLESS-2"] = 0, ["HEADLESS-3"] = 1 }
 
+local NINE = engine.CONFIG:gsub("layouts = data.layouts", "layouts = data.layouts, workspaces = 9", 1)
+
 local PINNED_SIDE = engine.TWO_SCREENS:gsub('layout = "dual" }', 'layout = "dual", pinned = { 2 } }', 1)
 
 describe("workspaces across screens", function()
@@ -95,6 +97,39 @@ describe("workspaces across screens", function()
     assert.are.same({ { workspace = 3, monitor = "HEADLESS-2" } }, o.workspaces.focused)
   end)
 
+  describe("with workspaces = 9", function()
+    before_each(function()
+      hl, o = engine.stub({ "HEADLESS-2", "HEADLESS-3" }, BLOCKS)
+      hyprslots = engine.setup(engine.TWO_SCREENS, NINE)
+    end)
+
+    it("switches to workspace 9 but refuses 10", function()
+      assert.is_true(engine.call(hyprslots, "workspace", '{"workspace": 9}').ok)
+      local reply = engine.call(hyprslots, "workspace", '{"workspace": 10}')
+      assert.is_false(reply.ok)
+      assert.matches("a workspace must be an integer from 1 to 9, got 10", reply.error)
+    end)
+
+    it("says how many workspaces it manages in state", function()
+      assert.are.equal(9, engine.state(hyprslots).workspace_count)
+    end)
+
+    it("refuses to assign a window to workspace 10", function()
+      local window = require("helpers.hl_stub").window(1, "kitty", { workspace = hl.get_workspace(1) })
+      hl.windows[#hl.windows + 1] = window
+      hl.emit("window.open", window)
+      local reply = engine.call(hyprslots, "assign", require("hyprslots.dkjson").encode({ address = window.address,
+        workspace = 10, slot = "main" }))
+      assert.matches("a workspace must be an integer from 1 to 9, got 10", reply.error)
+    end)
+  end)
+
+  it("says it manages ten workspaces by default", function()
+    hl, o = engine.stub({ "HEADLESS-2", "HEADLESS-3" }, BLOCKS)
+    hyprslots = engine.setup(engine.TWO_SCREENS)
+    assert.are.equal(10, engine.state(hyprslots).workspace_count)
+  end)
+
   describe("when hyprslots is not running", function()
     before_each(function()
       hl, o = engine.stub({ "HEADLESS-2", "HEADLESS-3" }, BLOCKS)
@@ -154,6 +189,15 @@ describe("workspaces across screens", function()
         { workspace = 10, monitor = "HEADLESS-2" },
       }, o.workspaces.focused)
       assert.are.equal("hyprslots.workspace(10)", o.bind_expressions[rebound[10].dispatcher])
+    end)
+
+    it("with workspaces = 9 rebinds Super+1..9 and leaves Super+0 Omarchy's", function()
+      local rebound = {}
+      o.rebind = function(keys) rebound[#rebound + 1] = keys end
+      hyprslots = engine.setup(engine.TWO_SCREENS, NINE)
+      hyprslots.bind_workspace_keys()
+      assert.are.equal(9, #rebound)
+      assert.are.equal("SUPER + code:18", rebound[9])
     end)
 
     it("falls back to hl.unbind and hl.bind without o.rebind", function()

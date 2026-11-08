@@ -156,8 +156,14 @@ local function sorted_keys(t)
   return keys
 end
 
-local function is_workspace(key)
-  return math.type(key) == "integer" and key >= 1 and key <= WORKSPACES
+local function is_workspace(key, count)
+  return math.type(key) == "integer" and key >= 1 and key <= count
+end
+
+-- Why a workspace key is out of range, for `count` managed workspaces.
+local function workspace_range(count)
+  return "a workspace must be an integer from 1 to " .. count
+    .. (count ~= WORKSPACES and " (workspaces = " .. count .. ")" or "")
 end
 
 local function key_path(prefix, key)
@@ -203,7 +209,7 @@ end
 
 -- Each workspace's specs: workspace -> slot -> spec text, every slot a global
 -- one. Returns workspace -> slot -> parsed spec.
-local function validate_specs(raw, slots, fail, title_matching)
+local function validate_specs(raw, slots, fail, title_matching, count)
   local specs = {}
   if raw == nil then
     return specs
@@ -215,8 +221,8 @@ local function validate_specs(raw, slots, fail, title_matching)
   for _, workspace in ipairs(sorted_keys(raw)) do
     local path = key_path("specs", workspace)
     local entries = raw[workspace]
-    if not is_workspace(workspace) then
-      fail(path, "a workspace must be an integer from 1 to " .. WORKSPACES)
+    if not is_workspace(workspace, count) then
+      fail(path, workspace_range(count))
     elseif type(entries) ~= "table" then
       fail(path, "must be a table of slot = spec")
     else
@@ -282,7 +288,7 @@ local function check_entry_name(path, name, what, fail)
   return true
 end
 
-local function validate_layout(name, raw, slots, fail)
+local function validate_layout(name, raw, slots, fail, count)
   local path = key_path("layouts", name)
   if type(raw) ~= "table" then
     fail(path, "must be a table { screens = N, default = ..., workspaces = ... }")
@@ -308,8 +314,8 @@ local function validate_layout(name, raw, slots, fail)
   else
     for _, n in ipairs(sorted_keys(raw.workspaces or {})) do
       local ws_path = key_path(path .. ".workspaces", n)
-      if not is_workspace(n) then
-        fail(ws_path, "a workspace must be an integer from 1 to " .. WORKSPACES)
+      if not is_workspace(n, count) then
+        fail(ws_path, workspace_range(count))
       else
         layout.workspaces[n] = validate_trees(ws_path, raw.workspaces[n], screens, slots, fail)
       end
@@ -466,7 +472,21 @@ local function validate_scroll(raw, fail)
 end
 
 local KNOWN = { slots = true, specs = true, desks = true, layouts = true, title_matching = true,
-  scroll = true }
+  scroll = true, workspaces = true }
+
+-- How many workspaces hyprslots manages (1 to N: Super+N, the editor's
+-- workspace keys, the workspace rules), default all ten of Omarchy's.
+local function validate_count(raw, fail)
+  if raw == nil then
+    return WORKSPACES
+  end
+  if math.type(raw) ~= "integer" or raw < 1 or raw > WORKSPACES then
+    fail("workspaces", "must be how many workspaces hyprslots manages, an integer from 1 to " .. WORKSPACES
+      .. ", got " .. tostring(raw))
+    return WORKSPACES
+  end
+  return raw
+end
 
 -- Normalize a raw config table. Returns the config, or nil and every error
 -- found (one per line).
@@ -491,10 +511,12 @@ function M.validate(raw, monitors)
 
   local title_matching = validate_title_matching(raw.title_matching, fail)
   local slots, slot_names = validate_slots(raw.slots, fail)
+  local count = validate_count(raw.workspaces, fail)
   local cfg = {
+    workspaces = count,
     slots = slots,
     slot_names = slot_names,
-    specs = validate_specs(raw.specs, slots, fail, title_matching),
+    specs = validate_specs(raw.specs, slots, fail, title_matching, count),
     title_matching = title_matching,
     desks = {},
     desk_names = {},
@@ -512,7 +534,7 @@ function M.validate(raw, monitors)
         if check_entry_name(key_path(section, name), name, section == "desks" and "desk" or "layout", fail) then
           local entry
           if section == "layouts" then
-            entry = validate_layout(name, entries[name], cfg.slots, fail)
+            entry = validate_layout(name, entries[name], cfg.slots, fail, count)
           else
             entry = validate_desk(name, entries[name], cfg.layouts, fail)
           end

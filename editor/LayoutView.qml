@@ -95,7 +95,7 @@ Item {
   readonly property string accent: String(Commons.Color.accent)
   readonly property string helpText: {
     if (prompting) return Help.escape(Prompts.help(prompt))
-    var workspaceKeys = { title: "Workspace", items: [{ key: "[ ]", label: "prev/next" }, { key: "1–9 0", label: "jump" },
+    var workspaceKeys = { title: "Workspace", items: [{ key: "[ ]", label: "prev/next" }, { key: Workspaces.jumpKeys(Workspaces.count(state)), label: "jump" },
       { key: "-", label: "default trees" }] }
     if (slotFocus) {
       return Help.row([
@@ -331,8 +331,8 @@ Item {
 
   function handleKey(key, text, modifiers) {
     if (prompting) return handlePrompt(key, text, modifiers)
-    if (text === "[" || text === "]") goWorkspace(Workspaces.step(workspace, text === "]" ? 1 : -1))
-    else if (Workspaces.ofDigit(text) !== null) goWorkspace(Workspaces.ofDigit(text))
+    if (text === "[" || text === "]") goWorkspace(Workspaces.step(workspace, text === "]" ? 1 : -1, Workspaces.count(state)))
+    else if (Workspaces.ofDigit(text, Workspaces.count(state)) !== null) goWorkspace(Workspaces.ofDigit(text, Workspaces.count(state)))
     else if (text === "-") goWorkspace("default")
     else if (text === "f") startFork()
     else if (slotFocus) return handleSlotKey(key, text)
@@ -886,7 +886,7 @@ Item {
         font.pixelSize: Style.font.title
         font.bold: true
       }
-      // Workspaces 1 to 10 by their keys ([ ] step, the digits jump) and the
+      // The managed workspaces by their keys ([ ] step, the digits jump) and the
       // default trees (-): the one edited reversed, the ones with trees of
       // their own brighter, the ones showing the default trees dimmer.
       Row {

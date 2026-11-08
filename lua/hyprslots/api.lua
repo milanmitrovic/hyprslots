@@ -18,6 +18,7 @@ local adapter = require("hyprslots.hl_adapter")
 local config = require("hyprslots.config")
 local desk = require("hyprslots.desk")
 local workspaces = require("hyprslots.workspaces")
+local workspace_count = workspaces.count -- snapshot shadows `workspaces`
 local edit = require("hyprslots.edit")
 local migrate = require("hyprslots.migrate")
 local ratio = require("hyprslots.ratio")
@@ -131,7 +132,7 @@ local function layouts_info(engine, read_only)
   for _, name in ipairs(cfg.layout_names) do
     local layout = cfg.layouts[name]
     local workspaces = object()
-    for n = 1, WORKSPACES do
+    for n = 1, cfg.workspaces or WORKSPACES do
       local trees = config.trees_for(layout, n)
       if trees then
         workspaces[tostring(n)] = trees_info(engine, name, n, trees)
@@ -232,7 +233,7 @@ local function used_workspaces(engine)
       seen[workspace] = true
     end
     for _, name in ipairs(cfg.layout_names) do
-      for n = 1, WORKSPACES do
+      for n = 1, cfg.workspaces or WORKSPACES do
         if next(config.trees_for(cfg.layouts[name], n) or {}) ~= nil then
           seen[n] = true
         end
@@ -327,6 +328,7 @@ function M.snapshot(engine)
   return {
     ok = true,
     seq = engine.seq,
+    workspace_count = workspace_count(engine),
     refused = engine.refused,
     config_error = engine.config_error,
     desk = engine.active and engine.active.desk or nil,
@@ -687,8 +689,9 @@ function handlers.assign(engine, args)
     return fail("no open window " .. tostring(args.address))
   end
   local workspace = as_integer(args.workspace)
-  if math.type(workspace) ~= "integer" or workspace < 1 or workspace > 10 then
-    return fail("a workspace must be an integer from 1 to 10, got " .. tostring(args.workspace))
+  local count = workspaces.count(engine)
+  if not workspaces.valid(workspace, count) then
+    return fail("a workspace must be an integer from 1 to " .. count .. ", got " .. tostring(args.workspace))
   end
   if not (engine.cfg and type(args.slot) == "string" and engine.cfg.slots[args.slot]) then
     return fail(string.format("no slot '%s' (add it in the editor's Layout tab, s then a)", tostring(args.slot)))

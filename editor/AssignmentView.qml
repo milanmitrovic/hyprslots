@@ -73,7 +73,7 @@ Item {
   readonly property string accent: String(Commons.Color.accent)
   readonly property string helpText: prompting ? Help.escape(Prompts.help(prompt)) : Help.row([
     [{ key: "↑/↓", label: "select" }],
-    { title: "Workspace", items: [{ key: "←/→ [ ]", label: "prev/next" }, { key: "1–9 0", label: "jump" }] },
+    { title: "Workspace", items: [{ key: "←/→ [ ]", label: "prev/next" }, { key: Workspaces.jumpKeys(Workspaces.count(state)), label: "jump" }] },
     [{ key: "a", label: "assign + take spec" },
       { key: "u", label: selectedRow && selectedRow.kind === "missing" ? "unassign: clear the Missing spec" : "unassign + clear spec" }],
     [{ key: "Ctrl+S", label: "save" }],
@@ -252,7 +252,7 @@ Item {
     else if (key === Qt.Key_Down || text === "j") select(selected + 1)
     else if (key === Qt.Key_Left || text === "h" || text === "p" || text === "[") turnPage(-1)
     else if (key === Qt.Key_Right || text === "l" || text === "]") turnPage(1)
-    else if (Workspaces.ofDigit(text) !== null) goWorkspace(Workspaces.ofDigit(text))
+    else if (Workspaces.ofDigit(text, Workspaces.count(state)) !== null) goWorkspace(Workspaces.ofDigit(text, Workspaces.count(state)))
     else if (text === "a") startAssign()
     else if (text === "u") startUnassign()
     else return false

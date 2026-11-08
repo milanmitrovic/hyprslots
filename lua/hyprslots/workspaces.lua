@@ -10,14 +10,21 @@ local adapter = require("hyprslots.hl_adapter")
 
 local M = {}
 
-function M.valid(workspace)
-  return math.type(workspace) == "integer" and workspace >= 1 and workspace <= 10
+-- How many workspaces the engine manages (config `workspaces`, default 10).
+function M.count(engine)
+  return engine and engine.cfg and engine.cfg.workspaces or 10
+end
+
+-- Whether `workspace` is one of 1..count (default all ten of Omarchy's).
+function M.valid(workspace, count)
+  return math.type(workspace) == "integer" and workspace >= 1 and workspace <= (count or 10)
 end
 
 -- Activate workspace N. Returns true, or nil and why not.
 function M.activate(engine, workspace)
-  if not M.valid(workspace) then
-    return nil, "a workspace must be an integer from 1 to 10, got " .. tostring(workspace)
+  local count = M.count(engine)
+  if not M.valid(workspace, count) then
+    return nil, "a workspace must be an integer from 1 to " .. count .. ", got " .. tostring(workspace)
   end
   if engine.refused then
     return nil, "hyprslots is not running: " .. engine.refused
@@ -120,10 +127,11 @@ function M.action(engine_ref, workspace)
 end
 
 -- Rebind SUPER + 1..0 (key codes 10..19, as Omarchy binds them) to workspace
--- switching. Not called by setup(): the cutover calls it from the user's
--- config once hyprslots should own those keys.
+-- switching, as many as the engine manages (config `workspaces`: with 9,
+-- Super+0 stays Omarchy's). Not called by setup(): the cutover calls it from
+-- the user's config once hyprslots should own those keys.
 function M.bind_keys(engine_ref)
-  for workspace = 1, 10 do
+  for workspace = 1, M.count(engine_ref()) do
     local keys = "SUPER + code:" .. tostring(workspace + 9)
     adapter.rebind(keys, "Switch to workspace " .. workspace .. " on every screen", M.action(engine_ref, workspace))
   end

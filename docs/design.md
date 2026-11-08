@@ -108,6 +108,7 @@ return {
   desks = data.desks,                 -- name -> { monitors, layout, pinned? }
   layouts = data.layouts,             -- name -> { screens, default?, workspaces? }
   title_matching = { ... },           -- per-class title extraction (§7a)
+  workspaces = 9,                     -- optional: manage workspaces 1 to 9 (default 10)
 }
 ```
 
@@ -147,6 +148,18 @@ count; `workspaces[n][i]` is workspace n's tree on screen i, and
 `default[i]` screen i's tree for every workspace with no entry of its own
 (an entry replaces the default trees whole, so `workspaces = { [5] = {} }`
 leaves workspace 5 empty). Desk and layout names hold no `/`.
+
+`workspaces` (top level, optional, an integer 1 to 10, default 10) is how
+many workspaces hyprslots manages: 1 to N. Specs and trees for a workspace
+past it are config errors (`specs[10]: a workspace must be an integer from
+1 to 9 (workspaces = 9)`); `bind_workspace_keys()` rebinds only Super+1..N
+(with 9, Super+0 stays Omarchy's own switch); the api refuses a workspace
+past it (`workspace`, `assign`; the edits through config.lua's validation);
+the workspace rules cover only 1 to N; `state` says `workspace_count`, and
+the editor's workspace strips, digit keys (`0` is no key with fewer than
+ten) and `[` / `]` wrapping follow it. It is config.lua's (a value there, or
+`data.workspaces` passed through from slots.lua); the editor never changes
+it.
 
 A tree or a spec may only name a slot defined under `slots`; anything else
 is a config error with its path (`specs[3].mian: no slot 'mian' (define it
@@ -216,7 +229,8 @@ refocused even when it is pinned and so did not switch. With no active desk
 only the origin switches, as Omarchy's Super+N does.
 
 `setup()` leaves Omarchy's Super+1..0 alone. `hyprslots.bind_workspace_keys()`
-rebinds `SUPER + code:10..19` to `hyprslots.workspace(1..10)` through
+rebinds `SUPER + code:10..19` to `hyprslots.workspace(1..10)` (as many as
+config `workspaces` says, §4, read when it is called) through
 `o.rebind` (so the keybindings menu keeps a description, "Switch to workspace
 N on every screen"); the user's shim calls it (`bind_desk_keys` is a
 deprecated alias).
@@ -727,7 +741,7 @@ workspace × slot table.
 |---|---|
 | ↑/↓, k/j | select |
 | ←/→, h/l (p), [ / ] | previous / next page |
-| 1–9, 0 | workspace 1–9, 10's page (one with no spec or tree has none, and says so) |
+| 1–9, 0 | workspace 1–9, 10's page (one with no spec or tree has none, and says so; 0 only when ten are managed) |
 | a | `Assign to workspace 3 slot (takes its spec): (m)ain, (r)ight, (1) more? [Esc] cancel`: every global slot, the workspace's own first; then `take_spec`: the window takes the slot and its spec (`spec.from_window`) becomes the workspace's for it, replacing the one it had; a slot not in layout is first put into the workspace's tree in the active layout (`take_spec` with `place`: a scroll branch in the global slot order, a tiled tree's root split as a new child, on the screen of the window's workspace, a workspace on the default trees getting its own copy), and the message names the tree it went into and the other desks using that layout |
 | u | on a window in a slot: `Unassign kitty from main and clear workspace 3's spec for it (kitty/deltaf)? (the slot is left empty) (y/n)`, then `unassign` with `clear_spec`: the window leaves the slot and the workspace no longer says what fills it, so the row is empty, not Missing that window; on an overflowing window, or one in a slot the workspace has no spec for, `unassign` alone; on a red Missing row (a spec whose window is not open): `Clear workspace 3's spec for main (kitty/deltaf)? The slot is left empty (y/n)`, then `clear_spec` |
 
@@ -759,11 +773,12 @@ panes the leaf order once the tree nests, or a scroll branch's column
 order (its `*`, when it has one, a frame of the filmstrip like any
 column). Edits go to a **draft**
 per pane (`edited` on the pane, `edited, not applied (w)` in the header).
-The header shows the workspace, the layout, and the workspaces 1 to 10 by
-their keys and `def` (the edited one reversed; the ones that show the
-default trees italic and dimmer; a click switches). A workspace that shows
-the default trees says so (`default trees: an edit gives workspace N its
-own`): its first edit gives it its own copy. Beside the panes, the **slot list**: the global slots by name,
+The header shows the workspace, the layout, and the managed workspaces
+(config `workspaces`, 1 to 10 by default) by their keys and `def` (the
+edited one reversed; the ones that show the default trees italic and
+dimmer; a click switches). A workspace that shows the default trees says
+so (`default trees: an edit gives workspace N its own`): its first edit
+gives it its own copy. Beside the panes, the **slot list**: the global slots by name,
 each with its description and nothing else (below).
 
 | Key | Does |
@@ -781,8 +796,8 @@ each with its description and nothing else (below).
 | Ctrl+S | apply the edited panes, then `save` (the panel's key) |
 | d | after y/n, put the pane's tree back to slots.lua (`reset`) |
 | R | `record` the pane's workspace, show the tree, its ratio and what it would drop (`missing`), apply after y/n (not on the default trees) |
-| [ / ] | previous / next workspace, round from 10 to 1 (the arrows stay the picture's) |
-| 1–9, 0 | workspace 1–9, 10 (as Super+N); unapplied edits are dropped, and the message says which |
+| [ / ] | previous / next workspace, round from the last managed one to 1 (the arrows stay the picture's) |
+| 1–9, 0 | workspace 1–9, 10 (as Super+N; 0 only when ten are managed); unapplied edits are dropped, and the message says which |
 | - | the layout's default trees (`workspace: "default"`), for every workspace with none of its own |
 | f | fork the layout: a name (the next free `<name>-N` suggested), then `fork_layout`: the active desk uses the copy, edited drafts carried over |
 | s | the keys go to the slot list (its border lights up; s or Esc back) |
@@ -930,7 +945,7 @@ restarts at 0 when Hyprland reloads its config (Lua state is discarded), so
 the editor treats any event as "re-read state", not as an ordering.
 
 `layout?` defaults to the active desk's layout and `desk?` to the active
-desk; `workspace` is a number 1 to 10, or `"default"` (a layout's default
+desk; `workspace` is a number 1 to 10 (1 to config `workspaces`), or `"default"` (a layout's default
 trees) where the tree calls say so; `screen` is a screen number (1 the
 left-most; as an object key, `"1"`).
 
@@ -965,7 +980,8 @@ left-most; as an object key, `"1"`).
 | `reload` | — | `desk, layout, seq` |
 | `arrange` | — | `swaps, widened[]` (workspace ids): the scroll pass now, every column of the focused scroll workspace widened (Super+L entering slots) |
 
-`state`: `seq`, `dirty` (unsaved edits, keyboard-resized trees, a new desk
+`state`: `seq`, `workspace_count` (config `workspaces`: how many
+workspaces hyprslots manages, 10 by default), `dirty` (unsaved edits, keyboard-resized trees, a new desk
 and slots.lua in a shape of before included), `desk` and `layout` (the
 active ones' names), `screens[]` (the active desk's connectors, left to
 right), `workspaces` (id -> `workspace, screen, monitor, layout`:

@@ -96,7 +96,7 @@ function Engine:reselect()
 
   if self.active then
     self:used_layout(self.active.layout)
-    for n = 1, WORKSPACES do
+    for n = 1, self.cfg.workspaces or WORKSPACES do
       for screen, branch in pairs(config.trees_for(self.active.entry, n) or {}) do
         local monitor = self.active.monitors[screen]
         if monitor then
@@ -365,7 +365,7 @@ workspace_rules = function(self, runtime)
   local cfg, ruled = self.cfg, self.ruled
   local with_trees = {}
   for _, name in ipairs(cfg.layout_names) do
-    for n = 1, WORKSPACES do
+    for n = 1, cfg.workspaces or WORKSPACES do
       if next(config.trees_for(cfg.layouts[name], n) or {}) ~= nil then
         with_trees[n] = true
       end

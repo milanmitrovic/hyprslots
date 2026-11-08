@@ -316,6 +316,32 @@ describe("config.validate", function()
     rejects(raw, "specs%[11%]: a workspace must be an integer from 1 to 10")
   end)
 
+  it("manages workspaces 1 to 10 unless workspaces says how many", function()
+    assert.are.equal(10, assert(config.validate(valid())).workspaces)
+    local raw = valid()
+    raw.workspaces = 9
+    assert.are.equal(9, assert(config.validate(raw)).workspaces)
+  end)
+
+  it("rejects a workspaces count that is no integer from 1 to 10", function()
+    for _, bad in ipairs({ 0, 11, 2.5, "9" }) do
+      local raw = valid()
+      raw.workspaces = bad
+      rejects(raw, "workspaces: must be how many workspaces hyprslots manages, an integer from 1 to 10")
+    end
+  end)
+
+  it("rejects specs and trees for a workspace past the count", function()
+    local raw = valid()
+    raw.workspaces = 9
+    raw.specs[10] = { main = "y" }
+    rejects(raw, "specs%[10%]: a workspace must be an integer from 1 to 9 %(workspaces = 9%)")
+    raw = valid()
+    raw.workspaces = 9
+    raw.layouts.solo.workspaces[10] = { [1] = "main" }
+    rejects(raw, "layouts%.solo%.workspaces%[10%]: a workspace must be an integer from 1 to 9 %(workspaces = 9%)")
+  end)
+
   it("rejects a bad slot name", function()
     local raw = valid()
     raw.slots["has space"] = {}

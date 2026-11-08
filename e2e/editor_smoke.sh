@@ -34,6 +34,7 @@
 # Screenshots of the nested compositor go to .e2e-tmp/editor-smoke-*.png.
 #
 # Screen: HEADLESS-2, 1920x1080, Omarchy block 0 (workspace N = workspace id N).
+# config.lua sets workspaces = 9: hyprslots manages workspaces 1 to 9.
 # Desk solo (HEADLESS-2) uses layout solo, which desk beamer (a projector not
 # connected) shares; workspace 3: h[main:2, v[right, side]]; t-side never
 # opens. Desk away (HEADLESS-2 and a Dell not connected) uses the 2-screen
@@ -48,7 +49,7 @@ LUA
   mkdir -p "$E2E_CONFIG_HOME/hyprslots"
   cat >"$E2E_CONFIG_HOME/hyprslots/config.lua" <<'LUA'
 local data = load_data("slots.lua")
-return { slots = data.slots, specs = data.specs, desks = data.desks, layouts = data.layouts }
+return { slots = data.slots, specs = data.specs, desks = data.desks, layouts = data.layouts, workspaces = 9 }
 LUA
   cat >"$E2E_CONFIG_HOME/hyprslots/slots.lua" <<'LUA'
 return {
@@ -821,6 +822,14 @@ test_body() {
   expect_eq "7: workspace 7 has no page" "Workspace 7 has no slots: no tree places one and it has no spec." "$(smoke message)"
   press_keys 3
   expect_eq "3 jumps to workspace 3's page" "slot main t-main" "$(smoke selection)"
+  # workspaces = 9 in config.lua: 0 is no key, the help says 1–9.
+  expect_eq "the engine manages nine workspaces" "9" "$(api_state | jq -r .workspace_count)"
+  expect_eq "0 is no key" "ignored" "$(smoke press 0)"
+  if [[ $(smoke help) == *'">1–9</font></b> jump'* ]]; then
+    pass "the help's jump keys are 1–9"
+  else
+    fail "help row: $(smoke help)"
+  fi
 
   # The Layout tab edits workspace 3's tree as a draft: / flips it, r takes a
   # typed ratio, w applies, Ctrl+S saves (s is no key of the view any more).

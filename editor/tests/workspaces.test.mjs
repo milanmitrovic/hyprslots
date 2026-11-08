@@ -47,3 +47,25 @@ test("stepping from the default trees goes to workspace 1 or 10", () => {
   assert.equal(W.step("default", 1), 1);
   assert.equal(W.step("default", -1), 10);
 });
+
+test("with workspace_count 9: ] steps round from 9 to 1, 0 is no key, the strip ends at 9", () => {
+  assert.equal(W.count({ workspace_count: 9 }), 9);
+  assert.equal(W.count({}), 10, "ten when the engine says nothing");
+  assert.equal(W.count(null), 10);
+  assert.equal(W.step(9, 1, 9), 1);
+  assert.equal(W.step(1, -1, 9), 9);
+  assert.equal(W.step("default", -1, 9), 9);
+  assert.equal(W.ofDigit("0", 9), null);
+  assert.equal(W.ofDigit("9", 9), 9);
+  assert.equal(W.ofDigit("5", 4), null, "a digit past the count");
+  const state = { workspace_count: 9, layouts: { solo: { screens: 1, own: [3], workspaces: {} } } };
+  const strip = plain(W.strip(state, "solo", 3));
+  assert.deepEqual(strip.map((w) => w.label), ["1", "2", "3", "4", "5", "6", "7", "8", "9", "def"]);
+});
+
+test("the help's jump keys follow the count", () => {
+  assert.equal(W.jumpKeys(10), "1–9 0");
+  assert.equal(W.jumpKeys(9), "1–9");
+  assert.equal(W.jumpKeys(4), "1–4");
+  assert.equal(W.jumpKeys(1), "1");
+});
