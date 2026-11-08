@@ -567,6 +567,7 @@ the running engine only through Hyprland:
 | `Engine.qml` | the service: runs the api through `hyprctl repl` (one `Process` per command, in order, 3 s watchdog), reads `state` debounced (60 ms) on `custom>>hyprslots changed` and on window events (`openwindow`, `closewindow`, `movewindowv2`, `windowtitlev2`, monitor events, `configreloaded`) via `Quickshell.Hyprland`'s `rawEvent`, only while someone follows it (`active`: the panel is open; `watchers`: bar widgets, from `watch()` / `unwatch()`); keeps `error` (last state read) and `lastError` (last call); `busy` while a call runs or the re-read after it is pending |
 | `Panel.qml` | the panel: an `OverlayWindow` card (`qs.Ui`), themed through `qs.Commons` (`Color.menu.*`, `Style`) like Omarchy's own panels; tabs Assignment, Layout, Slots, Arrangements (Tab / Shift+Tab), Ctrl+S saves, Esc or q closes; `press(key)` feeds a key by name (`Ctrl+s` with the modifier) |
 | `BarWidget.qml` | the bar widget (below): glyph, arrangement and desk; left click toggles the panel, right click a menu |
+| `Services.js` | where the service registers itself, for a bar widget whose bar hands it no `serviceFor` |
 | `AssignmentView.qml`, `LayoutView.qml`, `SlotsView.qml`, `ArrangementsView.qml` | aerolayout's Assignment, Layout, logical slots and monitors views (below) |
 | `Protocol.js`, `Assignment.js`, `Layout.js`, `Slots.js`, `Arrangements.js`, `Prompts.js`, `BarStatus.js` | pure logic, tested under node (`editor/tests/`) |
 
@@ -715,10 +716,15 @@ screens another one already names runs only when its name sorts first
 `<arrangement> · <desk>`: the active arrangement and the desk of the
 workspace its bar's monitor shows (`state.workspaces`; `–` on a workspace
 that is no desk, `none` when the monitors run no arrangement). It reads the
-plugin's service (`bar.shell.serviceFor("milan.hyprslots")`, asked again
-every 2 s while the service is not up yet) and calls its `watch()` so the
-service follows change events while the panel is closed: one poller for
-the panel and every widget instance. The desk follows workspace switches
+plugin's service and calls its `watch()` so the service follows change
+events while the panel is closed: one poller for the panel and every widget
+instance. Omarchy's built-in bar hands a widget `serviceFor`; a replacement
+bar (a `kind: bar` plugin, such as a clone of `omarchy.bar`) hands only
+toggle / summon / hide, so the service also registers itself in
+`Services.js`, a `.pragma library` script (one instance per QML engine,
+shared by the plugin's files), where the widget finds it. The widget looks
+again every 2 s: the service may come up after the bar, and a plugin reload
+replaces it. The desk follows workspace switches
 from Quickshell's Hyprland objects, with no state read.
 
 | State | Shows |
@@ -1068,7 +1074,8 @@ Parked:
   connected screen, Ctrl+S, rename, a refused pin, copy the default trees,
   rename a role, delete; then the Layout tab following the running
   arrangement; the bar widget on a stand-in bar strip (a `PluginBarApi`
-  whose shell finds the service and toggles the panel): its label and the
+  whose shell is a replacement bar's facade: it toggles the panel, has no
+  `serviceFor`): its label and the
   unsaved dot, the menu's Save and Re-apply, left clicks opening and
   closing the panel, Record opening the record preview, and the error
   state while the `hyprslots` global is gone), and writes screenshots to `.e2e-tmp/editor-smoke-*.png`.
