@@ -10,13 +10,14 @@
 // (editor/tests/assignment.test.mjs).
 //
 // A row is
-//   { kind: "window" | "missing", status, address, cls, title, workspace,
-//     desk, slot, role, spec }
+//   { kind: "window" | "missing" | "empty", status, address, cls, title,
+//     workspace, desk, slot, role, spec }
 // with status one of "slot" (matched by its spec), "manual" (assigned by
 // hand), "overflow" (matches `slot`, which is taken: in the desk's overflow
 // leaf), "unassigned" (taken out of its slot by hand), "none" (matches no
-// spec), "missing" (a slot with no window: the spec it waits for, "" when
-// the desk has none for it).
+// spec), "missing" (a slot whose window is not open: the spec it waits
+// for), "empty" (a slot of the desk with no window and no spec: nothing
+// says what fills it, so nothing is missing).
 
 function deskList(state) {
   return state && Array.isArray(state.desks) ? state.desks : []
@@ -179,9 +180,10 @@ function rows(state, desk) {
       if (!row.role) row.role = slots[i].role
       out.push(row)
     } else {
+      var waits = specs[slots[i].slot] !== undefined
       out.push({
-        kind: "missing",
-        status: "missing",
+        kind: waits ? "missing" : "empty",
+        status: waits ? "missing" : "empty",
         address: null,
         cls: "",
         title: "",
@@ -218,13 +220,43 @@ function slotText(row) {
   case "overflow": return "overflow (" + row.slot + ")"
   case "unassigned": return "unassigned"
   case "missing": return row.slot
+  case "empty": return row.slot
   default: return "—"
   }
 }
 
-// What a Missing row's App column says: the spec it waits for.
+// What a Missing row's App column says: the spec it waits for ("" for an
+// empty slot).
 function specText(row) {
-  return row.spec ? row.spec : "(no spec)"
+  return row.spec ? row.spec : ""
+}
+
+// What the Title column says: "Missing" for a slot whose window is not
+// open, a dash for an empty one, else the window's title.
+function titleText(row) {
+  if (row.kind === "missing") return "Missing"
+  if (row.kind === "empty") return "—"
+  return row.title || "No Title"
+}
+
+// What `u` does for a row: { address, clearSpec, question } (the y/n it
+// asks) or { error }. A window in a slot leaves it with the desk's spec for
+// it (api unassign with clear_spec), so the slot is left empty instead of
+// Missing that window; an overflowing window, or one in a slot the desk has
+// no spec for, is only taken out.
+function unassignPlan(state, row) {
+  if (!row) return { error: "Nothing selected." }
+  if (row.kind !== "window") return { error: "No window in " + row.slot + " to unassign." }
+  if (row.status === "overflow") {
+    return { address: row.address, clearSpec: false, question: "Take " + row.cls + " out of the overflow of " + row.slot + "?" }
+  }
+  if (row.status !== "slot" && row.status !== "manual") return { error: row.cls + " is in no slot." }
+  var spec = deskSpecs(state, row.desk)[row.slot]
+  if (spec === undefined) {
+    return { address: row.address, clearSpec: false, question: "Unassign " + row.cls + " from " + row.slot + "?" }
+  }
+  return { address: row.address, clearSpec: true, question: "Unassign " + row.cls + " from " + row.slot
+    + " and clear desk " + row.desk + "'s spec for it (" + spec + ")? (the slot is left empty)" }
 }
 
 // The desk `a` assigns on (and writes the spec into): the page's desk; on
@@ -293,11 +325,16 @@ function promptOptions(options) {
   })
 }
 
-// What `c` clears for a row: { desk, slot, spec } (the desk's spec for the
-// row's slot), or { error }.
+// What `c` clears for a row: { desk, slot, spec } (the desk's spec for a
+// slot whose window is not open, a Missing row), or { error }. A window in
+// a slot is u's: it takes the window out and clears the spec with it.
 function clearTarget(state, desk, row) {
   if (!row) return { error: "Nothing selected." }
-  if (row.kind !== "missing" && row.status !== "slot" && row.status !== "manual" && row.status !== "overflow") {
+  if (row.status === "slot" || row.status === "manual" || row.status === "overflow") {
+    return { error: row.cls + " is open in " + row.slot
+      + ": u takes it out and clears the spec with it (c clears a slot whose window is not open)." }
+  }
+  if (row.kind === "window") {
     return { error: (row.cls || "This window") + " is in no slot, so there is no spec to clear." }
   }
   var on = row.desk !== null && row.desk !== undefined ? row.desk : desk

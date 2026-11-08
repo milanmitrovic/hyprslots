@@ -94,16 +94,18 @@ test("a slot the desk has a spec for but no tree of the active arrangement shows
   assert.deepEqual(summary(A.rows(state, 3)).map((r) => r[1]), ["main", "right", "left", "spare", "main", ""]);
 });
 
-test("a slot a tree places but the desk has no spec for is Missing with no spec: only a by-hand window fills it", () => {
+test("a slot a tree places but the desk has no spec for is empty, not Missing: no spec, no Missing title", () => {
   const state = fixture();
   state.arrangements.dual.desks[4].big = { tree: "h[mail, main]", slots: ["mail", "main"] };
   const rows = plain(A.rows(state, 4));
-  assert.deepEqual(rows.map((r) => [r.status, r.slot, r.spec]), [
-    ["missing", "mail", "thunderbird"],
-    ["missing", "main", ""],
+  assert.deepEqual(rows.map((r) => [r.kind, r.status, r.slot, r.spec]), [
+    ["missing", "missing", "mail", "thunderbird"],
+    ["empty", "empty", "main", ""],
   ]);
-  assert.equal(A.specText(rows[1]), "(no spec)");
-  assert.equal(A.specText(rows[0]), "thunderbird");
+  assert.deepEqual([A.slotText(rows[1]), A.specText(rows[1]), A.titleText(rows[1])], ["main", "", "—"]);
+  assert.deepEqual([A.slotText(rows[0]), A.specText(rows[0]), A.titleText(rows[0])], ["mail", "thunderbird", "Missing"]);
+  assert.equal(A.titleText({ kind: "window", title: "" }), "No Title");
+  assert.equal(A.titleText({ kind: "window", title: "vim" }), "vim");
 });
 
 test("a global slot neither placed nor filled on the desk is no row of it", () => {
@@ -151,15 +153,49 @@ test("the prompt names the desk and each option the way aerolayout's does", () =
   assert.deepEqual([picked.desk, picked.slot], [3, "right"], "an option's value is the slot option itself");
 });
 
-test("clearing a spec takes the selected row's slot on its desk, when the desk has a spec for it", () => {
+test("c clears the spec of a Missing row: a slot whose window is not open", () => {
   const state = fixture();
   const rows = A.rows(state, 3);
-  assert.deepEqual(plain(A.clearTarget(state, 3, rows[0])), { desk: 3, slot: "main", spec: "t-main" });
-  assert.deepEqual(plain(A.clearTarget(state, 3, rows[2])), { desk: 3, slot: "left", spec: "t-left" }, "a Missing row");
-  assert.deepEqual(plain(A.clearTarget(state, 3, rows[3])), { desk: 3, slot: "main", spec: "t-main" }, "an overflow row");
-  assert.match(A.clearTarget(state, 3, rows[4]).error, /in no slot/);
+  assert.deepEqual(plain(A.clearTarget(state, 3, rows[2])), { desk: 3, slot: "left", spec: "t-left" });
   state.arrangements.dual.desks[4].big = { tree: "h[mail, main]", slots: ["mail", "main"] };
   assert.equal(A.clearTarget(state, 4, A.rows(state, 4)[1]).error, "Desk 4 has no spec for main.");
+});
+
+test("c on a window in a slot points at u, which takes it out with its spec", () => {
+  const state = fixture();
+  const rows = A.rows(state, 3);
+  assert.equal(A.clearTarget(state, 3, rows[0]).error,
+    "t-main is open in main: u takes it out and clears the spec with it (c clears a slot whose window is not open).");
+  assert.equal(A.clearTarget(state, 3, rows[3]).error,
+    "t-main is open in main: u takes it out and clears the spec with it (c clears a slot whose window is not open).");
+  assert.match(A.clearTarget(state, 3, rows[4]).error, /in no slot/);
+});
+
+test("u on a window in a slot takes it out and clears the desk's spec for the slot", () => {
+  const state = fixture();
+  const rows = A.rows(state, 3);
+  assert.deepEqual(plain(A.unassignPlan(state, rows[0])), { address: "0xa", clearSpec: true,
+    question: "Unassign t-main from main and clear desk 3's spec for it (t-main)? (the slot is left empty)" });
+  assert.deepEqual(plain(A.unassignPlan(state, rows[1])), { address: "0xe", clearSpec: true,
+    question: "Unassign t-right from right and clear desk 3's spec for it (t-right)? (the slot is left empty)" });
+});
+
+test("u on an overflowing window, or one in a slot with no spec, only takes it out", () => {
+  const state = fixture();
+  const rows = A.rows(state, 3);
+  assert.deepEqual(plain(A.unassignPlan(state, rows[3])), { address: "0xb", clearSpec: false,
+    question: "Take t-main out of the overflow of main?" });
+  delete state.specs[3].right;
+  assert.deepEqual(plain(A.unassignPlan(state, A.rows(state, 3)[1])), { address: "0xe", clearSpec: false,
+    question: "Unassign t-right from right?" });
+});
+
+test("u refuses a row with no window in a slot", () => {
+  const state = fixture();
+  const rows = A.rows(state, 3);
+  assert.equal(A.unassignPlan(state, rows[2]).error, "No window in left to unassign.");
+  assert.equal(A.unassignPlan(state, rows[4]).error, "foot is in no slot.");
+  assert.equal(A.unassignPlan(state, null).error, "Nothing selected.");
 });
 
 test("the first page shown is the focused workspace's desk, else every window", () => {

@@ -8,16 +8,18 @@ import "Prompts.js" as Prompts
 
 // Which live window fills which slot (aerolayout's AssignmentView). A table
 // of the windows on a desk with the screen, slot, app and title of each,
-// plus a "Missing" row for every slot whose window is not running, then the
+// plus a "Missing" row for every slot whose window is not running (a slot
+// the desk has no spec for and no window in is a dim, empty row), then the
 // windows overflowing on the desk and any others on its workspaces. ←/→ (or
 // [ ]) page through every window and each desk, the digits jump to a desk's
-// page (0 is desk 10); ↑/↓ select. `a` puts the selected
-// window into one of the global slots on the desk (one key per slot, as the
-// TUI prompts) and makes the window's spec the desk's for that slot, as
-// aerolayout's `a` did; `c` clears the desk's spec for the selected slot;
-// `u` takes a window out. Spec edits stay in memory until Ctrl+S (the
-// header says "unsaved edits"). The model is Assignment.js; the calls are
-// the api's take_spec, clear_spec and unassign (docs/design.md §9).
+// page (0 is desk 10); ↑/↓ select. `a` puts the selected window into one of
+// the global slots on the desk (one key per slot, as the TUI prompts) and
+// makes the window's spec the desk's for that slot, as aerolayout's `a`
+// did; `u` takes a window out of its slot and clears the desk's spec for it
+// (the slot is left empty, not Missing); `c` clears the spec of a slot whose
+// window is not open (a Missing row). Spec edits stay in memory until
+// Ctrl+S (the header says "unsaved edits"). The model is Assignment.js; the
+// calls are the api's take_spec, clear_spec and unassign (docs/design.md §9).
 Item {
   id: root
 
@@ -63,7 +65,7 @@ Item {
   readonly property bool showDesk: currentPage.desk === null
 
   readonly property string helpText: prompting ? Prompts.help(prompt)
-    : "↑/↓ select   ·   Desk: ←/→ [ ] prev/next  1–9 0 jump   ·   a assign + take spec  c clear spec  u unassign"
+    : "↑/↓ select   ·   Desk: ←/→ [ ] prev/next  1–9 0 jump   ·   a assign + take spec  u unassign + clear spec  c clear a Missing spec"
       + "   ·   Ctrl+S save"
       + "   ·   Tab switch view  q close"
 
@@ -130,8 +132,8 @@ Item {
   function startAssign() {
     var row = selectedRow
     if (!row) return
-    if (row.kind === "missing") {
-      say("Cannot assign a missing window. Unassign or start the app.", true)
+    if (row.kind !== "window") {
+      say("No window in " + row.slot + ": select a window, then a puts it there.", true)
       return
     }
     var focusedDesk = Assignment.deskOfWorkspace(state, focusedWorkspace)
@@ -142,7 +144,7 @@ Item {
     }
     var options = Assignment.slotOptions(state, currentPage.desk, row, focusedDesk)
     if (options.length === 0) {
-      say("There are no slots yet: add them in the Slots view.", true)
+      say("There are no slots yet: make them in the Layout tab's slot list (s, then a).", true)
       return
     }
     ask(Prompts.choice(Assignment.assignTitle(desk), Assignment.promptOptions(options)), function(option) {
@@ -199,29 +201,31 @@ Item {
     return address
   }
 
+  // u: the window out of its slot, and (Assignment.unassignPlan) the desk's
+  // spec for the slot with it, so the slot is left empty.
   function startUnassign() {
     var row = selectedRow
-    if (!row) return
-    if (row.kind === "missing") {
-      say("No window in " + row.slot + " to unassign.", true)
+    var plan = Assignment.unassignPlan(state, row)
+    if (plan.error) {
+      if (row) say(plan.error, true)
       return
     }
-    if (row.status !== "slot" && row.status !== "manual" && row.status !== "overflow") {
-      say(row.cls + " is in no slot.", true)
-      return
-    }
-    ask(Prompts.confirm(row.status === "overflow" ? "Take " + row.cls + " out of the overflow of " + row.slot + "?"
-      : "Unassign " + row.cls + " from " + row.slot + " slot?"), function(yes) {
-      if (yes) root.unassign(row)
+    ask(Prompts.confirm(plan.question), function(yes) {
+      if (yes) root.unassign(row, plan)
       else root.message = ""
     })
   }
 
-  function unassign(row) {
+  function unassign(row, plan) {
     if (!engine) return
-    engine.call("unassign", { address: row.address }, function(reply) {
+    engine.call("unassign", { address: plan.address, clear_spec: plan.clearSpec }, function(reply) {
       if (!reply.ok) say(reply.error, true)
-      else say(reply.slot ? "Unassigned " + row.cls + " from " + reply.slot + "." : "Took " + row.cls + " out of the overflow.", false)
+      else if (reply.spec) {
+        say("Unassigned " + row.cls + " from " + reply.slot + " and cleared desk " + reply.desk + "'s spec for it ("
+          + reply.spec + "): the slot is empty. Ctrl+S saves.", false)
+      } else {
+        say(reply.slot ? "Unassigned " + row.cls + " from " + reply.slot + "." : "Took " + row.cls + " out of the overflow.", false)
+      }
     })
   }
 
@@ -364,7 +368,10 @@ Item {
         required property var modelData
         required property int index
         readonly property bool current: index === root.selected
-        readonly property bool missing: modelData.kind === "missing"
+        // no window in the slot: Missing (the desk's spec waits for one) or
+        // empty (nothing says what fills it)
+        readonly property bool missing: modelData.kind === "missing" || modelData.kind === "empty"
+        readonly property bool empty: modelData.kind === "empty"
         readonly property color ink: current ? root.selectedText : root.foreground
         width: ListView.view.width
         height: root.rowHeight
@@ -413,7 +420,7 @@ Item {
             color: rowItem.current ? root.selectedText
               : rowItem.modelData.status === "overflow" || rowItem.modelData.status === "unassigned" ? Commons.Color.urgent
               : Commons.Color.accent
-            opacity: rowItem.missing || rowItem.modelData.status === "none" ? 0.55 : 1
+            opacity: rowItem.empty ? 0.4 : rowItem.missing || rowItem.modelData.status === "none" ? 0.55 : 1
             font.family: root.fontFamily
             font.pixelSize: Style.font.body
             font.bold: !rowItem.missing
@@ -438,8 +445,9 @@ Item {
             leftPadding: Style.spacing.md
             rightPadding: Style.spacing.md
             textFormat: Text.PlainText
-            text: rowItem.missing ? "Missing" : (rowItem.modelData.title || "No Title")
-            color: rowItem.missing && !rowItem.current ? Commons.Color.urgent : rowItem.ink
+            text: Assignment.titleText(rowItem.modelData)
+            color: rowItem.missing && !rowItem.empty && !rowItem.current ? Commons.Color.urgent : rowItem.ink
+            opacity: rowItem.empty ? 0.4 : 1
             font.family: root.fontFamily
             font.pixelSize: Style.font.body
             font.italic: rowItem.missing
