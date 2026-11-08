@@ -508,8 +508,6 @@ function move(root, key, direction) {
 }
 
 var SCROLL_SLOTS = "a scroll branch holds slots only (full-width columns in order); press t for tiles first"
-var SCROLL_OVERFLOW = "a scroll branch puts windows with no slot after its columns, so it has no overflow leaf; "
-  + "press t for tiles first"
 
 // H J K L (force_move_node). Along its container: pair the leaf with its
 // neighbour that way in a new container across it. Across its container:
@@ -561,11 +559,11 @@ function flip(root) {
   return out
 }
 
-// t: the whole tree as a scroll branch, its slots in reading order as
-// full-width scrolling columns (the overflow leaf has no place in one:
-// windows with no slot go after the columns), or a scroll branch back to the
-// tree it was made from when its columns are as they were, else its columns
-// side by side. { node } or { error }.
+// t: the whole tree as a scroll branch, its leaves in reading order as
+// full-width scrolling columns (the overflow leaf as the column windows with
+// no slot take), or a scroll branch back to the tree it was made from when
+// its columns are as they were, else its columns side by side.
+// { node } or { error }.
 function toggleScroll(root) {
   if (root.kind === "scroll") {
     var columns = leaves(root).join(",")
@@ -579,12 +577,14 @@ function toggleScroll(root) {
     if (tiled.children.length === 1) return { node: rooted(tiled) }
     return { node: tiled }
   }
-  var slots = leaves(root).filter(function(key) { return key !== OVERFLOW })
-  if (slots.length === 0) return { error: "this tree has no slot to scroll" }
+  var keys = leaves(root)
+  if (!keys.some(function(key) { return key !== OVERFLOW })) return { error: "this tree has no slot to scroll" }
   return { node: {
     kind: "scroll", weight: 1,
-    children: slots.map(function(slot) { return { kind: "slot", slot: slot, weight: 1 } }),
-    was: { text: format(root), columns: slots.join(",") },
+    children: keys.map(function(key) {
+      return key === OVERFLOW ? { kind: "overflow", weight: 1 } : { kind: "slot", slot: key, weight: 1 }
+    }),
+    was: { text: format(root), columns: keys.join(",") },
   } }
 }
 
@@ -616,14 +616,15 @@ function withOverflow(root) {
 }
 
 // o: park the overflow leaf (out of the tree; the engine then gives windows
-// with no slot a column at the right), or put it back: exactly as it was
-// when the tree has not changed since, else beside the leaf it was next to,
-// else where the engine would put it. `memory` is what parking returned.
+// with no slot a column at the right, or, on a scroll branch, the columns
+// after its own), or put it back: exactly as it was when the tree has not
+// changed since, else beside the leaf it was next to, else where the engine
+// would put it. `memory` is what parking returned.
 // { node, parked, memory } or { error }.
 function toggleOverflow(root, memory) {
-  if (root.kind === "scroll") return { error: SCROLL_OVERFLOW }
-  if (leaves(root).indexOf(OVERFLOW) >= 0) {
-    if (isLeaf(root)) return { error: "the overflow leaf is the whole tree; there would be nothing left to edit" }
+  var keys = leaves(root)
+  if (keys.indexOf(OVERFLOW) >= 0) {
+    if (keys.length === 1) return { error: "the overflow leaf is the whole tree; there would be nothing left to edit" }
     var taken = takeOut(root, OVERFLOW)
     return { node: taken.node, parked: true,
       memory: { saved: format(root), shape: format(taken.node), anchor: taken.anchor } }
@@ -641,6 +642,11 @@ function toggleOverflow(root, memory) {
       return { node: out, parked: false, memory: null }
     }
   }
+  if (root.kind === "scroll") {
+    var last = copy(root)
+    last.children.push({ kind: "overflow", weight: 1 })
+    return { node: last, parked: false, memory: null }
+  }
   return { node: withOverflow(root), parked: false, memory: null }
 }
 
@@ -656,7 +662,6 @@ function crossMove(source, target, key, direction) {
   if (key === OVERFLOW && target && leaves(target).indexOf(OVERFLOW) >= 0) {
     return { error: "that screen has an overflow leaf already" }
   }
-  if (key === OVERFLOW && target && target.kind === "scroll") return { error: SCROLL_OVERFLOW }
   var path = pathTo(source, key)
   var leaf = path[path.length - 1].node
   var moved = leaf.kind === "overflow" ? { kind: "overflow", weight: 1 } : { kind: "slot", slot: leaf.slot, weight: 1 }
@@ -875,7 +880,13 @@ function ratioPrompt(root) {
 // picture already is the order): "1.main → 2.right → 3.overflow".
 function order(root) {
   if (root.kind === "scroll") {
-    return leaves(root).map(function(key, i) { return (i + 1) + "." + key }).join(" → ") + ", then windows with no slot"
+    var keys = leaves(root)
+    if (keys.indexOf(OVERFLOW) < 0) {
+      return keys.map(function(key, i) { return (i + 1) + "." + key }).join(" → ") + ", then windows with no slot"
+    }
+    return keys.map(function(key, i) {
+      return (i + 1) + "." + (key === OVERFLOW ? "overflow (windows with no slot)" : key)
+    }).join(" → ")
   }
   if (isLeaf(root) || !root.children.some(function(c) { return !isLeaf(c) })) return ""
   return leaves(root).map(function(key, i) {

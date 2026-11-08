@@ -332,11 +332,15 @@ Item {
       say(result.error, true)
       return
     }
+    var scrolling = result.node.kind === "scroll"
     setDraft(role, result.node, result.memory)
     if (!result.parked) selectedKey = "*"
     keepSelection()
-    say((result.parked ? "Overflow leaf parked — windows with no slot get a column at the right."
-      : "Overflow leaf back — move it like any node to choose where they go.") + draftNote(), false)
+    say((result.parked
+      ? (scrolling ? "Overflow column parked — windows with no slot go after the columns."
+        : "Overflow leaf parked — windows with no slot get a column at the right.")
+      : (scrolling ? "Overflow column back — h/l move it among the columns to choose where they go."
+        : "Overflow leaf back — move it like any node to choose where they go.")) + draftNote(), false)
   }
 
   // Open a prompt; answer(value) runs on its answer.
@@ -796,7 +800,9 @@ Item {
             elide: Text.ElideRight
             text: "ratio  " + (pane.node && Layout.ratio(pane.node) !== "" ? Layout.ratio(pane.node) : "—")
               + (!pane.node ? ""
-                : pane.node.kind === "scroll" ? "   full-width scrolling columns; windows with no slot after them"
+                : pane.node.kind === "scroll" ? (Layout.leaves(pane.node).indexOf("*") < 0
+                  ? "   full-width scrolling columns; windows with no slot after them (o: a column of their own)"
+                  : "   full-width scrolling columns; windows with no slot in the * column")
                 : Layout.leaves(pane.node).indexOf("*") < 0 ? "   overflow parked (a column at the right)" : "")
             color: root.foreground
             opacity: 0.75

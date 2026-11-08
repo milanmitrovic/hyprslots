@@ -200,11 +200,11 @@ test("t makes the whole tree a scroll branch of its slots in order, and back as 
   const scrolled = L.toggleScroll(tree("h[a, v[b:2, c]:3]"));
   assert.equal(L.format(scrolled.node), "scroll[a, b, c]");
   assert.equal(L.format(L.toggleScroll(scrolled.node).node), "h[a, v[b:2, c]:3]");
-  // the overflow leaf has no place in one (windows with no slot go after the
-  // columns), and comes back with the tree
-  const withOverflow = L.toggleScroll(tree("h[a, v[b, *]]"));
-  assert.equal(L.format(withOverflow.node), "scroll[a, b]");
-  assert.equal(L.format(L.toggleScroll(withOverflow.node).node), "h[a, v[b, *]]");
+  // the overflow leaf becomes the column windows with no slot take, in
+  // reading order, and comes back with the tree
+  const withOverflow = L.toggleScroll(tree("h[a, v[*, b]]"));
+  assert.equal(L.format(withOverflow.node), "scroll[a, *, b]");
+  assert.equal(L.format(L.toggleScroll(withOverflow.node).node), "h[a, v[*, b]]");
   assert.equal(edited("main", (n) => L.toggleScroll(n)), "scroll[main]");
 });
 
@@ -249,9 +249,25 @@ test("o refuses to park the overflow leaf when it is the whole tree", () => {
   assert.match(L.toggleOverflow(tree("*"), null).error, /whole tree/);
 });
 
-test("o refuses a scroll branch, which puts windows with no slot after its columns", () => {
-  assert.match(L.toggleOverflow(tree("scroll[x, y]"), null).error,
-    /a scroll branch puts windows with no slot after its columns/);
+test("o parks a scroll branch's overflow column and puts it back where it was", () => {
+  const parked = L.toggleOverflow(tree("scroll[x, *, y]"), null);
+  assert.equal(parked.parked, true);
+  assert.equal(L.format(parked.node), "scroll[x, y]");
+  const back = L.toggleOverflow(parked.node, parked.memory);
+  assert.equal(back.parked, false);
+  assert.equal(L.format(back.node), "scroll[x, *, y]");
+  // the columns changed since: beside the column it was next to
+  const moved = L.move(parked.node, "x", "right");
+  assert.equal(L.format(L.toggleOverflow(moved.node, parked.memory).node), "scroll[y, x, *]");
+});
+
+test("o on a scroll branch with nothing remembered puts the overflow column last, where the engine puts those windows", () => {
+  assert.equal(edited("scroll[x, y]", (n) => L.toggleOverflow(n, null)), "scroll[x, y, *]");
+  assert.equal(edited("scroll[x]", (n) => L.toggleOverflow(n, null)), "scroll[x, *]");
+});
+
+test("o refuses to park a scroll branch's only column", () => {
+  assert.match(L.toggleOverflow(tree("scroll[*]"), null).error, /whole tree/);
 });
 
 // --- moving a leaf to another screen of the desk ----------------------------
@@ -274,8 +290,9 @@ test("a leaf moved onto a scroll branch becomes its column at the near edge, and
   moved = L.crossMove(tree("scroll[c, d]"), tree("e"), "d", "right");
   assert.equal(L.format(moved.source), "scroll[c]");
   assert.equal(L.format(moved.target), "h[d, e]");
-  assert.match(L.crossMove(tree("h[a, *]"), tree("scroll[c]"), "*", "right").error,
-    /a scroll branch puts windows with no slot after its columns/);
+  moved = L.crossMove(tree("h[a, *]"), tree("scroll[c]"), "*", "right");
+  assert.equal(L.format(moved.source), "a");
+  assert.equal(L.format(moved.target), "scroll[*, c]");
 });
 
 test("a screen keeps at least one leaf, and one overflow leaf at most", () => {
@@ -448,6 +465,15 @@ test("a scroll branch is a filmstrip: its columns side by side in order, numbere
   assert.equal(rects.some((r) => r.kind === "tab"), false);
 });
 
+test("a scroll branch's overflow column is a frame of the filmstrip where it stands", () => {
+  const rects = plain(L.rects(tree("scroll[x, *, z]"), { x: 0, y: 0, w: 300, h: 100 }, { selected: "*" }));
+  assert.deepEqual(rects.map((r) => [r.kind, r.key, r.x, r.w, r.label, r.column, !!r.selected]), [
+    ["slot", "x", 0, 100, "1. x", 1, false],
+    ["overflow", "*", 100, 100, "2. * overflow", 2, true],
+    ["slot", "z", 200, 100, "3. z", 3, false],
+  ]);
+});
+
 test("the ratio prompt names the current ratio, and refuses a tree with nothing to divide", () => {
   assert.equal(L.ratioPrompt(tree("h[main:2, v[right, *]]")).text,
     "Ratios for the whole tree (current 2:1[1:1]; empty clears all) [Enter] set  [Esc] cancel: ");
@@ -462,6 +488,7 @@ test("the order strip lists the leaves in order once the tree nests", () => {
   assert.equal(L.order(tree("h[a, b]")), "");
   assert.equal(L.order(tree("h[main, v[right, *]]")), "1.main → 2.right → 3.overflow");
   assert.equal(L.order(tree("scroll[x, y]")), "1.x → 2.y, then windows with no slot");
+  assert.equal(L.order(tree("scroll[x, *, y]")), "1.x → 2.overflow (windows with no slot) → 3.y");
 });
 
 // --- adding and removing slots (global slots) --------------------------------
