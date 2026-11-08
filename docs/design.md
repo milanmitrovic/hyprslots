@@ -2,8 +2,10 @@
 
 Status: engine slices 1 to 6 and editor slices D1 to D3 (Assignment,
 Layout, Slots, Arrangements) done and integrated on `feature/editor` (§11);
-slice 7, the cutover, done on the user's machine from that branch. Targets Hyprland 0.56.2 (Lua config)
-on Omarchy 4.5.
+slice 7, the cutover, done on the user's machine from that branch; the
+accordion (a Hyprland group, with tabs) replaced by the scroll branch (§6)
+after the cutover showed what aerolayout's laptop accordion is on
+Hyprland. Targets Hyprland 0.56.2 (Lua config) on Omarchy 4.5.
 
 ## 1. Purpose
 
@@ -47,15 +49,17 @@ Lua inside Hyprland's own config VM.
   all non-pinned screens.
 - **Tree**: per desk per arrangement, a root with one branch per screen role.
   Inner nodes are `h` or `v` splits with exact integer weights
-  (`h[main:2, right:1]`); leaves are slots, accordion containers, or the
-  overflow leaf.
+  (`h[main:2, right:1]`); leaves are slots or the overflow leaf. A whole
+  branch may instead be a scroll branch.
 - **Slot**: a named leaf. Slots belong to the **desk** (desk 3 always has a
   `main` slot holding the same window), trees belong to the **arrangement**
   (where `main` sits and how big it is depends on which screens exist).
 - **Spec**: the window matcher a slot carries: `class`, `class/title-pattern`,
   `[Tag]` and `[Tag]/Profile` (grammar in §7a).
-- **Accordion**: a container whose children stack in one Hyprland group.
-  Leaves only (no nested splits inside a group).
+- **Scroll branch**: a screen's whole tree written `scroll[a, b, c]`: its
+  slots are full-width columns of Hyprland's own scrolling layout, in that
+  order (aerolayout's accordion: full-screen windows side by side, scrolled
+  through). Slots only.
 - **Overflow leaf**: where windows matched to the desk but to no free slot go.
 - **Pinned screen**: a screen excluded from desk switching; it keeps showing
   whatever desk it is on.
@@ -187,19 +191,23 @@ and the wiki's custom-layouts page).
 A branch is tree text (`tree.lua`):
 
 ```
-node      := slot | '*' | split | accordion
+tree      := node | scroll                              -- scroll: the whole tree only
+node      := slot | '*' | split
 split     := ('h' | 'v') '[' child (',' child)* ']'     -- side by side / stacked
-accordion := 'a' '[' slot (',' slot)* ']'               -- one Hyprland group
+scroll    := 'scroll' '[' slot (',' slot)* ']'          -- full-width scrolling columns
 child     := node (':' weight)?                         -- weight: integer >= 1, default 1
 ```
 
-`h`, `v` and `a` open a container only when `[` follows; otherwise they are
-plain slot names. The root takes no weight. A slot appears at most once per
-tree. An accordion holds slots only: a split, accordion, `*` or weight inside
-it is rejected with its position, under the branch's config path. `*` is the
-**overflow leaf** (`h[main:2, v[right, *]]`): it takes a weight like any
-leaf and appears at most once per tree. `serialize.tree` writes the same
-syntax back (weights of 1 left out), which is what `save` and `state` use.
+`h`, `v` and `scroll` open a container only when `[` follows; otherwise they
+are plain slot names. The root takes no weight. A slot appears at most once
+per tree. A scroll branch is a screen's whole tree and holds slots only: a
+split, `*` or weight inside it, or a `scroll[` below the root, is rejected
+with its position, under the branch's config path. `a[...]`, the accordion
+this replaced, is rejected with the `scroll[...]` that says the same thing.
+`*` is the **overflow leaf** (`h[main:2, v[right, *]]`): it takes a weight
+like any leaf and appears at most once per tree. `serialize.tree` writes the
+same syntax back (weights of 1 left out), which is what `save` and `state`
+use.
 
 ### Placement
 
@@ -232,31 +240,68 @@ result depends on window open order and focus at the moment each split
 happens, and the dispatches race with window mapping. Arithmetic placement
 has neither problem.
 
-### Accordions
+### Scroll branches
 
-Every present member of an accordion gets the accordion's box. Realized as a
-Hyprland group, the group is one layout target (`target.window` is its
-current window) and so fills that box; members not yet grouped overlap in it
-meanwhile. A group showing a window that is no member still gets the box.
+A screen whose tree is `scroll[a, b, c]` gets its desk workspace on
+Hyprland's own `scrolling` layout instead of `lua:slots` (`scroll.lua`):
+the user's full-width scrolling (Super+L's full-width stop, which the
+user's laptop desks were on before the cutover), with hyprslots keeping
+the columns in slot order, the windows with no slot in the branch after
+them in the order they are in, and the columns that arrive full width.
+Everything a scroll branch needs is a deferred pass (20 ms timer), never
+work inside an event:
 
-Group membership (`groups.lua`) changes only in a deferred pass (20 ms
-timer), never in `recalculate`. The pass runs after `window.open`,
-`window.close` / `window.destroy`, `window.move_to_workspace` and start; after every
-`router.reroute_all` (hotplug, editor edits, reload), which asks for it
-once it has moved the windows, so it never races hotplug's timer hops
-(§8); and when a layout pass sees an accordion split over several targets
-or a stranger in its group (a drag-out fires no event, so this is what
-catches it). It plans pure moves per desk workspace with an accordion: a group
-holding a member is the accordion's (first wins), strangers are taken out
-(`hl.dsp.window.move{out_of_group}`), a missing group is made with
-`hl.dsp.group.toggle`, and members join with `HL.Group:add`: Hyprland has no
-dispatcher that adds a named window to a named group (`into_group` takes a
-direction). Members are put back after a drag-out: the tree is the truth. A
-lone member stays ungrouped; groups with no accordion slot and groups on
-workspaces that are no desk are left alone; floating windows are ignored.
-Layout-triggered passes stop after three in a row that still had moves to
-make (an error is logged), so a refused move cannot loop; any window event
-re-arms them.
+- **Order**, after a window opens or moves to a workspace, a workspace is
+  shown (a desk switch included, even to the desk already showing), a
+  re-route (hotplug, edits, reload) and Hyprland's start or config reload:
+  `scroll.plan` (pure) lists the swaps that put the columns in order and
+  Hyprland's `window.swap { window, target }` makes them. A swap keeps the
+  focus, but Hyprland warps the cursor to the swapped window, so the pass
+  sets `cursor:no_warps` around the swaps and puts it back (Hyprland still
+  focuses the monitor under that point, so the focused monitor is put back
+  too).
+- **Widen**, on the focused workspace only (Hyprland's `colresize` acts on
+  the focused workspace's focused window): when a column the pass has not
+  widened before is there and is not the configured width (`scroll =
+  { width = 0.99 }` in `config.lua`, the default 0.99 as the user's
+  full-width stop), `colresize all <width>`, then `fit_into_view` so the
+  focused column stays in view. A hidden workspace's new columns widen when
+  it is shown. A focus change runs the widen step alone, so a column the
+  user moved (`swapcol`) or resized stays put until the next arrival or
+  desk switch. A window floated and tiled again by hand comes back in a new
+  column at Hyprland's default width (the user's own full-width mode does
+  the same); Super+L entering slots (api `arrange`) widens every column.
+
+A workspace is **managed** only while its tiled layout is `scrolling` and
+Omarchy has no saved mode for it (`$XDG_STATE_HOME/omarchy/workspace-layouts/<id>.lua`):
+any Super+L stop saves one, and hyprslots then leaves the workspace's
+columns alone until Super+L brings slots back, which removes it.
+
+**Layout rules.** At load, desk N's workspace in every Omarchy block gets
+`scrolling` where the arrangement selected then has a scroll branch and
+`lua:slots` everywhere else; Omarchy's saved modes load afterwards and
+win. When the arrangement or a tree changes later (hotplug, an edit, the
+start check), each desk workspace whose layout should change gets the new
+rule unless it has a saved mode, so Super+L's choice stands. `lua:slots`,
+should it ever lay out a scroll branch, shows its columns side by side.
+
+**Hyprland 0.56.2's scrolling layout** (`src/layout/algorithm/tiled/scrolling`,
+verified in the nested harness): `scrolling.column_width` is one global
+option and the scrolling workspace rule only takes `direction`, so full
+width per workspace is `colresize` (the window rule `scrolling_width` sets a
+window's width wherever it is inserted, on every workspace, so it cannot
+make one desk full width). A new window's column goes right after the
+focused column when the focused window is on that workspace, else last; a
+window moved in goes last. `HL.Window.layout` reports a scrolling window's
+`column = { index (0-based), width, windows }` and `index_in_column`,
+which is how the pass reads the order. `swapcol`, `move` and `colresize`
+layout messages act on the focused window only; `window.swap` trades two
+windows' places (their targets) on any workspace, focus kept.
+
+Rejected alternative: the accordion as a Hyprland group (slice 4). A group
+draws a tabbed groupbar and is not what aerolayout's accordion is on the
+laptop; the cutover ported the laptop desks as accordions and every one
+showed tabs.
 
 ### Keyboard resize
 
@@ -288,10 +333,9 @@ overflow column appended. So the neighbour is the nearest slot that is
 present, `100px` is exact with empty slots closed up or the overflow
 column showing, and the appended column never gives up space (an explicit
 `*` is a neighbour like any leaf). The two weights change on the matching
-children of the configured split; absent siblings keep their share. An
-accordion member resizes its container: a Hyprland group is one target
-standing for one member, so every member of a present accordion counts as
-present, whichever is focused.
+children of the configured split; absent siblings keep their share. (A
+scroll branch is on Hyprland's scrolling layout, whose own resize keeps
+Omarchy's keys.)
 
 Hyprland sends a layout message to the focused workspace's algorithm only,
 so resize always acts on the focused window (`hl.dsp.layout("…")` from a
@@ -325,16 +369,25 @@ before the cutover.
   workspace (one in `hyprslots.api.call("state").workspaces`) it gains a
   slots stop between floating and tiling:
   slots → tiling → side-by-side → full-width → floating → slots
-  (`back` reverses). Elsewhere it is unchanged.
-- Omarchy's mode files know nothing of `lua:slots`, so "slots" is read from
-  the workspace's `tiledLayout` unless the mode file says floating (floating
-  keeps the tiled layout underneath).
+  (`back` reverses). Elsewhere it is unchanged. The slots stop is the layout
+  hyprslots gives the desk (`state.workspaces[id].layout`): `lua:slots`, or
+  `scrolling` for a scroll branch, whose columns hyprslots keeps full width
+  and in slot order (§6); its full-width stop is the user's own, which
+  hyprslots leaves alone.
+- Omarchy's mode files know nothing of slots, so "slots" is read from the
+  workspace's `tiledLayout` unless the mode file says floating (floating
+  keeps the tiled layout underneath): `lua:slots`, or, on a scroll desk,
+  `scrolling` with no mode file of its own.
 - Entering slots from floating first applies `dwindle` through
-  `o.workspace_mode` to tile the windows again, then sets the
-  `lua:slots` workspace rule and removes the workspace's mode file, so the
-  rule hyprslots sets at load brings slots back after a reload. Leaving slots
-  applies and saves the mode the way Omarchy's toggle does.
-- The bar widget shows a grid glyph (nf-md-view_grid) and "Slots".
+  `o.workspace_mode` to tile the windows again, then sets the desk's layout
+  as a workspace rule, removes the workspace's mode file (and its
+  full-width mark), so the rule hyprslots sets at load brings slots back
+  after a reload, and on a scroll desk calls api `arrange`, which orders
+  and widens its columns at once. Leaving slots applies the mode and saves
+  it, even Omarchy's default, so the desk stays out of slots across reloads
+  until Super+L enters slots again.
+- The bar widget shows a grid glyph (nf-md-view_grid) and "Slots"
+  (`workspace-layout-current` says `slots` for both kinds).
 
 Verified at cutover: a saved mode file for a desk workspace wins over
 hyprslots' load-time rule. Omarchy loads the saved modes from
@@ -345,7 +398,9 @@ removes the file), and Omarchy's default-layout command, which saves busy
 workspaces' current mode, takes those desks out of slots too. The cutover
 removed the saved modes of the desk workspaces (1, 3, 4, 5, 6, 9) and their
 full-width marks. A config reload re-applies the rule to existing
-workspaces.
+workspaces. The scroll fix (§11) put the laptop desks (1 to 9) back in
+slots the same way, now on the scrolling layout, so Super+L's full-width
+stop and hyprslots' slots stop look alike there: slots also orders.
 
 ## 7. Routing
 
@@ -461,8 +516,8 @@ and on `monitor.removed` from a oneshot timer created in the same event, which
 merges an unplugged screen's workspaces into the block of the screen they
 landed on (13 becomes 4). The second hop is created after that timer has come
 due, so it always sees the workspaces as Omarchy left them. When the
-re-route is done it asks for the accordion group pass (§6), so groups are
-formed on the workspaces the windows now sit on. Keyboard-resized trees are
+re-route is done it asks for the scroll pass (§6), so scroll columns are
+put in order on the workspaces the windows now sit on. Keyboard-resized trees are
 kept per arrangement, so returning to an arrangement brings its nudges
 back. Hotplug never
 changes a connected screen's view, so pinned screens are never refocused; a
@@ -543,11 +598,14 @@ Arrangements view. A pane per screen role, side by side, each a scale model
 of its monitor (its aspect from Hyprland, else 16:9): leaves are boxes
 proportional to their weights (tree.lua's integer arithmetic) with the slot
 name, `×n` for a share other than 1, and the title of the window in the
-slot; a nested split is a box titled with its kind and ratio (`h 1:3`); an
-accordion is a row of tabs over the box of its open member (the selected
-one, else the first); the overflow leaf is `* overflow`. Under each pane its
-tree text and ratio string (and `overflow parked` when the tree has no `*`);
-under the panes the leaf order once the tree nests. Edits go to a **draft**
+slot; a nested split is a box titled with its kind and ratio (`h 1:3`); a
+scroll branch is a filmstrip: its columns side by side in equal frames,
+numbered in order (no tabs: each frame stands for a full-width column of
+the screen); the overflow leaf is `* overflow`. Under each pane its tree
+text and ratio string (and `overflow parked` when the tree has no `*`, or
+that windows with no slot go after a scroll branch's columns); under the
+panes the leaf order once the tree nests, or a scroll branch's column
+order. Edits go to a **draft**
 per pane (`edited` on the pane, `edited, not applied (w)` in the header).
 
 | Key | Does |
@@ -556,9 +614,9 @@ per pane (`edited` on the pane, `edited, not applied (w)` in the header).
 | h j k l | swap the leaf with its neighbour in its container; off the edge, move it to the next screen's tree |
 | H J K L | along its container: pair it with its neighbour in a new container across; across: move it out beside its container |
 | / | flip every split of the tree |
-| t | stack the leaf's container as an accordion, or back to the split it was; refused, with tree.lua's message, when it holds a split or `*` |
+| t | make the whole tree a scroll branch of its slots in reading order (the overflow leaf has no place in one), or back to the tree it was made from while its columns are as they were, else its columns side by side |
 | r | prompt for the whole tree's ratio (grammar below; the current one shown, empty clears all) |
-| o | park the overflow leaf (the engine then gives it a column at the right) or put it back where it was |
+| o | park the overflow leaf (the engine then gives it a column at the right) or put it back where it was; refused on a scroll branch |
 | w | apply the edited panes (`set_trees`) |
 | Ctrl+S | apply the edited panes, then `save` (the panel's key) |
 | d | after y/n, put the pane's tree back to slots.lua (`reset`) |
@@ -576,8 +634,10 @@ workspace's own tree for the arrangement default, which hyprslots does not
 have); `g` picks a desk and `c` an arrangement (aerolayout's `g` picked a
 workspace or "all", and arrangements were the Monitors tab's); `R` always
 previews and asks; a parked overflow leaf is remembered only while the
-panel is open (aerolayout kept it hidden in the saved tree); an accordion
-has no orientation of its own, so arrows and moves treat it as a row.
+panel is open (aerolayout kept it hidden in the saved tree); a scroll
+branch's columns are a row, so h / l move a column (H J K L refuse: a
+scroll branch holds slots only), and a leaf moved onto a screen whose tree
+is one becomes its column at the near edge.
 
 **Slots view** (aerolayout `views.py` LogicalView, per desk). It opens on
 the focused workspace's desk. A row per slot, by name (the order windows
@@ -681,10 +741,12 @@ any event as "re-read state", not as an ordering.
 | `copy_trees` | `arrangement?`, `from` + `roles?` or `default: true` | `arrangement, from, seq` |
 | `save` | — | `path, seq` |
 | `reload` | — | `arrangement, seq` |
+| `arrange` | — | `swaps, widened[]` (workspace ids): the scroll pass now, every column of the focused scroll workspace widened (Super+L entering slots) |
 
 `state`: `seq`, `dirty` (unsaved edits, keyboard-resized trees included),
 `arrangement` (active name), `screens` (role -> connector), `workspaces`
-(id -> desk, role, monitor), `assignments` (address -> desk, slot,
+(id -> desk, role, monitor, `layout`: `lua:slots` or `scrolling`, what
+hyprslots gives it), `assignments` (address -> desk, slot,
 `manual` when made by `assign`),
 `overflow` (address -> desk, slot: a window that matches that slot's spec
 while every slot it matches is taken, laid out in that desk's overflow leaf), `unassigned[]` (addresses taken out of their slot by `unassign`),
@@ -693,10 +755,11 @@ while every slot it matches is taken, laid out in that desk's overflow leaf), `u
 (`name, description, serial, focused`: what a screen selector can name),
 `descriptions` ("3" -> slot -> text), `resized`
 (`"<arrangement>/<desk>/<role>"` -> `arrangement, desk, role, tree, ratio`
-for every unsaved keyboard-resized tree), `groups[]` (one per accordion on a
-desk workspace: `workspace, desk, role, slots[], members` (slot -> window
-address), `group[]` (the live Hyprland group holding a member, in group
-order), `formed`), `slots` ("3" -> slot -> spec text), `desks[]`,
+for every unsaved keyboard-resized tree), `scroll[]` (one per scroll branch
+on a desk workspace: `workspace, desk, role, slots[], layout` (its tiled
+layout), `managed` (scrolling, no saved Omarchy mode), `columns[]` (window
+addresses in column order), `members` (slot -> address), `in_order`),
+`slots` ("3" -> slot -> spec text), `desks[]`,
 `pinned[]`, `windows[]` (`address, class, title, workspace, floating,
 box{x,y,w,h}, desk?, slot?, overflow?{desk, slot}, unassigned?`), `config` (`dir, data_file, editable,
 read_only[]`), `refused`, `config_error`, `log_seq`.
@@ -764,7 +827,7 @@ Edits never write files: they re-run `config.lua` over the edited
 `slots.lua` data in memory and take effect only when the result validates.
 The new config is then applied like a hotplug: re-select, re-assign,
 re-route every assigned window to its slot's workspace (a slot moved to
-another screen role takes its open window along), group pass, relayout.
+another screen role takes its open window along), scroll pass, relayout.
 An edit to a branch replaces that branch's keyboard-resized override.
 `save` writes `slots.lua` through `serialize` (temp file + rename), then
 runs the saved data as the config and clears the overrides it wrote;
@@ -780,17 +843,18 @@ refused by the edit calls.
 **Ratio grammar** (`ratio.lua`, from aerolayout): `ratio := term (':'
 term)*`, `term := (number | '*') ('[' ratio ']')?`. `2[1:2]:1` sets a
 split and its first cell's split in one string; spaces separate like `:`;
-decimals become the smallest integer ratio (1.5:1 -> 3:2); `*` is an
-accordion pane (accordion cells take `*` or `1` and write nothing; a `*`
-among tiles is refused). The `ratio` in `state` is always in this grammar
+decimals become the smallest integer ratio (1.5:1 -> 3:2); `*` is a
+scroll branch's column (its cells take `*` or `1` and write nothing: each
+column is full width; a `*` among tiles is refused). The `ratio` in `state` is always in this grammar
 and can be sent back unchanged. This `*` is the ratio grammar's own and is
 unrelated to the overflow leaf `*` of tree text.
 
 **Record** (`record.lua`, from aerolayout's record.py): guillotine cuts
 over the windows' boxes (3 px epsilon), weights snapped to integers (8%
-snap, else a small integer multiple within 2%, else hundredths). A tree
-holding an accordion cannot be recorded (its windows overlap), as in
-aerolayout. A record that would drop a slot with no window, or the
+snap, else a small integer multiple within 2%, else hundredths); windows
+that overlap cannot be recorded, as in aerolayout. A scroll branch records
+as its slots in the column order they show (so `swapcol` and record set the
+slot order). A record that would drop a slot with no window, or the
 overflow leaf, is returned with `missing` and not applied unless
 `apply: true`.
 
@@ -820,7 +884,7 @@ Under `lua/hyprslots/`:
 | adapter | `router` | window events → assignment and moves |
 | adapter | `desks` | desk switching on top of `o.workspaces` |
 | adapter | `hotplug` | monitor events → arrangement selection, then re-route |
-| adapter | `groups` | accordions as Hyprland groups (pure `plan`, deferred reconcile) |
+| adapter | `scroll` | scroll branches on Hyprland's scrolling layout (pure `plan` / `order`, deferred pass, `describe`) |
 | adapter | `resize` | keyboard resize via `layout_msg`; the tree in force |
 | adapter | `api` | `state()` / `call(name, json)` for the editor |
 | adapter | `log` | ring buffer; `hyprslots.dump()` prints it with the state |
@@ -843,8 +907,9 @@ failure.
 
 **Gaps.** Hyprland hands a lua layout `ctx.area` already inside
 `gaps_out`, and `place` takes the border and `gaps_in` off each box edge
-that meets another box, as dwindle does; a group's groupbar is drawn inside
-its box. `e2e/gaps_test.sh` pins this with Omarchy's gaps (5/10, border 2).
+that meets another box, as dwindle does. Hyprland's scrolling layout works
+in the same area and keeps the same margins. `e2e/gaps_test.sh` pins both
+with Omarchy's gaps (5/10, border 2).
 
 ## 11. Roadmap
 
@@ -853,20 +918,21 @@ its box. `e2e/gaps_test.sh` pins this with Omarchy's gaps (5/10, border 2).
 | 1 Tracer | one screen, one desk tree via `lua:slots`; config, arrangement, tree, spec-by-class, layout, route, dump | done |
 | 2 Desks | desks across screens, synced Super+N, pinned screens, hotplug; turns the completion test green | done |
 | 3 Specs | full spec grammar, late titles, generated window rules | done |
-| 4 Containers | accordion (groups) and overflow | done |
+| 4 Containers | accordion (groups) and overflow | done; the accordion replaced by the scroll branch |
 | 5 Resize | keyboard resize via `layout_msg`; `lua:slots` in the Super+L layout cycle, focused screen only | done (Super+L patches applied at cutover) |
 | 6 Protocol | record, api protocol, serializer, ratio grammar | done |
 | Editor D1 | plugin skeleton (Engine service, panel, tabs) + Assignment view; api `assign` / `unassign`, `overflow` in `state` | done |
 | Editor D2 | Layout view; api `set_trees` / `reset` | done |
 | Editor D3 | Slots + Arrangements views; their api edits; slot descriptions | done |
 | 7 Cutover | install the engine and the editor plugin on the user's machine, retire the old setup | done 2026-11-08 (from `feature/editor`; `~/.local/bin/hyprslots-rollback` undoes it) |
+| Scroll | scroll branches on Hyprland's scrolling layout replace accordions; the laptop desks become `scroll[...]`; Super+L's slots stop covers them | done 2026-11-08 |
 
 Slices 2 to 6 were built in parallel on top of slices 1 and 2 and
 integrated on `feature/engine`; the cross-slice behaviour (keyboard-resized
 trees as the api's tree in force, nudges on the laid-out tree, re-routing
-and window-rule sync after edits, the group pass after hotplug's re-route,
+and window-rule sync after edits, the scroll pass after hotplug's re-route,
 matched extras in their desk's overflow, sticky re-solves) is described in
-the sections above and covered by `e2e/accordion_replug_test.sh` and
+the sections above and covered by `e2e/scroll_replug_test.sh` and
 `e2e/resize_save_test.sh`.
 
 D2 and D3 were built in parallel on top of D1 and integrated on
