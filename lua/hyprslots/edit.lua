@@ -167,6 +167,75 @@ function M.remove_leaf(node, name)
   return out
 end
 
+local function gcd(a, b)
+  while b ~= 0 do
+    a, b = b, a % b
+  end
+  return a
+end
+
+-- A parsed tree as text that is the same for every tree laid out the same:
+-- each container's weights divided by their greatest common divisor (2:2 is
+-- 1:1), the root's own weight left out.
+local function shape(node, weighted)
+  local text
+  if node.children then
+    local divisor = 0
+    for _, child in ipairs(node.children) do
+      divisor = gcd(child.weight or 1, divisor)
+    end
+    local parts = {}
+    for i, child in ipairs(node.children) do
+      parts[i] = shape(child, not node.scroll and math.tointeger((child.weight or 1) // math.max(divisor, 1)))
+    end
+    text = (node.scroll and "scroll" or node.split) .. "[" .. table.concat(parts, ", ") .. "]"
+  else
+    text = node.overflow and tree.OVERFLOW or node.slot
+  end
+  return weighted and text .. ":" .. weighted or text
+end
+
+-- Whether a workspace's own tree on a screen (`text`, nil for none) is the
+-- layout's default tree there (`default`, nil for none) with some of its
+-- slots missing, and nothing else: the same containers nested the same way,
+-- the same slots in the same order, the same overflow leaf, and the shares
+-- pruning those slots leaves (as edit.remove_leaf: a split left with one
+-- child is that child, with the split's share). Empty slots close up, so
+-- such a tree lays its windows out as the default one does, and the
+-- workspace may as well show the default. A tree that does not parse is no
+-- match.
+function M.redundant_with_default(text, default)
+  local own = text ~= nil and tree.parse(text) or nil
+  local base = default ~= nil and tree.parse(default) or nil
+  if (text ~= nil and not own) or (default ~= nil and not base) then
+    return false
+  end
+  if not base then
+    return own == nil
+  end
+  local mine = {}
+  for _, slot in ipairs(own and tree.slots(own) or {}) do
+    mine[slot] = true
+  end
+  local theirs = {}
+  local pruned = base
+  for _, slot in ipairs(tree.slots(base)) do
+    theirs[slot] = true
+    if not mine[slot] then
+      pruned = pruned and M.remove_leaf(pruned, slot)
+    end
+  end
+  for slot in pairs(mine) do
+    if not theirs[slot] then
+      return false
+    end
+  end
+  if not own or not pruned then
+    return own == nil and pruned == nil
+  end
+  return shape(own) == shape(pruned)
+end
+
 -- Every tree table of every layout: its default trees and each workspace's
 -- own, as (layout name, workspace or "default", screen -> text table).
 local function each_trees(data, fn)

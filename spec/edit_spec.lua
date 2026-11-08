@@ -224,6 +224,52 @@ describe("edit.place_slot", function()
   end)
 end)
 
+describe("edit.redundant_with_default", function()
+  local redundant = edit.redundant_with_default
+
+  it("is the default tree itself, or it with some slots missing", function()
+    assert.is_true(redundant("scroll[left, main, right]", "scroll[left, main, right]"))
+    assert.is_true(redundant("scroll[main, right]", "scroll[left, main, right]"))
+    assert.is_true(redundant("scroll[main]", "scroll[left, main, right]"))
+    assert.is_true(redundant("h[left, right]", "h[left, main, right]"))
+    assert.is_true(redundant("main", "h[left, main, right]"), "a split left with one slot is that slot")
+  end)
+
+  it("keeps the ratios pruning leaves behind, and only those", function()
+    assert.is_true(redundant("h[main:2, right]", "h[left, main:2, right]"))
+    assert.is_true(redundant("h[main:2, right:2]", "h[main, right]"), "the same shares in other numbers")
+    assert.is_false(redundant("h[left, main:2, right]", "h[left, main, right]"), "main twice as wide")
+    assert.is_false(redundant("h[main, right]", "h[left, main:2, right]"), "pruning keeps main at 2:1")
+    assert.is_true(redundant("h[a, b:2]", "h[a, v[b, c]:2]"), "a nested split left with one slot keeps its share")
+  end)
+
+  it("is no override the default could stand for: another kind, nesting, order or slot", function()
+    assert.is_false(redundant("h[left, main, right]", "scroll[left, main, right]"), "tiles, not scrolling")
+    assert.is_false(redundant("v[left, main]", "h[left, main, right]"), "stacked, not side by side")
+    assert.is_false(redundant("h[main, left]", "h[left, main, right]"), "another order")
+    assert.is_false(redundant("h[left, v[main, right]]", "h[left, main, right]"), "nested otherwise")
+    assert.is_false(redundant("h[left, main, mail]", "h[left, main, right]"), "a slot the default does not place")
+  end)
+
+  it("treats the overflow leaf as part of the shape, not a slot that closes up", function()
+    assert.is_false(redundant("h[left, main]", "h[left, main, *]"))
+    assert.is_false(redundant("h[left, main, *]", "h[left, main]"))
+    assert.is_true(redundant("h[main, *]", "h[left, main, *]"))
+  end)
+
+  it("is a screen with no tree when the default has none there, or places nothing a slot could fill", function()
+    assert.is_true(redundant(nil, nil))
+    assert.is_true(redundant(nil, "h[left, main, right]"), "every slot missing: nothing left")
+    assert.is_false(redundant("main", nil))
+    assert.is_false(redundant(nil, "h[left, *]"), "the overflow leaf alone is still a tree")
+  end)
+
+  it("is no match for a tree that does not parse", function()
+    assert.is_false(redundant("h[", "h[left, main]"))
+    assert.is_false(redundant("main", "h["))
+  end)
+end)
+
 describe("edit.reset_tree", function()
   local saved = two
 
