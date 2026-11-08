@@ -854,11 +854,13 @@ not the editor's to set.
 **Layouts view** (the third tab, `Layouts`; aerolayout MonitorsView,
 reshaped: aerolayout mapped monitors to arrangements; here desks and
 layouts are two lists and a desk points at a layout). A line says what the
-two are; then two sections:
+two are; then two sections, each under its column titles (Desk, Monitors,
+Uses layout, Pinned; Layout, Screens, Used by):
 
 - **Desks** (monitor setups): each stored desk by name, its monitors (`●`
   connected, `○` not; a connected one by connector and description), the
-  layout it uses, its pinned screens; the active desk tinted in the accent
+  layout it uses as a mapping (`→ dual`, so a desk and a layout of one
+  name do not read as the name twice), its pinned screens; the active desk tinted in the accent
   colour and marked `● active`; `(new, unsaved)` on one the engine made.
 - **Layouts** (logical arrangements for N screens): each by name, its screen
   count, the desks using it (`unused` when none); the active layout marked

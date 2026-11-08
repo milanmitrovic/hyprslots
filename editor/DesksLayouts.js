@@ -105,9 +105,16 @@ function deskCells(row) {
     mark: row.active ? "● active" : "",
     name: nameCell(row),
     monitors: row.monitors.map(monitorText).join(" + "),
-    layout: "layout " + row.layout,
+    layout: "→ " + row.layout,
     pinned: row.pinned.length ? "pinned " + row.pinned.join(", ") : "",
   }
+}
+
+// The column titles over a section's rows ("desk" or "layout"), keyed as
+// deskCells / layoutCells are.
+function columnTitles(kind) {
+  if (kind === "desk") return { name: "Desk", monitors: "Monitors", layout: "Uses layout", pinned: "Pinned" }
+  return { name: "Layout", screens: "Screens", usedBy: "Used by" }
 }
 
 function layoutCells(row) {

@@ -393,6 +393,37 @@ Item {
           font.bold: true
         }
 
+        // The section's column titles (a desk's layout column is the one it
+        // uses: "Uses layout", each cell "→ <layout>").
+        Row {
+          visible: entry.first
+          width: parent.width
+          readonly property var titles: DesksLayouts.columnTitles(entry.modelData.kind)
+          Repeater {
+            model: entry.desk
+              ? [{ text: "", width: root.markWidth }, { text: parent.titles.name, width: root.nameWidth },
+                { text: parent.titles.monitors, width: root.width * 0.43 },
+                { text: parent.titles.layout, width: root.width * 0.16 },
+                { text: parent.titles.pinned, width: root.width - root.markWidth - root.nameWidth - root.width * 0.59 }]
+              : [{ text: "", width: root.markWidth }, { text: parent.titles.name, width: root.nameWidth },
+                { text: parent.titles.screens, width: root.width * 0.14 },
+                { text: parent.titles.usedBy, width: root.width - root.markWidth - root.nameWidth - root.width * 0.14 }]
+            delegate: Text {
+              required property var modelData
+              width: modelData.width
+              leftPadding: Style.spacing.md
+              bottomPadding: Style.spacing.xs
+              textFormat: Text.PlainText
+              text: modelData.text
+              color: root.foreground
+              opacity: 0.45
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+              elide: Text.ElideRight
+            }
+          }
+        }
+
         Rectangle {
           width: parent.width
           height: root.rowHeight

@@ -72,20 +72,20 @@ test("a desk the engine just made is marked new and unsaved", () => {
   assert.match(D.deskCells(D.rows(state)[1]).name, /^laptop \(new, unsaved\)$/);
 });
 
-test("a desk row reads: name, monitors with ● when connected, the layout, the pinned screens", () => {
+test("a desk row reads: name, monitors with ● when connected, → the layout it uses, the pinned screens", () => {
   const rows = D.rows(fixture());
   assert.deepEqual(plain(D.deskCells(rows[0])), {
     mark: "● active",
     name: "docked",
     monitors: "● eDP-1 (BOE 0x0BCA) + ● " + SAMSUNG + " (DP-2)",
-    layout: "layout docked",
+    layout: "→ docked",
     pinned: "pinned 1",
   });
   assert.deepEqual(plain(D.deskCells(rows[2])), {
     mark: "",
     name: "office (set in config.lua)",
     monitors: "● eDP-1 (BOE 0x0BCA) + ○ Dell U2723QE ABC",
-    layout: "layout docked",
+    layout: "→ docked",
     pinned: "",
   });
 });
@@ -227,4 +227,9 @@ test("a read-only row refuses edits, saying where it is set", () => {
   assert.equal(D.readOnlyError(rows[2]), "Desk 'office' is set in config.lua.");
   assert.equal(D.readOnlyError(rows[6]), "Layout 'wide' is set in config.lua.");
   assert.equal(D.readOnlyError(rows[0]), "");
+});
+
+test("each section's column titles say what the columns are: a desk's layout is the one it uses", () => {
+  assert.deepEqual(plain(D.columnTitles("desk")), { name: "Desk", monitors: "Monitors", layout: "Uses layout", pinned: "Pinned" });
+  assert.deepEqual(plain(D.columnTitles("layout")), { name: "Layout", screens: "Screens", usedBy: "Used by" });
 });
