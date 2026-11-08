@@ -7,7 +7,8 @@
 #
 # The slotted windows open on desk 1 in shuffled order and are routed to the
 # hidden workspace 3; showing desk 3 finds them in slot order and widens them.
-# A window with no slot opened next to the first column goes last. A column
+# A window with no slot opened next to the first column goes last, or, once
+# the branch is scroll[left, *, main, right], where the `*` is. A column
 # the user moves stays where they put it through focus changes, and a desk
 # switch puts it back. The cursor never jumps.
 
@@ -157,6 +158,14 @@ test_body() {
   expect_eq "slot order after a desk switch" "t-left t-main t-right t-other" "$(columns 3)"
   expect_eq "focus kept through the swaps" "t-right" "$(active_class)"
   expect_in_view t-right
+
+  # When the branch places the overflow leaf among its columns, the window
+  # with no slot goes there, and the focus stays.
+  log "set_tree -> $(repl 'return hyprslots.api.call("set_tree", "{\"desk\": 3, \"role\": \"main\", \"tree\": \"scroll[left, *, main, right]\"}")')"
+  eventually 5 columns_are 3 "t-left t-other t-main t-right" || true
+  settle 3
+  expect_eq "the window with no slot takes the overflow column" "t-left t-other t-main t-right" "$(columns 3)"
+  expect_eq "focus kept through those swaps" "t-right" "$(active_class)"
 
   expect_eq "cursor:no_warps put back after the swaps" "false" "$(hc getoption cursor:no_warps -j | jq -r '.bool')"
 
