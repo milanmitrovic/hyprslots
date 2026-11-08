@@ -123,3 +123,12 @@ test("Qt keys become the names key() takes", () => {
   assert.equal(P.typed("\u0015"), "", "a control character types nothing");
   assert.equal(P.typed("é"), "é");
 });
+
+test("an inline choice says its options in its own words", () => {
+  const prompt = P.choice("Apply to (a)ll workspaces or (o)nly workspace 5?",
+    [{ key: "a", label: "all workspaces", value: "all" }, { key: "o", label: "only workspace 5", value: "only" }],
+    { inline: true });
+  assert.equal(P.display(prompt), "Apply to (a)ll workspaces or (o)nly workspace 5? [Esc] cancel");
+  assert.deepEqual(feed(prompt, "o").result, { value: "only" });
+  assert.equal(P.help(prompt), "letter pick   ·   Esc cancel");
+});

@@ -29,9 +29,11 @@ function text(label, opts) {
 }
 
 // A pick among options [{ key, label, value }]; a key of "" is picked with
-// the arrows only.
-function choice(label, options) {
-  return { kind: "choice", label: label, options: options, index: 0, error: "" }
+// the arrows only. opts.inline: the label names the options itself
+// ("Apply to (a)ll workspaces or (o)nly workspace 5?"), which are picked by
+// key only.
+function choice(label, options, opts) {
+  return { kind: "choice", label: label, options: options, index: 0, error: "", inline: !!(opts && opts.inline) }
 }
 
 function confirm(label) {
@@ -121,6 +123,7 @@ function choiceKey(prompt, name, typed) {
       if (options[i].key !== "" && options[i].key === typed) return answered(options[i].value)
     }
   }
+  if (prompt.inline) return stay(prompt)
   if (name === "Up" || name === "Down") {
     var p = copy(prompt)
     p.index = Math.max(0, Math.min(options.length - 1, prompt.index + (name === "Up" ? -1 : 1)))
@@ -153,6 +156,7 @@ function optionText(option) {
 function display(prompt) {
   if (!prompt) return ""
   if (prompt.kind === "text") return prompt.label + prompt.value.slice(0, prompt.cursor) + "▏" + prompt.value.slice(prompt.cursor)
+  if (prompt.kind === "choice" && prompt.inline) return prompt.label + " [Esc] cancel"
   if (prompt.kind === "choice") {
     var labels = prompt.options.map(optionText)
     var current = prompt.options[prompt.index]
@@ -168,6 +172,7 @@ function help(prompt) {
     return "type   ·   ←/→ Home End move   ·   Backspace Delete Ctrl+U edit"
       + (prompt.suggestions.length ? "   ·   ↑/↓ suggestions" : "") + "   ·   Return ok   ·   Esc cancel"
   }
+  if (prompt.kind === "choice" && prompt.inline) return "letter pick   ·   Esc cancel"
   if (prompt.kind === "choice") return "letter/digit pick   ·   ↑/↓ Return pick   ·   Esc cancel"
   return "y yes   ·   n / Esc no"
 }
