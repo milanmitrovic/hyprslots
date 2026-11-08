@@ -178,7 +178,7 @@ Item {
   function selectionText() {
     if (root.tab === 1) return layoutView.selectionText()
     var row = assignmentView.selectedRow
-    return row ? row.status + " " + (row.slot || "-") + " " + (row.cls || row.spec) : ""
+    return row ? row.status + " " + (row.slot || "-") + " " + (row.cls || row.spec || "-") : ""
   }
 
   // The Layout view's draft trees, "big: h[a, b]; side: c" (edited ones

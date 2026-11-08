@@ -8,8 +8,9 @@
 # of the nested Hyprland and the harness's private XDG_RUNTIME_DIR. The panel
 # is opened, a stray window is put into a slot with real key presses (wtype,
 # through the panel's keyboard handling), which also makes its spec desk 3's
-# for that slot; it is taken out again and the spec cleared with the panel's
-# press() hook, and api state must show each; [ ] and the digits page by
+# for that slot; u takes it out again with that spec (the slot is left
+# empty), c clears a Missing slot's spec, through the panel's press() hook,
+# and api state must show each; [ ] and the digits page by
 # desk. Then the Layout tab flips desk 3's tree, takes a typed ratio,
 # applies it (api state and the windows' geometry must follow) and saves it
 # (slots.lua must hold it); ] and 3 switch its desk; its slot list (s) edits
@@ -497,30 +498,42 @@ test_body() {
   expect_eq "the row says so" "slot side t-stray" "$(smoke selection)"
   log "message: $(smoke message)"
 
-  # And u, y (through the panel's press() hook) takes it out again.
+  # And u, y (through the panel's press() hook) takes it out again, the
+  # spec a took from it with it: side is left empty, not Missing t-stray.
   expect_eq "u" "ok" "$(smoke press u)"
+  expect_eq "u asks, naming the spec it clears" \
+    "Unassign t-stray from side and clear desk 3's spec for it (t-stray)? (the slot is left empty) (y/n)" "$(smoke message)"
   expect_eq "y" "ok" "$(smoke press y)"
   if eventually 5 unassigned "$stray"; then
     pass "u, y unassigned the stray"
   else
     fail "the stray is still assigned: $(assignment_of "$stray"); editor errors: $(smoke errors)"
   fi
+  if eventually 5 state_is '.specs["3"].side' null; then
+    pass "and cleared desk 3's spec for side"
+  else
+    fail "side's spec is $(api_state | jq -r '.specs["3"].side'): $(smoke message)"
+  fi
   eventually 5 smoke_idle || true
+  press_keys Up
+  expect_eq "side's row is empty: no spec, nothing Missing" "empty side -" "$(smoke selection)"
+  expect_eq "side stays a slot" "main right side" "$(slot_names)"
   sleep 0.3
   shot 3-unassigned
 
-  # c on side's Missing row clears desk 3's spec for it (the slot stays).
-  press_keys Up
-  expect_eq "Up selects side's Missing row" "missing side t-stray" "$(smoke selection)"
+  # c clears the spec of a slot whose window is not open (a Missing row);
+  # side waits for t-side again (set through the api), c, y clears it.
+  repl 'return hyprslots.api.call("set_spec", "{\"desk\": 3, \"slot\": \"side\", \"spec\": \"t-side\"}")' >/dev/null
+  eventually 5 bash -c "[[ \$($watch selection) == 'missing side t-side' ]]" || true
+  expect_eq "side is Missing t-side" "missing side t-side" "$(smoke selection)"
   press_keys c
-  expect_eq "c asks first" "Clear desk 3's spec for side (t-stray)? (y/n)" "$(smoke message)"
+  expect_eq "c asks first" "Clear desk 3's spec for side (t-side)? (y/n)" "$(smoke message)"
   press_keys y
   if eventually 5 state_is '.specs["3"].side' null; then
     pass "c, y cleared desk 3's spec for side"
   else
     fail "side's spec is $(api_state | jq -r '.specs["3"].side'): $(smoke message)"
   fi
-  expect_eq "side stays a slot" "main right side" "$(slot_names)"
   eventually 5 smoke_idle || true
 
   # [ pages back to every window, 3 jumps to desk 3's page, 7 has none.
@@ -592,6 +605,11 @@ test_body() {
     pass "slots.lua holds the edited tree"
   else
     fail "slots.lua: $(cat "$E2E_CONFIG_HOME/hyprslots/slots.lua")"
+  fi
+  if grep -qE 'side = "t-' "$E2E_CONFIG_HOME/hyprslots/slots.lua"; then
+    fail "slots.lua still has a spec for side: $(cat "$E2E_CONFIG_HOME/hyprslots/slots.lua")"
+  else
+    pass "slots.lua has no spec for side after u"
   fi
   log "message: $(smoke message)"
   sleep 0.3
