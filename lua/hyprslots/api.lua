@@ -598,7 +598,9 @@ function handlers.assign(engine, args)
     seq = engine.seq }
 end
 
--- unassign { address }: take a window out of its slot by hand.
+-- unassign { address, clear_spec? }: the window out of its slot (it takes
+-- none until assigned again or closed); with clear_spec, the desk's spec for
+-- that slot too (reply `spec`, the one cleared).
 function handlers.unassign(engine, args)
   if engine.refused then
     return fail("hyprslots is off: " .. engine.refused)
@@ -607,9 +609,25 @@ function handlers.unassign(engine, args)
   if not window then
     return fail("no open window " .. tostring(args.address))
   end
-  local previous = router.unassign(engine, window.address)
+  -- clear_spec (the Assignment view's u): the desk's spec for the slot the
+  -- window holds goes too, first, so the slot is left empty rather than
+  -- given to another window that spec matches. A refused clear changes
+  -- nothing.
+  local held = engine.assignments[window.address]
+  local cleared
+  if args.clear_spec == true and held then
+    local specs = engine.cfg and engine.cfg.specs[held.desk]
+    if specs and specs[held.slot] then
+      local reply = handlers.clear_spec(engine, { desk = held.desk, slot = held.slot })
+      if reply.ok == false then
+        return reply
+      end
+      cleared = reply.spec
+    end
+  end
+  local previous = router.unassign(engine, window.address) or held
   return { address = window.address, desk = previous and previous.desk or nil,
-    slot = previous and previous.slot or nil, seq = engine.seq }
+    slot = previous and previous.slot or nil, spec = cleared, seq = engine.seq }
 end
 
 -- The slot list's, Assignment and Arrangements views' edits. Each builds new slots.lua data
