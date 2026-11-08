@@ -884,6 +884,116 @@ function M.place_slot(data, layout, n, slot, screen)
   return out, screen
 end
 
+-- The slots a set of trees (screen -> text) places, as a set.
+local function placed_slots(trees)
+  local out = {}
+  for _, text in pairs(trees or {}) do
+    local node = tree.parse(text)
+    for _, slot in ipairs(node and tree.slots(node) or {}) do
+      out[slot] = true
+    end
+  end
+  return out
+end
+
+-- Why workspace n's own trees in a layout must stay, or nil when the shared
+-- (default) ones would lay it out the same: each screen's tree is the shared
+-- one with slots missing (M.redundant_with_default), and the workspace has
+-- no spec for a slot the shared trees place and its own leave out (that spec
+-- would start filling it).
+local function override_needed(data, entry, n)
+  local own = entry.workspaces[n]
+  local default = type(entry.default) == "table" and entry.default or {}
+  for screen = 1, screen_count(entry) do
+    if not M.redundant_with_default(own[screen], default[screen]) then
+      return string.format("screen %d's tree is not the shared one with slots left out", screen)
+    end
+  end
+  local specs = section(data, "specs")[n]
+  local mine, shared = placed_slots(own), placed_slots(default)
+  local woken = {}
+  for _, slot in ipairs(sorted_keys(type(specs) == "table" and specs or {})) do
+    if shared[slot] and not mine[slot] then
+      woken[#woken + 1] = slot
+    end
+  end
+  if #woken > 0 then
+    return string.format("it has a spec for %s, which its own trees leave out and the shared ones place",
+      table.concat(woken, ", "))
+  end
+  return nil
+end
+
+-- The data with every workspace's own trees in layout `layout` dropped that
+-- the layout's shared (default) trees would lay out the same (see
+-- override_needed): the copies the cutover made of one tree, cut down to the
+-- slots each workspace had. Returns the new data and { folded = {
+-- workspaces }, kept = { { workspace, reason } } } (both by workspace), or
+-- nil and why not.
+function M.fold_trees(data, layout)
+  local entry, err = layout_entry(data, layout)
+  if not entry then
+    return nil, err
+  end
+  local out = M.copy(data)
+  local target = out.layouts[layout]
+  local report = { folded = {}, kept = {} }
+  local workspaces = type(target.workspaces) == "table" and target.workspaces or {}
+  for _, n in ipairs(sorted_keys(workspaces)) do
+    if type(workspaces[n]) == "table" then
+      local reason = override_needed(out, target, n)
+      if reason then
+        report.kept[#report.kept + 1] = { workspace = n, reason = reason }
+      else
+        workspaces[n] = nil
+        report.folded[#report.folded + 1] = n
+      end
+    end
+  end
+  if target.workspaces ~= nil and next(workspaces) == nil then
+    target.workspaces = nil
+  end
+  return out, report
+end
+
+-- The data with workspace n's own trees in layout `layout` dropped, so it
+-- shows the shared (default) ones; with `screen`, only that screen's tree
+-- goes back to the shared one, and the rest once they are the shared ones
+-- too. Returns the new data, or nil and why not.
+function M.drop_override(data, layout, n, screen)
+  local entry, err = layout_entry(data, layout)
+  if not entry then
+    return nil, err
+  end
+  local ok, ws_err = check_workspace(n)
+  if not ok then
+    return nil, ws_err
+  end
+  if screen ~= nil then
+    screen = as_screen(screen)
+    local fits, screen_err = check_screen(layout, entry, screen)
+    if not fits then
+      return nil, screen_err
+    end
+  end
+  if type(entry.workspaces) ~= "table" or type(entry.workspaces[n]) ~= "table" then
+    return nil, string.format("workspace %d uses the shared trees already in layout '%s'", n, layout)
+  end
+  local out = M.copy(data)
+  local target = out.layouts[layout]
+  local default = type(target.default) == "table" and target.default or {}
+  if screen ~= nil then
+    target.workspaces[n][screen] = default[screen]
+  end
+  if screen == nil or serialize.dump(target.workspaces[n]) == serialize.dump(default) then
+    target.workspaces[n] = nil
+  end
+  if next(target.workspaces) == nil then
+    target.workspaces = nil
+  end
+  return out
+end
+
 -- The data with a layout's tree for workspace n (or "default") on a screen
 -- put back to the one `saved` (the data as slots.lua holds it) gives it:
 -- the workspace's own tree there, else (it has none of its own there) the

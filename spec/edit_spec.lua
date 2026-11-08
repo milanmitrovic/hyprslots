@@ -270,6 +270,102 @@ describe("edit.redundant_with_default", function()
   end)
 end)
 
+describe("edit.fold_trees", function()
+  -- The cutover's laptop layout: each workspace's own copy of one tree, cut
+  -- down to the slots it had specs for, and one real difference.
+  local function cutover()
+    return {
+      slots = { left = {}, main = {}, right = {}, mail = {} },
+      specs = { [2] = { main = "t-main" }, [5] = { left = "t-l", right = "t-r" } },
+      layouts = {
+        wide = { screens = 1, default = { [1] = "h[left, main, right]" }, workspaces = {
+          [1] = { [1] = "h[left, main, right]" },
+          [2] = { [1] = "h[main, right]" },
+          [3] = { [1] = "h[left, main:2, right]" },
+          [4] = { [1] = "main" },
+          [5] = { [1] = "h[left, right]" },
+        } },
+        other = { screens = 1, workspaces = { [1] = { [1] = "main" } } },
+      },
+    }
+  end
+
+  it("drops every workspace's trees that are the shared ones with slots missing, keeping the real overrides", function()
+    local before = cutover()
+    local after, report = edit.fold_trees(before, "wide")
+    assert.are.same({ [3] = { [1] = "h[left, main:2, right]" } }, after.layouts.wide.workspaces)
+    assert.are.same({ 1, 2, 4, 5 }, report.folded)
+    assert.are.same({ { workspace = 3, reason = "screen 1's tree is not the shared one with slots left out" } },
+      report.kept)
+    assert.are.same(cutover(), before, "the data given is untouched")
+    assert.are.same({ [1] = "main" }, after.layouts.other.workspaces[1], "another layout is not folded")
+  end)
+
+  it("compares every screen, a screen with no tree of its own matching one with no shared tree", function()
+    local data = {
+      slots = { left = {}, main = {}, right = {} },
+      layouts = { dual = { screens = 2, default = { [2] = "h[left, main, right]" }, workspaces = {
+        [1] = { [2] = "h[main, right]" },
+        [2] = { [1] = "main", [2] = "h[left, right]" },
+        [3] = {},
+      } } },
+    }
+    local after, report = edit.fold_trees(data, "dual")
+    assert.are.same({ [2] = { [1] = "main", [2] = "h[left, right]" } }, after.layouts.dual.workspaces)
+    assert.are.same({ 1, 3 }, report.folded, "workspace 3 showed nothing: every shared slot is empty there")
+  end)
+
+  it("keeps an override whose workspace has a spec the shared trees would start placing", function()
+    local data = cutover()
+    data.specs[4] = { main = "t-main", mail = "thunderbird" }
+    data.layouts.wide.default[1] = "h[left, main, right, mail]"
+    data.layouts.wide.workspaces[4][1] = "main"
+    local after, report = edit.fold_trees(data, "wide")
+    assert.are.same({ [1] = "main" }, after.layouts.wide.workspaces[4])
+    assert.are.same({ workspace = 4, reason = "it has a spec for mail, which its own trees leave out and the shared ones place" },
+      report.kept[2])
+  end)
+
+  it("takes the workspaces table away once nothing is left in it", function()
+    local data = cutover()
+    data.layouts.wide.workspaces[3] = nil
+    local after, report = edit.fold_trees(data, "wide")
+    assert.is_nil(after.layouts.wide.workspaces)
+    assert.are.same({}, report.kept)
+  end)
+
+  it("refuses a layout that is not there", function()
+    assert.matches("no layout 'nope'", select(2, edit.fold_trees(cutover(), "nope")))
+  end)
+end)
+
+describe("edit.drop_override", function()
+  it("sends a workspace back to the shared trees", function()
+    local after = assert(edit.drop_override(two(), "dual", 3))
+    assert.is_nil(after.layouts.dual.workspaces)
+    assert.are.same({ [1] = "h[mail, b]" }, after.layouts.dual.default)
+    after = assert(edit.drop_override(two(), "solo", 3))
+    assert.are.same({ [4] = { [1] = "h[mail, b]" } }, after.layouts.solo.workspaces, "the other workspaces keep theirs")
+  end)
+
+  it("drops one screen of it, and the rest once that leaves it the shared trees", function()
+    local data = two()
+    data.layouts.dual.default[2] = "c"
+    data.layouts.dual.workspaces[3][2] = "c"
+    local after = assert(edit.drop_override(data, "dual", 3, 2))
+    assert.are.same({ [1] = "h[a:2, v[b, *]]", [2] = "c" }, after.layouts.dual.workspaces[3], "screen 2 was the shared one")
+    after = assert(edit.drop_override(after, "dual", 3, 1))
+    assert.is_nil(after.layouts.dual.workspaces, "nothing of its own left")
+  end)
+
+  it("refuses a workspace on the shared trees, and an unknown layout, workspace or screen", function()
+    assert.matches("workspace 5 uses the shared trees already", select(2, edit.drop_override(two(), "dual", 5)))
+    assert.matches("no layout 'nope'", select(2, edit.drop_override(two(), "nope", 3)))
+    assert.matches("workspace", select(2, edit.drop_override(two(), "dual", 11)))
+    assert.matches("got 3", select(2, edit.drop_override(two(), "dual", 3, 3)))
+  end)
+end)
+
 describe("edit.reset_tree", function()
   local saved = two
 
