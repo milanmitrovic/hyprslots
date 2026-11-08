@@ -184,64 +184,25 @@ describe("tree.boxes", function()
   end)
 end)
 
-describe("accordion containers", function()
-  it("reads an accordion's slots in order", function()
-    assert.are.same({ "x", "y", "z", "d" }, tree.slots(parse("h[a[x, y, z]:2, d]")))
-  end)
-
-  it("treats a as a slot name when no bracket follows", function()
-    assert.are.same({ "a", "b" }, tree.slots(parse("a[a, b]")))
-  end)
-
+describe("accordions (gone)", function()
   local function rejects(text, pattern)
     local node, err = tree.parse(text)
     assert.is_nil(node)
     assert.matches(pattern, err)
   end
 
-  it("rejects a split inside an accordion, saying where", function()
-    rejects("h[a[x, v[y, z]], d]", "an accordion holds slots only, found 'v%[' inside it at position 8")
+  it("refuses a[...], pointing to scroll[...]", function()
+    rejects("a[left, main, right]",
+      "a%[...%] %(an accordion, a Hyprland group with tabs%) is gone: write scroll%[left, main, right%] for "
+        .. "full%-width scrolling columns at position 1")
   end)
 
-  it("rejects an accordion inside an accordion", function()
-    rejects("a[x, a[y, z]]", "slots only, found 'a%['")
+  it("refuses one inside a split too", function()
+    rejects("h[a[x, y], d]", "a%[...%] %(an accordion, a Hyprland group with tabs%) is gone")
   end)
 
-  it("rejects a weight inside an accordion", function()
-    rejects("a[x:2, y]", "accordion members take no weight")
-  end)
-
-  it("rejects a slot used twice across an accordion", function()
-    rejects("h[a[x, y], x]", "'x' appears twice")
-  end)
-
-  it("gives every member the container's box", function()
-    local boxes = tree.boxes(parse("h[a[x, y, z]:1, d:1]"), area(0, 0, 2400, 1350))
-    assert.are.same({
-      x = area(0, 0, 1200, 1350),
-      y = area(0, 0, 1200, 1350),
-      z = area(0, 0, 1200, 1350),
-      d = area(1200, 0, 1200, 1350),
-    }, boxes)
-  end)
-
-  it("keeps its full box with only some members present", function()
-    local boxes = tree.boxes(parse("h[a[x, y, z]:1, d:1]"), area(0, 0, 2400, 1350), { y = true, d = true })
-    assert.are.same({ y = area(0, 0, 1200, 1350), d = area(1200, 0, 1200, 1350) }, boxes)
-  end)
-
-  it("closes up when no member is present", function()
-    local boxes = tree.boxes(parse("h[a[x, y, z]:1, d:1]"), area(0, 0, 2400, 1350), { d = true })
-    assert.are.same({ d = area(0, 0, 2400, 1350) }, boxes)
-  end)
-
-  it("can be the whole tree", function()
-    local boxes = tree.boxes(parse("a[x, y]"), area(0, 0, 100, 50))
-    assert.are.same({ x = area(0, 0, 100, 50), y = area(0, 0, 100, 50) }, boxes)
-  end)
-
-  it("lists accordions with their members in order", function()
-    assert.are.same({ { "x", "y" }, { "p", "q" } }, tree.accordions(parse("h[a[x, y], v[d, a[p, q]]]")))
+  it("still reads a as a slot name when no bracket follows", function()
+    assert.are.same({ "a", "b" }, tree.slots(parse("h[a, b]")))
   end)
 end)
 
@@ -335,10 +296,6 @@ describe("the overflow leaf", function()
   -- aerolayout: validate_tree, "more than one overflow slot".
   it("rejects a second overflow leaf", function()
     rejects("h[*, v[main, *]]", "more than one overflow leaf")
-  end)
-
-  it("rejects an overflow leaf inside an accordion", function()
-    rejects("a[x, *]", "an accordion holds slots only, found '%*'")
   end)
 
   describe("tree.with_overflow", function()

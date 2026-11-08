@@ -6,8 +6,9 @@
 -- clusters the boxes along x (an `h` split) or else along y (a `v` split),
 -- recurses into each group, and weighs the groups by their extent.
 --
--- Accordions cannot be recorded: their windows overlap, so there is no cut
--- line, and the record is refused (as in aerolayout) rather than guessed.
+-- Overlapping windows cannot be recorded: there is no cut line, and the
+-- record is refused (as in aerolayout) rather than guessed. (A scroll
+-- branch records from its column order instead, api.lua.)
 --
 -- Weights are integers, as everywhere in hyprslots. aerolayout keeps a
 -- measured 1:1.37 as a decimal; here `weights` looks for the smallest integer
@@ -173,8 +174,7 @@ function M.tree(boxes)
   table.sort(items, function(a, b) return a.slot < b.slot end)
   local root = build(items)
   if not root then
-    return nil, "the windows overlap, so there are no cut lines to record "
-      .. "(an accordion cannot be recorded)"
+    return nil, "the windows overlap, so there are no cut lines to record"
   end
   return root
 end

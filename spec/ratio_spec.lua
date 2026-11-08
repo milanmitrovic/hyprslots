@@ -182,7 +182,7 @@ describe("ratio.apply", function()
   end)
 
   it("refuses a * among tiles, naming the container", function()
-    apply_rejects("h[a, b]", "*:1", "* is an accordion pane with no share of its own, and the outer container is tiled")
+    apply_rejects("h[a, b]", "*:1", "* is a scroll column with no share of its own, and the outer container is tiled")
     apply_rejects(H_WITH_V, "2[*:1]:1", "cell 1 is tiled")
   end)
 
@@ -194,50 +194,6 @@ describe("ratio.apply", function()
     local applied, err = ratio.apply(nil, "1:1")
     assert.is_nil(applied)
     assert.matches("tree", err)
-  end)
-end)
-
--- An accordion node, the way any split kind other than h/v reads here.
-local function accordion(...)
-  local children = {}
-  for i, name in ipairs({ ... }) do
-    children[i] = type(name) == "table" and name or { slot = name, weight = 1 }
-  end
-  return { split = "a", weight = 1, children = children }
-end
-
-describe("ratio on accordions", function()
-  it("writes nothing for * and 1 cells", function()
-    local acc = accordion("a", "b", "c")
-    acc.children[1].weight = 3
-    local applied = assert(ratio.apply(acc, "*:1:*"))
-    assert.are.same({ 3, 1, 1 }, weights(applied))
-  end)
-
-  it("is a no-op as a cell of a tiled ratio", function()
-    local node = { split = "h", weight = 1, children = { accordion("a", "b", "c"), { slot = "right", weight = 1 } } }
-    local applied = assert(ratio.apply(node, "2[*:1:*]:1"))
-    assert.are.same({ 2, 1 }, weights(applied))
-    assert.are.same({ 1, 1, 1 }, weights(applied.children[1]))
-  end)
-
-  it("still applies the ratio of a tiled cell inside it", function()
-    local acc = accordion("a", { split = "h", weight = 1, children = { { slot = "b", weight = 1 }, { slot = "c", weight = 1 } } })
-    local applied = assert(ratio.apply(acc, "*:*[3:1]"))
-    assert.are.same({ 3, 1 }, weights(applied.children[2]))
-  end)
-
-  it("refuses numbers on an accordion", function()
-    local applied, err = ratio.apply(accordion("a", "b", "c"), "3:1:1")
-    assert.is_nil(applied)
-    assert.is_truthy(err:find("ratios don't apply to the outer container", 1, true), err)
-    assert.is_truthy(err:find("accordion", 1, true), err)
-  end)
-
-  it("formats every accordion pane as *", function()
-    local node = { split = "h", weight = 1, children = { accordion("a", "b", "c"), { slot = "right", weight = 1 } } }
-    node.children[1].weight = 2
-    assert.are.equal("2[*:*:*]:1", ratio.format(node))
   end)
 end)
 

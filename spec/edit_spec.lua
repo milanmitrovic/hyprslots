@@ -231,9 +231,9 @@ describe("edit.rename_leaf / edit.remove_leaf", function()
   local serialize = require("hyprslots.serialize")
 
   it("rename a slot in a parsed tree, without touching the original", function()
-    local node = assert(tree.parse("h[a:2, a[b, c]]"))
-    assert.are.equal("h[a:2, a[x, c]]", serialize.tree(edit.rename_leaf(node, "b", "x")))
-    assert.are.equal("h[a:2, a[b, c]]", serialize.tree(node))
+    local node = assert(tree.parse("scroll[a, b, c]"))
+    assert.are.equal("scroll[a, x, c]", serialize.tree(edit.rename_leaf(node, "b", "x")))
+    assert.are.equal("scroll[a, b, c]", serialize.tree(node))
   end)
 
   it("removing a slot hoists a container's lone survivor with the container's weight", function()

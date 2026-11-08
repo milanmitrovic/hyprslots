@@ -14,7 +14,6 @@ local arrangement = require("hyprslots.arrangement")
 local assign = require("hyprslots.assign")
 local config = require("hyprslots.config")
 local desks = require("hyprslots.desks")
-local groups = require("hyprslots.groups")
 local hotplug = require("hyprslots.hotplug")
 local layout = require("hyprslots.layout")
 local log = require("hyprslots.log")
@@ -313,9 +312,8 @@ local function start(self, opts)
   self:assign_all()
   window_rules.sync(self)
 
-  -- Accordions: group moves run deferred, after the events above.
-  groups.attach(self)
-  -- Scroll branches: column order and width, deferred the same way.
+  -- Scroll branches: column order and width run deferred, after the events
+  -- above.
   scroll.attach(self)
   self.started = true
 end

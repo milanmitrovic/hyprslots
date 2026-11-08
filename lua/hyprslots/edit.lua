@@ -168,9 +168,8 @@ function M.rename_leaf(node, old, new)
 end
 
 -- A copy of a parsed tree without slot `name`: a split left with one child
--- is replaced by that child (taking the split's weight; an accordion or a
--- scroll branch stays one), a container left with none goes too. Nil when
--- nothing is left.
+-- is replaced by that child (taking the split's weight; a scroll branch
+-- stays one), a container left with none goes too. Nil when nothing is left.
 function M.remove_leaf(node, name)
   if node.slot ~= nil or node.children == nil then
     if node.slot == name then
@@ -188,7 +187,7 @@ function M.remove_leaf(node, name)
   if #children == 0 then
     return nil
   end
-  if #children == 1 and not node.accordion and not node.scroll then
+  if #children == 1 and not node.scroll then
     children[1].weight = node.weight
     return children[1]
   end

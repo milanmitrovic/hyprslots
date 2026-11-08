@@ -17,7 +17,6 @@ local adapter = require("hyprslots.hl_adapter")
 local config = require("hyprslots.config")
 local desks = require("hyprslots.desks")
 local edit = require("hyprslots.edit")
-local groups = require("hyprslots.groups")
 local ratio = require("hyprslots.ratio")
 local record = require("hyprslots.record")
 local resize = require("hyprslots.resize")
@@ -191,21 +190,6 @@ local function desks_list(engine)
   return array(sorted_keys(seen))
 end
 
--- The accordions of the desk workspaces and their live groups (groups.lua).
-local function groups_info(engine)
-  local out = array()
-  local ok, described = pcall(groups.describe, engine)
-  if not ok then
-    engine.log:error("state: groups: %s", tostring(described))
-    return out
-  end
-  for _, g in ipairs(described) do
-    out[#out + 1] = object({ workspace = g.workspace, desk = g.desk, role = g.role, slots = array(g.slots),
-      members = object(g.members), group = array(g.group), formed = g.formed })
-  end
-  return out
-end
-
 -- The scroll branches of the desk workspaces and their columns (scroll.lua).
 local function scroll_info(engine)
   local out = array()
@@ -305,7 +289,6 @@ function M.snapshot(engine)
     windows = windows_info(engine),
     dirty = engine.dirty == true or next(engine.resized or {}) ~= nil,
     resized = resized_info(engine),
-    groups = groups_info(engine),
     scroll = scroll_info(engine),
     config = object({
       dir = dir,
@@ -433,21 +416,6 @@ local function leaves(node, out)
   return out
 end
 
-local function has_accordion(node)
-  if node.children == nil then
-    return false
-  end
-  if node.split ~= "h" and node.split ~= "v" then
-    return true
-  end
-  for _, child in ipairs(node.children) do
-    if has_accordion(child) then
-      return true
-    end
-  end
-  return false
-end
-
 -- Apply a recorded tree when asked, or when it places every slot of the
 -- current tree; fills in reply.applied. Returns the reply, or a failure.
 local function apply_record(engine, args, reply)
@@ -515,10 +483,6 @@ function handlers.record(engine, args)
   local branch = M.effective_branch(engine, name, desk.desk, desk.role) or desk.branch
   if tree.scroll(branch) then
     return record_scroll(engine, args, id, desk, name, branch)
-  end
-  if has_accordion(branch) then
-    return fail("cannot record workspace " .. tostring(id) .. ": its tree holds an accordion, whose windows "
-      .. "overlap (aerolayout cannot record one either); set its tree or ratio instead")
   end
   local in_branch = {}
   for _, leaf in ipairs(leaves(branch)) do

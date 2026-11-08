@@ -1,22 +1,20 @@
 -- Layout trees: `h[main:2, right:1]`, `v[top, h[a, b:3]:2]`, or a bare slot.
 --
 -- Inner nodes are `h` (side by side) or `v` (stacked) splits; each child may
--- carry an integer weight (default 1). Leaves are slot names. An accordion,
--- `a[left, main, right]`, stacks its members in one Hyprland group: it holds
--- slots only (no splits, no weights) and all of its members share its box. A
--- scroll container, `scroll[left, main, right]`, is a whole screen's tree:
--- its slots are full-width columns of Hyprland's scrolling layout, in that
--- order (scroll.lua); it holds slots only and sits at the root only. A
--- parsed node is
+-- carry an integer weight (default 1). Leaves are slot names. A scroll
+-- container, `scroll[left, main, right]`, is a whole screen's tree: its slots
+-- are full-width columns of Hyprland's scrolling layout, in that order
+-- (scroll.lua); it holds slots only (no splits, no weights) and sits at the
+-- root only. The accordion `a[...]` (a Hyprland group, with tabs) is gone and
+-- refused with a pointer to scroll[...]. A parsed node is
 --
 --   { slot = "main", weight = 2 }                               -- leaf
 --   { split = "h", weight = 1, children = { node, ... } }       -- split
---   { accordion = true, weight = 1, children = { leaf, ... } }  -- accordion
 --   { scroll = true, weight = 1, children = { leaf, ... } }     -- scroll
 --   { overflow = true, weight = 1 }                             -- overflow leaf
 --
--- The overflow leaf, written `*` (at most one per tree, never inside an
--- accordion), is where windows with no slot in the tree go.
+-- The overflow leaf, written `*` (at most one per tree, never inside a
+-- scroll container), is where windows with no slot in the tree go.
 --
 -- `boxes` divides an area by those weights in whole pixels: every child but the
 -- last gets floor(extent * weight / total), the last gets the remainder, so the
@@ -142,8 +140,15 @@ local function parser(text)
     local name = p.name()
     if CONTAINER[name] and p.peek() == "[" then
       if name == "a" then
-        return { accordion = true,
-          children = p.children(member("an accordion"), "accordion members take no weight (the accordion shares one box)") }
+        -- Read its members for the suggestion, then refuse it where it starts.
+        local slots = {}
+        for i, child in ipairs(p.children(member("a[...]"), "a[...] is gone")) do
+          slots[i] = child.slot
+        end
+        p.pos = start
+        p.fail("a[...] (an accordion, a Hyprland group with tabs) is gone: write scroll["
+          .. table.concat(slots, ", ") .. "] for full-width scrolling columns"
+          .. (root and "" or " (as a screen's whole tree)"))
       end
       if name == "scroll" then
         if not root then
@@ -175,17 +180,6 @@ end
 -- The slot names of a tree, in reading order.
 function M.slots(node)
   return collect(node, {})
-end
-
-local function collect_accordions(node, out)
-  if node.accordion then
-    out[#out + 1] = collect(node, {})
-  elseif node.children then
-    for _, child in ipairs(node.children) do
-      collect_accordions(child, out)
-    end
-  end
-  return out
 end
 
 local function find_overflow(node)
@@ -222,11 +216,6 @@ function M.with_overflow(node)
     weight = 1,
     children = { kept, { overflow = true, weight = OVERFLOW_WEIGHT } },
   }
-end
-
--- The member slots of each accordion in a tree, in reading order.
-function M.accordions(node)
-  return collect_accordions(node, {})
 end
 
 -- The column slots of a scroll branch, in order, or nil when the tree is no
@@ -296,8 +285,7 @@ local function prune(node, present)
   if #children == 0 then
     return nil
   end
-  return { split = node.split, accordion = node.accordion, scroll = node.scroll, weight = node.weight,
-    children = children }
+  return { split = node.split, scroll = node.scroll, weight = node.weight, children = children }
 end
 
 local function divide(node, x, y, w, h, out)
@@ -305,13 +293,6 @@ local function divide(node, x, y, w, h, out)
     out[node.slot or M.OVERFLOW] = { x = x, y = y, w = w, h = h }
     return
   end
-  if node.accordion then
-    for _, child in ipairs(node.children) do
-      divide(child, x, y, w, h, out)
-    end
-    return
-  end
-
   local total = 0
   for _, child in ipairs(node.children) do
     total = total + child.weight
@@ -425,8 +406,7 @@ local function mirror(node, present)
   if #children == 0 then
     return nil
   end
-  return { split = node.split, accordion = node.accordion, scroll = node.scroll, weight = node.weight,
-    children = children, source = node }
+  return { split = node.split, scroll = node.scroll, weight = node.weight, children = children, source = node }
 end
 
 -- The tree the layout shows for `root` with these slots present: the

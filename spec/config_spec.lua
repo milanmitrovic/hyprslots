@@ -255,18 +255,17 @@ describe("config.validate", function()
     rejects(raw, "desks%[3%]%.big: desk 3 has no slot 'mian'")
   end)
 
-  it("accepts an accordion and an overflow leaf, checking the accordion's slots", function()
+  it("accepts an overflow leaf", function()
     local raw = valid()
-    raw.arrangements.solo.desks[3].big = "h[a[left, main]:2, *]"
+    raw.arrangements.solo.desks[3].big = "h[left:2, v[main, *]]"
     assert(config.validate(raw))
-    raw.arrangements.solo.desks[3].big = "h[a[left, mian], *]"
-    rejects(raw, "desks%[3%]%.big: desk 3 has no slot 'mian'")
   end)
 
-  it("rejects a split inside an accordion with its path", function()
+  it("refuses an accordion with its path, pointing to scroll[...]", function()
     local raw = valid()
-    raw.arrangements.solo.desks[3].big = "a[left, h[main]]"
-    rejects(raw, "arrangements%.solo%.desks%[3%]%.big: an accordion holds slots only, found 'h%[' inside it")
+    raw.arrangements.solo.desks[3].big = "a[left, main]"
+    rejects(raw, "arrangements%.solo%.desks%[3%]%.big: a%[...%] %(an accordion, a Hyprland group with tabs%) is gone: "
+      .. "write scroll%[left, main%]")
   end)
 
   it("accepts a scroll branch, checking its slots", function()

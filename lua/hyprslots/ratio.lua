@@ -7,12 +7,10 @@
 --   2[1:2]:1    cell 1 takes 2 shares and splits 1:2 inside; cell 2 takes 1
 --
 -- Whitespace separates cells like ':' does ('1 2 1' is '1:2:1'). A `*` is a
--- cell with no share to state: a pane of an accordion, which stacks its
--- children so each gets the whole container. An accordion's cells are written
--- `*` (or `1`) and setting them writes nothing; a `*` among tiled siblings is
--- refused. Any split whose kind is not `h` or `v` counts as an accordion. A
--- scroll branch (`scroll[...]`) is the same: its columns are each full width,
--- so they are written `*` too.
+-- cell with no share to state: a column of a scroll branch (`scroll[...]`),
+-- each of which is full width. A scroll branch's cells are written `*` (or
+-- `1`) and setting them writes nothing; a `*` among tiled siblings is
+-- refused.
 --
 -- hyprslots trees carry integer weights only (tree.lua), so a decimal ratio is
 -- turned into the smallest integer ratio meaning the same thing (1.5:1 ->
@@ -32,8 +30,9 @@ local function is_leaf(node)
   return node.children == nil
 end
 
-function M.is_accordion(node)
-  return not is_leaf(node) and node.split ~= "h" and node.split ~= "v"
+-- Whether a node's cells have no share of their own (a scroll branch).
+local function shareless(node)
+  return not is_leaf(node) and node.scroll == true
 end
 
 -- Tokens: numbers/words, ':', '[' and ']'. Whitespace runs become ':', and
@@ -210,24 +209,17 @@ local function validate(node, list, path)
   if #list ~= count then
     syntax_error(string.format("expected %d value%s for %s, got %d", count, count == 1 and "" or "s", path, #list))
   end
-  if node.scroll then
+  if shareless(node) then
     for _, term in ipairs(list) do
       if term.weight ~= M.STAR and term.weight ~= 1 then
         syntax_error("ratios don't apply to " .. path .. " — it's a scroll branch, and each of its columns "
           .. "is full width. Write * for every column")
       end
     end
-  elseif M.is_accordion(node) then
-    for _, term in ipairs(list) do
-      if term.weight ~= M.STAR and term.weight ~= 1 then
-        syntax_error("ratios don't apply to " .. path .. " — it's an accordion, and its panes each get the "
-          .. "whole container. Write * for a collapsed pane and 1 for the expanded one")
-      end
-    end
   else
     for _, term in ipairs(list) do
       if term.weight == M.STAR then
-        syntax_error("* is an accordion pane with no share of its own, and " .. path
+        syntax_error("* is a scroll column with no share of its own, and " .. path
           .. " is tiled — every cell here needs a number")
       end
     end
@@ -254,7 +246,7 @@ local function write(node, list)
     return copy
   end
   local weights
-  if list and not M.is_accordion(node) then
+  if list and not shareless(node) then
     local values = {}
     for i, term in ipairs(list) do
       values[i] = term.weight
@@ -295,7 +287,7 @@ function M.format(node)
     return ""
   end
   local cells
-  if M.is_accordion(node) then
+  if shareless(node) then
     cells = {}
     for i = 1, #node.children do
       cells[i] = M.STAR

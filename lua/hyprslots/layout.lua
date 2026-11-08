@@ -5,10 +5,9 @@
 -- its integer weights, and place each target in its window's slot. It never
 -- dispatches. Targets with no slot in the branch stack equally in its
 -- overflow leaf (`*`), or in a column appended at 3 : 1 when it has none; an
--- empty overflow leaf closes up. An accordion's group is one target and gets
--- the accordion's box; a layout pass that finds an accordion split over
--- several targets, or a stranger in its group, asks groups.lua for a deferred
--- regroup (it never dispatches itself). Any error is caught, logged, and the
+-- empty overflow leaf closes up. A scroll branch is not laid out here (its
+-- workspace is on Hyprland's scrolling layout, scroll.lua); should lua:slots
+-- get one, its columns sit side by side. Any error is caught, logged, and the
 -- targets are tiled in plain columns instead, so a bug never leaves windows
 -- unplaced.
 
@@ -52,50 +51,14 @@ local function rows(area, n)
   return tree.boxes({ split = "v", weight = 1, children = children }, area)
 end
 
--- The slot a target's window stands for. A group is one target showing its
--- current window; it stands for the first accordion member among its windows,
--- so a group showing a stranger still fills the accordion's box.
-local function target_slot(window, slot_in_branch, accordion_of)
-  local group = window.group
-  if group then
-    for _, member in ipairs(group.members or {}) do
-      local slot = slot_in_branch(member)
-      if slot and accordion_of[slot] then
-        return slot
-      end
-    end
-  end
-  return slot_in_branch(window)
-end
-
--- Whether a target's window (or group) holds only members of `accordion`.
-local function group_is_accordion(window, slot_in_branch, accordion_of, accordion)
-  for _, member in ipairs(window.group and window.group.members or {}) do
-    local slot = slot_in_branch(member)
-    if not slot or accordion_of[slot] ~= accordion then
-      return false
-    end
-  end
-  return true
-end
-
 -- What a layout pass on desk entry `desk` sees in ctx.targets: the branch in
--- force, the target placed in each slot, the overflowing targets, the set of
--- slots present (tree.OVERFLOW when something overflows), and whether an
--- accordion is split over several targets or holds a stranger.
+-- force, the target placed in each slot, the overflowing targets, and the set
+-- of slots present (tree.OVERFLOW when something overflows).
 local function survey(engine, ctx, desk)
   local branch = resize.branch(engine, desk)
   local in_branch = {}
   for _, slot in ipairs(tree.slots(branch)) do
     in_branch[slot] = true
-  end
-
-  local accordions = tree.accordions(branch)
-  local accordion_of = {}
-  for i, members in ipairs(accordions) do
-    for _, slot in ipairs(members) do
-      accordion_of[slot] = i
-    end
   end
 
   -- A window's slot when it is in this branch, else nil.
@@ -108,16 +71,8 @@ local function survey(engine, ctx, desk)
   end
 
   local slotted, overflow, present = {}, {}, {}
-  local targets_of_accordion, regroup = {}, false
   for _, target in ipairs(ctx.targets or {}) do
-    local slot = target.window and target_slot(target.window, slot_in_branch, accordion_of)
-    local accordion = slot and accordion_of[slot]
-    if accordion then
-      targets_of_accordion[accordion] = (targets_of_accordion[accordion] or 0) + 1
-      if targets_of_accordion[accordion] > 1 or not group_is_accordion(target.window, slot_in_branch, accordion_of, accordion) then
-        regroup = true
-      end
-    end
+    local slot = target.window and slot_in_branch(target.window)
     if slot and not present[slot] then
       slotted[slot] = target
       present[slot] = true
@@ -133,30 +88,15 @@ local function survey(engine, ctx, desk)
     slotted = slotted,
     overflow = overflow,
     present = present,
-    regroup = regroup,
-    accordions = accordions,
   }
 end
 
 -- The slots a resize on desk entry `desk` sees laid out in ctx: the layout's
--- present set, with every member of a present accordion (a group is one
--- target standing for one member, whichever member is focused).
+-- present set.
 function M.present(engine, ctx, desk)
-  local seen = survey(engine, ctx, desk)
   local out = {}
-  for key in pairs(seen.present) do
+  for key in pairs(survey(engine, ctx, desk).present) do
     out[key] = true
-  end
-  for _, members in ipairs(seen.accordions) do
-    local shown = false
-    for _, slot in ipairs(members) do
-      shown = shown or seen.present[slot] == true
-    end
-    if shown then
-      for _, slot in ipairs(members) do
-        out[slot] = true
-      end
-    end
   end
   return out
 end
@@ -173,9 +113,6 @@ local function place_slots(engine, ctx)
   end
 
   local seen = survey(engine, ctx, desk)
-  if seen.regroup and engine.regroup then
-    engine.regroup("layout")
-  end
 
   if next(seen.slotted) == nil then
     place_columns(ctx)

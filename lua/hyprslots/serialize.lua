@@ -15,16 +15,15 @@
 local M = {}
 
 -- The text of a parsed tree: weights of 1 are left out, children are joined
--- with ", ". A split is written as h[...] or v[...], an accordion
--- ({ accordion = true }, tree.lua) as a[...], a scroll branch
--- ({ scroll = true }) as scroll[...], and a leaf without a slot is the
--- overflow leaf `*`. Any other split kind is written as kind[children].
+-- with ", ". A split is written as h[...] or v[...], a scroll branch
+-- ({ scroll = true }, tree.lua) as scroll[...], and a leaf without a slot is
+-- the overflow leaf `*`. Any other split kind is written as kind[children].
 function M.tree(node)
   if node.slot then
     return node.slot
   end
   if node.children == nil then
-    return "*" -- the overflow leaf (feature/accordion's tree syntax)
+    return "*" -- the overflow leaf
   end
   local parts = {}
   for i, child in ipairs(node.children) do
@@ -34,7 +33,7 @@ function M.tree(node)
     end
     parts[i] = text
   end
-  local kind = (node.accordion and "a") or (node.scroll and "scroll") or node.split
+  local kind = node.scroll and "scroll" or node.split
   return kind .. "[" .. table.concat(parts, ", ") .. "]"
 end
 

@@ -159,13 +159,6 @@ describe("tree.nudge over the laid-out tree (opts.present)", function()
     assert.are.same({ 1100, 1300 }, laid(node, present, { tree.OVERFLOW, "a" }))
   end)
 
-  it("resizes an accordion member's whole container", function()
-    local present = { x = true, y = true, z = true }
-    local node = nudged("h[a[x, y], z]", "y", "r", 100, { area = SCREEN, present = present })
-    assert.are.same({ 1300, 1300, 1100 }, laid(node, present, { "x", "y", "z" }))
-    assert.is_true(node.children[1].accordion)
-  end)
-
   it("takes a fraction of the split as laid out", function()
     local present = { a = true, b = true }
     local node = nudged("h[a, b, c]", "a", "r", 0.1, { present = present })

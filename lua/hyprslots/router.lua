@@ -117,9 +117,9 @@ end
 -- Move every assigned window to its slot's workspace under the active
 -- arrangement (after hotplug or an edit), and every overflowing window to
 -- its desk's. Windows that match no slot, or whose slot no screen of the
--- arrangement holds, stay where they are. Then ask for a
--- deferred accordion group pass (groups.lua) and scroll pass (scroll.lua),
--- which must see the windows where they have just been moved.
+-- arrangement holds, stay where they are. Then ask for a deferred scroll
+-- pass (scroll.lua), which must see the windows where they have just been
+-- moved.
 function M.reroute_all(engine)
   if engine.refused or not engine.active then
     return
@@ -136,9 +136,6 @@ function M.reroute_all(engine)
         tostring(window.workspace_id), target)
       M.place(engine, window.address, target)
     end
-  end
-  if engine.regroup then
-    engine.regroup("event")
   end
   if engine.rearrange then
     engine.rearrange("event")
@@ -231,9 +228,6 @@ function M.assign(engine, window, desk, slot)
     M.promote(engine) -- the slot it left
   end
   window_rules.sync(engine)
-  if engine.regroup then
-    engine.regroup("event")
-  end
   if engine.rearrange then
     engine.rearrange("event")
   end
@@ -256,9 +250,6 @@ function M.unassign(engine, address)
     M.promote(engine)
   end
   window_rules.sync(engine)
-  if engine.regroup then
-    engine.regroup("event")
-  end
   if engine.rearrange then
     engine.rearrange("event")
   end

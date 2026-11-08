@@ -1,8 +1,8 @@
-# Gaps, borders and the groupbar, as Omarchy configures them (the other
-# tests run with gaps and borders off).
+# Gaps and borders, as Omarchy configures them (the other tests run with
+# gaps and borders off).
 #
 # Screen: HEADLESS-2, 2400x1350 at 0,0, Omarchy block 0. gaps_out 10,
-# gaps_in 5, border 2; groupbar 22 px tall, indicator 1, gaps_in 5.
+# gaps_in 5, border 2.
 #
 # Hyprland hands the layout ctx.area already inside gaps_out (10,10 2380x1330)
 # and place() takes the border and gaps_in off each box edge that meets
@@ -12,17 +12,18 @@
 #
 #   desk 3, h[a, b:2, c]: boxes 595 + 1190 + 595 px
 #     a  12,12 586x1326     b  612,12 1176x1326     c  1802,12 586x1326
-#   desk 4, a[d, e]: one group filling the area; Hyprland draws the
-#     groupbar inside the box (22 + indicator 1 = 23 px with this config;
-#     Omarchy's live theme makes it 28), so the window starts below it and
-#     still ends on the box's bottom edge:  12,35 2376x1303
+#   desk 4, scroll[d, e]: Hyprland's scrolling layout, which works in the
+#     same area: each column is 0.99 of its 2380 px (2356), d's is fitted
+#     to the left edge with e's next to it, and the windows inside keep the
+#     same margins (no gaps_in at the screen edge, 2 * gaps_in between):
+#     d  12,12 2347x1326     e  2373,12 2347x1326 (off to the right)
+#     No window is in a Hyprland group, so no groupbar takes any height.
 
 test_setup() {
   cat >"$E2E_CONFIG_HOME/hypr/test-extra.lua" <<'LUA'
 hl.monitor({ output = "HEADLESS-2", mode = "2400x1350@60", position = "0x0", scale = 1 })
 hl.config({
   general = { gaps_in = 5, gaps_out = 10, border_size = 2 },
-  group = { groupbar = { enabled = true, height = 22, indicator_height = 1, gaps_in = 5, gaps_out = 0 } },
 })
 LUA
   seed_workspace_blocks HEADLESS-2
@@ -43,7 +44,7 @@ return {
       screens = { main = "HEADLESS-2" },
       desks = {
         [3] = { main = "h[a, b:2, c]" },
-        [4] = { main = "a[d, e]" },
+        [4] = { main = "scroll[d, e]" },
       },
     },
   },
@@ -63,11 +64,13 @@ workspace_of() {
 
 on_workspace() { [[ $(workspace_of "$1") == "$2" ]]; }
 
-grouped_with() {
-  hc clients -j | jq -e --arg a "$1" --arg b "$2" '
-    (map({(.class): .address}) | add) as $addr
-    | any(.[]; .class == $a and (.grouped | index($addr[$b]) != null))' >/dev/null
+# Widths on workspace $1 in column order (left to right on the tape).
+widths() {
+  hc clients -j | jq -r --arg w "$1" '[.[] | select(.workspace.id == ($w | tonumber) and (.floating | not))]
+    | sort_by(.at[0], .at[1]) | map(.size[0] | tostring) | join(" ")'
 }
+
+widths_are() { [[ $(widths "$1") == "$2" ]]; }
 
 test_body() {
   output_create HEADLESS-2
@@ -95,14 +98,17 @@ test_body() {
   expect_client t-b 3 612 12 1176 1326
   expect_client t-c 3 1802 12 586 1326
 
-  # Given desk 4 is shown, d and e are one group under its groupbar.
+  # Given desk 4 is shown, d and e are full-width scrolling columns, d
+  # (the first) in view, both inside the gaps.
   log "desk 4 -> $(repl 'return hyprslots.api.call("desk", "{\"desk\": 4}")' 2>&1)"
-  eventually 10 grouped_with t-d t-e || true
+  hc dispatch "hl.dsp.focus({ window = \"address:$(hc clients -j | jq -r 'first(.[] | select(.class == "t-d")) | .address')\" })" >/dev/null
+  eventually 10 widths_are 4 "2347 2347" || true
   settle
   expect_monitor_workspace HEADLESS-2 4
-  if grouped_with t-d t-e; then pass "d and e in one group"; else fail "d and e are not grouped"; fi
-  expect_client t-d 4 12 35 2376 1303
-  expect_client t-e 4 12 35 2376 1303
+  expect_eq "workspace 4 scrolls" "scrolling" "$(hc workspaces -j | jq -r 'first(.[] | select(.id == 4)) | .tiledLayout')"
+  expect_eq "no Hyprland group" "0" "$(hc clients -j | jq '[.[] | select((.grouped | length) > 0)] | length')"
+  expect_client t-d 4 12 12 2347 1326
+  expect_client t-e 4 2373 12 2347 1326
 
   log "windows at the end:"
   client_table | sed 's/^/    /'
