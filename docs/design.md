@@ -980,7 +980,8 @@ Parked:
   with an ignored F13) and with `press()`, asserts through api `state`, the
   windows' geometry and the saved `slots.lua` (Assignment: assign by real
   keys, unassign; Layout: flip, a refused then a good ratio, apply, Ctrl+S,
-  reset, Ctrl+S applying a draft; Slots: rename, a refused then a good spec,
+  t making a scroll branch and l moving a column, reset, Ctrl+S applying a
+  draft; Slots: rename, a refused then a good spec,
   add, take from a window, delete, describe; Arrangements: create from the
   connected screen, Ctrl+S, rename, a refused pin, copy the default trees,
   rename a role, delete; then the Layout tab following the running
