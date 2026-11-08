@@ -4,8 +4,10 @@
 // one api `state` reply (docs/design.md §9). Ported from aerolayout's
 // AssignmentView (views.py): a table of the windows on a desk, each with its
 // slot, plus a placeholder row for every slot whose window is not running;
-// `a` puts the selected window into a slot, `u` takes it out. Pure, so node
-// can test it (editor/tests/assignment.test.mjs).
+// `a` puts the selected window into a global slot and makes its spec the
+// desk's for that slot (as aerolayout's `a` wrote the spec), `c` clears a
+// desk's spec for a slot, `u` takes a window out. Pure, so node can test it
+// (editor/tests/assignment.test.mjs).
 //
 // A row is
 //   { kind: "window" | "missing", status, address, cls, title, workspace,
@@ -13,7 +15,8 @@
 // with status one of "slot" (matched by its spec), "manual" (assigned by
 // hand), "overflow" (matches `slot`, which is taken: in the desk's overflow
 // leaf), "unassigned" (taken out of its slot by hand), "none" (matches no
-// spec), "missing" (a slot with no window: the spec it waits for).
+// spec), "missing" (a slot with no window: the spec it waits for, "" when
+// the desk has none for it).
 
 function deskList(state) {
   return state && Array.isArray(state.desks) ? state.desks : []
@@ -43,13 +46,24 @@ function activeArrangement(state) {
   return state.arrangements[state.arrangement] || null
 }
 
-// The slots of a desk as [{ slot, role }]: in tree order, screen role by
-// screen role of the active arrangement, then any slot no tree shows (role
-// null), by name.
+// The desk's specs: slot -> spec text.
+function deskSpecs(state, desk) {
+  return (state && state.specs && state.specs[String(desk)]) || {}
+}
+
+// The global slot names, in the state's order (by name).
+function slotNames(state) {
+  var list = state && Array.isArray(state.slots) ? state.slots : []
+  return list.map(function(s) { return s.name })
+}
+
+// The slots of a desk as [{ slot, role }]: those the active arrangement's
+// trees place, in tree order, screen role by screen role, then any the desk
+// has a spec for that no tree shows (role null), by name.
 function slotOrder(state, desk) {
   var out = []
   var seen = {}
-  var specs = (state && state.slots && state.slots[String(desk)]) || {}
+  var specs = deskSpecs(state, desk)
   var arrangement = activeArrangement(state)
   var branches = arrangement && arrangement.desks ? arrangement.desks[String(desk)] || {} : {}
   var roles = arrangement && Array.isArray(arrangement.roles) ? arrangement.roles : []
@@ -57,7 +71,7 @@ function slotOrder(state, desk) {
     var branch = branches[roles[r]]
     var slots = branch && Array.isArray(branch.slots) ? branch.slots : []
     for (var s = 0; s < slots.length; s++) {
-      if (!seen[slots[s]] && specs[slots[s]] !== undefined) {
+      if (!seen[slots[s]]) {
         seen[slots[s]] = true
         out.push({ slot: slots[s], role: roles[r] })
       }
@@ -156,7 +170,7 @@ function rows(state, desk) {
   }
 
   var slots = slotOrder(state, desk)
-  var specs = (state.slots && state.slots[String(desk)]) || {}
+  var specs = deskSpecs(state, desk)
   for (i = 0; i < slots.length; i++) {
     var w = held[desk + "/" + slots[i].slot]
     if (w) {
@@ -175,7 +189,7 @@ function rows(state, desk) {
         desk: desk,
         slot: slots[i].slot,
         role: slots[i].role,
-        spec: String(specs[slots[i].slot]),
+        spec: specs[slots[i].slot] !== undefined ? String(specs[slots[i].slot]) : "",
       })
     }
   }
@@ -208,51 +222,88 @@ function slotText(row) {
   }
 }
 
-// The slots `a` offers for a row: the page's desk; on the every-window page
-// the row's desk, or every desk for a window on none. Each option is
-// { key, desk, slot, spec, holder } where holder is the address in the slot
-// (or null) and key the letter that picks it: the slot's first letter, or
-// the first digit still free when that letter is taken (aerolayout's rule);
-// "" when there is none left (pick it with the arrows).
-function slotOptions(state, desk, row) {
-  var desks
-  if (desk !== null && desk !== undefined) desks = [desk]
-  else if (row && row.desk !== null && row.desk !== undefined) desks = [row.desk]
-  else if (row && deskOfWorkspace(state, row.workspace) !== null) desks = [deskOfWorkspace(state, row.workspace)]
-  else desks = deskList(state)
+// What a Missing row's App column says: the spec it waits for.
+function specText(row) {
+  return row.spec ? row.spec : "(no spec)"
+}
 
+// The desk `a` assigns on (and writes the spec into): the page's desk; on
+// the every-window page the row's desk, else the desk of its workspace,
+// else `focusedDesk` (the focused workspace's); null when there is none.
+function assignDesk(state, desk, row, focusedDesk) {
+  if (desk !== null && desk !== undefined) return desk
+  if (row && row.desk !== null && row.desk !== undefined) return row.desk
+  var own = row ? deskOfWorkspace(state, row.workspace) : null
+  if (own !== null) return own
+  return focusedDesk === undefined ? null : focusedDesk
+}
+
+function assignTitle(desk) {
+  return "Assign to desk " + desk + " slot (takes its spec)"
+}
+
+// The slots `a` offers for a row: every global slot, on the desk
+// assignDesk picks (none without one), the desk's own in tree order first,
+// then the rest by name. Each option is { key, desk, slot, spec (the desk's
+// spec for it, "" for none), holder } where holder is the address in the
+// slot (or null) and key the letter that picks it: the slot's first letter,
+// or the first digit still free when that letter is taken (aerolayout's
+// rule); "" when there is none left (pick it with the arrows).
+function slotOptions(state, desk, row, focusedDesk) {
+  var on = assignDesk(state, desk, row, focusedDesk)
+  if (on === null) return []
   var held = holders(state)
+  var specs = deskSpecs(state, on)
+  var names = slotOrder(state, on).map(function(o) { return o.slot })
+  var listed = {}
+  names.forEach(function(n) { listed[n] = true })
+  slotNames(state).forEach(function(n) {
+    if (!listed[n]) {
+      listed[n] = true
+      names.push(n)
+    }
+  })
   var used = {}
   var out = []
-  for (var d = 0; d < desks.length; d++) {
-    var specs = (state && state.slots && state.slots[String(desks[d])]) || {}
-    var order = slotOrder(state, desks[d])
-    for (var s = 0; s < order.length; s++) {
-      var name = order[s].slot
-      var key = name.charAt(0).toLowerCase()
-      if (used[key]) {
-        key = ""
-        for (var n = 1; n <= 9; n++) {
-          if (!used[String(n)]) {
-            key = String(n)
-            break
-          }
+  for (var s = 0; s < names.length; s++) {
+    var name = names[s]
+    var key = name.charAt(0).toLowerCase()
+    if (used[key]) {
+      key = ""
+      for (var n = 1; n <= 9; n++) {
+        if (!used[String(n)]) {
+          key = String(n)
+          break
         }
       }
-      if (key !== "") used[key] = true
-      var holder = held[desks[d] + "/" + name]
-      out.push({ key: key, desk: desks[d], slot: name, spec: String(specs[name]), holder: holder ? holder.address : null })
     }
+    if (key !== "") used[key] = true
+    var holder = held[on + "/" + name]
+    out.push({ key: key, desk: on, slot: name, spec: specs[name] !== undefined ? String(specs[name]) : "",
+      holder: holder ? holder.address : null })
   }
   return out
 }
 
-// The slot options as Prompts.js choice options ({ key, label, value }),
-// labelled "desk/slot" when they span desks; the value is the slot option.
-function promptOptions(options, multiDesk) {
+// The slot options as Prompts.js choice options ({ key, label, value });
+// the value is the slot option.
+function promptOptions(options) {
   return options.map(function(o) {
-    return { key: o.key, label: multiDesk ? o.desk + "/" + o.slot : o.slot, value: o }
+    return { key: o.key, label: o.slot, value: o }
   })
+}
+
+// What `c` clears for a row: { desk, slot, spec } (the desk's spec for the
+// row's slot), or { error }.
+function clearTarget(state, desk, row) {
+  if (!row) return { error: "Nothing selected." }
+  if (row.kind !== "missing" && row.status !== "slot" && row.status !== "manual" && row.status !== "overflow") {
+    return { error: (row.cls || "This window") + " is in no slot, so there is no spec to clear." }
+  }
+  var on = row.desk !== null && row.desk !== undefined ? row.desk : desk
+  var spec = deskSpecs(state, on)[row.slot]
+  if (spec === undefined) return { error: "Desk " + on + " has no spec for " + row.slot + "." }
+  return { desk: on, slot: row.slot, spec: String(spec) }
 }
 
 // The page to open on: the focused workspace's desk, else every window.

@@ -10,9 +10,12 @@ import "Prompts.js" as Prompts
 // plus a "Missing" row for every slot whose window is not running, then the
 // windows overflowing on the desk and any others on its workspaces. ←/→ page
 // through every window and each desk; ↑/↓ select. `a` puts the selected
-// window into a slot (one key per slot, as the TUI prompts), `u` takes it
-// out. The model is Assignment.js; the calls are the api's assign and
-// unassign (docs/design.md §9).
+// window into one of the global slots on the desk (one key per slot, as the
+// TUI prompts) and makes the window's spec the desk's for that slot, as
+// aerolayout's `a` did; `c` clears the desk's spec for the selected slot;
+// `u` takes a window out. Spec edits stay in memory until Ctrl+S (the
+// header says "unsaved edits"). The model is Assignment.js; the calls are
+// the api's take_spec, clear_spec and unassign (docs/design.md §9).
 Item {
   id: root
 
@@ -58,7 +61,8 @@ Item {
   readonly property bool showDesk: currentPage.desk === null
 
   readonly property string helpText: prompting ? Prompts.help(prompt)
-    : "↑/↓ select  ←/→ prev/next desk   ·   Slots: a assign  u unassign   ·   Ctrl+S save   ·   Tab switch view  q close"
+    : "↑/↓ select  ←/→ prev/next desk   ·   a assign + take spec  c clear spec  u unassign   ·   Ctrl+S save"
+      + "   ·   Tab switch view  q close"
 
   function keyOf(row) {
     if (!row) return ""
@@ -114,14 +118,18 @@ Item {
       say("Cannot assign a missing window. Unassign or start the app.", true)
       return
     }
-    var options = Assignment.slotOptions(state, currentPage.desk, row)
-    if (options.length === 0) {
-      say("No slots to assign " + row.cls + " to.", true)
+    var focusedDesk = Assignment.deskOfWorkspace(state, focusedWorkspace)
+    var desk = Assignment.assignDesk(state, currentPage.desk, row, focusedDesk)
+    if (desk === null) {
+      say(row.cls + " is on no desk: page to a desk (←/→) to assign it there.", true)
       return
     }
-    var multiDesk = false
-    for (var i = 1; i < options.length; i++) if (options[i].desk !== options[0].desk) multiDesk = true
-    ask(Prompts.choice("Assign to slot", Assignment.promptOptions(options, multiDesk)), function(option) {
+    var options = Assignment.slotOptions(state, currentPage.desk, row, focusedDesk)
+    if (options.length === 0) {
+      say("There are no slots yet: add them in the Slots view.", true)
+      return
+    }
+    ask(Prompts.choice(Assignment.assignTitle(desk), Assignment.promptOptions(options)), function(option) {
       root.assign(row, option)
     })
   }
@@ -133,19 +141,40 @@ Item {
     message = ""
   }
 
+  // The window takes the slot, and its spec becomes the desk's for it.
   function assign(row, option) {
     if (!engine) return
     say("Assigning " + row.cls + " to " + option.slot + "…", false)
-    engine.call("assign", { address: row.address, desk: option.desk, slot: option.slot }, function(reply) {
+    engine.call("take_spec", { address: row.address, desk: option.desk, slot: option.slot }, function(reply) {
       if (!reply.ok) {
         say(reply.error, true)
         return
       }
-      var text = "Assigned " + row.cls + " to " + reply.slot + " (desk " + reply.desk + ")"
+      var text = "Assigned " + row.cls + " to " + reply.slot + " (desk " + reply.desk + "): its spec is " + reply.spec
+      if (reply.replaced && reply.replaced !== reply.spec) text += " (was " + reply.replaced + ")"
       if (reply.displaced) text += "; " + classOf(reply.displaced) + " gave it up"
-      say(text + ".", false)
+      say(text + ". Ctrl+S saves.", false)
       selectedKey = row.address
     })
+  }
+
+  function startClear() {
+    var target = Assignment.clearTarget(state, currentPage.desk, selectedRow)
+    if (target.error) {
+      say(target.error, true)
+      return
+    }
+    ask(Prompts.confirm("Clear desk " + target.desk + "'s spec for " + target.slot + " (" + target.spec + ")?"),
+      function(yes) {
+        if (!yes) {
+          root.message = ""
+          return
+        }
+        root.engine.call("clear_spec", { desk: target.desk, slot: target.slot }, function(reply) {
+          if (!reply.ok) root.say(reply.error, true)
+          else root.say("Desk " + reply.desk + " no longer says what fills " + reply.slot + ". Ctrl+S saves.", false)
+        })
+      })
   }
 
   function classOf(address) {
@@ -199,6 +228,7 @@ Item {
     else if (key === Qt.Key_Right || text === "l") turnPage(1)
     else if (text === "a") startAssign()
     else if (text === "u") startUnassign()
+    else if (text === "c") startClear()
     else return false
     return true
   }
@@ -377,7 +407,7 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             leftPadding: Style.spacing.md
             textFormat: Text.PlainText
-            text: rowItem.missing ? rowItem.modelData.spec : (rowItem.modelData.cls || "Unknown")
+            text: rowItem.missing ? Assignment.specText(rowItem.modelData) : (rowItem.modelData.cls || "Unknown")
             color: rowItem.ink
             opacity: rowItem.missing ? 0.55 : 1
             font.family: root.fontFamily

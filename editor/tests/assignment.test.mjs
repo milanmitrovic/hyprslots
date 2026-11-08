@@ -20,7 +20,8 @@ function fixture() {
     ok: true,
     arrangement: "dual",
     desks: [3, 4],
-    slots: { 3: { left: "t-left", main: "t-main", right: "t-right" }, 4: { mail: "thunderbird" } },
+    slots: [{ name: "left" }, { name: "mail" }, { name: "main" }, { name: "right" }],
+    specs: { 3: { left: "t-left", main: "t-main", right: "t-right" }, 4: { mail: "thunderbird" } },
     arrangements: {
       dual: {
         roles: ["big", "side"],
@@ -45,7 +46,7 @@ function fixture() {
   };
 }
 
-const summary = (rows) => plain(rows).map((r) => [r.status, r.slot || "", r.address || r.spec]);
+const summary = (rows) => plain(rows).map((r) => [r.status, r.slot || "", r.address]);
 
 test("pages are every window, then each desk", () => {
   assert.deepEqual(plain(A.pages(fixture())), [
@@ -59,7 +60,7 @@ test("a desk lists its slots in tree order, screen by screen, a missing window a
   assert.deepEqual(summary(A.rows(fixture(), 3)), [
     ["slot", "main", "0xa"],
     ["manual", "right", "0xe"],
-    ["missing", "left", "t-left"],
+    ["missing", "left", null],
     ["overflow", "main", "0xb"],
     ["unassigned", "", "0xd"],
   ]);
@@ -86,56 +87,79 @@ test("the slot column reads like the TUI's", () => {
   assert.equal(A.slotText({ status: "none" }), "—");
 });
 
-test("a slot no tree of the active arrangement shows is still listed, after the shown ones", () => {
+test("a slot the desk has a spec for but no tree of the active arrangement shows is still listed, after the shown ones", () => {
   const state = fixture();
-  state.slots[3].spare = "t-spare";
+  state.slots.push({ name: "spare" });
+  state.specs[3].spare = "t-spare";
   assert.deepEqual(summary(A.rows(state, 3)).map((r) => r[1]), ["main", "right", "left", "spare", "main", ""]);
 });
 
-test("assign offers the desk's slots in tree order, keyed by first letter as aerolayout does", () => {
+test("a slot a tree places but the desk has no spec for is Missing with no spec: only a by-hand window fills it", () => {
+  const state = fixture();
+  state.arrangements.dual.desks[4].big = { tree: "h[mail, main]", slots: ["mail", "main"] };
+  const rows = plain(A.rows(state, 4));
+  assert.deepEqual(rows.map((r) => [r.status, r.slot, r.spec]), [
+    ["missing", "mail", "thunderbird"],
+    ["missing", "main", ""],
+  ]);
+  assert.equal(A.specText(rows[1]), "(no spec)");
+  assert.equal(A.specText(rows[0]), "thunderbird");
+});
+
+test("a global slot neither placed nor filled on the desk is no row of it", () => {
+  assert.deepEqual(summary(A.rows(fixture(), 4)).map((r) => r[1]), ["mail"]);
+});
+
+test("assign offers every global slot on the desk: its own in tree order first, then the rest by name", () => {
   const options = plain(A.slotOptions(fixture(), 3, null));
-  assert.deepEqual(options.map((o) => [o.key, o.desk, o.slot, o.holder]), [
-    ["m", 3, "main", "0xa"],
-    ["r", 3, "right", "0xe"],
-    ["l", 3, "left", null],
+  assert.deepEqual(options.map((o) => [o.key, o.desk, o.slot, o.spec, o.holder]), [
+    ["m", 3, "main", "t-main", "0xa"],
+    ["r", 3, "right", "t-right", "0xe"],
+    ["l", 3, "left", "t-left", null],
+    ["1", 3, "mail", "", null],
   ]);
 });
 
 test("a first letter already taken falls back to the first free digit", () => {
   const state = fixture();
-  state.slots[3] = { main: "a", menu: "b", mail: "c" };
+  state.slots = [{ name: "main" }, { name: "menu" }, { name: "mail" }];
+  state.specs[3] = { main: "a", menu: "b", mail: "c" };
   state.arrangements.dual.desks[3] = { big: { slots: ["main", "menu", "mail"] } };
   assert.deepEqual(plain(A.slotOptions(state, 3, null)).map((o) => o.key), ["m", "1", "2"]);
 });
 
-test("on the every-window page, assign offers the window's desk, or every desk for a window on none", () => {
+test("on the every-window page, assign offers the window's desk, else the focused desk, else nothing", () => {
   const state = fixture();
   const rows = A.rows(state, null);
   const onDesk = rows.find((r) => r.address === "0xd");
   const stray = rows.find((r) => r.address === "0xc");
-  assert.deepEqual(plain(A.slotOptions(state, null, onDesk)).map((o) => o.slot), ["main", "right", "left"]);
-  assert.deepEqual(plain(A.slotOptions(state, null, stray)).map((o) => o.desk + "/" + o.slot), [
-    "3/main",
-    "3/right",
-    "3/left",
-    "4/mail",
-  ]);
+  assert.deepEqual(plain(A.slotOptions(state, null, onDesk)).map((o) => o.desk + "/" + o.slot),
+    ["3/main", "3/right", "3/left", "3/mail"]);
+  assert.deepEqual(plain(A.slotOptions(state, null, stray, 4)).map((o) => o.desk + "/" + o.slot),
+    ["4/mail", "4/left", "4/main", "4/right"]);
+  assert.deepEqual(plain(A.slotOptions(state, null, stray, null)), []);
+  assert.equal(A.assignDesk(state, null, stray, 4), 4);
+  assert.equal(A.assignDesk(state, null, stray, null), null);
+  assert.equal(A.assignDesk(state, 3, stray, 4), 3, "a desk page is that desk");
 });
 
-test("the prompt names each option the way aerolayout's does", () => {
-  const ask = (state, desk, row, multiDesk) =>
-    P.display(P.choice("Assign to slot", A.promptOptions(A.slotOptions(state, desk, row), multiDesk)));
-  assert.equal(ask(fixture(), 3, null, false), "Assign to slot: (m)ain, (r)ight, (l)eft? [Esc] cancel   → main");
-  const state = fixture();
-  state.slots[3] = { main: "a", menu: "b" };
-  state.arrangements.dual.desks[3] = { big: { slots: ["main", "menu"] } };
-  assert.equal(ask(state, 3, null, false), "Assign to slot: (m)ain, (1) menu? [Esc] cancel   → main");
-  assert.equal(
-    ask(fixture(), null, { workspace: 1 }, true),
-    "Assign to slot: (m) 3/main, (r) 3/right, (l) 3/left, (1) 4/mail? [Esc] cancel   → 3/main",
-  );
-  const picked = A.promptOptions(A.slotOptions(fixture(), 3, null), false)[1].value;
+test("the prompt names the desk and each option the way aerolayout's does", () => {
+  const ask = (state, desk, row) =>
+    P.display(P.choice(A.assignTitle(A.assignDesk(state, desk, row, null)), A.promptOptions(A.slotOptions(state, desk, row))));
+  assert.equal(ask(fixture(), 3, null), "Assign to desk 3 slot (takes its spec): (m)ain, (r)ight, (l)eft, (1) mail? [Esc] cancel   → main");
+  const picked = A.promptOptions(A.slotOptions(fixture(), 3, null))[1].value;
   assert.deepEqual([picked.desk, picked.slot], [3, "right"], "an option's value is the slot option itself");
+});
+
+test("clearing a spec takes the selected row's slot on its desk, when the desk has a spec for it", () => {
+  const state = fixture();
+  const rows = A.rows(state, 3);
+  assert.deepEqual(plain(A.clearTarget(state, 3, rows[0])), { desk: 3, slot: "main", spec: "t-main" });
+  assert.deepEqual(plain(A.clearTarget(state, 3, rows[2])), { desk: 3, slot: "left", spec: "t-left" }, "a Missing row");
+  assert.deepEqual(plain(A.clearTarget(state, 3, rows[3])), { desk: 3, slot: "main", spec: "t-main" }, "an overflow row");
+  assert.match(A.clearTarget(state, 3, rows[4]).error, /in no slot/);
+  state.arrangements.dual.desks[4].big = { tree: "h[mail, main]", slots: ["mail", "main"] };
+  assert.equal(A.clearTarget(state, 4, A.rows(state, 4)[1]).error, "Desk 4 has no spec for main.");
 });
 
 test("the first page shown is the focused workspace's desk, else every window", () => {
