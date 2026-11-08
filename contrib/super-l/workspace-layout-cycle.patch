@@ -44,7 +44,16 @@
  # Same replace-id file as Omarchy's toggle, so one notification stays current.
  notify() {
    local state="$STATE_DIR/workspace-layout-notification" last id
-@@ -63,6 +87,65 @@
+@@ -33,6 +57,8 @@
+ 
+ refresh_bar() {
+   omarchy-shell -q omarchy.workspaces refresh
++  # The dock shows on floating workspaces; tell it the mode changed.
++  omarchy-shell -q omarchy.dock refresh
+ }
+ 
+ is_wide() { [[ -f $WIDE_FILE ]] && grep -qx "$WS" "$WIDE_FILE"; }
+@@ -63,6 +89,65 @@
    fi
  }
  
