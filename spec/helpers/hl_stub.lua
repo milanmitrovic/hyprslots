@@ -106,6 +106,11 @@ end
 function M.new(opts)
   opts = opts or {}
 
+  -- Omarchy's paths module, for the saved-mode files hyprslots looks for:
+  -- never the machine's own state directory (a spec may set its own first).
+  package.loaded["default.hypr.paths"] = package.loaded["default.hypr.paths"]
+    or { state_home = "/nonexistent/hyprslots-spec-state" }
+
   local hl = {
     monitors = opts.monitors or {},
     windows = opts.windows or {},
