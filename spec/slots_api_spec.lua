@@ -369,6 +369,29 @@ return {
       assert.are.equal("scroll[main, right]", tree_of(state(), "dual", 8, 1))
     end)
 
+    it("puts the slot into the shared trees for a workspace with none of its own, making it no copy", function()
+      setup([=[
+return {
+  slots = { left = {}, main = {}, right = {} },
+  specs = { [8] = { main = "t-main" } },
+  desks = { dual = { monitors = { "HEADLESS-2", "HEADLESS-3" }, layout = "solo" } },
+  layouts = {
+    solo = { screens = 2, default = { [1] = "scroll[main, right]" }, workspaces = { [2] = { [1] = "main" } } },
+  },
+}
+]=])
+      local editor = open(1, "kitty", 1, "deltaf | nvim")
+      local reply = ok("take_spec", { workspace = 8, slot = "left", address = editor.address, place = true })
+      assert.are.same({ layout = "solo", screen = 1, tree = "scroll[left, main, right]", used_by = { "dual" },
+        shared = true }, reply.placed)
+      local s = state()
+      assert.are.same({ 2 }, s.layouts.solo.own, "workspace 8 still shows the shared trees")
+      assert.are.equal("scroll[left, main, right]", s.layouts.solo.default["1"].tree)
+      assert.are.equal("scroll[left, main, right]", tree_of(s, "solo", 9, 1), "so does every other workspace on them")
+      assert.are.equal("main", tree_of(s, "solo", 2, 1), "a workspace with its own trees keeps them")
+      assert.are.same({ workspace = 8, slot = "left" }, s.assignments[editor.address])
+    end)
+
     it("changes no tree when the take is refused", function()
       setup(PLACING)
       local editor = open(1, "kitty", 1, "deltaf | nvim")

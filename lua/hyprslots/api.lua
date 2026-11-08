@@ -1064,8 +1064,10 @@ end
 -- window the spec matches; the one that held it is routed again). The edit
 -- is checked before anything moves. With place, a slot the workspace's trees
 -- in the layout (default the active one) do not place is put into them first
--- (edit.place_slot), on `screen`, else the screen of the window's workspace,
--- else 1; reply `placed` { layout, screen, tree, used_by[] }.
+-- (edit.place_slot: the workspace's own trees, else the layout's shared
+-- ones, never a copy), on `screen`, else the screen of the window's
+-- workspace, else 1; reply `placed` { layout, screen, tree, used_by[],
+-- shared (true when it went into the shared trees) }.
 function handlers.take_spec(engine, args)
   local window = live_window(args.address)
   if not window then
@@ -1090,12 +1092,12 @@ function handlers.take_spec(engine, args)
     if math.type(screen) ~= "integer" or screen < 1 or screen > engine.cfg.layouts[name].screens then
       screen = 1
     end
-    local on
-    data, on = edit.place_slot(data, name, workspace, args.slot, screen)
+    local on, into
+    data, on, into = edit.place_slot(data, name, workspace, args.slot, screen)
     if not data then
       return fail(on)
     end
-    placed = on and { layout = name, screen = on }
+    placed = on and { layout = name, screen = on, shared = into == "default" }
   end
   data, edit_err = edit.set_spec(data, workspace, args.slot, text)
   if not data then
@@ -1110,7 +1112,14 @@ function handlers.take_spec(engine, args)
     return fail(load_err)
   end
   if placed then
-    -- the placed tree replaces a keyboard-resized one of that branch
+    -- the placed tree replaces a keyboard-resized one of that branch: of
+    -- every workspace showing the shared trees, when it went into them
+    local before = engine.cfg.layouts[placed.layout]
+    for n = 1, placed.shared and (engine.cfg.workspaces or WORKSPACES) or 0 do
+      if before.workspaces[n] == nil then
+        resize.clear(engine, placed.layout, n, placed.screen)
+      end
+    end
     resize.clear(engine, placed.layout, workspace, placed.screen)
     local users = array()
     for _, desk_name in ipairs(cfg.desk_names) do
@@ -1119,7 +1128,8 @@ function handlers.take_spec(engine, args)
       end
     end
     placed = object({ layout = placed.layout, screen = placed.screen,
-      tree = serialize.tree(configured_tree(cfg, placed.layout, workspace, placed.screen)), used_by = users })
+      tree = serialize.tree(configured_tree(cfg, placed.layout, workspace, placed.screen)), used_by = users,
+      shared = placed.shared or nil })
   end
   local before = engine.data.specs and engine.data.specs[workspace]
   local replaced = type(before) == "table" and before[args.slot] or nil
