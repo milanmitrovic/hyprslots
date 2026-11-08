@@ -68,7 +68,7 @@ describe("generated window rules", function()
       assert.are.equal("3 silent", rule("hyprslots-t-left").workspace)
     end)
 
-    it("keeps sending a class to its desk while its slot is taken, for that desk's overflow", function()
+    it("keeps sending a class to its workspace while its slot is taken, for that workspace's overflow", function()
       local count = #hl.window_rules
       local window = open(1, "t-main", 1)
       assert.are.equal(count, #hl.window_rules, "nothing to re-register")
@@ -84,8 +84,8 @@ describe("generated window rules", function()
         local reply = engine.call(hyprslots, name, require("hyprslots.dkjson").encode(args))
         assert.is_true(reply.ok, reply.error)
       end
-      call("set_tree", { arrangement = "dual", desk = 3, role = "big", tree = "main" })
-      call("set_tree", { arrangement = "dual", desk = 3, role = "side", tree = "h[left, right]" })
+      call("set_tree", { arrangement = "dual", workspace = 3, role = "big", tree = "main" })
+      call("set_tree", { arrangement = "dual", workspace = 3, role = "side", tree = "h[left, right]" })
       assert.are.equal("13 silent", rule("hyprslots-t-right").workspace)
     end)
 

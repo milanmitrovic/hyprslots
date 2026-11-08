@@ -16,10 +16,10 @@
 -- the workspaces as Omarchy left them. Nothing here focuses a monitor or
 -- changes what a screen shows, so pinned screens stay as they are, with one
 -- exception: a non-pinned screen that was just plugged in shows the active
--- desk (the last one switched to), and focus goes back where it was.
+-- workspace (the last one switched to), and focus goes back where it was.
 
 local adapter = require("hyprslots.hl_adapter")
-local desks = require("hyprslots.desks")
+local workspaces = require("hyprslots.workspaces")
 local router = require("hyprslots.router")
 local window_rules = require("hyprslots.window_rules")
 
@@ -47,7 +47,7 @@ function M.monitors_changed(engine, event)
     engine:guard(event .. ": window rules", window_rules.sync, engine)
     adapter.defer(function()
       engine:guard(event .. ": re-route", router.reroute_all, engine)
-      engine:guard(event .. ": active desk", desks.show_active, engine, added)
+      engine:guard(event .. ": active workspace", workspaces.show_active, engine, added)
     end)
   end)
 end

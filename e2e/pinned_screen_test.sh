@@ -1,15 +1,15 @@
-# Pinned screens (docs/design.md §3, §5): a desk switch leaves a pinned screen
+# Pinned screens (docs/design.md §3, §5): a workspace switch leaves a pinned screen
 # on whatever it shows, and unplugging it only re-selects the arrangement.
 #
-# Screens and slots as in desk_across_screens_test.sh, with side pinned.
+# Screens and slots as in workspace_across_screens_test.sh, with side pinned.
 
-# shellcheck source=e2e/desk_across_screens_test.sh
-source "${BASH_SOURCE[0]%/*}/desk_across_screens_test.sh"
+# shellcheck source=e2e/workspace_across_screens_test.sh
+source "${BASH_SOURCE[0]%/*}/workspace_across_screens_test.sh"
 
-eval "desk_across_screens_setup() $(declare -f test_setup | tail -n +2)"
+eval "workspace_across_screens_setup() $(declare -f test_setup | tail -n +2)"
 
 test_setup() {
-  desk_across_screens_setup
+  workspace_across_screens_setup
   sed -i 's/^  arrangements = data.arrangements,$/&\n  pinned = { "side" },/' "$E2E_CONFIG_HOME/hyprslots/config.lua"
   grep -q 'pinned = { "side" }' "$E2E_CONFIG_HOME/hyprslots/config.lua" || harness_fail "could not pin side"
 }
@@ -27,12 +27,12 @@ test_body() {
   local side_before
   side_before=$(hc monitors -j | jq -r 'first(.[] | select(.name == "HEADLESS-3")) | .activeWorkspace.id')
 
-  # When desk 3 is activated from the pinned screen.
+  # When workspace 3 is activated from the pinned screen.
   hc dispatch "hl.dsp.focus({ monitor = 'HEADLESS-3' })" >/dev/null
-  log "desk 3 -> $(repl 'return hyprslots.api.call("desk", "{\"desk\": 3}")' 2>&1)"
+  log "workspace 3 -> $(repl 'return hyprslots.api.call("workspace", "{\"workspace\": 3}")' 2>&1)"
   settle
 
-  # Then big shows desk 3, side keeps its view, and focus stays on side.
+  # Then big shows workspace 3, side keeps its view, and focus stays on side.
   expect_monitor_workspace HEADLESS-2 3
   expect_monitor_workspace HEADLESS-3 "$side_before"
   expect_eq "focus stays on the pinned screen" "HEADLESS-3" "$(focused_monitor)"
@@ -43,7 +43,7 @@ test_body() {
   sleep 0.5
   settle
 
-  # Then single applies on big; t-left joins desk 3 there.
+  # Then single applies on big; t-left joins workspace 3 there.
   expect_eq "arrangement" "single" "$(repl 'return hyprslots.api.state()' | jq -r .arrangement)"
   expect_monitor_workspace HEADLESS-2 3
   expect_client t-left 3 0 0 1200 1350

@@ -9,9 +9,9 @@
 -- rule with nothing to do is registered as { name, enabled = false }.
 --
 -- The rule for class C goes to the first free slot, in assignment precedence
--- order (desk, then slot name), whose spec could match a C window, or, when
+-- order (workspace, then slot name), whose spec could match a C window, or, when
 -- every such slot is taken, to the first of them (the router sends an extra
--- C window to that desk's overflow leaf):
+-- C window to that workspace's overflow leaf):
 --   class-only spec  -> enabled, "<workspace> silent"
 --   title or tag     -> disabled: only the title decides, so the router does
 --   the slot is on no screen of the arrangement -> disabled
@@ -36,7 +36,7 @@ function M.desired(engine)
   local candidates = assign.candidates(cfg)
   local taken = {}
   for _, assignment in pairs(engine.assignments) do
-    taken[assignment.desk .. "\0" .. assignment.slot] = true
+    taken[assignment.workspace .. "\0" .. assignment.slot] = true
   end
 
   local classes = {}
@@ -69,11 +69,11 @@ function M.desired(engine)
 
   -- The first free slot that could take a window of the class ...
   for _, candidate in ipairs(candidates) do
-    if not taken[candidate.desk .. "\0" .. candidate.slot] then
+    if not taken[candidate.workspace .. "\0" .. candidate.slot] then
       consider(candidate)
     end
   end
-  -- ... else, every such slot being taken, the first of them, whose desk's
+  -- ... else, every such slot being taken, the first of them, whose workspace's
   -- overflow leaf the router sends the window to (router.route).
   for _, candidate in ipairs(candidates) do
     consider(candidate)

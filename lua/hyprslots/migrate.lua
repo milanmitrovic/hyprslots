@@ -1,22 +1,22 @@
 -- slots.lua's shape of before, read as today's (docs/design.md §4).
 --
--- Before: slots were per desk, and so were their descriptions:
+-- Before: slots were per workspace, and so were their descriptions:
 --
 --   slots = { [3] = { main = "kitty/deltaf", right = "firefox" } },
 --   descriptions = { [3] = { main = "the editor" } },
 --
--- Now slots are global logical names, defined once, and a desk only says
--- which app fills which of them:
+-- Now slots are global logical names, defined once, and a workspace only
+-- says which app fills which of them:
 --
 --   slots = { main = { description = "the editor" }, right = {} },
 --   specs = { [3] = { main = "kitty/deltaf", right = "firefox" } },
 --
--- `data` returns the second shape for either: every slot name some desk had
--- becomes a global slot, each desk's specs move under `specs` unchanged, and
--- a slot's descriptions move onto it (every different one, in desk order,
--- joined with "; "; one for a slot no desk has is dropped). What it cannot
--- read is carried over as it is, for config.validate to report. Pure; the
--- table given is never changed.
+-- `data` returns the second shape for either: every slot name some workspace
+-- had becomes a global slot, each workspace's specs move under `specs`
+-- unchanged, and a slot's descriptions move onto it (every different one, in
+-- workspace order, joined with "; "; one for a slot no workspace has is
+-- dropped). What it cannot read is carried over as it is, for config.validate
+-- to report. Pure; the table given is never changed.
 
 local M = {}
 
@@ -45,8 +45,8 @@ local function sorted(t)
   return keys
 end
 
--- Whether data is in the per-desk shape: `slots` keyed by desk (a number),
--- or per-desk `descriptions`.
+-- Whether data is in the per-workspace shape: `slots` keyed by workspace (a
+-- number), or per-workspace `descriptions`.
 function M.legacy(data)
   if type(data) ~= "table" then
     return false
@@ -73,21 +73,21 @@ function M.data(data)
   end
 
   local slots, specs = {}, type(out.specs) == "table" and out.specs or {}
-  local per_desk = type(data.slots) == "table" and data.slots or {}
-  for _, key in ipairs(sorted(per_desk)) do
-    local entries = per_desk[key]
+  local per_workspace = type(data.slots) == "table" and data.slots or {}
+  for _, key in ipairs(sorted(per_workspace)) do
+    local entries = per_workspace[key]
     if type(key) ~= "number" then
-      slots[key] = copy(entries) -- a global slot given beside desks
+      slots[key] = copy(entries) -- a global slot given beside workspaces
     elseif type(entries) ~= "table" then
       if specs[key] == nil then
         specs[key] = copy(entries)
       end
     else
-      local desk = type(specs[key]) == "table" and specs[key] or {}
-      specs[key] = desk
+      local own = type(specs[key]) == "table" and specs[key] or {}
+      specs[key] = own
       for _, name in ipairs(sorted(entries)) do
-        if desk[name] == nil then
-          desk[name] = entries[name]
+        if own[name] == nil then
+          own[name] = entries[name]
         end
         if slots[name] == nil then
           slots[name] = {}
@@ -98,8 +98,8 @@ function M.data(data)
 
   local texts, seen = {}, {}
   local descriptions = type(data.descriptions) == "table" and data.descriptions or {}
-  for _, desk in ipairs(sorted(descriptions)) do
-    local entries = descriptions[desk]
+  for _, workspace in ipairs(sorted(descriptions)) do
+    local entries = descriptions[workspace]
     if type(entries) == "table" then
       for _, name in ipairs(sorted(entries)) do
         local text = entries[name]

@@ -7,25 +7,25 @@
 --
 -- Hyprland hands a layout message to the focused workspace's algorithm only,
 -- so this always acts on the focused window's slot. A nudged tree replaces
--- the configured branch for that arrangement, desk and screen role, in memory
--- only (engine.resized["<arrangement>/<desk>/<role>"]): it survives monitor
--- hotplug (re-selecting the same arrangement) but not a config reload. The
--- editor api's save writes it to slots.lua and clears it; its reload drops
--- it. effective_branch is the one answer to "which tree is in force", for
--- the layout and the api alike.
+-- the configured branch for that arrangement, workspace and screen role, in
+-- memory only (engine.resized["<arrangement>/<workspace>/<role>"]): it
+-- survives monitor hotplug (re-selecting the same arrangement) but not a
+-- config reload. The editor api's save writes it to slots.lua and clears it;
+-- its reload drops it. effective_branch is the one answer to "which tree is
+-- in force", for the layout and the api alike.
 
 local adapter = require("hyprslots.hl_adapter")
 local tree = require("hyprslots.tree")
 
 local M = {}
 
--- The override key of an arrangement's desk on a screen role.
-function M.key(arrangement, desk, role)
-  return string.format("%s/%s/%s", tostring(arrangement), tostring(desk), tostring(role))
+-- The override key of an arrangement's workspace on a screen role.
+function M.key(arrangement, workspace, role)
+  return string.format("%s/%s/%s", tostring(arrangement), tostring(workspace), tostring(role))
 end
 
-local function key(engine, desk)
-  return M.key(engine.active and engine.active.name or "?", desk.desk, desk.role)
+local function key(engine, entry)
+  return M.key(engine.active and engine.active.name or "?", entry.workspace, entry.role)
 end
 
 local function overrides(engine)
@@ -33,42 +33,45 @@ local function overrides(engine)
   return engine.resized
 end
 
--- The tree in force for an arrangement's desk on a screen role: the nudged
--- one if there is one, else the config's (nil when the config has none).
-function M.effective_branch(engine, arrangement, desk, role)
-  local nudged = overrides(engine)[M.key(arrangement, desk, role)]
+-- The tree in force for an arrangement's workspace on a screen role: the
+-- nudged one if there is one, else the config's (nil when the config has none).
+function M.effective_branch(engine, arrangement, workspace, role)
+  local nudged = overrides(engine)[M.key(arrangement, workspace, role)]
   if nudged then
     return nudged
   end
   local entry = engine.cfg and engine.cfg.arrangements[arrangement]
-  local branches = entry and entry.desks[desk]
+  local branches = entry and entry.workspaces[workspace]
   return branches and branches[role]
 end
 
--- The tree recalculate lays out for a desk entry ({ desk, role, branch }) of
--- the active arrangement: effective_branch, else the entry's own branch.
-function M.branch(engine, desk)
+-- The tree recalculate lays out for a workspace entry ({ workspace, role,
+-- branch }) of the active arrangement: effective_branch, else the entry's own
+-- branch.
+function M.branch(engine, entry)
   local name = engine.active and engine.active.name
-  return (name and M.effective_branch(engine, name, desk.desk, desk.role)) or desk.branch
+  return (name and M.effective_branch(engine, name, entry.workspace, entry.role)) or entry.branch
 end
 
--- Each override as { key, arrangement, desk, role, tree }, sorted by key.
+-- Each override as { key, arrangement, workspace, role, tree }, sorted by key.
 function M.overrides(engine)
   local out = {}
   for k, node in pairs(overrides(engine)) do
-    local arrangement, desk, role = k:match("^(.*)/(%d+)/([^/]*)$")
-    out[#out + 1] = { key = k, arrangement = arrangement, desk = math.tointeger(tonumber(desk)), role = role, tree = node }
+    local arrangement, workspace, role = k:match("^(.*)/(%d+)/([^/]*)$")
+    out[#out + 1] = {
+      key = k, arrangement = arrangement, workspace = math.tointeger(tonumber(workspace)), role = role, tree = node,
+    }
   end
   table.sort(out, function(a, b) return a.key < b.key end)
   return out
 end
 
 -- Drop one override, or every override (no arguments past engine).
-function M.clear(engine, arrangement, desk, role)
+function M.clear(engine, arrangement, workspace, role)
   if arrangement == nil then
     engine.resized = {}
   else
-    overrides(engine)[M.key(arrangement, desk, role)] = nil
+    overrides(engine)[M.key(arrangement, workspace, role)] = nil
   end
 end
 
@@ -78,21 +81,21 @@ local function announce(engine)
   end
 end
 
--- The focused window's { desk entry, slot }, or nil and why not.
+-- The focused window's { workspace entry, slot }, or nil and why not.
 local function focused(engine)
   local window = adapter.active_window()
   if not window or not window.address then
     return nil, "no focused window"
   end
-  local desk = engine:desk_of_workspace(window.workspace_id)
-  if not desk then
-    return nil, "the focused window is not on a desk workspace"
+  local entry = engine:entry_of_workspace(window.workspace_id)
+  if not entry then
+    return nil, "the focused window is not on a hyprslots workspace"
   end
   local assignment = engine.assignments[window.address] or engine:assign(window)
-  if not assignment or assignment.desk ~= desk.desk then
-    return nil, "the focused window has no slot on this desk"
+  if not assignment or assignment.workspace ~= entry.workspace then
+    return nil, "the focused window has no slot on this workspace"
   end
-  return desk, assignment.slot
+  return entry, assignment.slot
 end
 
 -- "0.1" -> 0.1 (a fraction of the split), "100px" -> 100, true (pixels).
@@ -104,8 +107,8 @@ local function amount(text)
   return tonumber(text), false
 end
 
--- `present(desk)`, when given, is the set of slots the layout shows on that
--- desk entry (layout.present), so the nudge acts on the tree as laid out.
+-- `present(entry)`, when given, is the set of slots the layout shows on that
+-- workspace entry (layout.present), so the nudge acts on the tree as laid out.
 -- `quiet` leaves the change event to the caller (resize, which may nudge on
 -- both axes and announces once).
 local function nudge(engine, ctx, dir, text, present, quiet)
@@ -113,17 +116,17 @@ local function nudge(engine, ctx, dir, text, present, quiet)
   if not delta then
     return nil, "a nudge must be a fraction (0.1) or pixels (100px), got '" .. tostring(text) .. "'"
   end
-  local desk, slot = focused(engine)
-  if not desk then
+  local entry, slot = focused(engine)
+  if not entry then
     return nil, slot
   end
-  local nudged, err = tree.nudge(M.branch(engine, desk), slot, dir, delta,
-    { area = pixels and ctx.area or nil, present = present and present(desk) or nil })
+  local nudged, err = tree.nudge(M.branch(engine, entry), slot, dir, delta,
+    { area = pixels and ctx.area or nil, present = present and present(entry) or nil })
   if not nudged then
     return nil, err
   end
-  overrides(engine)[key(engine, desk)] = nudged
-  engine.log:info("nudge %s %s %s on desk %s", slot, dir, text, tostring(desk.desk))
+  overrides(engine)[key(engine, entry)] = nudged
+  engine.log:info("nudge %s %s %s on workspace %s", slot, dir, text, tostring(entry.workspace))
   if not quiet then
     announce(engine)
   end
@@ -131,13 +134,13 @@ local function nudge(engine, ctx, dir, text, present, quiet)
 end
 
 local function reset(engine)
-  local desk, err = focused(engine)
-  if not desk then
+  local entry, err = focused(engine)
+  if not entry then
     return nil, err
   end
-  local had = overrides(engine)[key(engine, desk)] ~= nil
-  overrides(engine)[key(engine, desk)] = nil
-  engine.log:info("reset desk %s %s", tostring(desk.desk), desk.role)
+  local had = overrides(engine)[key(engine, entry)] ~= nil
+  overrides(engine)[key(engine, entry)] = nil
+  engine.log:info("reset workspace %s %s", tostring(entry.workspace), entry.role)
   if had then
     announce(engine)
   end
@@ -175,7 +178,7 @@ local function resize(engine, ctx, dx, dy, present)
 end
 
 -- Handle one layout message. Returns true, or nil and why not. `present`
--- (optional) maps a desk entry to the slots laid out on it (layout.present).
+-- (optional) maps a workspace entry to the slots laid out on it (layout.present).
 function M.message(engine, ctx, msg, present)
   local words = {}
   for word in tostring(msg):gmatch("%S+") do
@@ -212,7 +215,7 @@ M.OMARCHY_KEYS = {
 local SLOTS_LAYOUT = "lua:slots"
 
 -- The action for one resize key: a "resize dx dy" layout message on a
--- lua:slots workspace (whatever its desk), Omarchy's own relative window
+-- lua:slots workspace (whatever its number), Omarchy's own relative window
 -- resize everywhere else.
 function M.key_action(dx, dy)
   local action = function()

@@ -270,7 +270,7 @@ test("o refuses to park a scroll branch's only column", () => {
   assert.match(L.toggleOverflow(tree("scroll[*]"), null).error, /whole tree/);
 });
 
-// --- moving a leaf to another screen of the desk ----------------------------
+// --- moving a leaf to another screen of the workspace ----------------------------
 
 test("a leaf moved off the edge of its screen joins the next screen's tree there", () => {
   let moved = L.crossMove(tree("h[a, b]"), tree("c"), "b", "right");
@@ -361,29 +361,29 @@ function fixture() {
     ok: true,
     arrangement: "dual",
     dirty: false,
-    desks: [3, 4],
+    used_workspaces: [3, 4],
     screens: { big: "HEADLESS-2", side: "HEADLESS-3" },
-    workspaces: { 3: { desk: 3, role: "big" }, 13: { desk: 3, role: "side" }, 4: { desk: 4, role: "big" } },
+    workspaces: { 3: { workspace: 3, role: "big" }, 13: { workspace: 3, role: "side" }, 4: { workspace: 4, role: "big" } },
     arrangements: {
       dual: {
         roles: ["big", "side"], screens: { big: "HEADLESS-2", side: "HEADLESS-3" }, active: true, read_only: false,
-        desks: {
+        workspaces: {
           3: { big: { tree: "h[main:2, v[right, *]]", ratio: "2:1[1:1]", slots: ["main", "right"], resized: true },
             side: { tree: "left", ratio: "", slots: ["left"] } },
           4: { big: { tree: "mail", ratio: "", slots: ["mail"] } },
         },
       },
-      single: { roles: ["big"], screens: { big: "HEADLESS-2" }, active: false, read_only: true, desks: {} },
+      single: { roles: ["big"], screens: { big: "HEADLESS-2" }, active: false, read_only: true, workspaces: {} },
     },
     windows: [
-      { address: "0xa", class: "t-main", title: "editor", workspace: 3, desk: 3, slot: "main" },
-      { address: "0xb", class: "t-left", title: "notes", workspace: 13, desk: 3, slot: "left" },
+      { address: "0xa", class: "t-main", title: "editor", workspace_id: 3, workspace: 3, slot: "main" },
+      { address: "0xb", class: "t-left", title: "notes", workspace_id: 13, workspace: 3, slot: "left" },
     ],
     config: { editable: true, read_only: ["arrangements.single"] },
   };
 }
 
-test("a desk shows one pane per screen role of the arrangement, with its tree in force", () => {
+test("a workspace shows one pane per screen role of the arrangement, with its tree in force", () => {
   assert.deepEqual(plain(L.panes(fixture(), "dual", 3)), [
     { role: "big", tree: "h[main:2, v[right, *]]", ratio: "2:1[1:1]", resized: true, screen: "HEADLESS-2" },
     { role: "side", tree: "left", ratio: "", resized: false, screen: "HEADLESS-3" },
@@ -393,30 +393,30 @@ test("a desk shows one pane per screen role of the arrangement, with its tree in
   assert.deepEqual(plain(L.panes(fixture(), "nope", 3)), []);
 });
 
-test("the view opens on the active arrangement, at the focused workspace's desk and screen", () => {
-  assert.deepEqual(plain(L.initialTarget(fixture(), 13)), { arrangement: "dual", desk: 3, role: "side" });
-  assert.deepEqual(plain(L.initialTarget(fixture(), 1)), { arrangement: "dual", desk: 3, role: "big" });
+test("the view opens on the active arrangement, at the focused workspace's number and screen", () => {
+  assert.deepEqual(plain(L.initialTarget(fixture(), 13)), { arrangement: "dual", workspace: 3, role: "side" });
+  assert.deepEqual(plain(L.initialTarget(fixture(), 1)), { arrangement: "dual", workspace: 3, role: "big" });
   const none = fixture();
   delete none.arrangement;
-  assert.deepEqual(plain(L.initialTarget(none, 3)), { arrangement: "dual", desk: 3, role: "big" });
+  assert.deepEqual(plain(L.initialTarget(none, 3)), { arrangement: "dual", workspace: 3, role: "big" });
 });
 
-test("an arrangement renamed or deleted under the view moves it to the running one, same desk", () => {
-  const here = { arrangement: "single", desk: 4, role: "big" };
+test("an arrangement renamed or deleted under the view moves it to the running one, same workspace", () => {
+  const here = { arrangement: "single", workspace: 4, role: "big" };
   assert.equal(L.retarget(fixture(), here), null, "still there: stay");
   const renamed = fixture();
   renamed.arrangements.solo = renamed.arrangements.single;
   delete renamed.arrangements.single;
-  assert.deepEqual(plain(L.retarget(renamed, here)), { arrangement: "dual", desk: 4, role: "big" });
+  assert.deepEqual(plain(L.retarget(renamed, here)), { arrangement: "dual", workspace: 4, role: "big" });
   const gone = fixture();
   delete gone.arrangements.dual;
   delete gone.arrangement;
-  assert.deepEqual(plain(L.retarget(gone, { arrangement: "dual", desk: 9, role: "side" })),
-    { arrangement: "single", desk: 3, role: "big" }, "the first by name; a desk the state lacks goes to the first");
+  assert.deepEqual(plain(L.retarget(gone, { arrangement: "dual", workspace: 9, role: "side" })),
+    { arrangement: "single", workspace: 3, role: "big" }, "the first by name; a workspace the state lacks goes to the first");
   const empty = fixture();
   empty.arrangements = {};
   delete empty.arrangement;
-  assert.deepEqual(plain(L.retarget(empty, here)), { arrangement: "", desk: 4, role: "" });
+  assert.deepEqual(plain(L.retarget(empty, here)), { arrangement: "", workspace: 4, role: "" });
   assert.equal(L.retarget(null, here), null, "no state yet: stay");
 });
 
@@ -516,14 +516,14 @@ test("x takes the selected slot out of the tree, tidied; the last leaf leaves no
   assert.match(refused("h[a, *]", (n) => L.removeSlot(n, "*")), /overflow/);
 });
 
-test("the slots a adds are the global ones no pane of the desk places yet", () => {
+test("the slots a adds are the global ones no pane of the workspace places yet", () => {
   const state = { slots: [{ name: "left" }, { name: "main" }, { name: "right" }, { name: "side" }] };
   const drafts = { big: { node: tree("h[main, right]") }, side: { node: null }, top: { node: tree("left") } };
   assert.deepEqual(plain(L.slotChoices(state, drafts)), ["side"]);
   assert.deepEqual(plain(L.slotChoices(null, drafts)), []);
 });
 
-test("the screen whose draft places a slot, null when no screen of the desk does", () => {
+test("the screen whose draft places a slot, null when no screen of the workspace does", () => {
   const drafts = { big: { node: tree("h[main, right]") }, side: { node: null }, top: { node: tree("left") } };
   assert.equal(L.placedIn(drafts, "right"), "big");
   assert.equal(L.placedIn(drafts, "left"), "top");

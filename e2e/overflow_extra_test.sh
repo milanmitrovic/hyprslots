@@ -1,9 +1,9 @@
 # Cross-slice: a second window of a class whose only slot is taken (slice 3's
-# routing and window rules) lands in that desk's overflow leaf (slice 4), and
+# routing and window rules) lands in that workspace's overflow leaf (slice 4), and
 # takes the slot when the first window closes.
 #
-# Screen: HEADLESS-2, 2400x1350 at 0,0, Omarchy block 0 (desk N = workspace N).
-# Desk 3, arrangement "solo": h[main, right]. With an extra window the layout
+# Screen: HEADLESS-2, 2400x1350 at 0,0, Omarchy block 0 (workspace N = workspace id N).
+# Workspace 3, arrangement "solo": h[main, right]. With an extra window the layout
 # is h[h[main, right]:3, *:1]: main 900, right 900, overflow 600 px.
 
 test_setup() {
@@ -55,7 +55,7 @@ test_body() {
   output_create HEADLESS-2
   expect_eq "hyprslots loaded" "" "$(hyprslots_load_error | head -n1)"
 
-  # Given two t-main windows and a t-right opened on desk 1.
+  # Given two t-main windows and a t-right opened on workspace 1.
   spawn_and_wait t-main
   local first_pid=${E2E_CLIENT_PIDS[-1]}
   spawn t-main
@@ -64,8 +64,8 @@ test_body() {
   spawn_and_wait t-right
   eventually 10 count_on_3 3 || true
 
-  # Then all three are on desk 3: the extra t-main in the overflow column.
-  log "desk 3 -> $(repl 'return hyprslots.api.call("desk", "{\"desk\": 3}")')"
+  # Then all three are on workspace 3: the extra t-main in the overflow column.
+  log "workspace 3 -> $(repl 'return hyprslots.api.call("workspace", "{\"workspace\": 3}")')"
   settle
   local rows
   mapfile -t rows < <(t_main_rows)

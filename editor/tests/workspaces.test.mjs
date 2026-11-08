@@ -1,0 +1,40 @@
+// Workspace keys (Workspaces.js), the same in the Layout and Assignment views:
+// [ and ] step through workspaces 1 to 10, the digits jump (0 is workspace
+// 10), and a strip shows which workspaces have trees.
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { load } from "./load.mjs";
+
+const W = load("Workspaces.js");
+const plain = (value) => JSON.parse(JSON.stringify(value));
+
+test("] and [ step to the next and previous workspace, round from 10 to 1 and back", () => {
+  assert.equal(W.step(3, 1), 4);
+  assert.equal(W.step(3, -1), 2);
+  assert.equal(W.step(10, 1), 1);
+  assert.equal(W.step(1, -1), 10);
+});
+
+test("a workspace out of range steps from the nearest end", () => {
+  assert.equal(W.step(0, 1), 1);
+  assert.equal(W.step(0, -1), 10);
+});
+
+test("the digits jump to workspaces 1 to 9, and 0 to workspace 10, as Super+N does", () => {
+  assert.equal(W.ofDigit("1"), 1);
+  assert.equal(W.ofDigit("9"), 9);
+  assert.equal(W.ofDigit("0"), 10);
+  assert.equal(W.ofDigit("a"), null);
+  assert.equal(W.ofDigit(""), null);
+  assert.equal(W.ofDigit("12"), null);
+});
+
+test("the strip marks the current workspace and the workspaces an arrangement has trees for", () => {
+  const state = { arrangements: { solo: { workspaces: { 3: { main: { tree: "a" } }, 10: { main: { tree: "b" } } } } } };
+  const strip = plain(W.strip(state, "solo", 3));
+  assert.equal(strip.length, 10);
+  assert.deepEqual(strip[2], { workspace: 3, label: "3", current: true, trees: true });
+  assert.deepEqual(strip[0], { workspace: 1, label: "1", current: false, trees: false });
+  assert.deepEqual(strip[9], { workspace: 10, label: "0", current: false, trees: true });
+  assert.equal(plain(W.strip(null, "solo", 1)).filter((w) => w.trees).length, 0);
+});

@@ -3,20 +3,21 @@ import QtQuick
 import Quickshell.Hyprland
 import qs.Commons
 import qs.Commons as Commons
-import "Desks.js" as Desks
+import "Workspaces.js" as Workspaces
 import "Layout.js" as Layout
 import "Prompts.js" as Prompts
 import "Slots.js" as Slots
 
-// One desk's trees, edited (aerolayout's LayoutView). A pane per screen role
-// of the arrangement, each a scale model of its screen: boxes proportional
+// One workspace's trees, edited (aerolayout's LayoutView). A pane per screen
+// role of the arrangement, each a scale model of its screen: boxes proportional
 // to the weights, nested containers titled with their kind and ratio, a
 // scroll branch as a filmstrip of its numbered full-width columns in order
 // (no tabs: Hyprland's scrolling layout, not a group), then the tree text and ratio
 // string. Edits go to a draft; `w` applies it (api set_trees), Ctrl+S (the
 // panel's) applies it and saves (api save), `d` puts a screen's tree back
 // to what slots.lua holds (api reset), `R` records the windows on screen
-// (api record, previewed). [ ] and the digits change the desk (Desks.js).
+// (api record, previewed). [ ] and the digits change the workspace
+// (Workspaces.js).
 //
 // Beside the picture, the global slots (aerolayout's logical slots), their
 // names and descriptions: `s` moves the keys to that list and back (Esc
@@ -24,7 +25,7 @@ import "Slots.js" as Slots
 // add_slot) and offers to put it in the tree at once, Return puts the
 // selected one in the tree after the selected leaf, r renames it everywhere
 // (rename_slot), e describes it (describe_slot), d deletes it after y/n
-// naming the trees and desks it goes from (remove_slot). The models are
+// naming the trees and workspaces it goes from (remove_slot). The models are
 // Layout.js and Slots.js; the calls are in docs/design.md §9.
 Item {
   id: root
@@ -39,18 +40,18 @@ Item {
 
   readonly property var state: engine ? engine.state : null
 
-  // What is being edited: an arrangement's desk, and the selected leaf in
+  // What is being edited: an arrangement's workspace, and the selected leaf in
   // the pane of one screen role.
   property string arrangement: ""
-  property int desk: 0
+  property int workspace: 0
   property string role: ""
   property string selectedKey: ""
 
-  readonly property var paneList: Layout.panes(state, arrangement, desk)
+  readonly property var paneList: Layout.panes(state, arrangement, workspace)
   // The same, computed now: a handler running on a state change can see the
   // binding above before it has caught up.
   function currentPanes() {
-    return Layout.panes(state, arrangement, desk)
+    return Layout.panes(state, arrangement, workspace)
   }
   // role -> { node (the draft, null when the screen has no tree), base (the
   // tree text in force it started from), memory (a parked overflow leaf) }
@@ -80,14 +81,14 @@ Item {
 
   readonly property string helpText: {
     if (prompting) return Prompts.help(prompt)
-    var desks = "Desk: [ ] prev/next  1–9 0 jump"
+    var workspaceKeys = "Workspace: [ ] prev/next  1–9 0 jump"
     if (slotFocus) {
       return "Slot list: ↑/↓ select  a new  Return put in " + (role ? role + "'s" : "the") + " tree  r rename  e describe  d delete"
-        + "   ·   s/Esc back to the screens   ·   " + desks + "   ·   Ctrl+S save   ·   Tab switch view  q close"
+        + "   ·   s/Esc back to the screens   ·   " + workspaceKeys + "   ·   Ctrl+S save   ·   Tab switch view  q close"
     }
     return "arrows select   ·   Tree: a add slot  x take out  hjkl move  HJKL force move  / flip  t " + toggleLabel
       + "  r ratios  o overflow   ·   Layout: w apply  Ctrl+S apply+save  d default  R record"
-      + "   ·   s slot list (new, rename, delete)   ·   " + desks + "  c arrangement   ·   Tab switch view  q close"
+      + "   ·   s slot list (new, rename, delete)   ·   " + workspaceKeys + "  c arrangement   ·   Tab switch view  q close"
   }
 
   // t turns the whole tree into a scroll branch (full-width scrolling
@@ -110,7 +111,7 @@ Item {
     return currentPanes().filter(function(p) { return root.edited(p.role) }).map(function(p) { return p.role })
   }
 
-  // Back to the opening target: the focused workspace's desk and screen.
+  // Back to the opening target: the focused workspace's number and screen.
   function reset() {
     prompt = null
     _answer = null
@@ -122,7 +123,7 @@ Item {
     if (state) {
       var t = Layout.initialTarget(state, focusedWorkspace)
       arrangement = t.arrangement || ""
-      desk = t.desk
+      workspace = t.workspace
       role = t.role || ""
     }
     sync()
@@ -143,15 +144,15 @@ Item {
   // the arrangement being edited is gone (renamed or deleted in the
   // Arrangements view), move to the running one.
   function sync() {
-    var moved = Layout.retarget(state, { arrangement: arrangement, desk: desk, role: role })
+    var moved = Layout.retarget(state, { arrangement: arrangement, workspace: workspace, role: role })
     if (moved) {
       var was = arrangement
       arrangement = moved.arrangement
-      desk = moved.desk
+      workspace = moved.workspace
       role = moved.role
       drafts = ({})
       selectedKey = ""
-      if (was !== "") say("Arrangement '" + was + "' is gone; editing desk " + desk + " of "
+      if (was !== "") say("Arrangement '" + was + "' is gone; editing workspace " + workspace + " of "
         + (arrangement !== "" ? arrangement : "nothing") + ".", false)
     }
     var next = {}
@@ -292,8 +293,8 @@ Item {
 
   function handleKey(key, text, modifiers) {
     if (prompting) return handlePrompt(key, text, modifiers)
-    if (text === "[" || text === "]") goDesk(Desks.step(desk, text === "]" ? 1 : -1))
-    else if (Desks.ofDigit(text) !== null) goDesk(Desks.ofDigit(text))
+    if (text === "[" || text === "]") goWorkspace(Workspaces.step(workspace, text === "]" ? 1 : -1))
+    else if (Workspaces.ofDigit(text) !== null) goWorkspace(Workspaces.ofDigit(text))
     else if (slotFocus) return handleSlotKey(key, text)
     else if (text === "s") focusSlots(true)
     else return handlePictureKey(key, text)
@@ -320,13 +321,13 @@ Item {
     return true
   }
 
-  // a: one of the global slots no pane of this desk places yet, added after
+  // a: one of the global slots no pane of this workspace places yet, added after
   // the selected leaf (or as the tree of a screen that has none).
   function startAddSlot() {
     if (refuseEdit() || role === "") return
     var names = Layout.slotChoices(state, drafts)
     if (names.length === 0) {
-      say("Every slot is placed on desk " + desk + " already; s, then a, makes a new one.", true)
+      say("Every slot is placed on workspace " + workspace + " already; s, then a, makes a new one.", true)
       return
     }
     var r = role
@@ -405,7 +406,7 @@ Item {
 
   // Return (and a's offer): the slot into the selected screen's tree, after
   // the selected leaf, as a draft; the keys go back to the picture with it
-  // selected, to move it where it belongs. A slot this desk places already
+  // selected, to move it where it belongs. A slot this workspace places already
   // is selected where it is.
   function placeSlot(name) {
     if (refuseEdit()) return
@@ -441,11 +442,11 @@ Item {
   }
 
   // a: a new global slot, a name and then an optional description; then,
-  // when this desk's trees may be edited, the offer to put it in the tree.
+  // when this workspace's trees may be edited, the offer to put it in the tree.
   function startNewSlot(values) {
     if (!slotsEditable()) return
     values = values || { name: "", description: "", error: "" }
-    ask(Prompts.withError(Prompts.text("New slot name (every desk's trees may place it) [Enter] next  [Esc] cancel: ",
+    ask(Prompts.withError(Prompts.text("New slot name (every workspace's trees may place it) [Enter] next  [Esc] cancel: ",
       { value: values.name, required: true }), values.error), function(name) {
       root.ask(Prompts.text("Description, optional [Enter] add  [Esc] cancel: ", { value: values.description }),
         function(description) {
@@ -467,7 +468,7 @@ Item {
       return
     }
     var after = activeNode && Layout.leaves(activeNode).indexOf(selectedKey) >= 0 ? " after " + selectedKey : ""
-    ask(Prompts.confirm("Added slot '" + slot + "'. Put it in " + role + "'s tree on desk " + desk + after + "?"),
+    ask(Prompts.confirm("Added slot '" + slot + "'. Put it in " + role + "'s tree on workspace " + workspace + after + "?"),
       function(yes) {
         if (yes) root.placeSlot(slot)
         else root.say("Added slot '" + slot + "'. Return puts it in a tree.", false)
@@ -488,7 +489,7 @@ Item {
   function startRenameSlot() {
     if (!needSlot() || !slotsEditable()) return
     var old = slotRow.slot
-    var label = "Rename '" + old + "' to (every tree and desk follows) [Enter] save  [Esc] cancel: "
+    var label = "Rename '" + old + "' to (every tree and workspace follows) [Enter] save  [Esc] cancel: "
     var answer = function(to) {
       to = to.trim()
       if (to === old) return
@@ -503,7 +504,7 @@ Item {
         var specs = reply.specs || []
         root.say("Renamed '" + old + "' to '" + reply.to + "'."
           + (reply.trees > 0 ? " Rewrote " + reply.trees + (reply.trees === 1 ? " tree." : " trees.") : "")
-          + (specs.length ? " Moved the specs of desk" + (specs.length > 1 ? "s " : " ") + specs.join(", ") + "." : ""),
+          + (specs.length ? " Moved the specs of workspace" + (specs.length > 1 ? "s " : " ") + specs.join(", ") + "." : ""),
           false)
       })
     }
@@ -613,26 +614,26 @@ Item {
     })
   }
 
-  // [ ] and the digits: another desk of the same arrangement (the arrows
+  // [ ] and the digits: another workspace of the same arrangement (the arrows
   // stay the picture's).
-  function goDesk(n) {
+  function goWorkspace(n) {
     if (!state || n === null) return
-    if (n === desk) {
-      say("Editing desk " + desk + " already.", false)
+    if (n === workspace) {
+      say("Editing workspace " + workspace + " already.", false)
       return
     }
-    pick("desk", String(n))
+    pick("workspace", String(n))
   }
 
   function pick(what, name) {
     var dropped = editedRoles()
-    if (what === "desk") desk = parseInt(name, 10)
+    if (what === "workspace") workspace = parseInt(name, 10)
     else arrangement = name
     drafts = ({})
     role = ""
     selectedKey = ""
     sync()
-    var where = "desk " + desk + " of " + arrangement
+    var where = "workspace " + workspace + " of " + arrangement
     say("Editing " + where + "." + (dropped.length ? " Unapplied edits dropped (" + dropped.join(", ") + ")." : ""),
       dropped.length > 0)
   }
@@ -650,7 +651,7 @@ Item {
 
   // --- engine calls ---------------------------------------------------------
 
-  // w: every edited pane of the desk in one set_trees. `then` runs after it
+  // w: every edited pane of the workspace in one set_trees. `then` runs after it
   // worked (Ctrl+S's save, through applyThen).
   function apply(then) {
     if (refuseEdit()) return
@@ -671,13 +672,13 @@ Item {
     }
     if (!engine) return
     say("Applying " + roles.join(", ") + "…", false)
-    var target = { arrangement: arrangement, desk: desk }
-    engine.call("set_trees", { arrangement: target.arrangement, desk: target.desk, trees: trees }, function(reply) {
+    var target = { arrangement: arrangement, workspace: workspace }
+    engine.call("set_trees", { arrangement: target.arrangement, workspace: target.workspace, trees: trees }, function(reply) {
       if (!reply.ok) {
         root.say(reply.error, true)
         return
       }
-      if (reply.arrangement === root.arrangement && reply.desk === root.desk) {
+      if (reply.arrangement === root.arrangement && reply.workspace === root.workspace) {
         var next = Object.assign({}, root.drafts)
         for (var r in reply.trees) {
           var parsed = Layout.parse(reply.trees[r].tree)
@@ -688,7 +689,7 @@ Item {
       }
       var parts = []
       for (var r2 in reply.trees) parts.push(r2 + " " + reply.trees[r2].tree)
-      root.say("Applied desk " + reply.desk + ": " + parts.join(", ") + (then ? "" : ". Ctrl+S saves."), false)
+      root.say("Applied workspace " + reply.workspace + ": " + parts.join(", ") + (then ? "" : ". Ctrl+S saves."), false)
       if (then) then()
     })
   }
@@ -703,8 +704,8 @@ Item {
   function startReset() {
     if (refuseEdit()) return
     var r = role
-    confirm("Put desk " + desk + " on " + r + " back to the tree slots.lua holds?", function() {
-      root.engine.call("reset", { arrangement: root.arrangement, desk: root.desk, role: r }, function(reply) {
+    confirm("Put workspace " + workspace + " on " + r + " back to the tree slots.lua holds?", function() {
+      root.engine.call("reset", { arrangement: root.arrangement, workspace: root.workspace, role: r }, function(reply) {
         if (!reply.ok) {
           root.say(reply.error, true)
           return
@@ -713,14 +714,14 @@ Item {
         next[r] = { node: reply.tree ? Layout.parse(reply.tree).node : null, base: reply.tree || null, memory: null }
         root.drafts = next
         root.keepSelection()
-        root.say("Desk " + reply.desk + " on " + r + " is back to " + (reply.tree || "no tree") + ".", false)
+        root.say("Workspace " + reply.workspace + " on " + r + " is back to " + (reply.tree || "no tree") + ".", false)
       })
     })
   }
 
-  function workspaceOf(d, r) {
+  function workspaceIdOf(n, r) {
     var ws = state && state.workspaces ? state.workspaces : {}
-    for (var id in ws) if (ws[id].desk === d && ws[id].role === r) return parseInt(id, 10)
+    for (var id in ws) if (ws[id].workspace === n && ws[id].role === r) return parseInt(id, 10)
     return -1
   }
 
@@ -733,26 +734,26 @@ Item {
         + "': press c and pick it.", true)
       return
     }
-    var id = workspaceOf(desk, role)
+    var id = workspaceIdOf(workspace, role)
     if (id < 0) {
-      say("Desk " + desk + " has no workspace on " + role + ".", true)
+      say("Workspace " + workspace + " has no tree on " + role + ".", true)
       return
     }
     var r = role
     say("Recording workspace " + id + "…", false)
-    engine.call("record", { workspace: id, apply: false }, function(reply) {
+    engine.call("record", { workspace_id: id, apply: false }, function(reply) {
       if (!reply.ok) {
         root.say(reply.error, true)
         return
       }
       var missing = reply.missing || []
-      var text = "Recorded " + reply.tree + " (" + reply.ratio + ") from workspace " + reply.workspace
+      var text = "Recorded " + reply.tree + " (" + reply.ratio + ") from workspace " + reply.workspace_id
         + (missing.length ? "; missing " + missing.join(", ") + ": applying drops " + (missing.length === 1 ? "it" : "them")
           + " from the tree" : "") + ". Apply it?"
       root.confirm(text, function() {
         var trees = {}
         trees[r] = reply.tree
-        root.engine.call("set_trees", { arrangement: reply.arrangement, desk: reply.desk, trees: trees }, function(set) {
+        root.engine.call("set_trees", { arrangement: reply.arrangement, workspace: reply.workspace, trees: trees }, function(set) {
           if (!set.ok) {
             root.say(set.error, true)
             return
@@ -816,31 +817,31 @@ Item {
         anchors.leftMargin: Style.spacing.lg
         anchors.verticalCenter: parent.verticalCenter
         textFormat: Text.PlainText
-        text: "Desk " + root.desk + "   [" + (root.arrangement || "no arrangement") + "]"
+        text: "Workspace " + root.workspace + "   [" + (root.arrangement || "no arrangement") + "]"
           + (root.state && root.state.arrangement && !root.isActive ? "   these screens run '" + root.state.arrangement + "'" : "")
         color: root.foreground
         font.family: root.fontFamily
         font.pixelSize: Style.font.title
         font.bold: true
       }
-      // Desks 1 to 10 by their keys ([ ] step, the digits jump): the one
+      // Workspaces 1 to 10 by their keys ([ ] step, the digits jump): the one
       // edited reversed, the ones with trees in this arrangement brighter.
       Row {
-        id: deskStrip
+        id: workspaceStrip
         anchors.left: headerText.right
         anchors.leftMargin: Style.spacing.lg * 2
         anchors.verticalCenter: parent.verticalCenter
         spacing: Style.spacing.xs
         Repeater {
-          model: Desks.strip(root.state, root.arrangement, root.desk)
+          model: Workspaces.strip(root.state, root.arrangement, root.workspace)
           delegate: Rectangle {
             required property var modelData
-            width: deskKey.implicitWidth + Style.spacing.sm * 2
-            height: deskKey.implicitHeight + Style.spacing.xs * 2
+            width: workspaceKey.implicitWidth + Style.spacing.sm * 2
+            height: workspaceKey.implicitHeight + Style.spacing.xs * 2
             radius: Style.cornerRadius
             color: modelData.current ? root.selectedBackground : "transparent"
             Text {
-              id: deskKey
+              id: workspaceKey
               anchors.centerIn: parent
               textFormat: Text.PlainText
               text: parent.modelData.label
@@ -852,7 +853,7 @@ Item {
             }
             MouseArea {
               anchors.fill: parent
-              onClicked: root.goDesk(parent.modelData.desk)
+              onClicked: root.goWorkspace(parent.modelData.workspace)
             }
           }
         }
@@ -959,7 +960,7 @@ Item {
                   anchors.centerIn: parent
                   visible: pane.node === null
                   textFormat: Text.PlainText
-                  text: "No tree for desk " + root.desk + " here"
+                  text: "No tree for workspace " + root.workspace + " here"
                   color: root.foreground
                   opacity: 0.5
                   font.family: root.fontFamily
@@ -972,7 +973,7 @@ Item {
                     pad: 5,
                     title: Style.font.bodySmall + 6,
                     selected: pane.active ? root.selectedKey : "",
-                    titles: Layout.titles(root.state, root.desk, pane.modelData.role),
+                    titles: Layout.titles(root.state, root.workspace, pane.modelData.role),
                   }) : []
                   delegate: Rectangle {
                     id: cell

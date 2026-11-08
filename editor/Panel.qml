@@ -10,7 +10,7 @@ import "Prompts.js" as Prompts
 
 // The hyprslots editor panel (docs/design.md §9): aerolayout's `edit` TUI as
 // an Omarchy shell panel. Three tabs, cycled with Tab / Shift+Tab as in the
-// TUI: Assignment (which window fills which slot), Layout (one desk's trees,
+// TUI: Assignment (which window fills which slot), Layout (one workspace's trees,
 // with the global slots listed beside them, made and placed there) and
 // Arrangements. Esc or q closes it (while a view's prompt is open, every key
 // is the prompt's; in the Layout tab's slot list Esc goes back to the

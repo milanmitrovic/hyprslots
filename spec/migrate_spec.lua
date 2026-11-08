@@ -1,11 +1,11 @@
--- Test seam S3: slots.lua's per-desk shape of before (slots = desk -> slot ->
--- spec, descriptions = desk -> slot -> text) read as the global shape
--- (slots = name -> { description? }, specs = desk -> slot -> spec).
+-- Test seam S3: slots.lua's per-workspace shape of before (slots = workspace -> slot ->
+-- spec, descriptions = workspace -> slot -> text) read as the global shape
+-- (slots = name -> { description? }, specs = workspace -> slot -> spec).
 
 local migrate = require("hyprslots.migrate")
 
 describe("migrate.data", function()
-  it("turns per-desk slots into global slots and per-desk specs", function()
+  it("turns per-workspace slots into global slots and per-workspace specs", function()
     local out, migrated = migrate.data({
       slots = {
         [1] = { left = "[Left]", main = "[Main]" },
@@ -32,7 +32,7 @@ describe("migrate.data", function()
     assert.is_nil(out.descriptions)
   end)
 
-  it("keeps every different description of one slot name, in desk order", function()
+  it("keeps every different description of one slot name, in workspace order", function()
     local out = migrate.data({
       slots = { [2] = { main = "a" }, [3] = { main = "b" }, [5] = { main = "c" } },
       descriptions = { [5] = { main = "editor" }, [2] = { main = "notes" }, [3] = { main = "editor" } },
@@ -40,7 +40,7 @@ describe("migrate.data", function()
     assert.are.equal("notes; editor", out.slots.main.description)
   end)
 
-  it("drops a description of a slot no desk has", function()
+  it("drops a description of a slot no workspace has", function()
     local out = migrate.data({ slots = { [3] = { main = "a" } }, descriptions = { [3] = { gone = "x" } } })
     assert.are.same({ main = {} }, out.slots)
   end)
@@ -69,7 +69,7 @@ describe("migrate.data", function()
     assert.are.same({ slots = { [3] = { main = "a" } }, descriptions = { [3] = { main = "x" } } }, data)
   end)
 
-  it("keeps what it cannot read for validation to report (a desk that is no table)", function()
+  it("keeps what it cannot read for validation to report (a workspace that is no table)", function()
     local out = migrate.data({ slots = { [3] = "kitty" } })
     assert.are.same({ [3] = "kitty" }, out.specs)
   end)
@@ -87,7 +87,7 @@ describe("migrate.data", function()
     assert.is_nil(out.descriptions)
   end)
 
-  it("tells the per-desk shape from the global one", function()
+  it("tells the per-workspace shape from the global one", function()
     assert.is_true(migrate.legacy({ slots = { [3] = { main = "a" } } }))
     assert.is_true(migrate.legacy({ descriptions = {} }))
     assert.is_false(migrate.legacy({ slots = { main = {} } }))

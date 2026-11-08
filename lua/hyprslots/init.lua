@@ -13,7 +13,7 @@ local api = require("hyprslots.api")
 local arrangement = require("hyprslots.arrangement")
 local assign = require("hyprslots.assign")
 local config = require("hyprslots.config")
-local desks = require("hyprslots.desks")
+local workspaces = require("hyprslots.workspaces")
 local hotplug = require("hyprslots.hotplug")
 local layout = require("hyprslots.layout")
 local log = require("hyprslots.log")
@@ -26,7 +26,7 @@ local window_rules = require("hyprslots.window_rules")
 local M = {}
 
 local LAYOUT = "slots"
-local BLOCKS = 10 -- Omarchy monitor blocks given lua:slots desk workspaces
+local BLOCKS = 10 -- Omarchy monitor blocks given lua:slots workspaces
 
 local engine = nil
 
@@ -48,9 +48,9 @@ local function new_engine()
     config_error = nil,
     refused = nil,
     active = nil,
-    workspaces = {}, -- workspace id -> { desk, role, monitor, branch }
-    assignments = {}, -- window address -> { desk, slot }
-    overflow = {}, -- window address -> { desk, slot }: matches that slot, which is taken
+    workspaces = {}, -- workspace id -> { workspace, role, monitor, branch }
+    assignments = {}, -- window address -> { workspace, slot }
+    overflow = {}, -- window address -> { workspace, slot }: matches that slot, which is taken
     unassigned = {}, -- window address -> true: taken out of its slot by hand, takes none
     seq = 0, -- bumped on every change the editor should see
     started = false,
@@ -60,7 +60,7 @@ local function new_engine()
     since_save = {}, -- renames and removals since data was slots.lua's (api.lua's reset reads through them)
     ruled = {}, -- workspace id -> the layout hyprslots gave it ("lua:slots" or "scrolling")
     scroll_seen = {}, -- workspace id -> set of windows whose columns scroll.lua has widened
-    resized = {}, -- "<arrangement>/<desk>/<role>" -> keyboard-resized tree (resize.lua)
+    resized = {}, -- "<arrangement>/<workspace>/<role>" -> keyboard-resized tree (resize.lua)
   }, Engine)
 end
 
@@ -75,7 +75,7 @@ function Engine:refuse(reason)
 end
 
 -- Re-pick the arrangement for the connected monitors and rebuild the map from
--- workspace id to desk and screen role.
+-- workspace id to workspace number and screen role.
 function Engine:reselect()
   local previous = self.active and self.active.name
   self.active = nil
@@ -88,11 +88,11 @@ function Engine:reselect()
   self.active = arrangement.select(self.cfg, monitors)
 
   if self.active then
-    for desk, branches in pairs(self.active.arrangement.desks) do
+    for workspace, branches in pairs(self.active.arrangement.workspaces) do
       for role, branch in pairs(branches) do
         local monitor = self.active.monitors[role]
-        local id = adapter.workspace_id(monitor, desk)
-        self.workspaces[id] = { desk = desk, role = role, monitor = monitor, branch = branch }
+        local id = adapter.workspace_id(monitor, workspace)
+        self.workspaces[id] = { workspace = workspace, role = role, monitor = monitor, branch = branch }
       end
     end
   end
@@ -166,8 +166,8 @@ function Engine:slot_of(hl_window)
   return self:assign(adapter.window(hl_window))
 end
 
--- { desk, role, monitor, branch } for a workspace id, or nil.
-function Engine:desk_of_workspace(id)
+-- { workspace, role, monitor, branch } for a workspace id, or nil.
+function Engine:entry_of_workspace(id)
   if self.refused or id == nil then
     return nil
   end
@@ -176,9 +176,9 @@ end
 
 -- The workspace id an assignment lives on in the active arrangement, or nil.
 function Engine:workspace_for(assignment)
-  for id, desk in pairs(self.workspaces) do
-    if desk.desk == assignment.desk then
-      for _, slot in ipairs(tree.slots(desk.branch)) do
+  for id, entry in pairs(self.workspaces) do
+    if entry.workspace == assignment.workspace then
+      for _, slot in ipairs(tree.slots(entry.branch)) do
         if slot == assignment.slot then
           return id
         end
@@ -226,7 +226,7 @@ local function load_config(self, dir)
   end
 end
 
--- A layout for desk N's workspace in every monitor block, for every desk
+-- A layout for workspace N in every monitor block, for every workspace
 -- some arrangement has a tree for: "scrolling" where the active arrangement
 -- has a scroll branch (scroll.lua), lua:slots everywhere else. Workspace rules
 -- apply when a workspace is created, so they are set up front, and again
@@ -236,20 +236,20 @@ end
 -- choice stands until Super+L brings slots back.
 workspace_rules = function(self, runtime)
   local cfg, ruled = self.cfg, self.ruled
-  local desks_with_trees = {}
+  local with_trees = {}
   for _, name in ipairs(cfg.arrangement_names) do
-    for desk in pairs(cfg.arrangements[name].desks) do
-      desks_with_trees[desk] = true
+    for n in pairs(cfg.arrangements[name].workspaces) do
+      with_trees[n] = true
     end
   end
   local list = {}
-  for desk in pairs(desks_with_trees) do
-    list[#list + 1] = desk
+  for n in pairs(with_trees) do
+    list[#list + 1] = n
   end
   table.sort(list)
-  for _, desk in ipairs(list) do
+  for _, n in ipairs(list) do
     for block = 0, BLOCKS - 1 do
-      local id = block * 10 + desk
+      local id = block * 10 + n
       local layout = scroll.layout_for(self, id)
       if ruled[id] ~= layout then
         ruled[id] = layout
@@ -325,7 +325,7 @@ function Engine:changed()
   adapter.emit_event("hyprslots changed " .. self.seq)
 end
 
--- Make Hyprland lay out every desk workspace of the active arrangement again
+-- Make Hyprland lay out every workspace of the active arrangement again
 -- (one zero resize per workspace holding a tiled window).
 function Engine:relayout()
   local nudged = {}
@@ -390,16 +390,19 @@ local function current()
   return engine
 end
 
--- An action showing desk N, for hl.bind in place of o.workspaces.focus(N).
-function M.desk(n)
-  return desks.action(current, n)
+-- An action showing workspace N on every screen, for hl.bind in place of
+-- o.workspaces.focus(N).
+function M.workspace(n)
+  return workspaces.action(current, n)
 end
+M.desk = M.workspace -- deprecated alias
 
--- Bind SUPER + 1..0 to hyprslots.desk(1..10) in place of Omarchy's
+-- Bind SUPER + 1..0 to hyprslots.workspace(1..10) in place of Omarchy's
 -- per-screen workspace keys. Call it from the config after setup().
-function M.bind_desk_keys()
-  desks.bind_keys(current)
+function M.bind_workspace_keys()
+  workspaces.bind_keys(current)
 end
+M.bind_desk_keys = M.bind_workspace_keys -- deprecated alias
 
 -- Point Omarchy's keyboard resize binds at the slots layout on lua:slots
 -- workspaces (Omarchy's resize elsewhere). Call after Omarchy's bindings load;

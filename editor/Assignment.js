@@ -2,32 +2,34 @@
 
 // The Assignment view's model: which live window fills which slot, read off
 // one api `state` reply (docs/design.md §9). Ported from aerolayout's
-// AssignmentView (views.py): a table of the windows on a desk, each with its
-// slot, plus a placeholder row for every slot whose window is not running;
-// `a` puts the selected window into a global slot and makes its spec the
-// desk's for that slot (as aerolayout's `a` wrote the spec), `c` clears a
-// desk's spec for a slot, `u` takes a window out. Pure, so node can test it
-// (editor/tests/assignment.test.mjs).
+// AssignmentView (views.py): a table of the windows on a workspace, each with
+// its slot, plus a placeholder row for every slot whose window is not
+// running; `a` puts the selected window into a global slot and makes its spec
+// the workspace's for that slot (as aerolayout's `a` wrote the spec), `c`
+// clears a workspace's spec for a slot, `u` takes a window out. Pure, so node
+// can test it (editor/tests/assignment.test.mjs).
 //
 // A row is
 //   { kind: "window" | "missing" | "empty", status, address, cls, title,
-//     workspace, desk, slot, role, spec }
+//     workspaceId, workspace, slot, role, spec }
+// (workspaceId the Hyprland workspace id the window is on, workspace the
+// number 1 to 10 of its slot or its workspace)
 // with status one of "slot" (matched by its spec), "manual" (assigned by
-// hand), "overflow" (matches `slot`, which is taken: in the desk's overflow
-// leaf), "unassigned" (taken out of its slot by hand), "none" (matches no
+// hand), "overflow" (matches `slot`, which is taken: in the workspace's
+// overflow leaf), "unassigned" (taken out of its slot by hand), "none" (matches no
 // spec), "missing" (a slot whose window is not open: the spec it waits
-// for), "empty" (a slot of the desk with no window and no spec: nothing
+// for), "empty" (a slot of the workspace with no window and no spec: nothing
 // says what fills it, so nothing is missing).
 
-function deskList(state) {
-  return state && Array.isArray(state.desks) ? state.desks : []
+function workspaceList(state) {
+  return state && Array.isArray(state.used_workspaces) ? state.used_workspaces : []
 }
 
-// The pages ←/→ move through: every window, then each desk.
+// The pages ←/→ move through: every window, then each workspace.
 function pages(state) {
-  var out = [{ desk: null, label: "All windows" }]
-  var desks = deskList(state)
-  for (var i = 0; i < desks.length; i++) out.push({ desk: desks[i], label: "Desk " + desks[i] })
+  var out = [{ workspace: null, label: "All windows" }]
+  var numbers = workspaceList(state)
+  for (var i = 0; i < numbers.length; i++) out.push({ workspace: numbers[i], label: "Workspace " + numbers[i] })
   return out
 }
 
@@ -36,10 +38,11 @@ function workspaceEntry(state, id) {
   return state.workspaces[String(id)] || null
 }
 
-// The desk a workspace is of in the active arrangement, or null.
-function deskOfWorkspace(state, id) {
+// The workspace number (1 to 10) a Hyprland workspace id is in the active
+// arrangement, or null.
+function workspaceOf(state, id) {
   var entry = workspaceEntry(state, id)
-  return entry ? entry.desk : null
+  return entry ? entry.workspace : null
 }
 
 function activeArrangement(state) {
@@ -47,9 +50,9 @@ function activeArrangement(state) {
   return state.arrangements[state.arrangement] || null
 }
 
-// The desk's specs: slot -> spec text.
-function deskSpecs(state, desk) {
-  return (state && state.specs && state.specs[String(desk)]) || {}
+// The workspace's specs: slot -> spec text.
+function workspaceSpecs(state, workspace) {
+  return (state && state.specs && state.specs[String(workspace)]) || {}
 }
 
 // The global slot names, in the state's order (by name).
@@ -58,15 +61,15 @@ function slotNames(state) {
   return list.map(function(s) { return s.name })
 }
 
-// The slots of a desk as [{ slot, role }]: those the active arrangement's
-// trees place, in tree order, screen role by screen role, then any the desk
-// has a spec for that no tree shows (role null), by name.
-function slotOrder(state, desk) {
+// The slots of a workspace as [{ slot, role }]: those the active
+// arrangement's trees place, in tree order, screen role by screen role, then
+// any the workspace has a spec for that no tree shows (role null), by name.
+function slotOrder(state, workspace) {
   var out = []
   var seen = {}
-  var specs = deskSpecs(state, desk)
+  var specs = workspaceSpecs(state, workspace)
   var arrangement = activeArrangement(state)
-  var branches = arrangement && arrangement.desks ? arrangement.desks[String(desk)] || {} : {}
+  var branches = arrangement && arrangement.workspaces ? arrangement.workspaces[String(workspace)] || {} : {}
   var roles = arrangement && Array.isArray(arrangement.roles) ? arrangement.roles : []
   for (var r = 0; r < roles.length; r++) {
     var branch = branches[roles[r]]
@@ -93,25 +96,25 @@ function isManual(state, address) {
 }
 
 function windowRow(state, w) {
-  var entry = workspaceEntry(state, w.workspace)
+  var entry = workspaceEntry(state, w.workspace_id)
   var row = {
     kind: "window",
     address: w.address,
     cls: w.class || "",
     title: w.title || "",
-    workspace: w.workspace,
-    desk: entry ? entry.desk : null,
+    workspaceId: w.workspace_id,
+    workspace: entry ? entry.workspace : null,
     slot: null,
     role: entry ? entry.role : null,
     spec: null,
     status: w.unassigned ? "unassigned" : "none",
   }
   if (w.slot !== undefined && w.slot !== null) {
-    row.desk = w.desk
+    row.workspace = w.workspace
     row.slot = w.slot
     row.status = isManual(state, w.address) ? "manual" : "slot"
   } else if (w.overflow) {
-    row.desk = w.overflow.desk
+    row.workspace = w.overflow.workspace
     row.slot = w.overflow.slot
     row.status = "overflow"
   }
@@ -123,13 +126,14 @@ function holders(state) {
   var windows = windowList(state)
   for (var i = 0; i < windows.length; i++) {
     var w = windows[i]
-    if (w.slot !== undefined && w.slot !== null) out[w.desk + "/" + w.slot] = w
+    if (w.slot !== undefined && w.slot !== null) out[w.workspace + "/" + w.slot] = w
   }
   return out
 }
 
-// The rows of one page: `desk` a desk number, or null for every window.
-function rows(state, desk) {
+// The rows of one page: `workspace` a workspace number, or null for every
+// window.
+function rows(state, workspace) {
   if (!state) return []
   var windows = windowList(state)
   var held = holders(state)
@@ -137,12 +141,12 @@ function rows(state, desk) {
   var used = {}
   var i
 
-  if (desk === null || desk === undefined) {
-    var desks = deskList(state)
-    for (var d = 0; d < desks.length; d++) {
-      var order = slotOrder(state, desks[d])
+  if (workspace === null || workspace === undefined) {
+    var numbers = workspaceList(state)
+    for (var d = 0; d < numbers.length; d++) {
+      var order = slotOrder(state, numbers[d])
       for (var s = 0; s < order.length; s++) {
-        var holder = held[desks[d] + "/" + order[s].slot]
+        var holder = held[numbers[d] + "/" + order[s].slot]
         if (holder) {
           used[holder.address] = true
           out.push(windowRow(state, holder))
@@ -151,7 +155,7 @@ function rows(state, desk) {
     }
     for (i = 0; i < windows.length; i++) {
       if (!used[windows[i].address] && windows[i].slot !== undefined && windows[i].slot !== null) {
-        used[windows[i].address] = true // a slot of a desk the list does not name
+        used[windows[i].address] = true // a slot of a workspace the list does not name
         out.push(windowRow(state, windows[i]))
       }
     }
@@ -163,17 +167,17 @@ function rows(state, desk) {
     }
     var rest = windows.filter(function(w) { return !used[w.address] })
     rest.sort(function(a, b) {
-      if (a.workspace !== b.workspace) return (a.workspace || 0) - (b.workspace || 0)
+      if (a.workspace_id !== b.workspace_id) return (a.workspace_id || 0) - (b.workspace_id || 0)
       return a.address < b.address ? -1 : a.address > b.address ? 1 : 0
     })
     for (i = 0; i < rest.length; i++) out.push(windowRow(state, rest[i]))
     return out
   }
 
-  var slots = slotOrder(state, desk)
-  var specs = deskSpecs(state, desk)
+  var slots = slotOrder(state, workspace)
+  var specs = workspaceSpecs(state, workspace)
   for (i = 0; i < slots.length; i++) {
-    var w = held[desk + "/" + slots[i].slot]
+    var w = held[workspace + "/" + slots[i].slot]
     if (w) {
       used[w.address] = true
       var row = windowRow(state, w)
@@ -187,8 +191,8 @@ function rows(state, desk) {
         address: null,
         cls: "",
         title: "",
-        workspace: null,
-        desk: desk,
+        workspaceId: null,
+        workspace: workspace,
         slot: slots[i].slot,
         role: slots[i].role,
         spec: specs[slots[i].slot] !== undefined ? String(specs[slots[i].slot]) : "",
@@ -196,14 +200,14 @@ function rows(state, desk) {
     }
   }
   for (i = 0; i < windows.length; i++) {
-    if (!used[windows[i].address] && windows[i].overflow && windows[i].overflow.desk === desk) {
+    if (!used[windows[i].address] && windows[i].overflow && windows[i].overflow.workspace === workspace) {
       used[windows[i].address] = true
       out.push(windowRow(state, windows[i]))
     }
   }
   for (i = 0; i < windows.length; i++) {
     var other = windows[i]
-    if (!used[other.address] && deskOfWorkspace(state, other.workspace) === desk
+    if (!used[other.address] && workspaceOf(state, other.workspace_id) === workspace
         && (other.slot === undefined || other.slot === null)) {
       used[other.address] = true
       out.push(windowRow(state, other))
@@ -240,10 +244,10 @@ function titleText(row) {
 }
 
 // What `u` does for a row: { address, clearSpec, question } (the y/n it
-// asks) or { error }. A window in a slot leaves it with the desk's spec for
-// it (api unassign with clear_spec), so the slot is left empty instead of
-// Missing that window; an overflowing window, or one in a slot the desk has
-// no spec for, is only taken out.
+// asks) or { error }. A window in a slot leaves it with the workspace's spec
+// for it (api unassign with clear_spec), so the slot is left empty instead of
+// Missing that window; an overflowing window, or one in a slot the workspace
+// has no spec for, is only taken out.
 function unassignPlan(state, row) {
   if (!row) return { error: "Nothing selected." }
   if (row.kind !== "window") return { error: "No window in " + row.slot + " to unassign." }
@@ -251,41 +255,42 @@ function unassignPlan(state, row) {
     return { address: row.address, clearSpec: false, question: "Take " + row.cls + " out of the overflow of " + row.slot + "?" }
   }
   if (row.status !== "slot" && row.status !== "manual") return { error: row.cls + " is in no slot." }
-  var spec = deskSpecs(state, row.desk)[row.slot]
+  var spec = workspaceSpecs(state, row.workspace)[row.slot]
   if (spec === undefined) {
     return { address: row.address, clearSpec: false, question: "Unassign " + row.cls + " from " + row.slot + "?" }
   }
   return { address: row.address, clearSpec: true, question: "Unassign " + row.cls + " from " + row.slot
-    + " and clear desk " + row.desk + "'s spec for it (" + spec + ")? (the slot is left empty)" }
+    + " and clear workspace " + row.workspace + "'s spec for it (" + spec + ")? (the slot is left empty)" }
 }
 
-// The desk `a` assigns on (and writes the spec into): the page's desk; on
-// the every-window page the row's desk, else the desk of its workspace,
-// else `focusedDesk` (the focused workspace's); null when there is none.
-function assignDesk(state, desk, row, focusedDesk) {
-  if (desk !== null && desk !== undefined) return desk
-  if (row && row.desk !== null && row.desk !== undefined) return row.desk
-  var own = row ? deskOfWorkspace(state, row.workspace) : null
+// The workspace `a` assigns on (and writes the spec into): the page's
+// workspace; on the every-window page the row's workspace, else the number of
+// the workspace it is on, else `focusedNumber` (the focused workspace's); null
+// when there is none.
+function assignWorkspace(state, workspace, row, focusedNumber) {
+  if (workspace !== null && workspace !== undefined) return workspace
+  if (row && row.workspace !== null && row.workspace !== undefined) return row.workspace
+  var own = row ? workspaceOf(state, row.workspaceId) : null
   if (own !== null) return own
-  return focusedDesk === undefined ? null : focusedDesk
+  return focusedNumber === undefined ? null : focusedNumber
 }
 
-function assignTitle(desk) {
-  return "Assign to desk " + desk + " slot (takes its spec)"
+function assignTitle(workspace) {
+  return "Assign to workspace " + workspace + " slot (takes its spec)"
 }
 
-// The slots `a` offers for a row: every global slot, on the desk
-// assignDesk picks (none without one), the desk's own in tree order first,
-// then the rest by name. Each option is { key, desk, slot, spec (the desk's
-// spec for it, "" for none), holder } where holder is the address in the
-// slot (or null) and key the letter that picks it: the slot's first letter,
-// or the first digit still free when that letter is taken (aerolayout's
-// rule); "" when there is none left (pick it with the arrows).
-function slotOptions(state, desk, row, focusedDesk) {
-  var on = assignDesk(state, desk, row, focusedDesk)
+// The slots `a` offers for a row: every global slot, on the workspace
+// assignWorkspace picks (none without one), the workspace's own in tree order
+// first, then the rest by name. Each option is { key, workspace, slot, spec
+// (the workspace's spec for it, "" for none), holder } where holder is the
+// address in the slot (or null) and key the letter that picks it: the slot's
+// first letter, or the first digit still free when that letter is taken
+// (aerolayout's rule); "" when there is none left (pick it with the arrows).
+function slotOptions(state, workspace, row, focusedNumber) {
+  var on = assignWorkspace(state, workspace, row, focusedNumber)
   if (on === null) return []
   var held = holders(state)
-  var specs = deskSpecs(state, on)
+  var specs = workspaceSpecs(state, on)
   var names = slotOrder(state, on).map(function(o) { return o.slot })
   var listed = {}
   names.forEach(function(n) { listed[n] = true })
@@ -311,7 +316,7 @@ function slotOptions(state, desk, row, focusedDesk) {
     }
     if (key !== "") used[key] = true
     var holder = held[on + "/" + name]
-    out.push({ key: key, desk: on, slot: name, spec: specs[name] !== undefined ? String(specs[name]) : "",
+    out.push({ key: key, workspace: on, slot: name, spec: specs[name] !== undefined ? String(specs[name]) : "",
       holder: holder ? holder.address : null })
   }
   return out
@@ -325,10 +330,10 @@ function promptOptions(options) {
   })
 }
 
-// What `c` clears for a row: { desk, slot, spec } (the desk's spec for a
-// slot whose window is not open, a Missing row), or { error }. A window in
+// What `c` clears for a row: { workspace, slot, spec } (the workspace's spec
+// for a slot whose window is not open, a Missing row), or { error }. A window in
 // a slot is u's: it takes the window out and clears the spec with it.
-function clearTarget(state, desk, row) {
+function clearTarget(state, workspace, row) {
   if (!row) return { error: "Nothing selected." }
   if (row.status === "slot" || row.status === "manual" || row.status === "overflow") {
     return { error: row.cls + " is open in " + row.slot
@@ -337,24 +342,25 @@ function clearTarget(state, desk, row) {
   if (row.kind === "window") {
     return { error: (row.cls || "This window") + " is in no slot, so there is no spec to clear." }
   }
-  var on = row.desk !== null && row.desk !== undefined ? row.desk : desk
-  var spec = deskSpecs(state, on)[row.slot]
-  if (spec === undefined) return { error: "Desk " + on + " has no spec for " + row.slot + "." }
-  return { desk: on, slot: row.slot, spec: String(spec) }
+  var on = row.workspace !== null && row.workspace !== undefined ? row.workspace : workspace
+  var spec = workspaceSpecs(state, on)[row.slot]
+  if (spec === undefined) return { error: "Workspace " + on + " has no spec for " + row.slot + "." }
+  return { workspace: on, slot: row.slot, spec: String(spec) }
 }
 
-// The page to open on: the focused workspace's desk, else every window.
-// The page of desk `desk` (the digit keys jump to it), -1 when it has none.
-function pageOfDesk(state, desk) {
+// The page to open on: the focused workspace's number, else every window.
+// The page of workspace `workspace` (the digit keys jump to it), -1 when it
+// has none.
+function pageOfWorkspace(state, workspace) {
   var list = pages(state)
-  for (var i = 0; i < list.length; i++) if (list[i].desk === desk) return i
+  for (var i = 0; i < list.length; i++) if (list[i].workspace === workspace) return i
   return -1
 }
 
 function initialPage(state, workspaceId) {
-  var desk = deskOfWorkspace(state, workspaceId)
-  if (desk === null) return 0
+  var workspace = workspaceOf(state, workspaceId)
+  if (workspace === null) return 0
   var list = pages(state)
-  for (var i = 0; i < list.length; i++) if (list[i].desk === desk) return i
+  for (var i = 0; i < list.length; i++) if (list[i].workspace === workspace) return i
   return 0
 }

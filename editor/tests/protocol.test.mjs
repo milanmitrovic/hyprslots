@@ -7,10 +7,10 @@ import { load } from "./load.mjs";
 const P = load("Protocol.js");
 
 test("a call is one hyprctl repl returning hyprslots.api.call with the JSON as a Lua string", () => {
-  assert.deepEqual(Array.from(P.callCommand("assign", { address: "0x1", desk: 3, slot: "main" })), [
+  assert.deepEqual(Array.from(P.callCommand("assign", { address: "0x1", workspace: 3, slot: "main" })), [
     "hyprctl",
     "repl",
-    'return hyprslots.api.call("assign", "{\\"address\\":\\"0x1\\",\\"desk\\":3,\\"slot\\":\\"main\\"}")',
+    'return hyprslots.api.call("assign", "{\\"address\\":\\"0x1\\",\\"workspace\\":3,\\"slot\\":\\"main\\"}")',
   ]);
 });
 

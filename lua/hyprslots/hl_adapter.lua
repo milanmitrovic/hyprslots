@@ -134,15 +134,15 @@ function M.omarchy_disabled()
   return workspaces ~= nil and workspaces.enabled == false
 end
 
--- Workspace id of desk N on a monitor (by connector name).
-function M.workspace_id(monitor_name, desk)
-  return M.omarchy_workspaces().workspace_id({ name = monitor_name }, desk)
+-- Workspace id of workspace N on a monitor (by connector name).
+function M.workspace_id(monitor_name, workspace)
+  return M.omarchy_workspaces().workspace_id({ name = monitor_name }, workspace)
 end
 
--- Show desk N on a monitor, the way Omarchy's Super+N does (the focused
+-- Show workspace N on a monitor, the way Omarchy's Super+N does (the focused
 -- monitor when monitor_name is nil).
-function M.focus_desk(desk, monitor_name)
-  return hl().dispatch(M.omarchy_workspaces().focus(desk, monitor_name))
+function M.focus_workspace(workspace, monitor_name)
+  return hl().dispatch(M.omarchy_workspaces().focus(workspace, monitor_name))
 end
 
 -- The connector of the monitor a workspace is on, or nil when it does not

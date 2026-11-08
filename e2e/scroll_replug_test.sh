@@ -2,10 +2,10 @@
 # arrangement survives unplugging and replugging that screen.
 #
 # Screens (matched by connector):
-#   big  = HEADLESS-2, 2400x1350 at 0,0      Omarchy block 0: desk N = workspace N
-#   side = HEADLESS-3, 1920x1080 at 2400,0   Omarchy block 1: desk N = workspace 10+N
+#   big  = HEADLESS-2, 2400x1350 at 0,0      Omarchy block 0: workspace N = workspace id N
+#   side = HEADLESS-3, 1920x1080 at 2400,0   Omarchy block 1: workspace N = workspace id 10+N
 #
-# Desk 3:
+# Workspace 3:
 #   dual   (big + side): side = scroll[x, y], big = main
 #   single (big only):   big = scroll[main, x, y]
 #
@@ -85,12 +85,12 @@ test_body() {
   eventually 10 is_arrangement dual || true
   expect_eq "arrangement with both screens" "dual" "$(arrangement)"
 
-  # Given y, main and x opened on big's desk 1, and desk 3 shown.
+  # Given y, main and x opened on big's workspace 1, and workspace 3 shown.
   focus_monitor HEADLESS-2
   for class in t-y t-main t-x; do
     spawn_and_wait "$class"
   done
-  repl 'return hyprslots.api.call("desk", "{\"desk\": 3}")' >/dev/null
+  repl 'return hyprslots.api.call("workspace", "{\"workspace\": 3}")' >/dev/null
 
   # Then x and y scroll on side, in slot order; side's columns widen once
   # side is the focused screen.
@@ -109,7 +109,7 @@ test_body() {
   eventually 10 is_arrangement single || fail "arrangement never became single: $(arrangement)"
   eventually 15 columns_are 3 "t-main t-x t-y" || true
   focus_monitor HEADLESS-2
-  repl 'return hyprslots.api.call("desk", "{\"desk\": 3}")' >/dev/null
+  repl 'return hyprslots.api.call("workspace", "{\"workspace\": 3}")' >/dev/null
   eventually 10 widths_are 3 "2376 2376 2376" || true
   settle 5
   expect_eq "big's workspace 3 scrolls" "scrolling" "$(tiled_layout 3)"
@@ -121,7 +121,7 @@ test_body() {
   output_create HEADLESS-3
   eventually 10 is_arrangement dual || fail "arrangement never became dual: $(arrangement)"
   eventually 15 columns_are 13 "t-x t-y" || true
-  repl 'return hyprslots.api.call("desk", "{\"desk\": 3}")' >/dev/null
+  repl 'return hyprslots.api.call("workspace", "{\"workspace\": 3}")' >/dev/null
   focus_monitor HEADLESS-3
   eventually 10 widths_are 13 "1901 1901" || true
   settle 5
@@ -132,8 +132,8 @@ test_body() {
   expect_eq "no Hyprland group anywhere" "0" "$(grouped_count)"
 
   local described
-  described=$(repl 'return hyprslots.api.state()' | jq -c '[.scroll[] | {workspace, managed, in_order}]')
-  expect_eq "state: side's scroll workspace kept and in order" '[{"workspace":13,"managed":true,"in_order":true}]' "$described"
+  described=$(repl 'return hyprslots.api.state()' | jq -c '[.scroll[] | {workspace_id, managed, in_order}]')
+  expect_eq "state: side's scroll workspace kept and in order" '[{"workspace_id":13,"managed":true,"in_order":true}]' "$described"
 
   log "windows at the end:"
   hc clients -j | jq -r 'sort_by(.class)[] | "\(.class) ws=\(.workspace.id) at=\(.at[0]),\(.at[1]) size=\(.size[0])x\(.size[1]) grouped=\(.grouped | length)"' | sed 's/^/    /'

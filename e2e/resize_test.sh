@@ -1,7 +1,7 @@
 # Keyboard resize (slice 5): layout messages to the slots provider.
 #
-# Screen: HEADLESS-2, 2400x1350 at 0,0, Omarchy block 0 (desk N = workspace N).
-# Desk 3, arrangement "solo": h[a:1, b:1] -> 1200 + 1200 px.
+# Screen: HEADLESS-2, 2400x1350 at 0,0, Omarchy block 0 (workspace N = workspace id N).
+# Workspace 3, arrangement "solo": h[a:1, b:1] -> 1200 + 1200 px.
 #
 # With a focused, `hl.dsp.layout("nudge r 0.1")` moves the a|b edge right by
 # 0.1 of the split (240 px): a 1440, b 960. "reset" goes back to 1200 + 1200.
@@ -49,7 +49,7 @@ test_body() {
   output_create HEADLESS-2
   expect_eq "hyprslots loaded" "" "$(hyprslots_load_error | head -n1)"
 
-  log "desk 3 -> $(repl 'return hyprslots.api.call("desk", "{\"desk\": 3}")' 2>&1)"
+  log "workspace 3 -> $(repl 'return hyprslots.api.call("workspace", "{\"workspace\": 3}")' 2>&1)"
   spawn_and_wait t-a
   spawn_and_wait t-b
   settle

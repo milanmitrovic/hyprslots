@@ -30,7 +30,7 @@ describe("hl stub timers and omarchy", function()
     assert.are.equal(1, fired)
   end)
 
-  it("numbers desk workspaces by monitor block", function()
+  it("numbers workspaces by monitor block", function()
     local o = hl_stub.omarchy({ ["HEADLESS-2"] = 0, ["HEADLESS-3"] = 1 })
 
     assert.are.equal(3, o.workspaces.workspace_id({ name = "HEADLESS-2" }, 3))
@@ -43,6 +43,6 @@ describe("hl stub timers and omarchy", function()
 
     hl.dispatch(o.workspaces.focus(3, "HEADLESS-2"))
 
-    assert.are.same({ { desk = 3, monitor = "HEADLESS-2" } }, o.workspaces.focused)
+    assert.are.same({ { workspace = 3, monitor = "HEADLESS-2" } }, o.workspaces.focused)
   end)
 end)

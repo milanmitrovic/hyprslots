@@ -1,7 +1,7 @@
 # Slice 6: the editor's api round trip on one screen.
 #
-# Screen: HEADLESS-2, 2400x1350 at 0,0, Omarchy block 0 (desk N = workspace N).
-# Desk 3, arrangement "solo": h[a:1, b:2, c:1] -> 600 + 1200 + 600 px.
+# Screen: HEADLESS-2, 2400x1350 at 0,0, Omarchy block 0 (workspace N = workspace id N).
+# Workspace 3, arrangement "solo": h[a:1, b:2, c:1] -> 600 + 1200 + 600 px.
 #
 # set_ratio changes the tree to 1:1:2 and the screen follows; record reads the
 # windows back into that same tree; save writes slots.lua; both an api reload
@@ -46,7 +46,7 @@ api() {
 # A field of a JSON reply (jq path).
 field() { jq -r "$1 | if . == null then \"\" else tostring end" 2>/dev/null; }
 
-main_tree() { api state | field '.arrangements.solo.desks["3"].main.tree'; }
+main_tree() { api state | field '.arrangements.solo.workspaces["3"].main.tree'; }
 
 tree_is() { [[ $(main_tree) == "$1" ]]; }
 
@@ -76,7 +76,7 @@ test_body() {
     spawn_and_wait "$class"
     eventually 5 on_workspace "$class" 3 || true
   done
-  log "desk 3 -> $(api desk '{"desk": 3}')"
+  log "workspace 3 -> $(api workspace '{"workspace": 3}')"
   settle
   expect_client t-a 3 0 0 600 1350
   expect_client t-b 3 600 0 1200 1350
@@ -85,7 +85,7 @@ test_body() {
   # Given the tree h[a:1, b:2, c:1], when set_ratio makes it 1:1:2,
   # then the screen follows without anything else happening.
   local reply seq
-  reply=$(api set_ratio '{"desk": 3, "role": "main", "ratio": "1:1:2"}')
+  reply=$(api set_ratio '{"workspace": 3, "role": "main", "ratio": "1:1:2"}')
   log "set_ratio -> $reply"
   expect_eq "set_ratio ok" "true" "$(field .ok <<<"$reply")"
   expect_eq "set_ratio tree" "h[a, b, c:2]" "$(field .tree <<<"$reply")"
@@ -141,7 +141,7 @@ test_body() {
   expect_client t-c 3 1200 0 1200 1350
 
   # Errors come back as JSON, never as an empty reply.
-  reply=$(api set_ratio '{"desk": 3, "role": "main", "ratio": "1:1"}')
+  reply=$(api set_ratio '{"workspace": 3, "role": "main", "ratio": "1:1"}')
   expect_eq "a bad ratio is an error reply" "false" "$(field .ok <<<"$reply")"
   log "bad ratio -> $(field .error <<<"$reply")"
 

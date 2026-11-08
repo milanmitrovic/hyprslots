@@ -1,6 +1,6 @@
 -- The "slots" layout provider (docs/design.md §6), used as `lua:slots`.
 --
--- recalculate(ctx) is arithmetic only: find the workspace's desk and screen
+-- recalculate(ctx) is arithmetic only: find the workspace's number and screen
 -- role, take that branch of the active arrangement's tree, divide ctx.area by
 -- its integer weights, and place each target in its window's slot. It never
 -- dispatches. Targets with no slot in the branch stack equally in its
@@ -51,11 +51,11 @@ local function rows(area, n)
   return tree.boxes({ split = "v", weight = 1, children = children }, area)
 end
 
--- What a layout pass on desk entry `desk` sees in ctx.targets: the branch in
+-- What a layout pass on workspace entry `entry` sees in ctx.targets: the branch in
 -- force, the target placed in each slot, the overflowing targets, and the set
 -- of slots present (tree.OVERFLOW when something overflows).
-local function survey(engine, ctx, desk)
-  local branch = resize.branch(engine, desk)
+local function survey(engine, ctx, entry)
+  local branch = resize.branch(engine, entry)
   local in_branch = {}
   for _, slot in ipairs(tree.slots(branch)) do
     in_branch[slot] = true
@@ -64,7 +64,7 @@ local function survey(engine, ctx, desk)
   -- A window's slot when it is in this branch, else nil.
   local function slot_in_branch(window)
     local assignment = engine:slot_of(window)
-    if assignment and assignment.desk == desk.desk and in_branch[assignment.slot] then
+    if assignment and assignment.workspace == entry.workspace and in_branch[assignment.slot] then
       return assignment.slot
     end
     return nil
@@ -91,11 +91,11 @@ local function survey(engine, ctx, desk)
   }
 end
 
--- The slots a resize on desk entry `desk` sees laid out in ctx: the layout's
+-- The slots a resize on workspace entry `entry` sees laid out in ctx: the layout's
 -- present set.
-function M.present(engine, ctx, desk)
+function M.present(engine, ctx, entry)
   local out = {}
-  for key in pairs(survey(engine, ctx, desk).present) do
+  for key in pairs(survey(engine, ctx, entry).present) do
     out[key] = true
   end
   return out
@@ -106,13 +106,13 @@ local function place_slots(engine, ctx)
     return
   end
 
-  local desk = engine:desk_of_workspace(workspace_of(ctx))
-  if not desk then
+  local entry = engine:entry_of_workspace(workspace_of(ctx))
+  if not entry then
     place_columns(ctx)
     return
   end
 
-  local seen = survey(engine, ctx, desk)
+  local seen = survey(engine, ctx, entry)
 
   if next(seen.slotted) == nil then
     place_columns(ctx)
@@ -146,8 +146,8 @@ function M.provider(engine)
     -- focused workspace's algorithm only. Returns true, or the reason the
     -- message did nothing (Hyprland shows a string reply as the error).
     layout_msg = function(ctx, msg)
-      local present = function(desk)
-        return M.present(engine, ctx, desk)
+      local present = function(entry)
+        return M.present(engine, ctx, entry)
       end
       local ok, handled, err = pcall(resize.message, engine, ctx, msg, present)
       if not ok then

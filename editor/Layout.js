@@ -1,12 +1,12 @@
 .pragma library
 
-// The Layout view's model (docs/design.md §9): one desk's trees, edited as a
-// draft before they are applied. Ported from aerolayout's tree_visualizer.py
-// (move, force move, flip, toggle, overflow, the nested ratio editor) onto
-// hyprslots' tree text (tree.lua) and ratio grammar (ratio.lua), which are
-// mirrored here so the draft can be edited, shown and checked without a
-// round trip; the engine validates again on apply. Pure, so node can test it
-// (editor/tests/layout.test.mjs).
+// The Layout view's model (docs/design.md §9): one workspace's trees, edited
+// as a draft before they are applied. Ported from aerolayout's
+// tree_visualizer.py (move, force move, flip, toggle, overflow, the nested
+// ratio editor) onto hyprslots' tree text (tree.lua) and ratio grammar
+// (ratio.lua), which are mirrored here so the draft can be edited, shown and
+// checked without a round trip; the engine validates again on apply. Pure, so
+// node can test it (editor/tests/layout.test.mjs).
 //
 // A node is
 //   { kind: "slot", slot, weight }          a slot
@@ -651,8 +651,8 @@ function toggleOverflow(root, memory) {
 }
 
 // A leaf moved off the left or right edge of its screen's tree onto the
-// next screen's (`target`, null when that screen has no tree for the desk),
-// arriving at the near edge (aerolayout's cross-pane move).
+// next screen's (`target`, null when that screen has no tree for the
+// workspace), arriving at the near edge (aerolayout's cross-pane move).
 // { source, target } or { error }.
 function crossMove(source, target, key, direction) {
   if (isLeaf(source)) {
@@ -704,8 +704,8 @@ function removeSlot(root, key) {
   return { node: takeOut(root, key).node }
 }
 
-// The global slots (state.slots) no pane's draft of the desk places yet:
-// what `a` offers. `drafts` is role -> { node }.
+// The global slots (state.slots) no pane's draft of the workspace places
+// yet: what `a` offers. `drafts` is role -> { node }.
 function slotChoices(state, drafts) {
   var placed = {}
   for (var role in drafts || {}) {
@@ -717,7 +717,7 @@ function slotChoices(state, drafts) {
 }
 
 // The screen role whose draft places slot `slot` (drafts: role -> { node }),
-// or null: a slot sits on one screen of a desk.
+// or null: a slot sits on one screen of a workspace.
 function placedIn(drafts, slot) {
   if (slot === OVERFLOW) return null
   for (var role in drafts || {}) {
@@ -744,13 +744,13 @@ function sortedNames(object) {
   return Object.keys(object || {}).sort()
 }
 
-// The trees of one desk of an arrangement, one pane per screen role (the
+// The trees of one workspace of an arrangement, one pane per screen role (the
 // arrangement's role order): { role, tree (text in force, or null when the
-// desk has none on that screen), ratio, resized, screen (its selector) }.
-function panes(state, arrangement, desk) {
+// workspace has none on that screen), ratio, resized, screen (its selector) }.
+function panes(state, arrangement, workspace) {
   var entry = state && state.arrangements ? state.arrangements[arrangement] : null
   if (!entry) return []
-  var branches = (entry.desks || {})[String(desk)] || {}
+  var branches = (entry.workspaces || {})[String(workspace)] || {}
   return (entry.roles || []).map(function(role) {
     var branch = branches[role]
     return { role: role, tree: branch ? branch.tree : null, ratio: branch ? branch.ratio || "" : "",
@@ -759,30 +759,32 @@ function panes(state, arrangement, desk) {
 }
 
 // Where the view opens: the active arrangement (else the first), at the
-// focused workspace's desk and screen role (else the first desk and role).
+// focused workspace's number and screen role (else the first workspace and
+// role).
 function initialTarget(state, workspaceId) {
   var names = sortedNames(state && state.arrangements)
   var arrangement = state && state.arrangement && state.arrangements[state.arrangement] ? state.arrangement : names[0]
   var entry = arrangement ? state.arrangements[arrangement] : null
-  var desks = state && Array.isArray(state.desks) ? state.desks : []
+  var used = state && Array.isArray(state.used_workspaces) ? state.used_workspaces : []
   var roles = entry && entry.roles ? entry.roles : []
   var ws = state && state.workspaces ? state.workspaces[String(workspaceId)] : null
-  if (ws && arrangement === state.arrangement) return { arrangement: arrangement, desk: ws.desk, role: ws.role }
-  return { arrangement: arrangement || null, desk: desks.length ? desks[0] : 1, role: roles.length ? roles[0] : null }
+  if (ws && arrangement === state.arrangement) return { arrangement: arrangement, workspace: ws.workspace, role: ws.role }
+  return { arrangement: arrangement || null, workspace: used.length ? used[0] : 1, role: roles.length ? roles[0] : null }
 }
 
 // Where the view goes when the arrangement it edits is no longer there (the
 // Arrangements view renamed or deleted it): the running arrangement (else
-// the first by name), at the same desk when the state still has it (else the
-// first), on its first role. null while it is still there, or with no state.
+// the first by name), at the same workspace when the state still has it
+// (else the first), on its first role. null while it is still there, or with
+// no state.
 function retarget(state, target) {
   if (!state || !state.arrangements || state.arrangements[target.arrangement]) return null
   var names = sortedNames(state.arrangements)
   var arrangement = state.arrangement && state.arrangements[state.arrangement] ? state.arrangement : names[0] || ""
-  var desks = Array.isArray(state.desks) ? state.desks : []
-  var desk = desks.indexOf(target.desk) >= 0 || desks.length === 0 ? target.desk : desks[0]
+  var used = Array.isArray(state.used_workspaces) ? state.used_workspaces : []
+  var workspace = used.indexOf(target.workspace) >= 0 || used.length === 0 ? target.workspace : used[0]
   var roles = arrangement ? state.arrangements[arrangement].roles || [] : []
-  return { arrangement: arrangement, desk: desk, role: roles.length ? roles[0] : "" }
+  return { arrangement: arrangement, workspace: workspace, role: roles.length ? roles[0] : "" }
 }
 
 // Why the trees of an arrangement may not be edited, "" when they may.
@@ -798,14 +800,14 @@ function editBlock(state, arrangement) {
   return ""
 }
 
-// slot -> title of the window in it, for a desk's screen role.
-function titles(state, desk, role) {
+// slot -> title of the window in it, for a workspace's screen role.
+function titles(state, workspace, role) {
   var out = {}
   var windows = state && Array.isArray(state.windows) ? state.windows : []
   for (var i = 0; i < windows.length; i++) {
     var w = windows[i]
-    if (w.desk !== desk || !w.slot) continue
-    var ws = state.workspaces ? state.workspaces[String(w.workspace)] : null
+    if (w.workspace !== workspace || !w.slot) continue
+    var ws = state.workspaces ? state.workspaces[String(w.workspace_id)] : null
     if (role && ws && ws.role !== role) continue
     if (out[w.slot] === undefined) out[w.slot] = w.title || ""
   }

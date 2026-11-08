@@ -1,50 +1,50 @@
 -- Windows -> slots.
 --
--- Every (desk, slot) pair a desk has a spec for is a candidate (cfg.specs:
--- slots are global, a desk says which app fills which), tried in desk order
--- then slot-name order; a window takes the first free one whose spec matches
--- it. Windows are
+-- Every (workspace, slot) pair a workspace has a spec for is a candidate
+-- (cfg.specs: slots are global, a workspace says which app fills which),
+-- tried in workspace order then slot-name order; a window takes the first
+-- free one whose spec matches it. Windows are
 -- considered oldest first (by stable_id), so the result never depends on the
 -- order Hyprland lists them in. Assignment is sticky: a previous assignment
 -- whose slot still exists and whose spec still admits the window's class is
 -- kept, whatever its title says now, before anything new is handed out; one
 -- made by hand is kept whatever the window is, while the slot is defined
--- (with or without a spec on that desk). Pure.
+-- (with or without a spec on that workspace). Pure.
 
 local spec = require("hyprslots.spec")
 
 local M = {}
 
--- The (desk, slot) pairs in the order they are tried.
+-- The (workspace, slot) pairs in the order they are tried.
 local function candidates(cfg)
-  local desks = {}
-  for desk in pairs(cfg.specs) do
-    desks[#desks + 1] = desk
+  local workspaces = {}
+  for workspace in pairs(cfg.specs) do
+    workspaces[#workspaces + 1] = workspace
   end
-  table.sort(desks)
+  table.sort(workspaces)
 
   local out = {}
-  for _, desk in ipairs(desks) do
+  for _, workspace in ipairs(workspaces) do
     local names = {}
-    for name in pairs(cfg.specs[desk]) do
+    for name in pairs(cfg.specs[workspace]) do
       names[#names + 1] = name
     end
     table.sort(names)
     for _, name in ipairs(names) do
-      out[#out + 1] = { desk = desk, slot = name, spec = cfg.specs[desk][name] }
+      out[#out + 1] = { workspace = workspace, slot = name, spec = cfg.specs[workspace][name] }
     end
   end
   return out
 end
 
--- The (desk, slot, spec) candidates in precedence order (for window_rules).
+-- The (workspace, slot, spec) candidates in precedence order (for window_rules).
 M.candidates = candidates
 
-local function key(desk, slot)
-  return desk .. "\0" .. slot
+local function key(workspace, slot)
+  return workspace .. "\0" .. slot
 end
 
--- A previous assignment holds while its desk's spec for the slot still
+-- A previous assignment holds while its workspace's spec for the slot still
 -- admits the window's class: a title that changed after the window won its
 -- slot does not take the slot away (assignment is sticky, as in claim). One
 -- made by hand (`manual`, the editor's assign) holds while the slot is
@@ -53,8 +53,8 @@ local function still_holds(cfg, assignment, window)
   if assignment.manual then
     return cfg.slots[assignment.slot] ~= nil
   end
-  local desk = cfg.specs[assignment.desk]
-  local parsed = desk and desk[assignment.slot]
+  local specs = cfg.specs[assignment.workspace]
+  local parsed = specs and specs[assignment.slot]
   return parsed and spec.admits(parsed, window) or false
 end
 
@@ -74,16 +74,16 @@ end
 
 local function first_free(pairs_, taken, window)
   for _, candidate in ipairs(pairs_) do
-    if not taken[key(candidate.desk, candidate.slot)] and spec.match(candidate.spec, window) then
-      return { desk = candidate.desk, slot = candidate.slot }
+    if not taken[key(candidate.workspace, candidate.slot)] and spec.match(candidate.spec, window) then
+      return { workspace = candidate.workspace, slot = candidate.slot }
     end
   end
   return nil
 end
 
 -- Assign every window ({ address, class, stable_id }). `previous` (address ->
--- { desk, slot }) is honoured where it still matches; it is not modified.
--- Returns address -> { desk, slot } for the windows that got a slot.
+-- { workspace, slot }) is honoured where it still matches; it is not modified.
+-- Returns address -> { workspace, slot } for the windows that got a slot.
 function M.solve(cfg, windows, previous)
   previous = previous or {}
   local ordered = oldest_first(windows)
@@ -91,9 +91,9 @@ function M.solve(cfg, windows, previous)
 
   for _, window in ipairs(ordered) do
     local before = previous[window.address]
-    if before and not taken[key(before.desk, before.slot)] and still_holds(cfg, before, window) then
-      result[window.address] = { desk = before.desk, slot = before.slot, manual = before.manual }
-      taken[key(before.desk, before.slot)] = true
+    if before and not taken[key(before.workspace, before.slot)] and still_holds(cfg, before, window) then
+      result[window.address] = { workspace = before.workspace, slot = before.slot, manual = before.manual }
+      taken[key(before.workspace, before.slot)] = true
     end
   end
 
@@ -103,7 +103,7 @@ function M.solve(cfg, windows, previous)
       local assignment = first_free(pairs_, taken, window)
       if assignment then
         result[window.address] = assignment
-        taken[key(assignment.desk, assignment.slot)] = true
+        taken[key(assignment.workspace, assignment.slot)] = true
       end
     end
   end
@@ -111,13 +111,13 @@ function M.solve(cfg, windows, previous)
   return result
 end
 
--- The first (desk, slot), in precedence order, whose spec matches the window,
+-- The first (workspace, slot), in precedence order, whose spec matches the window,
 -- taken or not, or nil: where a window that matches but finds every such
--- slot taken overflows (that desk's overflow leaf).
+-- slot taken overflows (that workspace's overflow leaf).
 function M.first_match(cfg, window)
   for _, candidate in ipairs(candidates(cfg)) do
     if spec.match(candidate.spec, window) then
-      return { desk = candidate.desk, slot = candidate.slot }
+      return { workspace = candidate.workspace, slot = candidate.slot }
     end
   end
   return nil
@@ -132,7 +132,7 @@ function M.claim(cfg, current, window)
   end
   local taken = {}
   for _, assignment in pairs(current) do
-    taken[key(assignment.desk, assignment.slot)] = true
+    taken[key(assignment.workspace, assignment.slot)] = true
   end
   return first_free(candidates(cfg), taken, window)
 end

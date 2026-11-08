@@ -1,6 +1,6 @@
 -- scroll[...] branches on Hyprland's own scrolling layout (docs/design.md §6).
 --
--- A screen whose tree is `scroll[a, b, c]` gets its desk workspace on
+-- A screen whose tree is `scroll[a, b, c]` gets its workspace on
 -- Hyprland's `scrolling` layout instead of lua:slots: the user's full-width
 -- scrolling, with hyprslots keeping the columns in slot order (windows with
 -- no slot in the branch where it places the overflow leaf, `scroll[a, *, b]`,
@@ -9,7 +9,7 @@
 -- timer), never inside an event:
 --
 --   order  after a window opens or moves to a workspace, the workspace is
---          shown (a desk switch included), an arrangement change, a re-route
+--          shown (a workspace switch included), an arrangement change, a re-route
 --          or an edit: Hyprland's window.swap between pairs of windows, which
 --          keeps the focus; the cursor is kept from warping to the swapped
 --          window (cursor:no_warps for the duration).
@@ -111,11 +111,11 @@ function M.width(engine)
   return scroll and scroll.width or M.DEFAULT_WIDTH
 end
 
--- The layout desk workspace `id` should have under the active arrangement:
+-- The layout workspace `id` should have under the active arrangement:
 -- "scrolling" for a scroll branch, else "lua:slots".
 function M.layout_for(engine, id)
-  local desk = engine.workspaces[id]
-  if desk and tree.scroll(desk.branch) then
+  local entry = engine.workspaces[id]
+  if entry and tree.scroll(entry.branch) then
     return "scrolling"
   end
   return "lua:slots"
@@ -124,8 +124,8 @@ end
 -- Whether hyprslots keeps workspace `id`'s columns: a scroll branch of the
 -- active arrangement, on the scrolling layout, with no saved Omarchy mode.
 function M.managed(engine, id)
-  local desk = engine:desk_of_workspace(id)
-  if not desk or not tree.scroll(desk.branch) then
+  local entry = engine:entry_of_workspace(id)
+  if not entry or not tree.scroll(entry.branch) then
     return false
   end
   if adapter.workspace_tiled_layout(id) ~= "scrolling" then
@@ -138,8 +138,8 @@ end
 -- each holds in the branch (nil for none), and the branch's columns
 -- (tree.columns: its slots, tree.OVERFLOW where windows with no slot go).
 -- Windows Hyprland reports no column for (a group, say) are left out.
-local function columns(engine, id, desk)
-  local slots = tree.columns(desk.branch)
+local function columns(engine, id, entry)
+  local slots = tree.columns(entry.branch)
   local in_branch = {}
   for _, slot in ipairs(slots) do
     if slot ~= tree.OVERFLOW then
@@ -149,7 +149,7 @@ local function columns(engine, id, desk)
   local out = {}
   for _, window in ipairs(adapter.scroll_windows(id)) do
     local assignment = engine.assignments[window.address]
-    if assignment and assignment.desk == desk.desk and in_branch[assignment.slot] then
+    if assignment and assignment.workspace == entry.workspace and in_branch[assignment.slot] then
       window.slot = assignment.slot
     end
     out[#out + 1] = window
@@ -176,8 +176,8 @@ function M.arrange(engine, opts)
   local width = M.width(engine)
 
   local ids, scrolls = {}, {}
-  for id, desk in pairs(engine.workspaces) do
-    if tree.scroll(desk.branch) then
+  for id, entry in pairs(engine.workspaces) do
+    if tree.scroll(entry.branch) then
       ids[#ids + 1] = id
       scrolls[id] = true
     end
@@ -195,8 +195,8 @@ function M.arrange(engine, opts)
     if not M.managed(engine, id) then
       engine.scroll_seen[id] = nil
     else
-      local desk = engine.workspaces[id]
-      local windows, slots = columns(engine, id, desk)
+      local entry = engine.workspaces[id]
+      local windows, slots = columns(engine, id, entry)
       local changed = false
 
       if reorder then
@@ -277,8 +277,8 @@ function M.attach(engine)
   end)
 end
 
--- Every scroll branch on a desk workspace of the active arrangement, for the
--- api's state: { workspace, desk, role, slots, layout = its tiled layout,
+-- Every scroll branch on a workspace of the active arrangement, for the
+-- api's state: { workspace_id, workspace, role, slots, layout = its tiled layout,
 -- managed, columns = addresses in column order, members = slot -> address,
 -- in_order = whether the columns are in slot order }.
 function M.describe(engine)
@@ -287,15 +287,15 @@ function M.describe(engine)
     return out
   end
   local ids = {}
-  for id, desk in pairs(engine.workspaces) do
-    if tree.scroll(desk.branch) then
+  for id, entry in pairs(engine.workspaces) do
+    if tree.scroll(entry.branch) then
       ids[#ids + 1] = id
     end
   end
   table.sort(ids)
   for _, id in ipairs(ids) do
-    local desk = engine.workspaces[id]
-    local windows, order_of = columns(engine, id, desk)
+    local entry = engine.workspaces[id]
+    local windows, order_of = columns(engine, id, entry)
     local order, members = {}, {}
     for i, window in ipairs(windows) do
       order[i] = window.address
@@ -304,7 +304,7 @@ function M.describe(engine)
       end
     end
     out[#out + 1] = {
-      workspace = id, desk = desk.desk, role = desk.role, slots = tree.scroll(desk.branch),
+      workspace_id = id, workspace = entry.workspace, role = entry.role, slots = tree.scroll(entry.branch),
       layout = adapter.workspace_tiled_layout(id), managed = M.managed(engine, id),
       columns = order, members = members, in_order = #M.plan(order_of, windows) == 0,
     }

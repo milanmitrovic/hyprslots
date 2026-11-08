@@ -23,10 +23,10 @@ function fixture() {
         roles: ["big", "side"],
         active: true,
         read_only: false,
-        desks: { 3: { big: { tree: "h[main:2, right]" }, side: { tree: "left" } }, 5: { big: { tree: "x" } } },
+        workspaces: { 3: { big: { tree: "h[main:2, right]" }, side: { tree: "left" } }, 5: { big: { tree: "x" } } },
       },
-      single: { screens: { big: "HEADLESS-2" }, roles: ["big"], active: false, read_only: false, desks: {} },
-      work: { screens: { a: "DP-1", b: "SER-3" }, roles: ["a", "b"], active: false, read_only: true, desks: {} },
+      single: { screens: { big: "HEADLESS-2" }, roles: ["big"], active: false, read_only: false, workspaces: {} },
+      work: { screens: { a: "DP-1", b: "SER-3" }, roles: ["a", "b"], active: false, read_only: true, workspaces: {} },
     },
   };
 }
@@ -106,7 +106,7 @@ test("copy sources are the default trees, then every other arrangement", () => {
 test("deleting says which trees go, and when these monitors will run nothing", () => {
   const rows = A.rows(fixture());
   assert.equal(A.deleteQuestion(rows[0]),
-    "Delete arrangement 'dual'? It takes its trees for desks 3, 5; these monitors will run nothing until another matches them.");
+    "Delete arrangement 'dual'? It takes its trees for workspaces 3, 5; these monitors will run nothing until another matches them.");
   assert.equal(A.deleteQuestion(rows[1]), "Delete arrangement 'single'? It holds no trees.");
 });
 

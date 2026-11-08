@@ -81,8 +81,8 @@ function M.placed_by_class(ctx)
 end
 
 -- Omarchy's `o` with a fake `o.workspaces`: `blocks` maps connector -> block,
--- so desk N on a monitor is block * 10 + N. Every focus action that runs is
--- recorded in `o.workspaces.focused` as { desk, monitor }.
+-- so workspace N on a monitor is block * 10 + N. Every focus action that runs is
+-- recorded in `o.workspaces.focused` as { workspace, monitor }.
 function M.omarchy(blocks)
   local workspaces = { slots = 10, focused = {} }
 
@@ -92,7 +92,7 @@ function M.omarchy(blocks)
 
   function workspaces.focus(slot, monitor_name)
     return function()
-      workspaces.focused[#workspaces.focused + 1] = { desk = slot, monitor = monitor_name }
+      workspaces.focused[#workspaces.focused + 1] = { workspace = slot, monitor = monitor_name }
     end
   end
 

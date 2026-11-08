@@ -104,7 +104,7 @@ describe("hotplug", function()
       assert.are.equal("single", engine.state(hyprslots).arrangement)
     end)
 
-    it("moves the slots of the new screen's branch onto its desk workspace there", function()
+    it("moves the slots of the new screen's branch onto its workspace there", function()
       hl.monitors[2] = side
       hl.emit("monitor.added", side)
       hl.run_timers()
@@ -123,17 +123,17 @@ describe("hotplug", function()
       hl.run_timers()
     end
 
-    it("shows the active desk on the screen that came back, keeping focus", function()
-      engine.call(hyprslots, "desk", '{"desk": 3}')
+    it("shows the active workspace on the screen that came back, keeping focus", function()
+      engine.call(hyprslots, "workspace", '{"workspace": 3}')
       o.workspaces.focused = {}
       hl.dispatched = {}
       plug_side()
-      assert.are.same({ { desk = 3, monitor = "HEADLESS-3" } }, o.workspaces.focused)
+      assert.are.same({ { workspace = 3, monitor = "HEADLESS-3" } }, o.workspaces.focused)
       local focused = hl.dispatched_of("focus")
       assert.are.same({ monitor = "HEADLESS-2" }, focused[#focused])
     end)
 
-    it("shows no desk on the new screen before any desk switch", function()
+    it("shows no workspace on the new screen before any workspace switch", function()
       plug_side()
       assert.are.same({}, o.workspaces.focused)
       assert.are.same({}, hl.dispatched_of("focus"))
@@ -150,10 +150,10 @@ describe("hotplug", function()
   end)
 
   describe("with a pinned screen", function()
-    it("leaves a pinned screen that came back on its own desk", function()
+    it("leaves a pinned screen that came back on its own workspace", function()
       hl.monitors = { hl.monitors[1] }
       hyprslots = engine.setup(PINNED_SIDE)
-      engine.call(hyprslots, "desk", '{"desk": 3}')
+      engine.call(hyprslots, "workspace", '{"workspace": 3}')
       o.workspaces.focused = {}
       hl.dispatched = {}
       hl.monitors[2] = side

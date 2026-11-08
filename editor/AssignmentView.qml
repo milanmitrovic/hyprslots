@@ -3,23 +3,24 @@ import QtQuick
 import qs.Commons
 import qs.Commons as Commons
 import "Assignment.js" as Assignment
-import "Desks.js" as Desks
+import "Workspaces.js" as Workspaces
 import "Prompts.js" as Prompts
 
 // Which live window fills which slot (aerolayout's AssignmentView). A table
-// of the windows on a desk with the screen, slot, app and title of each,
+// of the windows on a workspace with the screen, slot, app and title of each,
 // plus a "Missing" row for every slot whose window is not running (a slot
-// the desk has no spec for and no window in is a dim, empty row), then the
-// windows overflowing on the desk and any others on its workspaces. ←/→ (or
-// [ ]) page through every window and each desk, the digits jump to a desk's
-// page (0 is desk 10); ↑/↓ select. `a` puts the selected window into one of
-// the global slots on the desk (one key per slot, as the TUI prompts) and
-// makes the window's spec the desk's for that slot, as aerolayout's `a`
-// did; `u` takes a window out of its slot and clears the desk's spec for it
-// (the slot is left empty, not Missing); `c` clears the spec of a slot whose
-// window is not open (a Missing row). Spec edits stay in memory until
-// Ctrl+S (the header says "unsaved edits"). The model is Assignment.js; the
-// calls are the api's take_spec, clear_spec and unassign (docs/design.md §9).
+// the workspace has no spec for and no window in is a dim, empty row), then
+// the windows overflowing on the workspace and any others on it, on any
+// screen. ←/→ (or [ ]) page through every window and each workspace, the
+// digits jump to a workspace's page (0 is workspace 10); ↑/↓ select. `a` puts
+// the selected window into one of the global slots on the workspace (one key
+// per slot, as the TUI prompts) and makes the window's spec the workspace's
+// for that slot, as aerolayout's `a` did; `u` takes a window out of its slot
+// and clears the workspace's spec for it (the slot is left empty, not
+// Missing); `c` clears the spec of a slot whose window is not open (a
+// Missing row). Spec edits stay in memory until Ctrl+S (the header says
+// "unsaved edits"). The model is Assignment.js; the calls are the api's
+// take_spec, clear_spec and unassign (docs/design.md §9).
 Item {
   id: root
 
@@ -35,7 +36,7 @@ Item {
   readonly property var pageList: Assignment.pages(state)
   property int page: 0
   readonly property var currentPage: pageList[Math.min(page, pageList.length - 1)]
-  readonly property var rows: Assignment.rows(state, currentPage.desk)
+  readonly property var rows: Assignment.rows(state, currentPage.workspace)
   // The selection follows the row (by window address, or a missing slot's
   // name) through every re-read, not the index.
   property string selectedKey: ""
@@ -62,16 +63,16 @@ Item {
     }
     return count > 1
   }
-  readonly property bool showDesk: currentPage.desk === null
+  readonly property bool showWorkspace: currentPage.workspace === null
 
   readonly property string helpText: prompting ? Prompts.help(prompt)
-    : "↑/↓ select   ·   Desk: ←/→ [ ] prev/next  1–9 0 jump   ·   a assign + take spec  u unassign + clear spec  c clear a Missing spec"
+    : "↑/↓ select   ·   Workspace: ←/→ [ ] prev/next  1–9 0 jump   ·   a assign + take spec  u unassign + clear spec  c clear a Missing spec"
       + "   ·   Ctrl+S save"
       + "   ·   Tab switch view  q close"
 
   function keyOf(row) {
     if (!row) return ""
-    return row.address ? row.address : "missing:" + row.desk + "/" + row.slot
+    return row.address ? row.address : "missing:" + row.workspace + "/" + row.slot
   }
 
   function indexOfKey(key) {
@@ -93,11 +94,12 @@ Item {
     select(0)
   }
 
-  // A digit: desk n's page, when it has one (desks with specs or trees).
-  function goDesk(n) {
-    var i = Assignment.pageOfDesk(state, n)
+  // A digit: workspace n's page, when it has one (workspaces with specs or
+  // trees).
+  function goWorkspace(n) {
+    var i = Assignment.pageOfWorkspace(state, n)
     if (i < 0) {
-      say("Desk " + n + " has no slots: no tree places one and it has no spec.", true)
+      say("Workspace " + n + " has no slots: no tree places one and it has no spec.", true)
       return
     }
     page = i
@@ -111,7 +113,7 @@ Item {
     messageIsError = !!isError
   }
 
-  // Back to the opening page: the focused workspace's desk.
+  // Back to the opening page: the focused workspace's number.
   function reset() {
     prompt = null
     _answer = null
@@ -120,7 +122,7 @@ Item {
     selectedKey = ""
   }
 
-  // Open on the focused desk once the first state arrives.
+  // Open on the focused workspace once the first state arrives.
   property bool _placed: false
   onStateChanged: {
     if (!_placed && state) {
@@ -136,18 +138,18 @@ Item {
       say("No window in " + row.slot + ": select a window, then a puts it there.", true)
       return
     }
-    var focusedDesk = Assignment.deskOfWorkspace(state, focusedWorkspace)
-    var desk = Assignment.assignDesk(state, currentPage.desk, row, focusedDesk)
-    if (desk === null) {
-      say(row.cls + " is on no desk: page to a desk (←/→, or its digit) to assign it there.", true)
+    var focusedNumber = Assignment.workspaceOf(state, focusedWorkspace)
+    var workspace = Assignment.assignWorkspace(state, currentPage.workspace, row, focusedNumber)
+    if (workspace === null) {
+      say(row.cls + " is on no workspace: page to a workspace (←/→, or its digit) to assign it there.", true)
       return
     }
-    var options = Assignment.slotOptions(state, currentPage.desk, row, focusedDesk)
+    var options = Assignment.slotOptions(state, currentPage.workspace, row, focusedNumber)
     if (options.length === 0) {
       say("There are no slots yet: make them in the Layout tab's slot list (s, then a).", true)
       return
     }
-    ask(Prompts.choice(Assignment.assignTitle(desk), Assignment.promptOptions(options)), function(option) {
+    ask(Prompts.choice(Assignment.assignTitle(workspace), Assignment.promptOptions(options)), function(option) {
       root.assign(row, option)
     })
   }
@@ -159,16 +161,16 @@ Item {
     message = ""
   }
 
-  // The window takes the slot, and its spec becomes the desk's for it.
+  // The window takes the slot, and its spec becomes the workspace's for it.
   function assign(row, option) {
     if (!engine) return
     say("Assigning " + row.cls + " to " + option.slot + "…", false)
-    engine.call("take_spec", { address: row.address, desk: option.desk, slot: option.slot }, function(reply) {
+    engine.call("take_spec", { address: row.address, workspace: option.workspace, slot: option.slot }, function(reply) {
       if (!reply.ok) {
         say(reply.error, true)
         return
       }
-      var text = "Assigned " + row.cls + " to " + reply.slot + " (desk " + reply.desk + "): its spec is " + reply.spec
+      var text = "Assigned " + row.cls + " to " + reply.slot + " (workspace " + reply.workspace + "): its spec is " + reply.spec
       if (reply.replaced && reply.replaced !== reply.spec) text += " (was " + reply.replaced + ")"
       if (reply.displaced) text += "; " + classOf(reply.displaced) + " gave it up"
       say(text + ". Ctrl+S saves.", false)
@@ -177,20 +179,20 @@ Item {
   }
 
   function startClear() {
-    var target = Assignment.clearTarget(state, currentPage.desk, selectedRow)
+    var target = Assignment.clearTarget(state, currentPage.workspace, selectedRow)
     if (target.error) {
       say(target.error, true)
       return
     }
-    ask(Prompts.confirm("Clear desk " + target.desk + "'s spec for " + target.slot + " (" + target.spec + ")?"),
+    ask(Prompts.confirm("Clear workspace " + target.workspace + "'s spec for " + target.slot + " (" + target.spec + ")?"),
       function(yes) {
         if (!yes) {
           root.message = ""
           return
         }
-        root.engine.call("clear_spec", { desk: target.desk, slot: target.slot }, function(reply) {
+        root.engine.call("clear_spec", { workspace: target.workspace, slot: target.slot }, function(reply) {
           if (!reply.ok) root.say(reply.error, true)
-          else root.say("Desk " + reply.desk + " no longer says what fills " + reply.slot + ". Ctrl+S saves.", false)
+          else root.say("Workspace " + reply.workspace + " no longer says what fills " + reply.slot + ". Ctrl+S saves.", false)
         })
       })
   }
@@ -201,8 +203,8 @@ Item {
     return address
   }
 
-  // u: the window out of its slot, and (Assignment.unassignPlan) the desk's
-  // spec for the slot with it, so the slot is left empty.
+  // u: the window out of its slot, and (Assignment.unassignPlan) the
+  // workspace's spec for the slot with it, so the slot is left empty.
   function startUnassign() {
     var row = selectedRow
     var plan = Assignment.unassignPlan(state, row)
@@ -221,7 +223,7 @@ Item {
     engine.call("unassign", { address: plan.address, clear_spec: plan.clearSpec }, function(reply) {
       if (!reply.ok) say(reply.error, true)
       else if (reply.spec) {
-        say("Unassigned " + row.cls + " from " + reply.slot + " and cleared desk " + reply.desk + "'s spec for it ("
+        say("Unassigned " + row.cls + " from " + reply.slot + " and cleared workspace " + reply.workspace + "'s spec for it ("
           + reply.spec + "): the slot is empty. Ctrl+S saves.", false)
       } else {
         say(reply.slot ? "Unassigned " + row.cls + " from " + reply.slot + "." : "Took " + row.cls + " out of the overflow.", false)
@@ -246,7 +248,7 @@ Item {
     else if (key === Qt.Key_Down || text === "j") select(selected + 1)
     else if (key === Qt.Key_Left || text === "h" || text === "p" || text === "[") turnPage(-1)
     else if (key === Qt.Key_Right || text === "l" || text === "]") turnPage(1)
-    else if (Desks.ofDigit(text) !== null) goDesk(Desks.ofDigit(text))
+    else if (Workspaces.ofDigit(text) !== null) goWorkspace(Workspaces.ofDigit(text))
     else if (text === "a") startAssign()
     else if (text === "u") startUnassign()
     else if (text === "c") startClear()
@@ -254,12 +256,12 @@ Item {
     return true
   }
 
-  // Columns: [Desk] [Screen] Slot App Title, sized by share of the width.
-  readonly property real deskWidth: showDesk ? width * 0.07 : 0
+  // Columns: [Ws] [Screen] Slot App Title, sized by share of the width.
+  readonly property real workspaceWidth: showWorkspace ? width * 0.07 : 0
   readonly property real screenWidth: showScreen ? width * 0.1 : 0
   readonly property real slotWidth: width * 0.18
   readonly property real appWidth: width * 0.18
-  readonly property real titleWidth: width - deskWidth - screenWidth - slotWidth - appWidth
+  readonly property real titleWidth: width - workspaceWidth - screenWidth - slotWidth - appWidth
   readonly property int rowHeight: Math.max(Style.space(26), Style.font.body + Style.spacing.md * 2)
 
   Column {
@@ -330,7 +332,7 @@ Item {
       width: parent.width
       Repeater {
         model: [
-          { text: "Desk", width: root.deskWidth },
+          { text: "Ws", width: root.workspaceWidth },
           { text: "Screen", width: root.screenWidth },
           { text: "Slot", width: root.slotWidth },
           { text: "App", width: root.appWidth },
@@ -368,7 +370,7 @@ Item {
         required property var modelData
         required property int index
         readonly property bool current: index === root.selected
-        // no window in the slot: Missing (the desk's spec waits for one) or
+        // no window in the slot: Missing (the workspace's spec waits for one) or
         // empty (nothing says what fills it)
         readonly property bool missing: modelData.kind === "missing" || modelData.kind === "empty"
         readonly property bool empty: modelData.kind === "empty"
@@ -386,12 +388,12 @@ Item {
         Row {
           anchors.fill: parent
           Text {
-            width: root.deskWidth
-            visible: root.showDesk
+            width: root.workspaceWidth
+            visible: root.showWorkspace
             anchors.verticalCenter: parent.verticalCenter
             leftPadding: Style.spacing.md
             textFormat: Text.PlainText
-            text: rowItem.modelData.desk !== null && rowItem.modelData.desk !== undefined ? String(rowItem.modelData.desk) : ""
+            text: rowItem.modelData.workspace !== null && rowItem.modelData.workspace !== undefined ? String(rowItem.modelData.workspace) : ""
             color: rowItem.ink
             opacity: 0.7
             font.family: root.fontFamily

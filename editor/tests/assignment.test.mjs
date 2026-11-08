@@ -1,4 +1,4 @@
-// The Assignment view's model (Assignment.js): which rows a desk shows, in
+// The Assignment view's model (Assignment.js): which rows a workspace shows, in
 // what order, and which slots `a` offers, from an api `state` reply.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -10,53 +10,53 @@ const P = load("Prompts.js");
 // Plain copies, so deepEqual does not trip over the vm context's prototypes.
 const plain = (value) => JSON.parse(JSON.stringify(value));
 
-function window(address, cls, workspace, extra) {
-  return { address, class: cls, title: cls + " title", workspace, floating: false, ...extra };
+function window(address, cls, workspaceId, extra) {
+  return { address, class: cls, title: cls + " title", workspace_id: workspaceId, floating: false, ...extra };
 }
 
-// dual: big = h[main:2, right:1], side = left; desk 4 has one slot on big.
+// dual: big = h[main:2, right:1], side = left; workspace 4 has one slot on big.
 function fixture() {
   return {
     ok: true,
     arrangement: "dual",
-    desks: [3, 4],
+    used_workspaces: [3, 4],
     slots: [{ name: "left" }, { name: "mail" }, { name: "main" }, { name: "right" }],
     specs: { 3: { left: "t-left", main: "t-main", right: "t-right" }, 4: { mail: "thunderbird" } },
     arrangements: {
       dual: {
         roles: ["big", "side"],
         active: true,
-        desks: {
+        workspaces: {
           3: { big: { tree: "h[main:2, right]", slots: ["main", "right"] }, side: { tree: "left", slots: ["left"] } },
           4: { big: { tree: "mail", slots: ["mail"] } },
         },
       },
     },
-    workspaces: { 3: { desk: 3, role: "big" }, 13: { desk: 3, role: "side" }, 4: { desk: 4, role: "big" } },
-    assignments: { "0xa": { desk: 3, slot: "main" }, "0xe": { desk: 3, slot: "right", manual: true } },
-    overflow: { "0xb": { desk: 3, slot: "main" } },
+    workspaces: { 3: { workspace: 3, role: "big" }, 13: { workspace: 3, role: "side" }, 4: { workspace: 4, role: "big" } },
+    assignments: { "0xa": { workspace: 3, slot: "main" }, "0xe": { workspace: 3, slot: "right", manual: true } },
+    overflow: { "0xb": { workspace: 3, slot: "main" } },
     unassigned: ["0xd"],
     windows: [
-      window("0xa", "t-main", 3, { desk: 3, slot: "main" }),
-      window("0xb", "t-main", 3, { overflow: { desk: 3, slot: "main" } }),
+      window("0xa", "t-main", 3, { workspace: 3, slot: "main" }),
+      window("0xb", "t-main", 3, { overflow: { workspace: 3, slot: "main" } }),
       window("0xc", "firefox", 1),
       window("0xd", "foot", 13, { unassigned: true }),
-      window("0xe", "t-right", 3, { desk: 3, slot: "right" }),
+      window("0xe", "t-right", 3, { workspace: 3, slot: "right" }),
     ],
   };
 }
 
 const summary = (rows) => plain(rows).map((r) => [r.status, r.slot || "", r.address]);
 
-test("pages are every window, then each desk", () => {
+test("pages are every window, then each workspace", () => {
   assert.deepEqual(plain(A.pages(fixture())), [
-    { desk: null, label: "All windows" },
-    { desk: 3, label: "Desk 3" },
-    { desk: 4, label: "Desk 4" },
+    { workspace: null, label: "All windows" },
+    { workspace: 3, label: "Workspace 3" },
+    { workspace: 4, label: "Workspace 4" },
   ]);
 });
 
-test("a desk lists its slots in tree order, screen by screen, a missing window as a placeholder, then overflow and strays", () => {
+test("a workspace lists its slots in tree order, screen by screen, a missing window as a placeholder, then overflow and strays", () => {
   assert.deepEqual(summary(A.rows(fixture(), 3)), [
     ["slot", "main", "0xa"],
     ["manual", "right", "0xe"],
@@ -71,7 +71,7 @@ test("rows say which screen each slot or window is on", () => {
   assert.deepEqual(roles, ["big", "big", "side", "big", "side"]);
 });
 
-test("every window lists slotted ones by desk and tree order, then overflow, then the rest by workspace", () => {
+test("every window lists slotted ones by workspace and tree order, then overflow, then the rest by workspace id", () => {
   assert.deepEqual(summary(A.rows(fixture(), null)), [
     ["slot", "main", "0xa"],
     ["manual", "right", "0xe"],
@@ -87,16 +87,16 @@ test("the slot column reads like the TUI's", () => {
   assert.equal(A.slotText({ status: "none" }), "—");
 });
 
-test("a slot the desk has a spec for but no tree of the active arrangement shows is still listed, after the shown ones", () => {
+test("a slot the workspace has a spec for but no tree of the active arrangement shows is still listed, after the shown ones", () => {
   const state = fixture();
   state.slots.push({ name: "spare" });
   state.specs[3].spare = "t-spare";
   assert.deepEqual(summary(A.rows(state, 3)).map((r) => r[1]), ["main", "right", "left", "spare", "main", ""]);
 });
 
-test("a slot a tree places but the desk has no spec for is empty, not Missing: no spec, no Missing title", () => {
+test("a slot a tree places but the workspace has no spec for is empty, not Missing: no spec, no Missing title", () => {
   const state = fixture();
-  state.arrangements.dual.desks[4].big = { tree: "h[mail, main]", slots: ["mail", "main"] };
+  state.arrangements.dual.workspaces[4].big = { tree: "h[mail, main]", slots: ["mail", "main"] };
   const rows = plain(A.rows(state, 4));
   assert.deepEqual(rows.map((r) => [r.kind, r.status, r.slot, r.spec]), [
     ["missing", "missing", "mail", "thunderbird"],
@@ -108,13 +108,13 @@ test("a slot a tree places but the desk has no spec for is empty, not Missing: n
   assert.equal(A.titleText({ kind: "window", title: "vim" }), "vim");
 });
 
-test("a global slot neither placed nor filled on the desk is no row of it", () => {
+test("a global slot neither placed nor filled on the workspace is no row of it", () => {
   assert.deepEqual(summary(A.rows(fixture(), 4)).map((r) => r[1]), ["mail"]);
 });
 
-test("assign offers every global slot on the desk: its own in tree order first, then the rest by name", () => {
+test("assign offers every global slot on the workspace: its own in tree order first, then the rest by name", () => {
   const options = plain(A.slotOptions(fixture(), 3, null));
-  assert.deepEqual(options.map((o) => [o.key, o.desk, o.slot, o.spec, o.holder]), [
+  assert.deepEqual(options.map((o) => [o.key, o.workspace, o.slot, o.spec, o.holder]), [
     ["m", 3, "main", "t-main", "0xa"],
     ["r", 3, "right", "t-right", "0xe"],
     ["l", 3, "left", "t-left", null],
@@ -126,39 +126,39 @@ test("a first letter already taken falls back to the first free digit", () => {
   const state = fixture();
   state.slots = [{ name: "main" }, { name: "menu" }, { name: "mail" }];
   state.specs[3] = { main: "a", menu: "b", mail: "c" };
-  state.arrangements.dual.desks[3] = { big: { slots: ["main", "menu", "mail"] } };
+  state.arrangements.dual.workspaces[3] = { big: { slots: ["main", "menu", "mail"] } };
   assert.deepEqual(plain(A.slotOptions(state, 3, null)).map((o) => o.key), ["m", "1", "2"]);
 });
 
-test("on the every-window page, assign offers the window's desk, else the focused desk, else nothing", () => {
+test("on the every-window page, assign offers the window's workspace, else the focused workspace, else nothing", () => {
   const state = fixture();
   const rows = A.rows(state, null);
-  const onDesk = rows.find((r) => r.address === "0xd");
+  const onWorkspace = rows.find((r) => r.address === "0xd");
   const stray = rows.find((r) => r.address === "0xc");
-  assert.deepEqual(plain(A.slotOptions(state, null, onDesk)).map((o) => o.desk + "/" + o.slot),
+  assert.deepEqual(plain(A.slotOptions(state, null, onWorkspace)).map((o) => o.workspace + "/" + o.slot),
     ["3/main", "3/right", "3/left", "3/mail"]);
-  assert.deepEqual(plain(A.slotOptions(state, null, stray, 4)).map((o) => o.desk + "/" + o.slot),
+  assert.deepEqual(plain(A.slotOptions(state, null, stray, 4)).map((o) => o.workspace + "/" + o.slot),
     ["4/mail", "4/left", "4/main", "4/right"]);
   assert.deepEqual(plain(A.slotOptions(state, null, stray, null)), []);
-  assert.equal(A.assignDesk(state, null, stray, 4), 4);
-  assert.equal(A.assignDesk(state, null, stray, null), null);
-  assert.equal(A.assignDesk(state, 3, stray, 4), 3, "a desk page is that desk");
+  assert.equal(A.assignWorkspace(state, null, stray, 4), 4);
+  assert.equal(A.assignWorkspace(state, null, stray, null), null);
+  assert.equal(A.assignWorkspace(state, 3, stray, 4), 3, "a workspace page is that workspace");
 });
 
-test("the prompt names the desk and each option the way aerolayout's does", () => {
-  const ask = (state, desk, row) =>
-    P.display(P.choice(A.assignTitle(A.assignDesk(state, desk, row, null)), A.promptOptions(A.slotOptions(state, desk, row))));
-  assert.equal(ask(fixture(), 3, null), "Assign to desk 3 slot (takes its spec): (m)ain, (r)ight, (l)eft, (1) mail? [Esc] cancel   → main");
+test("the prompt names the workspace and each option the way aerolayout's does", () => {
+  const ask = (state, workspace, row) =>
+    P.display(P.choice(A.assignTitle(A.assignWorkspace(state, workspace, row, null)), A.promptOptions(A.slotOptions(state, workspace, row))));
+  assert.equal(ask(fixture(), 3, null), "Assign to workspace 3 slot (takes its spec): (m)ain, (r)ight, (l)eft, (1) mail? [Esc] cancel   → main");
   const picked = A.promptOptions(A.slotOptions(fixture(), 3, null))[1].value;
-  assert.deepEqual([picked.desk, picked.slot], [3, "right"], "an option's value is the slot option itself");
+  assert.deepEqual([picked.workspace, picked.slot], [3, "right"], "an option's value is the slot option itself");
 });
 
 test("c clears the spec of a Missing row: a slot whose window is not open", () => {
   const state = fixture();
   const rows = A.rows(state, 3);
-  assert.deepEqual(plain(A.clearTarget(state, 3, rows[2])), { desk: 3, slot: "left", spec: "t-left" });
-  state.arrangements.dual.desks[4].big = { tree: "h[mail, main]", slots: ["mail", "main"] };
-  assert.equal(A.clearTarget(state, 4, A.rows(state, 4)[1]).error, "Desk 4 has no spec for main.");
+  assert.deepEqual(plain(A.clearTarget(state, 3, rows[2])), { workspace: 3, slot: "left", spec: "t-left" });
+  state.arrangements.dual.workspaces[4].big = { tree: "h[mail, main]", slots: ["mail", "main"] };
+  assert.equal(A.clearTarget(state, 4, A.rows(state, 4)[1]).error, "Workspace 4 has no spec for main.");
 });
 
 test("c on a window in a slot points at u, which takes it out with its spec", () => {
@@ -171,13 +171,13 @@ test("c on a window in a slot points at u, which takes it out with its spec", ()
   assert.match(A.clearTarget(state, 3, rows[4]).error, /in no slot/);
 });
 
-test("u on a window in a slot takes it out and clears the desk's spec for the slot", () => {
+test("u on a window in a slot takes it out and clears the workspace's spec for the slot", () => {
   const state = fixture();
   const rows = A.rows(state, 3);
   assert.deepEqual(plain(A.unassignPlan(state, rows[0])), { address: "0xa", clearSpec: true,
-    question: "Unassign t-main from main and clear desk 3's spec for it (t-main)? (the slot is left empty)" });
+    question: "Unassign t-main from main and clear workspace 3's spec for it (t-main)? (the slot is left empty)" });
   assert.deepEqual(plain(A.unassignPlan(state, rows[1])), { address: "0xe", clearSpec: true,
-    question: "Unassign t-right from right and clear desk 3's spec for it (t-right)? (the slot is left empty)" });
+    question: "Unassign t-right from right and clear workspace 3's spec for it (t-right)? (the slot is left empty)" });
 });
 
 test("u on an overflowing window, or one in a slot with no spec, only takes it out", () => {
@@ -198,7 +198,7 @@ test("u refuses a row with no window in a slot", () => {
   assert.equal(A.unassignPlan(state, null).error, "Nothing selected.");
 });
 
-test("the first page shown is the focused workspace's desk, else every window", () => {
+test("the first page shown is the focused workspace's number, else every window", () => {
   const state = fixture();
   assert.equal(A.initialPage(state, 13), 1);
   assert.equal(A.initialPage(state, 4), 2);
@@ -206,14 +206,14 @@ test("the first page shown is the focused workspace's desk, else every window", 
   assert.equal(A.initialPage(state, null), 0);
 });
 
-test("a desk's page, for the digit keys; -1 for a desk with no page", () => {
+test("a workspace's page, for the digit keys; -1 for a workspace with no page", () => {
   const state = fixture();
-  assert.equal(A.pageOfDesk(state, 3), 1);
-  assert.equal(A.pageOfDesk(state, 4), 2);
-  assert.equal(A.pageOfDesk(state, 7), -1);
+  assert.equal(A.pageOfWorkspace(state, 3), 1);
+  assert.equal(A.pageOfWorkspace(state, 4), 2);
+  assert.equal(A.pageOfWorkspace(state, 7), -1);
 });
 
 test("no state yet means no pages but the every-window one, and no rows", () => {
-  assert.deepEqual(plain(A.pages(null)), [{ desk: null, label: "All windows" }]);
+  assert.deepEqual(plain(A.pages(null)), [{ workspace: null, label: "All windows" }]);
   assert.deepEqual(plain(A.rows(null, null)), []);
 });

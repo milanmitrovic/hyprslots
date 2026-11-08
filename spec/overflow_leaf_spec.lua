@@ -47,7 +47,7 @@ describe("overflow", function()
     assert(hyprslots.setup({ config_dir = dir }))
   end
 
-  -- A window on desk 3 that has been through window.open.
+  -- A window on workspace 3 that has been through window.open.
   local function opened(id, class, ws)
     local window = hl_stub.window(id, class, { workspace = ws or 3 })
     hl.windows[#hl.windows + 1] = window

@@ -1,6 +1,6 @@
 -- Test seam S2: what the editor's Slots and Arrangements views need from the
 -- api (docs/design.md §9): global slot edits (add, remove, rename across
--- every tree and desk, describe), per-desk specs (set, clear, take a
+-- every tree and workspace, describe), per-workspace specs (set, clear, take a
 -- window's spec, the Assignment view's a) and arrangement edits (create from
 -- the connected screens, rename, delete, screens, pinned, copy trees). Every
 -- edit stays in memory until save, re-runs config.lua, and re-routes.
@@ -43,8 +43,8 @@ describe("the Slots and Arrangements views' api", function()
     return reply
   end
 
-  local function tree_of(s, arrangement, desk, role)
-    local branch = s.arrangements[arrangement].desks[tostring(desk)]
+  local function tree_of(s, arrangement, workspace, role)
+    local branch = s.arrangements[arrangement].workspaces[tostring(workspace)]
     return branch and branch[role] and branch[role].tree
   end
 
@@ -71,7 +71,7 @@ describe("the Slots and Arrangements views' api", function()
       }, state().monitors)
     end)
 
-    it("lists the global slots with their descriptions, and each desk's specs", function()
+    it("lists the global slots with their descriptions, and each workspace's specs", function()
       ok("describe_slot", { slot = "main", description = "the editor" })
       local s = state()
       assert.are.same({ { name = "left" }, { name = "main", description = "the editor" }, { name = "right" } }, s.slots)
@@ -81,13 +81,13 @@ describe("the Slots and Arrangements views' api", function()
   end)
 
   describe("add_slot", function()
-    it("defines a global slot, with its description, that every desk's trees may then place", function()
+    it("defines a global slot, with its description, that every workspace's trees may then place", function()
       local reply = ok("add_slot", { slot = "chat", description = "team chat" })
       assert.are.equal("chat", reply.slot)
       local s = state()
       assert.are.same({ name = "chat", description = "team chat" }, s.slots[1])
       assert.is_true(s.dirty)
-      ok("set_tree", { arrangement = "single", desk = 5, role = "big", tree = "chat" })
+      ok("set_tree", { arrangement = "single", workspace = 5, role = "big", tree = "chat" })
     end)
 
     it("refuses a taken or malformed name", function()
@@ -108,16 +108,16 @@ return { slots = slots, specs = data.specs, arrangements = data.arrangements }
   end)
 
   describe("remove_slot", function()
-    it("refuses a slot that trees place or desks have specs for, saying where", function()
+    it("refuses a slot that trees place or workspaces have specs for, saying where", function()
       local reply = call("remove_slot", { slot = "right" })
       assert.is_false(reply.ok)
       assert.matches("dual/3/big, single/3/big", reply.error)
-      assert.matches("desk 3", reply.error)
+      assert.matches("workspace 3", reply.error)
       assert.matches("force", reply.error)
       assert.are.equal(3, #state().slots)
     end)
 
-    it("with force, takes it out of every tree of every desk and every desk's specs", function()
+    it("with force, takes it out of every tree of every workspace and every workspace's specs", function()
       local right = open(1, "t-right", 1)
       local reply = ok("remove_slot", { slot = "right", force = true })
       assert.are.same({ "dual/3/big", "single/3/big" }, reply.trees)
@@ -138,9 +138,9 @@ return { slots = slots, specs = data.specs, arrangements = data.arrangements }
   end)
 
   describe("rename_slot", function()
-    it("renames a slot everywhere: every tree, every desk's spec, its description", function()
+    it("renames a slot everywhere: every tree, every workspace's spec, its description", function()
       ok("describe_slot", { slot = "main", description = "the editor" })
-      ok("set_spec", { desk = 5, slot = "main", spec = "kitty" })
+      ok("set_spec", { workspace = 5, slot = "main", spec = "kitty" })
       local reply = ok("rename_slot", { slot = "main", to = "editor" })
       assert.are.equal("editor", reply.to)
       assert.are.equal(2, reply.trees)
@@ -157,12 +157,12 @@ return { slots = slots, specs = data.specs, arrangements = data.arrangements }
     it("keeps the window in its slot, a hand-made assignment too", function()
       local main = open(1, "t-main", 1)
       local stranger = open(2, "firefox", 1)
-      ok("assign", { address = stranger.address, desk = 3, slot = "right" })
+      ok("assign", { address = stranger.address, workspace = 3, slot = "right" })
       ok("rename_slot", { slot = "main", to = "editor" })
       ok("rename_slot", { slot = "right", to = "aside" })
       local s = state()
-      assert.are.same({ desk = 3, slot = "editor" }, s.assignments[main.address])
-      assert.are.same({ desk = 3, slot = "aside", manual = true }, s.assignments[stranger.address])
+      assert.are.same({ workspace = 3, slot = "editor" }, s.assignments[main.address])
+      assert.are.same({ workspace = 3, slot = "aside", manual = true }, s.assignments[stranger.address])
     end)
 
     it("carries a keyboard-resized tree along", function()
@@ -210,59 +210,59 @@ return { slots = slots, specs = data.specs, arrangements = data.arrangements }
   end)
 
   describe("set_spec", function()
-    it("sets the app that fills a global slot on a desk, in memory, and the window it names takes the slot", function()
+    it("sets the app that fills a global slot on a workspace, in memory, and the window it names takes the slot", function()
       local editor = open(1, "kitty", 1, "deltaf | nvim")
-      local reply = ok("set_spec", { desk = 3, slot = "main", spec = " kitty/deltaf " })
-      assert.are.same({ desk = 3, slot = "main", spec = "kitty/deltaf" }, { desk = reply.desk, slot = reply.slot, spec = reply.spec })
+      local reply = ok("set_spec", { workspace = 3, slot = "main", spec = " kitty/deltaf " })
+      assert.are.same({ workspace = 3, slot = "main", spec = "kitty/deltaf" }, { workspace = reply.workspace, slot = reply.slot, spec = reply.spec })
       local s = state()
       assert.are.equal("kitty/deltaf", s.specs["3"].main)
       assert.is_true(s.dirty)
-      assert.are.same({ desk = 3, slot = "main" }, s.assignments[editor.address])
+      assert.are.same({ workspace = 3, slot = "main" }, s.assignments[editor.address])
       assert.are.equal(3, editor.workspace.id)
     end)
 
-    it("gives a desk with no specs its first, for a global slot", function()
-      ok("set_spec", { desk = 7, slot = "main", spec = "spotify" })
+    it("gives a workspace with no specs its first, for a global slot", function()
+      ok("set_spec", { workspace = 7, slot = "main", spec = "spotify" })
       assert.are.same({ main = "spotify" }, state().specs["7"])
-      assert.are.same({ 3, 7 }, state().desks)
+      assert.are.same({ 3, 7 }, state().used_workspaces)
     end)
 
     it("refuses a spec the grammar rejects, or a slot that is not defined, changing nothing", function()
       local seq = state().seq
-      local reply = call("set_spec", { desk = 3, slot = "main", spec = "[Tag" })
+      local reply = call("set_spec", { workspace = 3, slot = "main", spec = "[Tag" })
       assert.is_false(reply.ok)
       assert.matches("closing ']'", reply.error)
-      assert.matches("no slot 'zz'", call("set_spec", { desk = 3, slot = "zz", spec = "x" }).error)
+      assert.matches("no slot 'zz'", call("set_spec", { workspace = 3, slot = "zz", spec = "x" }).error)
       assert.are.equal("t-main", state().specs["3"].main)
       assert.are.equal(seq, state().seq)
     end)
 
     it("announces the change", function()
       local seq = state().seq
-      ok("set_spec", { desk = 3, slot = "main", spec = "foo" })
+      ok("set_spec", { workspace = 3, slot = "main", spec = "foo" })
       local events = hl.dispatched_of("event")
       assert.are.equal("hyprslots changed " .. state().seq, events[#events])
       assert.is_true(state().seq > seq)
     end)
 
-    it("refuses a desk whose specs config.lua builds in code", function()
+    it("refuses a workspace whose specs config.lua builds in code", function()
       setup(engine.TWO_SCREENS, [[
 local data = load_data("slots.lua")
 local specs = { [3] = data.specs[3], [4] = { main = "thunderbird" } }
 return { slots = data.slots, specs = specs, arrangements = data.arrangements }
 ]])
-      local reply = call("set_spec", { desk = 4, slot = "main", spec = "x" })
+      local reply = call("set_spec", { workspace = 4, slot = "main", spec = "x" })
       assert.is_false(reply.ok)
-      assert.matches("desk 4's specs are set by code in config.lua", reply.error)
+      assert.matches("workspace 4's specs are set by code in config.lua", reply.error)
     end)
   end)
 
   describe("clear_spec", function()
-    it("drops a desk's spec for a slot: its window leaves the slot, the slot stays", function()
+    it("drops a workspace's spec for a slot: its window leaves the slot, the slot stays", function()
       local right = open(1, "t-right", 1)
-      assert.are.same({ desk = 3, slot = "right" }, state().assignments[right.address])
-      local reply = ok("clear_spec", { desk = 3, slot = "right" })
-      assert.are.same({ 3, "right" }, { reply.desk, reply.slot })
+      assert.are.same({ workspace = 3, slot = "right" }, state().assignments[right.address])
+      local reply = ok("clear_spec", { workspace = 3, slot = "right" })
+      assert.are.same({ 3, "right" }, { reply.workspace, reply.slot })
       local s = state()
       assert.is_nil(s.specs["3"].right)
       assert.are.equal(3, #s.slots)
@@ -270,20 +270,20 @@ return { slots = data.slots, specs = specs, arrangements = data.arrangements }
       assert.are.equal("h[main:2, right]", tree_of(s, "dual", 3, "big"))
     end)
 
-    it("refuses a desk with no spec for the slot", function()
-      assert.matches("desk 4 has no spec for 'main'", call("clear_spec", { desk = 4, slot = "main" }).error)
+    it("refuses a workspace with no spec for the slot", function()
+      assert.matches("workspace 4 has no spec for 'main'", call("clear_spec", { workspace = 4, slot = "main" }).error)
     end)
   end)
 
   describe("take_spec (the Assignment view's a)", function()
-    it("writes the window's spec into the desk's slot and puts the window there", function()
+    it("writes the window's spec into the workspace's slot and puts the window there", function()
       local editor = open(1, "kitty", 1, "deltaf | nvim")
-      local reply = ok("take_spec", { desk = 3, slot = "right", address = editor.address })
+      local reply = ok("take_spec", { workspace = 3, slot = "right", address = editor.address })
       assert.are.equal("kitty/deltaf", reply.spec)
       assert.are.equal("t-right", reply.replaced)
       local s = state()
       assert.are.equal("kitty/deltaf", s.specs["3"].right)
-      assert.are.same({ desk = 3, slot = "right" }, s.assignments[editor.address], "a spec assignment, not by hand")
+      assert.are.same({ workspace = 3, slot = "right" }, s.assignments[editor.address], "a spec assignment, not by hand")
       assert.are.equal(3, editor.workspace.id)
       assert.is_true(s.dirty)
     end)
@@ -291,25 +291,25 @@ return { slots = data.slots, specs = specs, arrangements = data.arrangements }
     it("gives the slot to that window over an older one the new spec also matches", function()
       local older = open(1, "kitty", 1, "deltaf | logs")
       local chosen = open(2, "kitty", 1, "deltaf | nvim")
-      local reply = ok("take_spec", { desk = 5, slot = "main", address = chosen.address })
+      local reply = ok("take_spec", { workspace = 5, slot = "main", address = chosen.address })
       assert.are.equal("kitty/deltaf", reply.spec)
       local s = state()
-      assert.are.same({ desk = 5, slot = "main" }, s.assignments[chosen.address])
+      assert.are.same({ workspace = 5, slot = "main" }, s.assignments[chosen.address])
       assert.is_nil(s.assignments[older.address])
     end)
 
     it("displaces the window that held the slot", function()
       local right = open(1, "t-right", 1)
       local editor = open(2, "kitty", 1, "deltaf | nvim")
-      local reply = ok("take_spec", { desk = 3, slot = "right", address = editor.address })
+      local reply = ok("take_spec", { workspace = 3, slot = "right", address = editor.address })
       assert.are.equal(right.address, reply.displaced)
       assert.is_nil(state().assignments[right.address])
     end)
 
     it("refuses a window that is not open, or a slot that is not defined, changing nothing", function()
       local editor = open(1, "kitty", 1, "deltaf | nvim")
-      assert.are.equal("no open window 0xdead", call("take_spec", { desk = 3, slot = "right", address = "0xdead" }).error)
-      assert.matches("no slot 'zz'", call("take_spec", { desk = 3, slot = "zz", address = editor.address }).error)
+      assert.are.equal("no open window 0xdead", call("take_spec", { workspace = 3, slot = "right", address = "0xdead" }).error)
+      assert.matches("no slot 'zz'", call("take_spec", { workspace = 3, slot = "zz", address = editor.address }).error)
       assert.is_nil(state().assignments[editor.address])
       assert.is_false(state().dirty)
     end)
@@ -321,7 +321,7 @@ return { slots = data.slots, specs = specs, arrangements = data.arrangements }
       ok("add_arrangement", { name = "home", screens = { a = "HEADLESS-2" }, default = true })
       local s = state()
       assert.are.same({ tall = "SER-3", wide = "Dell U2723QE ABC123" }, s.arrangements.work.screens)
-      assert.are.same({}, s.arrangements.work.desks)
+      assert.are.same({}, s.arrangements.work.workspaces)
       assert.are.equal("h[left, main, right]", tree_of(s, "home", 3, "a"))
     end)
 
@@ -345,9 +345,9 @@ return { slots = data.slots, specs = specs, arrangements = data.arrangements }
 
   describe("rename_arrangement", function()
     it("renames it; the active one stays active under its new name", function()
-      ok("rename_arrangement", { arrangement = "dual", to = "desk" })
+      ok("rename_arrangement", { arrangement = "dual", to = "workspace" })
       local s = state()
-      assert.are.equal("desk", s.arrangement)
+      assert.are.equal("workspace", s.arrangement)
       assert.is_nil(s.arrangements.dual)
     end)
 
@@ -415,7 +415,7 @@ return { slots = data.slots, specs = data.specs, arrangements = data.arrangement
       assert.are.equal("h[main:2, right]", tree_of(state(), "single", 3, "big"))
     end)
 
-    it("from the default, puts each desk's slots side by side on the first screen", function()
+    it("from the default, puts each workspace's slots side by side on the first screen", function()
       ok("copy_trees", { arrangement = "dual", default = true })
       local s = state()
       assert.are.equal("h[left, main, right]", tree_of(s, "dual", 3, "big"))
@@ -434,7 +434,7 @@ return { slots = { main = {} }, specs = { [3] = { main = "t-main" } }, arrangeme
 ]])
       for _, name in ipairs({ "set_spec", "clear_spec", "add_slot", "rename_slot", "remove_slot", "describe_slot",
         "add_arrangement", "set_pinned" }) do
-        local reply = call(name, { desk = 3, slot = "main", spec = "x", to = "y", name = "n", screens = { a = "X" }, pinned = {} })
+        local reply = call(name, { workspace = 3, slot = "main", spec = "x", to = "y", name = "n", screens = { a = "X" }, pinned = {} })
         assert.is_false(reply.ok, name)
         assert.matches("slots.lua", reply.error, nil, name)
       end

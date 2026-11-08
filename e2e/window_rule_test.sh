@@ -1,9 +1,9 @@
 # Generated window rules (docs/design.md §7b): a window of a class-only spec
-# opens directly on its slot's desk workspace, never on the focused one.
+# opens directly on its slot's workspace, never on the focused one.
 # Hyprland's socket2 `openwindow` event carries the workspace the window
 # mapped on, before the router could have moved it.
 #
-# Screen: HEADLESS-2, 2400x1350 at 0,0, Omarchy block 0. Desk 3 tree "main",
+# Screen: HEADLESS-2, 2400x1350 at 0,0, Omarchy block 0. Workspace 3 tree "main",
 # slot main = class t-main.
 
 test_setup() {
@@ -49,7 +49,7 @@ test_body() {
   listen_events
   sleep 0.3
 
-  # When t-main opens while desk 1 shows.
+  # When t-main opens while workspace 1 shows.
   spawn_and_wait t-main
   eventually 5 opened_on >/dev/null || true
   settle
@@ -60,8 +60,8 @@ test_body() {
   expect_eq "t-main never moved" "0" "$(grep -ac '^movewindow' "$E2E_DIR/events.log")"
   expect_monitor_workspace HEADLESS-2 1
 
-  # And once desk 3 shows, it fills its slot.
-  repl 'return hyprslots.api.call("desk", "{\"desk\": 3}")' >/dev/null
+  # And once workspace 3 shows, it fills its slot.
+  repl 'return hyprslots.api.call("workspace", "{\"workspace\": 3}")' >/dev/null
   settle
   expect_client t-main 3 0 0 2400 1350
 }

@@ -343,7 +343,7 @@ Item {
     })
   }
 
-  // p: pin or unpin a role (pinned roles are kept out of desk switching, in
+  // p: pin or unpin a role (pinned roles are kept out of workspace switching, in
   // every arrangement).
   function startPin() {
     if (!needRow(false)) return
@@ -355,8 +355,8 @@ Item {
       if (at >= 0) pinned.splice(at, 1)
       else pinned.push(role)
       run("set_pinned", { pinned: pinned }, function() {
-        return at >= 0 ? "'" + role + "' is no longer pinned: desk switches move it again."
-          : "'" + role + "' is pinned: desk switches leave it alone."
+        return at >= 0 ? "'" + role + "' is no longer pinned: workspace switches move it again."
+          : "'" + role + "' is pinned: workspace switches leave it alone."
       })
     })
   }

@@ -13,11 +13,11 @@
 -- uses: specs and trees parsed, every error reported with its path.
 --
 -- Slots are global logical names (`slots = { main = { description = ... } }`),
--- defined once; a desk says which app fills which of them (`specs = { [3] =
--- { main = "kitty/deltaf" } }`), and a tree may only place a slot defined
--- under `slots`. The per-desk shape of before (slots = desk -> slot -> spec)
--- is still read, through migrate.lua, in a data file and in what config.lua
--- returns.
+-- defined once; a workspace says which app fills which of them (`specs = {
+-- [3] = { main = "kitty/deltaf" } }`), and a tree may only place a slot
+-- defined under `slots`. The per-workspace shape of before (slots =
+-- workspace -> slot -> spec) is still read, through migrate.lua, in a data
+-- file and in what config.lua returns.
 
 local migrate = require("hyprslots.migrate")
 local spec = require("hyprslots.spec")
@@ -25,7 +25,7 @@ local tree = require("hyprslots.tree")
 
 local M = {}
 
-local DESKS = 10
+local WORKSPACES = 10
 local SLOT_NAME = "^[%a_][%w_%-]*$"
 
 -- The directory hyprslots reads its config from.
@@ -152,8 +152,8 @@ local function sorted_keys(t)
   return keys
 end
 
-local function is_desk(key)
-  return math.type(key) == "integer" and key >= 1 and key <= DESKS
+local function is_workspace(key)
+  return math.type(key) == "integer" and key >= 1 and key <= WORKSPACES
 end
 
 local function key_path(prefix, key)
@@ -197,26 +197,26 @@ local function validate_slots(raw, fail)
   return slots, names
 end
 
--- Each desk's specs: desk -> slot -> spec text, every slot a global one.
--- Returns desk -> slot -> parsed spec.
+-- Each workspace's specs: workspace -> slot -> spec text, every slot a global
+-- one. Returns workspace -> slot -> parsed spec.
 local function validate_specs(raw, slots, fail, title_matching)
   local specs = {}
   if raw == nil then
     return specs
   end
   if type(raw) ~= "table" then
-    fail("specs", "must be a table of desk -> { slot = spec }")
+    fail("specs", "must be a table of workspace -> { slot = spec }")
     return specs
   end
-  for _, desk in ipairs(sorted_keys(raw)) do
-    local path = key_path("specs", desk)
-    local entries = raw[desk]
-    if not is_desk(desk) then
-      fail(path, "a desk must be an integer from 1 to " .. DESKS)
+  for _, workspace in ipairs(sorted_keys(raw)) do
+    local path = key_path("specs", workspace)
+    local entries = raw[workspace]
+    if not is_workspace(workspace) then
+      fail(path, "a workspace must be an integer from 1 to " .. WORKSPACES)
     elseif type(entries) ~= "table" then
       fail(path, "must be a table of slot = spec")
     else
-      specs[desk] = {}
+      specs[workspace] = {}
       for _, name in ipairs(sorted_keys(entries)) do
         local slot_path = key_path(path, name)
         if type(name) ~= "string" or not slots[name] then
@@ -224,7 +224,7 @@ local function validate_specs(raw, slots, fail, title_matching)
         else
           local parsed, err = spec.parse(entries[name], title_matching)
           if parsed then
-            specs[desk][name] = parsed
+            specs[workspace][name] = parsed
           else
             fail(slot_path, err)
           end
@@ -247,7 +247,7 @@ local function validate_arrangement(name, raw, slots, fail)
     end
   end
 
-  local arrangement = { name = name, screens = {}, roles = {}, desks = {} }
+  local arrangement = { name = name, screens = {}, roles = {}, workspaces = {} }
 
   local screens_path = path .. ".screens"
   if type(raw.screens) ~= "table" or next(raw.screens) == nil then
@@ -266,23 +266,24 @@ local function validate_arrangement(name, raw, slots, fail)
     end
   end
 
+  -- The data key is still `desks` (slots.lua's on-disk shape).
   local desks_path = path .. ".desks"
   if raw.desks ~= nil and type(raw.desks) ~= "table" then
-    fail(desks_path, "must be a table of desk -> { role = tree }")
+    fail(desks_path, "must be a table of workspace -> { role = tree }")
     return arrangement
   end
-  for _, desk in ipairs(sorted_keys(raw.desks or {})) do
-    local desk_path = key_path(desks_path, desk)
-    local branches = raw.desks[desk]
-    if not is_desk(desk) then
-      fail(desk_path, "a desk must be an integer from 1 to " .. DESKS)
+  for _, workspace in ipairs(sorted_keys(raw.desks or {})) do
+    local workspace_path = key_path(desks_path, workspace)
+    local branches = raw.desks[workspace]
+    if not is_workspace(workspace) then
+      fail(workspace_path, "a workspace must be an integer from 1 to " .. WORKSPACES)
     elseif type(branches) ~= "table" then
-      fail(desk_path, "must be a table of role = tree")
+      fail(workspace_path, "must be a table of role = tree")
     else
-      arrangement.desks[desk] = {}
+      arrangement.workspaces[workspace] = {}
       local placed = {}
       for _, role in ipairs(sorted_keys(branches)) do
-        local branch_path = key_path(desk_path, role)
+        local branch_path = key_path(workspace_path, role)
         if not arrangement.screens[role] then
           fail(branch_path, "no screen role '" .. tostring(role) .. "' in this arrangement's screens")
         else
@@ -290,7 +291,7 @@ local function validate_arrangement(name, raw, slots, fail)
           if not node then
             fail(branch_path, err)
           else
-            arrangement.desks[desk][role] = node
+            arrangement.workspaces[workspace][role] = node
             for _, slot in ipairs(tree.slots(node)) do
               if not slots[slot] then
                 fail(branch_path, string.format("no slot '%s' (define it under slots)", slot))
@@ -416,7 +417,7 @@ function M.validate(raw)
   if type(raw) ~= "table" then
     return nil, "the config must be a table, got " .. type(raw)
   end
-  raw = migrate.data(raw) -- the per-desk shape of before, read as today's
+  raw = migrate.data(raw) -- the per-workspace shape of before, read as today's
 
   local errors, fail = collector()
 
@@ -485,12 +486,12 @@ function M.load(dir, opts)
     return nil, path .. " must return a table, got " .. type(raw)
   end
 
-  -- A config.lua written for the per-desk shape passes slots.lua's slots on
+  -- A config.lua written for the per-workspace shape passes slots.lua's slots on
   -- and nothing else; the specs that now sit beside them would be lost.
   for name, file in pairs(loaded) do
     if raw.specs == nil and type(file.data) == "table" and type(file.data.specs) == "table"
       and next(file.data.specs) ~= nil then
-      return nil, path .. ": " .. name .. " holds specs (desk -> slot -> app) that config.lua does not return: "
+      return nil, path .. ": " .. name .. " holds specs (workspace -> slot -> app) that config.lua does not return: "
         .. "add `specs = data.specs` beside `slots = data.slots`"
     end
   end

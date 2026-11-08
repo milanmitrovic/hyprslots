@@ -54,7 +54,7 @@ describe("late titles", function()
     assert.are.equal(1, window.workspace.id, "nothing moves before the debounce runs out")
 
     hl.run_timers()
-    assert.are.same({ desk = 3, slot = "main" }, assignment(window))
+    assert.are.same({ workspace = 3, slot = "main" }, assignment(window))
     assert.are.equal(3, window.workspace.id)
   end)
 
@@ -87,12 +87,12 @@ describe("late titles", function()
 
   it("never moves an assigned window because its title changed", function()
     local window = open(1, "foot", "deltaf | zellij")
-    assert.are.same({ desk = 3, slot = "main" }, assignment(window))
+    assert.are.same({ workspace = 3, slot = "main" }, assignment(window))
     hl.dispatch(hl.dsp.window.move({ window = "address:" .. window.address, workspace = "1" }))
 
     retitle(window, "notes | zellij")
     hl.run_timers()
-    assert.are.same({ desk = 3, slot = "main" }, assignment(window))
+    assert.are.same({ workspace = 3, slot = "main" }, assignment(window))
     assert.are.equal(1, window.workspace.id)
   end)
 

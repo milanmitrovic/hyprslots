@@ -187,8 +187,8 @@ describe("keyboard resize", function()
       unchanged()
     end)
 
-    it("a focused window off any desk", function()
-      assert.matches("not on a desk", msg("nudge r 0.1", hl_stub.window(9, "t-x", { workspace = 1 })))
+    it("a focused window off any workspace", function()
+      assert.matches("not on a hyprslots workspace", msg("nudge r 0.1", hl_stub.window(9, "t-x", { workspace = 1 })))
       unchanged()
     end)
 

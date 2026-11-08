@@ -9,14 +9,14 @@ import "BarStatus.js" as BarStatus
 import "Services.js" as Services
 
 // The hyprslots bar widget (docs/design.md §9): a grid glyph and
-// `<arrangement> · <desk>` for the workspace its bar's monitor shows, a dot
+// `<arrangement> · <n>` for the workspace its bar's monitor shows, a dot
 // while edits are unsaved, red with the error in the tooltip when the engine
 // has a config error, refused to run, is not loaded, or the plugin's service
 // is missing. The state is the service's (Engine.qml): the widget only asks
 // it to follow events (watch / unwatch), it never polls of its own.
 //
 // Left click toggles the editor panel; right click opens a menu: Re-apply
-// layout, Record desk (the panel's Layout tab, R), Save (with unsaved edits),
+// layout, Record workspace (the panel's Layout tab, R), Save (with unsaved edits),
 // Reload config. The model is BarStatus.js.
 BarWidget {
   id: root
@@ -67,13 +67,13 @@ BarWidget {
     var screen = window ? window.screen : null
     return screen ? Hyprland.monitorFor(screen) : Hyprland.focusedMonitor
   }
-  readonly property int workspace: monitor && monitor.activeWorkspace ? monitor.activeWorkspace.id : -1
+  readonly property int workspaceId: monitor && monitor.activeWorkspace ? monitor.activeWorkspace.id : -1
 
   readonly property var input: ({
     engine: root.engine !== null,
     error: root.engine ? root.engine.error : "",
     state: root.engine ? root.engine.state : null,
-    workspace: root.workspace,
+    workspaceId: root.workspaceId,
   })
   readonly property var status: BarStatus.view(input)
   readonly property var menuItems: BarStatus.menu(input)
@@ -112,15 +112,15 @@ BarWidget {
       return
     }
     if (!root.engine) return
-    var desk = root.status.desk
-    var steps = BarStatus.calls(id, desk)
+    var workspace = root.status.workspace
+    var steps = BarStatus.calls(id, workspace)
     var run = function(i) {
       root.engine.call(steps[i].name, steps[i].args, function(reply) {
         if (reply.ok && i + 1 < steps.length) {
           run(i + 1)
           return
         }
-        root.notify(BarStatus.outcome(id, desk, reply), !reply.ok)
+        root.notify(BarStatus.outcome(id, workspace, reply), !reply.ok)
       })
     }
     if (steps.length > 0) run(0)

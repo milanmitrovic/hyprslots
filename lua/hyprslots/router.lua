@@ -1,18 +1,18 @@
 -- Window events -> slot assignment and moves (docs/design.md §7).
 --
 -- On window.open a window matching a slot is assigned to it (sticky) and,
--- when it opened on another workspace, moved to the slot's: desk N on the
--- screen whose tree holds the slot in the active arrangement. Moves happen
+-- when it opened on another workspace, moved to the slot's: workspace N on
+-- the screen whose tree holds the slot in the active arrangement. Moves happen
 -- here, in the event callback, never in recalculate. window.close frees the
 -- slot (window.destroy's window has no address left in Hyprland 0.56.2). A
 -- target workspace that does not exist yet is created where Hyprland puts it
 -- (the focused monitor) and then moved to its screen.
 --
 -- Overflow: a window that matches some slot's spec while every such slot is
--- taken goes to the desk workspace of the first slot that matches it, in
+-- taken goes to the workspace of the first slot that matches it, in
 -- precedence order, where the layout puts it in that branch's overflow leaf
--- (engine.overflow remembers it). It follows that desk on hotplug and edits,
--- and takes a slot as soon as one it matches is freed. A window that matches
+-- (engine.overflow remembers it). It follows that workspace on hotplug and
+-- edits, and takes a slot as soon as one it matches is freed. A window that matches
 -- no spec at all stays where it opened.
 --
 -- Late titles: on window.title a window with no slot (overflowing or not) is
@@ -50,8 +50,8 @@ function M.window_opened(engine, hl_window)
 end
 
 -- Assign a plain window to a slot and move it to the slot's workspace, or,
--- when every slot it matches is taken, to the first such slot's desk
--- workspace (its overflow leaf).
+-- when every slot it matches is taken, to the first such slot's workspace
+-- (its overflow leaf).
 function M.route(engine, window)
   if engine.unassigned[window.address] then
     return -- taken out of its slot by hand: it stays where it is
@@ -76,8 +76,8 @@ function M.route(engine, window)
 
   local target = engine:workspace_for(assignment)
   if not target then
-    engine.log:info("open %s: %s %s on desk %d is on no screen of the active arrangement",
-      window.class, what, assignment.slot, assignment.desk)
+    engine.log:info("open %s: %s %s on workspace %d is on no screen of the active arrangement",
+      window.class, what, assignment.slot, assignment.workspace)
     return
   end
 
@@ -94,7 +94,7 @@ function M.route(engine, window)
   M.place(engine, window.address, target)
 end
 
--- Move a window to a desk workspace and make sure that workspace sits on its
+-- Move a window to a workspace and make sure that workspace sits on its
 -- screen. Hyprland creates a missing workspace on the FOCUSED monitor, and
 -- there is no way to create one elsewhere without showing it, so it is moved
 -- over afterwards; it is hidden, so neither screen's view nor focus changes.
@@ -103,10 +103,10 @@ function M.place(engine, address, target)
   M.keep_on_screen(engine, target)
 end
 
--- Move a desk workspace to its screen when it is on another one.
+-- Move a workspace to its screen when it is on another one.
 function M.keep_on_screen(engine, target)
-  local desk = engine.workspaces[target]
-  local monitor = desk and desk.monitor
+  local entry = engine.workspaces[target]
+  local monitor = entry and entry.monitor
   local actual = adapter.workspace_monitor(target)
   if monitor and actual and actual ~= monitor then
     engine.log:info("workspace %d: %s -> %s", target, actual, monitor)
@@ -116,7 +116,7 @@ end
 
 -- Move every assigned window to its slot's workspace under the active
 -- arrangement (after hotplug or an edit), and every overflowing window to
--- its desk's. Windows that match no slot, or whose slot no screen of the
+-- its workspace's. Windows that match no slot, or whose slot no screen of the
 -- arrangement holds, stay where they are. Then ask for a deferred scroll
 -- pass (scroll.lua), which must see the windows where they have just been
 -- moved.
@@ -181,7 +181,7 @@ function M.window_destroyed(engine, hl_window)
   if address and engine.assignments[address] then
     local assignment = engine.assignments[address]
     engine.assignments[address] = nil
-    engine.log:info("destroy %s: slot %s on desk %d is free", address, assignment.slot, assignment.desk)
+    engine.log:info("destroy %s: slot %s on workspace %d is free", address, assignment.slot, assignment.workspace)
     M.promote(engine)
     window_rules.sync(engine)
   end
@@ -192,14 +192,14 @@ end
 -- whatever its spec says (assign.lua honours `manual`). It is moved to the
 -- slot's workspace like a routed window. The window that held the slot is
 -- routed again, as if it had just opened: into another free slot it matches,
--- else its desk's overflow. The slot the window leaves goes to the oldest
+-- else its workspace's overflow. The slot the window leaves goes to the oldest
 -- window overflowing on it. Returns the new assignment and the displaced
 -- window's address.
-function M.assign(engine, window, desk, slot)
+function M.assign(engine, window, workspace, slot)
   local address = window.address
   local displaced
   for other, held in pairs(engine.assignments) do
-    if other ~= address and held.desk == desk and held.slot == slot then
+    if other ~= address and held.workspace == workspace and held.slot == slot then
       displaced = other
     end
   end
@@ -207,24 +207,25 @@ function M.assign(engine, window, desk, slot)
     engine.assignments[displaced] = nil
   end
   local previous = engine.assignments[address]
-  local assignment = { desk = desk, slot = slot, manual = true }
+  local assignment = { workspace = workspace, slot = slot, manual = true }
   engine.assignments[address] = assignment
   engine.overflow[address] = nil
   engine.unassigned[address] = nil
   local target = engine:workspace_for(assignment)
   if target and window.workspace_id ~= target then
-    engine.log:info("assign %s (%s) to slot %s on desk %d, workspace %s -> %d", tostring(window.class), address,
-      slot, desk, tostring(window.workspace_id), target)
+    engine.log:info("assign %s (%s) to slot %s on workspace %d, workspace %s -> %d", tostring(window.class), address,
+      slot, workspace, tostring(window.workspace_id), target)
     M.place(engine, address, target)
   elseif target then
     M.keep_on_screen(engine, target)
   end
   local other = displaced and find_window(displaced)
   if other then
-    engine.log:info("assign: %s (%s) gives up slot %s on desk %d", tostring(other.class), displaced, slot, desk)
+    engine.log:info("assign: %s (%s) gives up slot %s on workspace %d", tostring(other.class), displaced, slot,
+      workspace)
     M.route(engine, other)
   end
-  if previous and (previous.desk ~= desk or previous.slot ~= slot) then
+  if previous and (previous.workspace ~= workspace or previous.slot ~= slot) then
     M.promote(engine) -- the slot it left
   end
   window_rules.sync(engine)
@@ -246,7 +247,7 @@ function M.unassign(engine, address)
   engine.overflow[address] = nil
   engine.unassigned[address] = true
   if previous then
-    engine.log:info("unassign %s: slot %s on desk %d is free", address, previous.slot, previous.desk)
+    engine.log:info("unassign %s: slot %s on workspace %d is free", address, previous.slot, previous.workspace)
     M.promote(engine)
   end
   window_rules.sync(engine)

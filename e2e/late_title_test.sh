@@ -1,9 +1,9 @@
 # Late titles (docs/design.md §7): a foot window opens with a generic title
 # that matches no slot and stays where it opened; when its title changes to
-# one matching `foot/deltaf`, it is routed to that slot's desk workspace and
+# one matching `foot/deltaf`, it is routed to that slot's workspace and
 # placed there.
 #
-# Screen: HEADLESS-2, 2400x1350 at 0,0, Omarchy block 0. Desk 3 tree "main",
+# Screen: HEADLESS-2, 2400x1350 at 0,0, Omarchy block 0. Workspace 3 tree "main",
 # slot main = foot/deltaf (foot's default extractor keeps the part of the
 # title before " | ").
 
@@ -60,14 +60,14 @@ test_body() {
   touch "$E2E_DIR/retitle"
   eventually 10 foot_on 3 || true
 
-  # Then it is routed to desk 3 and takes slot main.
+  # Then it is routed to workspace 3 and takes slot main.
   expect_eq "foot retitled" "deltaf | zellij" "$(foot_field title)"
   expect_eq "foot routed to workspace 3" "3" "$(foot_workspace)"
-  expect_eq "foot holds slot main" '[{"desk":3,"slot":"main"}]' "$(assignments)"
+  expect_eq "foot holds slot main" '[{"slot":"main","workspace":3}]' "$(assignments)"
   expect_monitor_workspace HEADLESS-2 1
 
-  # And desk 3 shows it in its slot.
-  repl 'return hyprslots.api.call("desk", "{\"desk\": 3}")' >/dev/null
+  # And workspace 3 shows it in its slot.
+  repl 'return hyprslots.api.call("workspace", "{\"workspace\": 3}")' >/dev/null
   settle
   expect_client foot 3 0 0 2400 1350
 }

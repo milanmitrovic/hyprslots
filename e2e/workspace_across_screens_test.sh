@@ -1,11 +1,11 @@
-# Completion test for slice 2 (docs/design.md §12): one desk spans two
+# Completion test for slice 2 (docs/design.md §12): one workspace spans two
 # screens, and losing a screen switches to the arrangement for what is left.
 #
 # Screens (matched by connector):
-#   big  = HEADLESS-2, 2400x1350 at 0,0      Omarchy block 0: desk N = workspace N
-#   side = HEADLESS-3, 1920x1080 at 2400,0   Omarchy block 1: desk N = workspace 10+N
+#   big  = HEADLESS-2, 2400x1350 at 0,0      Omarchy block 0: workspace N = workspace id N
+#   side = HEADLESS-3, 1920x1080 at 2400,0   Omarchy block 1: workspace N = workspace id 10+N
 #
-# Arrangements for desk 3:
+# Arrangements for workspace 3:
 #   dual   (big + side): side = left, big = h[main:2, right:1]
 #   single (big only):   big = h[left, main, right]
 
@@ -54,30 +54,30 @@ test_body() {
   output_create HEADLESS-3
   [[ $(monitor_names) == "HEADLESS-2 HEADLESS-3" ]] || harness_fail "unexpected monitors: $(monitor_names)"
 
-  # Given three windows opened on big's desk 1, in shuffled order.
+  # Given three windows opened on big's workspace 1, in shuffled order.
   hc dispatch "hl.dsp.focus({ monitor = 'HEADLESS-2' })" >/dev/null
   for class in t-right t-left t-main; do
     spawn_and_wait "$class"
   done
   settle
-  # They open on workspace 1, and the router moves each to its desk-3
-  # workspace as it opens (design §7), so where they sit now is not a
+  # They open on workspace 1, and the router moves each to its workspace
+  # 3 as it opens (design §7), so where they sit now is not a
   # precondition; only that all three exist.
   local mapped
   mapped=$(hc clients -j | jq '[.[] | select(.mapped)] | length')
   [[ $mapped == 3 ]] || harness_fail "expected 3 mapped windows, have: $(client_table)"
-  log "windows before desk switch:"
+  log "windows before workspace switch:"
   client_table | sed 's/^/    /'
 
   local load_error
   load_error=$(hyprslots_load_error | head -n1)
   expect_eq "hyprslots loaded" "" "$load_error"
 
-  # When desk 3 is activated through the Super+3 path.
-  log "desk 3 -> $(repl 'return hyprslots.api.call("desk", "{\"desk\": 3}")' 2>&1)"
+  # When workspace 3 is activated through the Super+3 path.
+  log "workspace 3 -> $(repl 'return hyprslots.api.call("workspace", "{\"workspace\": 3}")' 2>&1)"
   settle
 
-  # Then both screens show desk 3, side holds left, big splits main:right 2:1.
+  # Then both screens show workspace 3, side holds left, big splits main:right 2:1.
   expect_monitor_workspace HEADLESS-2 3
   expect_monitor_workspace HEADLESS-3 13
   expect_client t-left 13 2400 0 1920 1080
@@ -89,7 +89,7 @@ test_body() {
   sleep 0.5
   settle
 
-  # Then arrangement single tiles all three 1:1:1 on big's desk 3.
+  # Then arrangement single tiles all three 1:1:1 on big's workspace 3.
   expect_monitor_workspace HEADLESS-2 3
   expect_client t-left 3 0 0 800 1350
   expect_client t-main 3 800 0 800 1350

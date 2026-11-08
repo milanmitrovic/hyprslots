@@ -7,35 +7,38 @@
 
 var GLYPH = "󰕰" // the grid milan.layout shows for slots
 
-// The desk a workspace belongs to in the active arrangement, or null.
-function deskOf(state, workspace) {
-  var ws = state && state.workspaces ? state.workspaces[String(workspace)] : null
-  return ws && ws.desk !== undefined && ws.desk !== null ? ws.desk : null
+// The workspace number (1 to 10) a Hyprland workspace id is in the active
+// arrangement, or null.
+function workspaceOf(state, id) {
+  var ws = state && state.workspaces ? state.workspaces[String(id)] : null
+  return ws && ws.workspace !== undefined && ws.workspace !== null ? ws.workspace : null
 }
 
 var HINT = "Click: editor · Right-click: menu"
 
-// Where the bar's screen is, in words: "solo, desk 3".
-function where(arrangement, desk, workspace) {
+// Where the bar's screen is, in words: "solo, workspace 3".
+function where(arrangement, workspace, workspaceId) {
   if (!arrangement) return "no arrangement for these monitors"
-  if (desk !== null) return arrangement + ", desk " + desk
-  if (workspace === undefined || workspace === null || workspace < 0) return arrangement + ", no workspace"
-  return arrangement + ", workspace " + workspace + " is no desk"
+  if (workspace !== null) return arrangement + ", workspace " + workspace
+  if (workspaceId === undefined || workspaceId === null || workspaceId < 0) return arrangement + ", no workspace"
+  return arrangement + ", workspace " + workspaceId + " has no tree"
 }
 
 // input: { engine (whether the service is there), error (its last state
 // read's error, "" when fine), state (the last state that read fine, or
-// null), workspace (the bar's monitor's active workspace id, -1 if none) }.
-// Returns { label, status: "normal" | "dirty" | "error", tooltip, error,
-// desk (or null), arrangement ("" when none), dirty }.
+// null), workspaceId (the bar's monitor's active Hyprland workspace id, -1 if
+// none) }. Returns { label, status: "normal" | "dirty" | "error", tooltip,
+// error, workspace (its number 1 to 10, or null), arrangement ("" when none),
+// dirty }.
 function view(input) {
   var state = input.state
-  var desk = deskOf(state, input.workspace)
+  var workspace = workspaceOf(state, input.workspaceId)
   var arrangement = state && state.arrangement ? String(state.arrangement) : ""
   var dirty = !!(state && state.dirty === true)
-  var label = GLYPH + " " + (arrangement || "none") + " · " + (desk === null ? "–" : desk) + (dirty ? " •" : "")
-  var here = where(arrangement, desk, input.workspace) + (dirty ? " · unsaved edits" : "")
-  var out = { label: label, status: dirty ? "dirty" : "normal", tooltip: "", error: "", desk: desk, arrangement: arrangement, dirty: dirty }
+  var label = GLYPH + " " + (arrangement || "none") + " · " + (workspace === null ? "–" : workspace) + (dirty ? " •" : "")
+  var here = where(arrangement, workspace, input.workspaceId) + (dirty ? " · unsaved edits" : "")
+  var out = { label: label, status: dirty ? "dirty" : "normal", tooltip: "", error: "", workspace: workspace,
+    arrangement: arrangement, dirty: dirty }
 
   if (!input.engine) {
     out.error = "the milan.hyprslots service is not running"
@@ -60,17 +63,19 @@ function view(input) {
 
 // The right-click menu for the same input as view(): [{ id, label, enabled }]
 // with ids "arrange", "record", "save", "reload". Re-apply and record need
-// the bar's screen to show a desk of a running engine (a config error leaves
+// the bar's screen to show a workspace of a running engine (a config error leaves
 // the last good config running); save needs unsaved edits; reload needs
 // only the service (it is how a fixed config error is picked up).
 function menu(input) {
   var v = view(input)
   var state = input.state
   var live = !!(input.engine && !input.error && state && !state.refused)
-  var onDesk = live && v.desk !== null
+  var onWorkspace = live && v.workspace !== null
   return [
-    { id: "arrange", label: "Re-apply layout" + (v.desk !== null ? " (desk " + v.desk + ")" : ""), enabled: onDesk },
-    { id: "record", label: "Record desk" + (v.desk !== null ? " " + v.desk : "") + "…", enabled: onDesk },
+    { id: "arrange", label: "Re-apply layout" + (v.workspace !== null ? " (workspace " + v.workspace + ")" : ""),
+      enabled: onWorkspace },
+    { id: "record", label: "Record workspace" + (v.workspace !== null ? " " + v.workspace : "") + "…",
+      enabled: onWorkspace },
     { id: "save", label: "Save", enabled: live && v.dirty },
     { id: "reload", label: "Reload config", enabled: !!input.engine },
   ]
@@ -78,20 +83,20 @@ function menu(input) {
 
 // The api calls a menu entry makes, in order ([] for record, which opens
 // the panel's Layout tab on its record flow instead). Re-apply is the
-// desk's Super+N (`desk`: every screen of the arrangement shows it again,
-// scroll branches back in slot order) and then `arrange` (the scroll pass
-// now, the focused scroll workspace's columns widened).
-function calls(id, desk) {
-  if (id === "arrange") return [{ name: "desk", args: { desk: desk } }, { name: "arrange", args: {} }]
+// workspace's Super+N (`workspace`: every screen of the arrangement shows it
+// again, scroll branches back in slot order) and then `arrange` (the scroll
+// pass now, the focused scroll workspace's columns widened).
+function calls(id, workspace) {
+  if (id === "arrange") return [{ name: "workspace", args: { workspace: workspace } }, { name: "arrange", args: {} }]
   if (id === "save") return [{ name: "save", args: {} }]
   if (id === "reload") return [{ name: "reload", args: {} }]
   return []
 }
 
 // What a menu entry's last reply says, for a notification.
-function outcome(id, desk, reply) {
+function outcome(id, workspace, reply) {
   if (!reply || !reply.ok) return reply && reply.error ? String(reply.error) : "the call failed"
-  if (id === "arrange") return "Desk " + desk + " laid out again."
+  if (id === "arrange") return "Workspace " + workspace + " laid out again."
   if (id === "save") return "Saved " + reply.path + "."
   if (id === "reload") return "Reloaded the config; these monitors run " + (reply.arrangement || "no arrangement") + "."
   return "Done."

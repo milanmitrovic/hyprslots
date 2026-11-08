@@ -47,9 +47,9 @@ function rows(state) {
       if (monitor) seen[monitor] = true
       return { role: role, selector: selector, monitor: monitor, pinned: !!pinned[role] }
     })
-    var desks = Object.keys(a.desks || {}).map(Number).sort(function(x, y) { return x - y })
+    var workspaces = Object.keys(a.workspaces || {}).map(Number).sort(function(x, y) { return x - y })
     return { name: name, screens: screens, active: !!a.active || state.arrangement === name, fits: fits,
-      readOnly: !!a.read_only, desks: desks }
+      readOnly: !!a.read_only, workspaces: workspaces }
   })
 }
 
@@ -131,7 +131,7 @@ function copySources(state, exclude) {
 
 function deleteQuestion(row) {
   var q = "Delete arrangement '" + row.name + "'? "
-  q += row.desks.length ? "It takes its trees for desks " + row.desks.join(", ") : "It holds no trees"
+  q += row.workspaces.length ? "It takes its trees for workspaces " + row.workspaces.join(", ") : "It holds no trees"
   if (row.active) q += "; these monitors will run nothing until another matches them"
   return q + "."
 }

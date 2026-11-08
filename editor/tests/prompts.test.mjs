@@ -89,13 +89,13 @@ test("keys get letters by first letter, then the first free digit", () => {
   assert.deepEqual(plain(P.keys(["main", "menu", "right", "Mail"])), ["m", "1", "r", "2"]);
 });
 
-test("the Layout view's desk and arrangement picks read as one-key prompts", () => {
+test("the Layout view's workspace and arrangement picks read as one-key prompts", () => {
   assert.equal(P.display(P.choice("Edit arrangement", P.options(["dual", "single", "solo"]))),
     "Edit arrangement: (d)ual, (s)ingle, (1) solo? [Esc] cancel   → dual");
-  const desks = P.options(["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]);
-  assert.deepEqual(plain(desks.map((o) => o.key)), ["1", "2", "3", "4", "5", "6", "7", "8", "9", ""]);
-  assert.equal(P.display(P.choice("Edit desk", desks.slice(2, 3))), "Edit desk: (3)? [Esc] cancel   → 3");
-  assert.deepEqual(feed(P.choice("Edit desk", desks), "3").result, { value: "3" });
+  const workspaces = P.options(["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]);
+  assert.deepEqual(plain(workspaces.map((o) => o.key)), ["1", "2", "3", "4", "5", "6", "7", "8", "9", ""]);
+  assert.equal(P.display(P.choice("Edit workspace", workspaces.slice(2, 3))), "Edit workspace: (3)? [Esc] cancel   → 3");
+  assert.deepEqual(feed(P.choice("Edit workspace", workspaces), "3").result, { value: "3" });
 });
 
 test("a refused ratio reopens with the entry kept and the refusal under it", () => {

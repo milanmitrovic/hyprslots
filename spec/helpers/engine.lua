@@ -1,5 +1,5 @@
 -- Drive hyprslots.setup() against a stubbed hl (test seam S2), for the specs
--- that need two screens: desks, routing across screens, hotplug.
+-- that need two screens: workspaces, routing across screens, hotplug.
 --
 --   local engine = require("helpers.engine")
 --   local hl, o = engine.stub({ "HEADLESS-2", "HEADLESS-3" }, { ["HEADLESS-2"] = 0, ["HEADLESS-3"] = 1 })

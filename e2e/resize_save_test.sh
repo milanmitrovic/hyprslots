@@ -2,8 +2,8 @@
 # (slice 4) is pixel-exact, and the editor api (slice 6) saves it, so it
 # survives an api reload and a full Hyprland config reload.
 #
-# Screen: HEADLESS-2, 2400x1350 at 0,0, Omarchy block 0 (desk N = workspace N).
-# Desk 3, arrangement "solo": h[a, b]; t-other has no slot, so the layout is
+# Screen: HEADLESS-2, 2400x1350 at 0,0, Omarchy block 0 (workspace N = workspace id N).
+# Workspace 3, arrangement "solo": h[a, b]; t-other has no slot, so the layout is
 # h[h[a, b]:3, *:1]: a 900, b 900, overflow 600 px.
 #
 # "nudge r 100px" on a moves the a|b edge exactly 100 px (a 1000, b 800) and
@@ -45,7 +45,7 @@ api() {
 
 field() { jq -r "$1 | if . == null then \"\" else tostring end" 2>/dev/null; }
 
-main_tree() { api state | field '.arrangements.solo.desks["3"].main.tree'; }
+main_tree() { api state | field '.arrangements.solo.workspaces["3"].main.tree'; }
 
 tree_is() { [[ $(main_tree) == "$1" ]]; }
 
@@ -63,7 +63,7 @@ test_body() {
   output_create HEADLESS-2
   expect_eq "hyprslots loaded" "" "$(hyprslots_load_error | head -n1)"
 
-  log "desk 3 -> $(api desk '{"desk": 3}')"
+  log "workspace 3 -> $(api workspace '{"workspace": 3}')"
   for class in t-a t-b t-other; do
     spawn_and_wait "$class"
   done
@@ -85,7 +85,7 @@ test_body() {
   # Then the api reports the nudge as an unsaved override.
   local state
   state=$(api state)
-  expect_eq "state tree" "h[a:5, b:4]" "$(field '.arrangements.solo.desks["3"].main.tree' <<<"$state")"
+  expect_eq "state tree" "h[a:5, b:4]" "$(field '.arrangements.solo.workspaces["3"].main.tree' <<<"$state")"
   expect_eq "override listed" "h[a:5, b:4]" "$(field '.resized["solo/3/main"].tree' <<<"$state")"
   expect_eq "unsaved" "true" "$(field .dirty <<<"$state")"
 

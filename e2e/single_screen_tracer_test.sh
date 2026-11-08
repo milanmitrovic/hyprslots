@@ -1,10 +1,10 @@
-# Tracer (slice 1): one screen, one desk tree, laid out by lua:slots.
+# Tracer (slice 1): one screen, one workspace tree, laid out by lua:slots.
 #
-# Screen: HEADLESS-2, 2400x1350 at 0,0, Omarchy block 0 (desk N = workspace N).
-# Desk 3, arrangement "solo": h[a:1, b:2, c:1] -> 600 + 1200 + 600 px.
+# Screen: HEADLESS-2, 2400x1350 at 0,0, Omarchy block 0 (workspace N = workspace id N).
+# Workspace 3, arrangement "solo": h[a:1, b:2, c:1] -> 600 + 1200 + 600 px.
 #
-# The windows open on desk 1 in shuffled order; the router moves each to desk
-# 3 as it opens, and activating desk 3 shows them in their slots.
+# The windows open on workspace 1 in shuffled order; the router moves each to workspace
+# 3 as it opens, and activating workspace 3 shows them in their slots.
 
 test_setup() {
   cat >"$E2E_CONFIG_HOME/hypr/test-extra.lua" <<'LUA'
@@ -58,20 +58,20 @@ test_body() {
   eventually 5 arrangement_is solo || true
   expect_eq "active arrangement" "solo" "$(state_field arrangement)"
 
-  # Given desk 1 is showing, when the three windows open in shuffled order,
-  # then each is routed to desk 3 as it opens.
+  # Given workspace 1 is showing, when the three windows open in shuffled order,
+  # then each is routed to workspace 3 as it opens.
   expect_monitor_workspace HEADLESS-2 1
   for class in t-c t-a t-b; do
     spawn_and_wait "$class"
     eventually 5 on_workspace "$class" 3 || true
-    expect_eq "$class routed to desk 3" "3" "$(workspace_of "$class")"
+    expect_eq "$class routed to workspace 3" "3" "$(workspace_of "$class")"
   done
 
-  # When desk 3 is activated.
-  log "desk 3 -> $(repl 'return hyprslots.api.call("desk", "{\"desk\": 3}")' 2>&1)"
+  # When workspace 3 is activated.
+  log "workspace 3 -> $(repl 'return hyprslots.api.call("workspace", "{\"workspace\": 3}")' 2>&1)"
   settle
 
-  # Then the screen shows desk 3 and the tree h[a:1, b:2, c:1] to the pixel.
+  # Then the screen shows workspace 3 and the tree h[a:1, b:2, c:1] to the pixel.
   expect_monitor_workspace HEADLESS-2 3
   expect_client t-a 3 0 0 600 1350
   expect_client t-b 3 600 0 1200 1350

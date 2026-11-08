@@ -1,7 +1,7 @@
 -- Test seam S2: a window that matches a slot's spec while every such slot is
--- taken goes to that desk's overflow leaf (docs/design.md §3, §7): it is
--- routed to the desk workspace of the first slot that matches it, follows
--- that desk on hotplug, takes a slot when one frees up, and is re-matched on
+-- taken goes to that workspace's overflow leaf (docs/design.md §3, §7): it is
+-- routed to the workspace of the first slot that matches it, follows
+-- that workspace on hotplug, takes a slot when one frees up, and is re-matched on
 -- a late title like any window with no slot.
 
 local engine = require("helpers.engine")
@@ -40,15 +40,15 @@ describe("matched windows with no free slot", function()
 
   after_each(engine.cleanup)
 
-  it("go to the desk workspace of the first slot that matches them", function()
+  it("go to the workspace of the first slot that matches them", function()
     local first = open(1, "t-left", 1)
     local extra = open(2, "t-left", 1)
-    assert.are.same({ desk = 3, slot = "left" }, assignment(first))
+    assert.are.same({ workspace = 3, slot = "left" }, assignment(first))
     assert.is_nil(assignment(extra))
     assert.are.same({ 13, 13 }, { workspace_of(first), workspace_of(extra) })
   end)
 
-  it("are laid out in that desk's overflow leaf", function()
+  it("are laid out in that workspace's overflow leaf", function()
     open(1, "t-left", 1)
     local extra = open(2, "t-left", 1)
     local ctx = hl_stub.layout_ctx({ x = 2400, y = 0, w = 1920, h = 1080 }, hl.windows)
@@ -59,7 +59,7 @@ describe("matched windows with no free slot", function()
     assert.are.same({ x = 3840, y = 0, w = 480, h = 1080 }, ctx.targets[2].placed)
   end)
 
-  it("follow their desk when the screens change", function()
+  it("follow their workspace when the screens change", function()
     open(1, "t-left", 1)
     local extra = open(2, "t-left", 1)
     local side = hl.monitors[2]
@@ -82,7 +82,7 @@ describe("matched windows with no free slot", function()
       end
     end
     hl.emit("window.destroy", first)
-    assert.are.same({ desk = 3, slot = "left" }, assignment(extra))
+    assert.are.same({ workspace = 3, slot = "left" }, assignment(extra))
     assert.are.equal(13, workspace_of(extra))
   end)
 
@@ -118,12 +118,12 @@ return {
     end
     open(1, "shell")
     local late = open(2, "shell")
-    assert.are.equal(2, late.workspace.id, "overflows on desk 2, where foot's first slot is")
+    assert.are.equal(2, late.workspace.id, "overflows on workspace 2, where foot's first slot is")
 
     late.title = "deltaf | zellij"
     hl.emit("window.title", late)
     hl.run_timers()
-    assert.are.same({ desk = 3, slot = "main" }, engine.state(hyprslots).assignments[late.address])
+    assert.are.same({ workspace = 3, slot = "main" }, engine.state(hyprslots).assignments[late.address])
     assert.are.equal(3, late.workspace.id)
   end)
 end)

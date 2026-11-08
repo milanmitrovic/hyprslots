@@ -10,9 +10,9 @@
 # visible windows keep a gaps_out margin at the screen edges and a
 # 2 * gaps_in gap between each other:
 #
-#   desk 3, h[a, b:2, c]: boxes 595 + 1190 + 595 px
+#   workspace 3, h[a, b:2, c]: boxes 595 + 1190 + 595 px
 #     a  12,12 586x1326     b  612,12 1176x1326     c  1802,12 586x1326
-#   desk 4, scroll[d, e]: Hyprland's scrolling layout, which works in the
+#   workspace 4, scroll[d, e]: Hyprland's scrolling layout, which works in the
 #     same area: each column is 0.99 of its 2380 px (2356), d's is fitted
 #     to the left edge with e's next to it, and the windows inside keep the
 #     same margins (no gaps_in at the screen edge, 2 * gaps_in between):
@@ -91,17 +91,17 @@ test_body() {
     eventually 5 on_workspace "$class" 4 || true
   done
 
-  # Given desk 3 is shown, its three slots tile 1:2:1 inside the gaps.
-  log "desk 3 -> $(repl 'return hyprslots.api.call("desk", "{\"desk\": 3}")' 2>&1)"
+  # Given workspace 3 is shown, its three slots tile 1:2:1 inside the gaps.
+  log "workspace 3 -> $(repl 'return hyprslots.api.call("workspace", "{\"workspace\": 3}")' 2>&1)"
   settle
   expect_monitor_workspace HEADLESS-2 3
   expect_client t-a 3 12 12 586 1326
   expect_client t-b 3 612 12 1176 1326
   expect_client t-c 3 1802 12 586 1326
 
-  # Given desk 4 is shown, d and e are full-width scrolling columns, d
+  # Given workspace 4 is shown, d and e are full-width scrolling columns, d
   # (the first) in view, both inside the gaps.
-  log "desk 4 -> $(repl 'return hyprslots.api.call("desk", "{\"desk\": 4}")' 2>&1)"
+  log "workspace 4 -> $(repl 'return hyprslots.api.call("workspace", "{\"workspace\": 4}")' 2>&1)"
   hc dispatch "hl.dsp.focus({ window = \"address:$(hc clients -j | jq -r 'first(.[] | select(.class == "t-d")) | .address')\" })" >/dev/null
   eventually 10 widths_are 4 "2347 2347" || true
   settle

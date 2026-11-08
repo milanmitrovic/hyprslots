@@ -7,13 +7,13 @@
 # Panel.qml standalone, with WAYLAND_DISPLAY and HYPRLAND_INSTANCE_SIGNATURE
 # of the nested Hyprland and the harness's private XDG_RUNTIME_DIR. The panel
 # is opened, a stray window is put into a slot with real key presses (wtype,
-# through the panel's keyboard handling), which also makes its spec desk 3's
+# through the panel's keyboard handling), which also makes its spec workspace 3's
 # for that slot; u takes it out again with that spec (the slot is left
 # empty), c clears a Missing slot's spec, through the panel's press() hook,
 # and api state must show each; [ ] and the digits page by
-# desk. Then the Layout tab flips desk 3's tree, takes a typed ratio,
+# workspace. Then the Layout tab flips workspace 3's tree, takes a typed ratio,
 # applies it (api state and the windows' geometry must follow) and saves it
-# (slots.lua must hold it); ] and 3 switch its desk; its slot list (s) edits
+# (slots.lua must hold it); ] and 3 switch its workspace; its slot list (s) edits
 # the global slots (a refused then a good rename, the trees and specs
 # following; a new slot, put in the tree at once and x taken out again;
 # Return on a placed one; delete; describe) with no Slots tab; the
@@ -24,8 +24,8 @@
 # state while the hyprslots global is gone.
 # Screenshots of the nested compositor go to .e2e-tmp/editor-smoke-*.png.
 #
-# Screen: HEADLESS-2, 1920x1080, Omarchy block 0 (desk N = workspace N).
-# Desk 3, arrangement "solo": h[main:2, v[right, side]]; t-side never opens.
+# Screen: HEADLESS-2, 1920x1080, Omarchy block 0 (workspace N = workspace id N).
+# Workspace 3, arrangement "solo": h[main:2, v[right, side]]; t-side never opens.
 
 test_setup() {
   cat >"$E2E_CONFIG_HOME/hypr/test-extra.lua" <<'LUA'
@@ -73,9 +73,9 @@ assignment_of() {
   api_state | jq -cS --arg a "$1" '.assignments[$a] // null'
 }
 
-assigned_to_side() { [[ $(assignment_of "$1") == '{"desk":3,"slot":"side"}' ]]; }
-# Desk 3's tree in force on the main screen, and whether all is saved.
-tree_in_force() { api_state | jq -r '.arrangements.solo.desks["3"].main.tree'; }
+assigned_to_side() { [[ $(assignment_of "$1") == '{"slot":"side","workspace":3}' ]]; }
+# Workspace 3's tree in force on the main screen, and whether all is saved.
+tree_in_force() { api_state | jq -r '.arrangements.solo.workspaces["3"].main.tree'; }
 tree_in_force_is() { [[ $(tree_in_force) == "$1" ]]; }
 saved() { [[ $(api_state | jq -r .dirty) == false ]]; }
 
@@ -150,9 +150,9 @@ slot_names() { api_state | jq -r '[.slots[].name] | join(" ")'; }
 
 # The Layout tab's slot list (s): the global slots, name and description
 # only. A rename to a taken name is refused in its prompt, then right
-# becomes aside (every tree and desk 3's spec follow); a makes notes and,
+# becomes aside (every tree and workspace 3's spec follow); a makes notes and,
 # on y, puts it in the tree after the selected leaf (main), where x takes it out
-# again; Return on a slot the desk places selects it in the picture; d asks
+# again; Return on a slot the workspace places selects it in the picture; d asks
 # naming what a slot goes from, deletes the unused notes; e describes main.
 layout_slots() {
   local watch="qs ipc --pid $SMOKE_QS_PID call smoke"
@@ -164,7 +164,7 @@ layout_slots() {
   shot 9-layout-slots
   press_keys Down r
   expect_eq "r prompts for the new name" \
-    "Rename 'right' to (every tree and desk follows) [Enter] save  [Esc] cancel: ▏" "$(smoke message)"
+    "Rename 'right' to (every tree and workspace follows) [Enter] save  [Esc] cancel: ▏" "$(smoke message)"
   press_text main
   press_keys Return
   eventually 5 bash -c "[[ \$(qs ipc --pid $SMOKE_QS_PID call smoke message) == *\"there is a slot 'main' already\"* ]]" ||
@@ -176,7 +176,7 @@ layout_slots() {
   press_text aside
   press_keys Return
   if eventually 5 state_is '.specs["3"].aside' t-right; then
-    pass "r renamed right to aside, desk 3's spec along"
+    pass "r renamed right to aside, workspace 3's spec along"
   else
     fail "right was not renamed: $(api_state | jq -c '{slots, specs}'); $(smoke message); errors: $(smoke errors)"
   fi
@@ -201,7 +201,7 @@ layout_slots() {
   fi
   eventually 5 bash -c "[[ \$($watch message) == *'(y/n)'* ]]" || true
   expect_eq "and offers to put it in the tree after the selected leaf" \
-    "Added slot 'notes'. Put it in main's tree on desk 3 after main? (y/n)" "$(smoke message)"
+    "Added slot 'notes'. Put it in main's tree on workspace 3 after main? (y/n)" "$(smoke message)"
   press_keys y
   expect_eq "y put notes after main, in the draft" "main: h[main:2, notes, v[aside, side:3]] *" "$(smoke layout)"
   expect_eq "the keys are the picture's again, notes selected" "main notes" "$(smoke selection)"
@@ -210,7 +210,7 @@ layout_slots() {
   press_keys x
   expect_eq "x took it out again" "main: h[main:2, v[aside, side:3]]" "$(smoke layout)"
 
-  # Return on a slot the desk places selects it in the picture.
+  # Return on a slot the workspace places selects it in the picture.
   press_keys s Up Up Up Down
   expect_eq "main selected in the list" "slots main" "$(smoke selection)"
   press_keys Return
@@ -248,31 +248,31 @@ layout_slots() {
   expect_eq "the picture's keys again" "main main" "$(smoke selection)"
 }
 
-# The Arrangements tab: n makes "desk" for the connected screen, copying
+# The Arrangements tab: n makes "office" for the connected screen, copying
 # solo's trees; it sorts before solo, so these monitors run it.
 arrangements_view() {
   expect_eq "Tab to Arrangements" "ok" "$(smoke press Tab)"
   sleep 0.3
   shot 13-arrangements
   press_keys n
-  press_text desk
+  press_text office
   press_keys Return
   expect_eq "a role is suggested for the monitor" "main" \
     "$(smoke message | sed -E 's/.*cancel: (.*)▏.*/\1/')"
   press_keys Return
   expect_eq "then where its trees come from" \
-    "Trees for 'desk' from: (d)efault, (e)mpty, (s)olo? [Esc] cancel   → default" "$(smoke message)"
+    "Trees for 'office' from: (d)efault, (e)mpty, (s)olo? [Esc] cancel   → default" "$(smoke message)"
   press_keys s
-  if eventually 5 state_is .arrangement desk; then
-    pass "n created desk from these screens, and they run it"
+  if eventually 5 state_is .arrangement office; then
+    pass "n created office from these screens, and they run it"
   else
-    fail "desk is not running: $(api_state | jq -c '{arrangement, a: (.arrangements | keys)}'); $(smoke message)"
+    fail "office is not running: $(api_state | jq -c '{arrangement, a: (.arrangements | keys)}'); $(smoke message)"
   fi
   local selector
   selector=$(api_state | jq -r '.monitors[0] | if .description != "" then .description elif .serial != "" then .serial else .name end')
-  expect_eq "desk selects the monitor by $selector" "$selector" "$(api_state | jq -r '.arrangements.desk.screens.main')"
-  expect_eq "desk has solo's trees" "h[main:2, v[aside, side:3]]" \
-    "$(api_state | jq -r '.arrangements.desk.desks["3"].main.tree')"
+  expect_eq "office selects the monitor by $selector" "$selector" "$(api_state | jq -r '.arrangements.office.screens.main')"
+  expect_eq "office has solo's trees" "h[main:2, v[aside, side:3]]" \
+    "$(api_state | jq -r '.arrangements.office.workspaces["3"].main.tree')"
   eventually 5 smoke_idle || true
   log "message: $(smoke message)"
   sleep 0.3
@@ -291,7 +291,7 @@ save_and_check() {
   local saved
   saved=$(cat "$file")
   for want in 'aside = {},' 'description = "the editor",' 'aside = "t-right",' 'main = "t-main",' \
-    'main = "h[main:2, v[aside, side:3]]"' 'desk = {' 'solo = {'; do
+    'main = "h[main:2, v[aside, side:3]]"' 'office = {' 'solo = {'; do
     if grep -qF "$want" <<<"$saved"; then
       pass "slots.lua holds $want"
     else
@@ -300,7 +300,7 @@ save_and_check() {
   done
 }
 
-# More of the Arrangements tab, unsaved: r renames desk to home, p is refused
+# More of the Arrangements tab, unsaved: r renames office to home, p is refused
 # (this config.lua does not read pinned from slots.lua), c copies the
 # default trees into home, e renames its screen role, x deletes solo.
 arrangement_edits() {
@@ -308,7 +308,7 @@ arrangement_edits() {
   press_text home
   press_keys Return
   if eventually 5 state_is .arrangement home; then
-    pass "r renamed desk to home, still running"
+    pass "r renamed office to home, still running"
   else
     fail "home is not running: $(api_state | jq -r .arrangement); $(smoke message)"
   fi
@@ -320,23 +320,23 @@ arrangement_edits() {
   press_keys c d
   expect_eq "c asks first" "Replace every tree of 'home' with the default trees? (y/n)" "$(smoke message)"
   press_keys y
-  if eventually 5 state_is '.arrangements.home.desks["3"].main.tree' "h[aside, main]"; then
+  if eventually 5 state_is '.arrangements.home.workspaces["3"].main.tree' "h[aside, main]"; then
     pass "c, d, y gave home the default trees"
   else
-    fail "home's tree is $(api_state | jq -r '.arrangements.home.desks["3"].main.tree'): $(smoke message)"
+    fail "home's tree is $(api_state | jq -r '.arrangements.home.workspaces["3"].main.tree'): $(smoke message)"
   fi
   eventually 5 smoke_idle || true
   press_keys e m Backspace Backspace Backspace Backspace
   press_text big
   press_keys Return Return
-  if eventually 5 state_is '.arrangements.home.desks["3"].big.tree' "h[aside, main]"; then
+  if eventually 5 state_is '.arrangements.home.workspaces["3"].big.tree' "h[aside, main]"; then
     pass "e renamed home's screen role main to big, its tree along"
   else
     fail "home is $(api_state | jq -c '.arrangements.home'): $(smoke message)"
   fi
   eventually 5 smoke_idle || true
   press_keys Down x
-  expect_eq "x asks first" "Delete arrangement 'solo'? It takes its trees for desks 3. (y/n)" "$(smoke message)"
+  expect_eq "x asks first" "Delete arrangement 'solo'? It takes its trees for workspaces 3. (y/n)" "$(smoke message)"
   press_keys y
   if eventually 5 state_is '.arrangements.solo' null; then
     pass "x, y deleted solo"
@@ -354,15 +354,15 @@ arrangement_edits() {
 # stand-in bar: its label follows the engine's state through the shared
 # service (no poller of its own), a dot while edits are unsaved; a left
 # click opens and closes the panel; the right-click menu's Save saves and
-# Re-apply lays the desk out again; with the hyprslots global gone the
+# Re-apply lays the workspace out again; with the hyprslots global gone the
 # widget turns red and says why, and comes back with it.
 bar_widget() {
   local watch="qs ipc --pid $SMOKE_QS_PID call smoke"
   expect_eq "the widget loads" "ok" "$(smoke bar)"
   eventually 5 bash -c "[[ \$($watch barLabel) == 'dirty 󰕰 home · 3 •' ]]" || true
-  expect_eq "it shows the running arrangement and desk, a dot for the unsaved edits" \
+  expect_eq "it shows the running arrangement and workspace, a dot for the unsaved edits" \
     "dirty 󰕰 home · 3 •" "$(smoke barLabel)"
-  expect_eq "its tooltip says so" $'Hyprslots: home, desk 3 · unsaved edits\nClick: editor · Right-click: menu' \
+  expect_eq "its tooltip says so" $'Hyprslots: home, workspace 3 · unsaved edits\nClick: editor · Right-click: menu' \
     "$(smoke barTooltip)"
   sleep 0.3
   shot 17-bar-widget
@@ -385,8 +385,8 @@ bar_widget() {
   eventually 5 smoke_idle || true
 
   expect_eq "Re-apply layout" "ok" "$(smoke barChoose arrange)"
-  if eventually 5 bash -c "[[ \$($watch barRun) == *'Desk 3 laid out again.'* ]]"; then
-    pass "Re-apply ran desk 3, then arrange"
+  if eventually 5 bash -c "[[ \$($watch barRun) == *'Workspace 3 laid out again.'* ]]"; then
+    pass "Re-apply ran workspace 3, then arrange"
   else
     fail "Re-apply: $(smoke barRun); errors: $(smoke errors)"
   fi
@@ -406,7 +406,7 @@ bar_widget() {
 
   # Record opens the panel on the Layout tab's record flow (R): the preview
   # asks before applying anything; n keeps the tree.
-  expect_eq "Record desk" "ok" "$(smoke barChoose record)"
+  expect_eq "Record workspace" "ok" "$(smoke barChoose record)"
   if eventually 5 bash -c "[[ \$($watch message) == Recorded*'Apply it?'* ]]"; then
     pass "Record opened the panel on the record preview"
   else
@@ -453,10 +453,10 @@ test_body() {
   output_create HEADLESS-2
   expect_eq "hyprslots loaded" "" "$(hyprslots_load_error | head -n1)"
 
-  # Given t-main and t-right in their slots on desk 3 and a stray window there.
+  # Given t-main and t-right in their slots on workspace 3 and a stray window there.
   spawn_and_wait t-main
   spawn_and_wait t-right
-  log "desk 3 -> $(repl 'return hyprslots.api.call("desk", "{\"desk\": 3}")')"
+  log "workspace 3 -> $(repl 'return hyprslots.api.call("workspace", "{\"workspace\": 3}")')"
   spawn_and_wait t-stray
   settle
   local stray
@@ -471,24 +471,24 @@ test_body() {
   sleep 0.5 # let the overlay reveal itself (it waits for the output's scale)
   shot 1-open
 
-  # Then `a` on the stray puts it into slot side and makes its spec desk 3's
+  # Then `a` on the stray puts it into slot side and makes its spec workspace 3's
   # for side, as real key presses: Down x3 (main, right, the side
   # placeholder, stray), a, then s for side.
-  expect_eq "the panel opens on desk 3, main selected" "slot main t-main" "$(smoke selection)"
+  expect_eq "the panel opens on workspace 3, main selected" "slot main t-main" "$(smoke selection)"
   keys_in_background -k Down -k Down -k Down -s 1000 -k a -s 1500 -k s
   local watch="qs ipc --pid $SMOKE_QS_PID call smoke"
   eventually 5 bash -c "[[ \$($watch selection) == 'none - t-stray' ]]"
   expect_eq "Down x3 selects the stray" "none - t-stray" "$(smoke selection)"
-  eventually 3 bash -c "[[ \$($watch message) == 'Assign to desk 3 slot'* ]]" || fail "a opened no prompt: $(smoke message)"
-  expect_eq "a prompts with the global slots on desk 3" \
-    "Assign to desk 3 slot (takes its spec): (m)ain, (r)ight, (s)ide? [Esc] cancel   → main" "$(smoke message)"
+  eventually 3 bash -c "[[ \$($watch message) == 'Assign to workspace 3 slot'* ]]" || fail "a opened no prompt: $(smoke message)"
+  expect_eq "a prompts with the global slots on workspace 3" \
+    "Assign to workspace 3 slot (takes its spec): (m)ain, (r)ight, (s)ide? [Esc] cancel   → main" "$(smoke message)"
   wait "$SMOKE_WTYPE_PID" 2>/dev/null
   if eventually 5 assigned_to_side "$stray"; then
     pass "keys a, s put the stray in side"
   else
     fail "the stray is not in side: $(assignment_of "$stray"); editor errors: $(smoke errors)"
   fi
-  expect_eq "and made its spec desk 3's for side" "t-stray" "$(api_state | jq -r '.specs["3"].side')"
+  expect_eq "and made its spec workspace 3's for side" "t-stray" "$(api_state | jq -r '.specs["3"].side')"
   expect_eq "in memory until saved" "true" "$(api_state | jq -r .dirty)"
   eventually 5 smoke_idle || true
   settle
@@ -502,7 +502,7 @@ test_body() {
   # spec a took from it with it: side is left empty, not Missing t-stray.
   expect_eq "u" "ok" "$(smoke press u)"
   expect_eq "u asks, naming the spec it clears" \
-    "Unassign t-stray from side and clear desk 3's spec for it (t-stray)? (the slot is left empty) (y/n)" "$(smoke message)"
+    "Unassign t-stray from side and clear workspace 3's spec for it (t-stray)? (the slot is left empty) (y/n)" "$(smoke message)"
   expect_eq "y" "ok" "$(smoke press y)"
   if eventually 5 unassigned "$stray"; then
     pass "u, y unassigned the stray"
@@ -510,7 +510,7 @@ test_body() {
     fail "the stray is still assigned: $(assignment_of "$stray"); editor errors: $(smoke errors)"
   fi
   if eventually 5 state_is '.specs["3"].side' null; then
-    pass "and cleared desk 3's spec for side"
+    pass "and cleared workspace 3's spec for side"
   else
     fail "side's spec is $(api_state | jq -r '.specs["3"].side'): $(smoke message)"
   fi
@@ -523,33 +523,33 @@ test_body() {
 
   # c clears the spec of a slot whose window is not open (a Missing row);
   # side waits for t-side again (set through the api), c, y clears it.
-  repl 'return hyprslots.api.call("set_spec", "{\"desk\": 3, \"slot\": \"side\", \"spec\": \"t-side\"}")' >/dev/null
+  repl 'return hyprslots.api.call("set_spec", "{\"workspace\": 3, \"slot\": \"side\", \"spec\": \"t-side\"}")' >/dev/null
   eventually 5 bash -c "[[ \$($watch selection) == 'missing side t-side' ]]" || true
   expect_eq "side is Missing t-side" "missing side t-side" "$(smoke selection)"
   press_keys c
-  expect_eq "c asks first" "Clear desk 3's spec for side (t-side)? (y/n)" "$(smoke message)"
+  expect_eq "c asks first" "Clear workspace 3's spec for side (t-side)? (y/n)" "$(smoke message)"
   press_keys y
   if eventually 5 state_is '.specs["3"].side' null; then
-    pass "c, y cleared desk 3's spec for side"
+    pass "c, y cleared workspace 3's spec for side"
   else
     fail "side's spec is $(api_state | jq -r '.specs["3"].side'): $(smoke message)"
   fi
   eventually 5 smoke_idle || true
 
-  # [ pages back to every window, 3 jumps to desk 3's page, 7 has none.
+  # [ pages back to every window, 3 jumps to workspace 3's page, 7 has none.
   press_keys [
   expect_eq "[ pages to every window" "slot main t-main" "$(smoke selection)"
   press_keys 7
-  expect_eq "7: desk 7 has no page" "Desk 7 has no slots: no tree places one and it has no spec." "$(smoke message)"
+  expect_eq "7: workspace 7 has no page" "Workspace 7 has no slots: no tree places one and it has no spec." "$(smoke message)"
   press_keys 3
-  expect_eq "3 jumps to desk 3's page" "slot main t-main" "$(smoke selection)"
+  expect_eq "3 jumps to workspace 3's page" "slot main t-main" "$(smoke selection)"
 
-  # The Layout tab edits desk 3's tree as a draft: / flips it, r takes a
+  # The Layout tab edits workspace 3's tree as a draft: / flips it, r takes a
   # typed ratio, w applies, Ctrl+S saves (s is no key of the view any more).
   expect_eq "Tab" "ok" "$(smoke press Tab)"
   sleep 0.3
   shot 4-layout-tab
-  expect_eq "the Layout view opens on desk 3's main screen, main selected" "main main" "$(smoke selection)"
+  expect_eq "the Layout view opens on workspace 3's main screen, main selected" "main main" "$(smoke selection)"
   expect_eq "its draft is the tree in force" "main: h[main:2, v[right, side]]" "$(smoke layout)"
   expect_eq "/" "ok" "$(smoke press /)"
   expect_eq "/ flips every split, in the draft" "main: v[main:2, h[right, side]] *" "$(smoke layout)"
@@ -627,7 +627,7 @@ test_body() {
   sleep 0.3
   shot 8-layout-scroll
   smoke press d >/dev/null
-  expect_eq "d asks first" "Put desk 3 on main back to the tree slots.lua holds? (y/n)" "$(smoke message)"
+  expect_eq "d asks first" "Put workspace 3 on main back to the tree slots.lua holds? (y/n)" "$(smoke message)"
   smoke press y >/dev/null
   local clean='main: v[main:2, h[right, side:3]]'
   if eventually 5 bash -c "[[ \$($watch layout) == '$clean' ]]"; then
@@ -655,15 +655,15 @@ test_body() {
   fi
   eventually 5 smoke_idle || true
 
-  # ] and the digits switch the desk (the arrows stay the picture's): desk 4
+  # ] and the digits switch the workspace (the arrows stay the picture's): workspace 4
   # has no tree yet, 3 jumps back.
   expect_eq "]" "ok" "$(smoke press ])"
-  expect_eq "] edits desk 4" "Editing desk 4 of solo." "$(smoke message)"
+  expect_eq "] edits workspace 4" "Editing workspace 4 of solo." "$(smoke message)"
   expect_eq "which has no tree here" "main: -" "$(smoke layout)"
   sleep 0.3
-  shot 8b-layout-desk-4
+  shot 8b-layout-workspace-4
   expect_eq "3" "ok" "$(smoke press 3)"
-  expect_eq "3 jumps back to desk 3" "Editing desk 3 of solo." "$(smoke message)"
+  expect_eq "3 jumps back to workspace 3" "Editing workspace 3 of solo." "$(smoke message)"
   expect_eq "its tree" "main: h[main:2, v[right, side:3]]" "$(smoke layout)"
 
   layout_slots
@@ -675,7 +675,7 @@ test_body() {
   # whose screen role is big now.
   press_keys Tab Tab
   expect_eq "the Layout tab follows the running arrangement" "big: h[aside, main]" "$(smoke layout)"
-  expect_eq "and says so" "Arrangement 'solo' is gone; editing desk 3 of home." "$(smoke message)"
+  expect_eq "and says so" "Arrangement 'solo' is gone; editing workspace 3 of home." "$(smoke message)"
   sleep 0.3
   shot 16-layout-follows
 
@@ -689,7 +689,7 @@ test_body() {
     "$(smoke errors)"
   bar_widget
 
-  log "assign round trip takes $(time_ms repl "return hyprslots.api.call(\"assign\", \"{\\\"address\\\":\\\"$stray\\\",\\\"desk\\\":3,\\\"slot\\\":\\\"side\\\"}\")") ms"
+  log "assign round trip takes $(time_ms repl "return hyprslots.api.call(\"assign\", \"{\\\"address\\\":\\\"$stray\\\",\\\"workspace\\\":3,\\\"slot\\\":\\\"side\\\"}\")") ms"
 
   log "qs log (warnings):"
   grep -iE 'warn|error|fail' "$E2E_DIR/qs.log" | head -n 20 | sed 's/^/    /'
