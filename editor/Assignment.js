@@ -307,6 +307,13 @@ function clearTarget(state, desk, row) {
 }
 
 // The page to open on: the focused workspace's desk, else every window.
+// The page of desk `desk` (the digit keys jump to it), -1 when it has none.
+function pageOfDesk(state, desk) {
+  var list = pages(state)
+  for (var i = 0; i < list.length; i++) if (list[i].desk === desk) return i
+  return -1
+}
+
 function initialPage(state, workspaceId) {
   var desk = deskOfWorkspace(state, workspaceId)
   if (desk === null) return 0

@@ -522,3 +522,17 @@ test("the slots a adds are the global ones no pane of the desk places yet", () =
   assert.deepEqual(plain(L.slotChoices(state, drafts)), ["side"]);
   assert.deepEqual(plain(L.slotChoices(null, drafts)), []);
 });
+
+test("the screen whose draft places a slot, null when no screen of the desk does", () => {
+  const drafts = { big: { node: tree("h[main, right]") }, side: { node: null }, top: { node: tree("left") } };
+  assert.equal(L.placedIn(drafts, "right"), "big");
+  assert.equal(L.placedIn(drafts, "left"), "top");
+  assert.equal(L.placedIn(drafts, "notes"), null);
+  assert.equal(L.placedIn(drafts, "*"), null);
+});
+
+test("a slot renamed in a draft keeps its place and weight", () => {
+  assert.equal(edited("h[main:2, v[right, *]]", (n) => ({ node: L.renameSlot(n, "right", "aside") })), "h[main:2, v[aside, *]]");
+  assert.equal(edited("scroll[a, b]", (n) => ({ node: L.renameSlot(n, "a", "x") })), "scroll[x, b]");
+  assert.equal(edited("main", (n) => ({ node: L.renameSlot(n, "other", "x") })), "main");
+});

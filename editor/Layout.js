@@ -716,6 +716,28 @@ function slotChoices(state, drafts) {
   return list.map(function(s) { return s.name }).filter(function(name) { return !placed[name] })
 }
 
+// The screen role whose draft places slot `slot` (drafts: role -> { node }),
+// or null: a slot sits on one screen of a desk.
+function placedIn(drafts, slot) {
+  if (slot === OVERFLOW) return null
+  for (var role in drafts || {}) {
+    var d = drafts[role]
+    if (d && d.node && leaves(d.node).indexOf(slot) >= 0) return role
+  }
+  return null
+}
+
+// The tree with slot `from` called `to` (the slot list's rename, carried
+// into an edited draft as the engine's rename_slot rewrites the trees).
+function renameSlot(root, from, to) {
+  var out = copy(root)
+  ;(function walk(n) {
+    if (n.kind === "slot" && n.slot === from) n.slot = to
+    if (n.children) n.children.forEach(walk)
+  })(out)
+  return out
+}
+
 // --- the view's model -------------------------------------------------------
 
 function sortedNames(object) {

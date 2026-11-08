@@ -170,6 +170,13 @@ test("the first page shown is the focused workspace's desk, else every window", 
   assert.equal(A.initialPage(state, null), 0);
 });
 
+test("a desk's page, for the digit keys; -1 for a desk with no page", () => {
+  const state = fixture();
+  assert.equal(A.pageOfDesk(state, 3), 1);
+  assert.equal(A.pageOfDesk(state, 4), 2);
+  assert.equal(A.pageOfDesk(state, 7), -1);
+});
+
 test("no state yet means no pages but the every-window one, and no rows", () => {
   assert.deepEqual(plain(A.pages(null)), [{ desk: null, label: "All windows" }]);
   assert.deepEqual(plain(A.rows(null, null)), []);
