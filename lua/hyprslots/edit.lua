@@ -813,10 +813,13 @@ end
 -- `screen`: into a scroll branch in the global slot order (before the first
 -- slot it sorts before, else after the last one), appended to a tiled tree's
 -- root split (a bare leaf becoming h[leaf, slot]), or as the whole tree of a
--- screen with none. A workspace showing the default trees gets its own copy
--- of them with the slot; the default ones stay. Returns the new data and the
--- screen the slot went on (nil when the workspace's trees already place it,
--- on any screen: nothing changes), or nil and why not.
+-- screen with none. A workspace with trees of its own gets the slot there;
+-- one showing the shared (default) trees gets it in them, so every
+-- workspace showing them places it (an empty slot closes up), and never a
+-- copy of its own. Returns the new data, the screen the slot went on and
+-- the trees it went into (n, or "default"), the last two nil when the
+-- workspace's trees already place it, on any screen: nothing changes; or nil
+-- and why not.
 function M.place_slot(data, layout, n, slot, screen)
   local entry, err = layout_entry(data, layout)
   if not entry then
@@ -849,15 +852,17 @@ function M.place_slot(data, layout, n, slot, screen)
   end
 
   local out = M.copy(data)
-  local trees = trees_of(out.layouts[layout], n)
+  local into = own and n or "default"
+  local trees = trees_of(out.layouts[layout], into)
   local text = trees[screen]
   local node = text and tree.parse(text)
   if not node then
     if text then
-      return nil, string.format("layout '%s' workspace %d screen %d's tree '%s' does not parse", layout, n, screen, text)
+      return nil, string.format("layout '%s' %s, screen %d: tree '%s' does not parse", layout,
+        own and "workspace " .. n or "shared trees", screen, text)
     end
     trees[screen] = slot
-    return out, screen
+    return out, screen, into
   end
   local leaf = { slot = slot, weight = 1 }
   if node.scroll then
@@ -881,7 +886,7 @@ function M.place_slot(data, layout, n, slot, screen)
     node = { split = "h", weight = 1, children = { node, leaf } }
   end
   trees[screen] = serialize.tree(node)
-  return out, screen
+  return out, screen, into
 end
 
 -- The slots a set of trees (screen -> text) places, as a set.
