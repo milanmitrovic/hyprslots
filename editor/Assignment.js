@@ -410,6 +410,7 @@ function placedText(reply, desk) {
   var p = reply && reply.placed
   if (!p) return ""
   var others = (Array.isArray(p.used_by) ? p.used_by : []).filter(function(d) { return d !== desk })
-  return "placed " + reply.slot + " in layout " + p.layout + ", workspace " + reply.workspace + " screen " + p.screen + ": "
+  var where = p.shared ? "layout " + p.layout + "'s shared tree (all workspaces)" : "layout " + p.layout + ", workspace " + reply.workspace
+  return "placed " + reply.slot + " in " + where + " screen " + p.screen + ": "
     + p.tree + (others.length ? " (also used by " + others.join(", ") + ")" : "")
 }

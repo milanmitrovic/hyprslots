@@ -274,4 +274,7 @@ test("the message after a takes a slot no tree places names the tree it went int
   reply.placed.used_by = ["laptop"];
   assert.equal(A.placedText(reply, "laptop"), "placed left in layout scroll, workspace 8 screen 1: scroll[left, main, right]");
   assert.equal(A.placedText({ slot: "left" }, "laptop"), "");
+  reply.placed.shared = true;
+  assert.equal(A.placedText(reply, "laptop"),
+    "placed left in layout scroll's shared tree (all workspaces) screen 1: scroll[left, main, right]");
 });
