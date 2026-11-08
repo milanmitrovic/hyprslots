@@ -132,6 +132,11 @@ ShellRoot {
       return panel.layoutText()
     }
 
+    // The panel's tabs, and the current one: "Assignment Layout Arrangements | Layout".
+    function tabs(): string {
+      return panel.tabs.join(" ") + " | " + panel.tabs[panel.tab]
+    }
+
     function press(key: string): string {
       return panel.press(key)
     }
