@@ -1,10 +1,10 @@
 -- Generated window rules (docs/design.md §7b): a window whose class has a
 -- class-only spec opens straight on that slot's workspace under the active
--- arrangement, instead of mapping on the focused workspace and jumping.
+-- desk, instead of mapping on the focused workspace and jumping.
 --
 -- One rule per class, named "hyprslots-<class>": registering a rule under a
 -- name Hyprland already has replaces it, so the rules are re-registered (only
--- when they change) after every arrangement change and every slot taken or
+-- when they change) after every desk change and every slot taken or
 -- freed. Hyprland rules cannot be removed at runtime, only disabled, so a
 -- rule with nothing to do is registered as { name, enabled = false }.
 --
@@ -14,7 +14,7 @@
 -- C window to that workspace's overflow leaf):
 --   class-only spec  -> enabled, "<workspace> silent"
 --   title or tag     -> disabled: only the title decides, so the router does
---   the slot is on no screen of the arrangement -> disabled
+--   the slot is on no screen of the desk -> disabled
 -- A rule is only an optimisation: the router places a window the same way
 -- with or without it, and checks the workspace's screen either way.
 

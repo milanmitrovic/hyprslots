@@ -7,25 +7,26 @@
 --
 -- Hyprland hands a layout message to the focused workspace's algorithm only,
 -- so this always acts on the focused window's slot. A nudged tree replaces
--- the configured branch for that arrangement, workspace and screen role, in
--- memory only (engine.resized["<arrangement>/<workspace>/<role>"]): it
--- survives monitor hotplug (re-selecting the same arrangement) but not a
--- config reload. The editor api's save writes it to slots.lua and clears it;
--- its reload drops it. effective_branch is the one answer to "which tree is
--- in force", for the layout and the api alike.
+-- the configured branch for that layout, workspace and screen, in memory
+-- only (engine.resized["<layout>/<workspace>/<screen>"]): it survives monitor
+-- hotplug (back to a desk using the same layout) but not a config reload. The
+-- editor api's save writes it to slots.lua and clears it; its reload drops
+-- it. effective_branch is the one answer to "which tree is in force", for
+-- the layout and the api alike.
 
 local adapter = require("hyprslots.hl_adapter")
+local config = require("hyprslots.config")
 local tree = require("hyprslots.tree")
 
 local M = {}
 
--- The override key of an arrangement's workspace on a screen role.
-function M.key(arrangement, workspace, role)
-  return string.format("%s/%s/%s", tostring(arrangement), tostring(workspace), tostring(role))
+-- The override key of a layout's workspace on a screen.
+function M.key(layout, workspace, screen)
+  return string.format("%s/%s/%s", tostring(layout), tostring(workspace), tostring(screen))
 end
 
 local function key(engine, entry)
-  return M.key(engine.active and engine.active.name or "?", entry.workspace, entry.role)
+  return M.key(engine.active and engine.active.layout or "?", entry.workspace, entry.screen)
 end
 
 local function overrides(engine)
@@ -33,33 +34,35 @@ local function overrides(engine)
   return engine.resized
 end
 
--- The tree in force for an arrangement's workspace on a screen role: the
--- nudged one if there is one, else the config's (nil when the config has none).
-function M.effective_branch(engine, arrangement, workspace, role)
-  local nudged = overrides(engine)[M.key(arrangement, workspace, role)]
+-- The tree in force for a layout's workspace on a screen: the nudged one
+-- if there is one, else the config's (its own or the default; nil when the
+-- config has none).
+function M.effective_branch(engine, layout, workspace, screen)
+  local nudged = overrides(engine)[M.key(layout, workspace, screen)]
   if nudged then
     return nudged
   end
-  local entry = engine.cfg and engine.cfg.arrangements[arrangement]
-  local branches = entry and entry.workspaces[workspace]
-  return branches and branches[role]
+  local entry = engine.cfg and engine.cfg.layouts[layout]
+  local trees = config.trees_for(entry, workspace)
+  return trees and trees[screen]
 end
 
--- The tree recalculate lays out for a workspace entry ({ workspace, role,
--- branch }) of the active arrangement: effective_branch, else the entry's own
+-- The tree recalculate lays out for a workspace entry ({ workspace, screen,
+-- branch }) of the active desk: effective_branch, else the entry's own
 -- branch.
 function M.branch(engine, entry)
-  local name = engine.active and engine.active.name
-  return (name and M.effective_branch(engine, name, entry.workspace, entry.role)) or entry.branch
+  local name = engine.active and engine.active.layout
+  return (name and M.effective_branch(engine, name, entry.workspace, entry.screen)) or entry.branch
 end
 
--- Each override as { key, arrangement, workspace, role, tree }, sorted by key.
+-- Each override as { key, layout, workspace, screen, tree }, sorted by key.
 function M.overrides(engine)
   local out = {}
   for k, node in pairs(overrides(engine)) do
-    local arrangement, workspace, role = k:match("^(.*)/(%d+)/([^/]*)$")
+    local layout, workspace, screen = k:match("^(.*)/(%d+)/(%d+)$")
     out[#out + 1] = {
-      key = k, arrangement = arrangement, workspace = math.tointeger(tonumber(workspace)), role = role, tree = node,
+      key = k, layout = layout, workspace = math.tointeger(tonumber(workspace)),
+      screen = math.tointeger(tonumber(screen)), tree = node,
     }
   end
   table.sort(out, function(a, b) return a.key < b.key end)
@@ -67,11 +70,11 @@ function M.overrides(engine)
 end
 
 -- Drop one override, or every override (no arguments past engine).
-function M.clear(engine, arrangement, workspace, role)
-  if arrangement == nil then
+function M.clear(engine, layout, workspace, screen)
+  if layout == nil then
     engine.resized = {}
   else
-    overrides(engine)[M.key(arrangement, workspace, role)] = nil
+    overrides(engine)[M.key(layout, workspace, screen)] = nil
   end
 end
 
@@ -140,7 +143,7 @@ local function reset(engine)
   end
   local had = overrides(engine)[key(engine, entry)] ~= nil
   overrides(engine)[key(engine, entry)] = nil
-  engine.log:info("reset workspace %s %s", tostring(entry.workspace), entry.role)
+  engine.log:info("reset workspace %s screen %s", tostring(entry.workspace), tostring(entry.screen))
   if had then
     announce(engine)
   end

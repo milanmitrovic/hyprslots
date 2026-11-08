@@ -2,7 +2,7 @@
 --
 -- On window.open a window matching a slot is assigned to it (sticky) and,
 -- when it opened on another workspace, moved to the slot's: workspace N on
--- the screen whose tree holds the slot in the active arrangement. Moves happen
+-- the screen whose tree holds the slot under the active desk. Moves happen
 -- here, in the event callback, never in recalculate. window.close frees the
 -- slot (window.destroy's window has no address left in Hyprland 0.56.2). A
 -- target workspace that does not exist yet is created where Hyprland puts it
@@ -76,7 +76,7 @@ function M.route(engine, window)
 
   local target = engine:workspace_for(assignment)
   if not target then
-    engine.log:info("open %s: %s %s on workspace %d is on no screen of the active arrangement",
+    engine.log:info("open %s: %s %s on workspace %d is on no screen of the active desk",
       window.class, what, assignment.slot, assignment.workspace)
     return
   end
@@ -114,10 +114,10 @@ function M.keep_on_screen(engine, target)
   end
 end
 
--- Move every assigned window to its slot's workspace under the active
--- arrangement (after hotplug or an edit), and every overflowing window to
--- its workspace's. Windows that match no slot, or whose slot no screen of the
--- arrangement holds, stay where they are. Then ask for a deferred scroll
+-- Move every assigned window to its slot's workspace under the active desk
+-- (after hotplug or an edit), and every overflowing window to its
+-- workspace's. Windows that match no slot, or whose slot no screen of the
+-- desk holds, stay where they are. Then ask for a deferred scroll
 -- pass (scroll.lua), which must see the windows where they have just been
 -- moved.
 function M.reroute_all(engine)

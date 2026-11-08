@@ -2,9 +2,9 @@
 --
 -- Workspace N on a screen is o.workspaces.focus(N, <its connector>). A
 -- workspace switch shows workspace N on every non-pinned screen of the active
--- arrangement, the focused screen (the origin) last, then refocuses the
--- origin. With no arrangement it switches the focused screen alone, as
--- Omarchy's Super+N does.
+-- desk, the focused screen (the origin) last, then refocuses the origin.
+-- With no desk it switches the focused screen alone, as Omarchy's Super+N
+-- does.
 
 local adapter = require("hyprslots.hl_adapter")
 
@@ -42,18 +42,17 @@ function M.activate(engine, workspace)
 end
 
 -- The connectors a workspace switch shows the workspace on, in order: every
--- non-pinned screen of the active arrangement by role name, the origin last;
--- or just the origin when no arrangement is active.
+-- non-pinned screen of the active desk, left to right, the origin last; or
+-- just the origin when no desk is active.
 function M.screens(engine, origin)
   local active = engine.active
   if not active then
     return { origin }
   end
-  local pinned = engine.cfg and engine.cfg.pinned or {}
+  local pinned = active.pinned or {}
   local out, origin_switches = {}, false
-  for _, role in ipairs(active.arrangement.roles) do
-    local monitor = active.monitors[role]
-    if not pinned[role] then
+  for screen, monitor in ipairs(active.monitors) do
+    if not pinned[screen] then
       if monitor == origin then
         origin_switches = true
       else
@@ -70,17 +69,16 @@ end
 -- Show the active workspace (the last one switched to) on screens that were
 -- just plugged in, unless they are pinned, then refocus the focused screen.
 -- `monitors` is a set of connector names. Does nothing before the first
--- workspace switch or with no active arrangement.
+-- workspace switch or with no active desk.
 function M.show_active(engine, monitors)
   local workspace, active = engine.active_workspace, engine.active
   if not workspace or not active or engine.refused then
     return
   end
-  local pinned = engine.cfg and engine.cfg.pinned or {}
+  local pinned = active.pinned or {}
   local shown = {}
-  for _, role in ipairs(active.arrangement.roles) do
-    local monitor = active.monitors[role]
-    if monitors[monitor] and not pinned[role] then
+  for screen, monitor in ipairs(active.monitors) do
+    if monitors[monitor] and not pinned[screen] then
       shown[#shown + 1] = monitor
     end
   end

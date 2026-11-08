@@ -10,9 +10,9 @@
 
 local adapter = require("hyprslots.hl_adapter")
 local api = require("hyprslots.api")
-local arrangement = require("hyprslots.arrangement")
 local assign = require("hyprslots.assign")
 local config = require("hyprslots.config")
+local desk = require("hyprslots.desk")
 local workspaces = require("hyprslots.workspaces")
 local hotplug = require("hyprslots.hotplug")
 local layout = require("hyprslots.layout")
@@ -27,6 +27,8 @@ local M = {}
 
 local LAYOUT = "slots"
 local BLOCKS = 10 -- Omarchy monitor blocks given lua:slots workspaces
+local WORKSPACES = 10
+local NEW_DESK_DELAY = 1000 -- ms a monitor set no desk knows must hold before it gets a desk
 
 local engine = nil
 
@@ -48,7 +50,7 @@ local function new_engine()
     config_error = nil,
     refused = nil,
     active = nil,
-    workspaces = {}, -- workspace id -> { workspace, role, monitor, branch }
+    workspaces = {}, -- workspace id -> { workspace, screen, monitor, branch }
     assignments = {}, -- window address -> { workspace, slot }
     overflow = {}, -- window address -> { workspace, slot }: matches that slot, which is taken
     unassigned = {}, -- window address -> true: taken out of its slot by hand, takes none
@@ -60,7 +62,9 @@ local function new_engine()
     since_save = {}, -- renames and removals since data was slots.lua's (api.lua's reset reads through them)
     ruled = {}, -- workspace id -> the layout hyprslots gave it ("lua:slots" or "scrolling")
     scroll_seen = {}, -- workspace id -> set of windows whose columns scroll.lua has widened
-    resized = {}, -- "<arrangement>/<workspace>/<role>" -> keyboard-resized tree (resize.lua)
+    resized = {}, -- "<layout>/<workspace>/<screen>" -> keyboard-resized tree (resize.lua)
+    auto_desks = {}, -- desk name -> true: made for monitors no desk knew, not saved yet
+    recent_layouts = {}, -- layout names, the most recently used first
   }, Engine)
 end
 
@@ -74,10 +78,13 @@ function Engine:refuse(reason)
   adapter.notify("hyprslots is off: " .. reason, "error")
 end
 
--- Re-pick the arrangement for the connected monitors and rebuild the map from
--- workspace id to workspace number and screen role.
+-- Re-pick the desk for the connected monitors and rebuild the map from
+-- workspace id to workspace number and screen (desk.lua; screen i is the
+-- i-th monitor from the left). Monitors no desk knows get one of their own
+-- (Engine:new_desk) once they have held for a second: hotplug passes through
+-- sets on its way.
 function Engine:reselect()
-  local previous = self.active and self.active.name
+  local previous = self.active and (self.active.desk .. "\0" .. self.active.layout)
   self.active = nil
   self.workspaces = {}
   if not self.cfg or self.refused then
@@ -85,23 +92,28 @@ function Engine:reselect()
   end
 
   local monitors = adapter.monitors()
-  self.active = arrangement.select(self.cfg, monitors)
+  self.active = desk.select(self.cfg, monitors)
 
   if self.active then
-    for workspace, branches in pairs(self.active.arrangement.workspaces) do
-      for role, branch in pairs(branches) do
-        local monitor = self.active.monitors[role]
-        local id = adapter.workspace_id(monitor, workspace)
-        self.workspaces[id] = { workspace = workspace, role = role, monitor = monitor, branch = branch }
+    self:used_layout(self.active.layout)
+    for n = 1, WORKSPACES do
+      for screen, branch in pairs(config.trees_for(self.active.entry, n) or {}) do
+        local monitor = self.active.monitors[screen]
+        if monitor then
+          local id = adapter.workspace_id(monitor, n)
+          self.workspaces[id] = { workspace = n, screen = screen, monitor = monitor, branch = branch }
+        end
       end
     end
+  elseif #desk.usable(monitors) > 0 then
+    self:want_desk()
   end
 
   if self.started and self.cfg then
     workspace_rules(self, true)
   end
 
-  local now = self.active and self.active.name
+  local now = self.active and (self.active.desk .. "\0" .. self.active.layout)
   if now ~= previous and self.started then
     self:changed()
   end
@@ -110,8 +122,117 @@ function Engine:reselect()
     for _, monitor in ipairs(monitors) do
       names[#names + 1] = monitor.name
     end
-    self.log:info("arrangement %s (monitors: %s)", tostring(now), table.concat(names, ", "))
+    self.log:info("desk %s, layout %s (monitors: %s)", tostring(self.active and self.active.desk),
+      tostring(self.active and self.active.layout), table.concat(names, ", "))
   end
+end
+
+-- Remember that a layout ran (most recent first): a new desk takes the
+-- most recently used layout for as many screens.
+function Engine:used_layout(name)
+  local recent = { name }
+  for _, other in ipairs(self.recent_layouts) do
+    if other ~= name then
+      recent[#recent + 1] = other
+    end
+  end
+  self.recent_layouts = recent
+end
+
+function Engine:want_desk()
+  if self.desk_pending then
+    return
+  end
+  self.desk_pending = true
+  adapter.defer(function()
+    self.desk_pending = false
+    self:guard("new desk", self.new_desk, self)
+  end, NEW_DESK_DELAY)
+end
+
+-- The layout a new desk of `count` monitors uses: the most recently used
+-- one for that many screens, else the first by name, else nil.
+local function layout_for_new_desk(self, count)
+  for _, name in ipairs(self.recent_layouts) do
+    local layout = self.cfg.layouts[name]
+    if layout and layout.screens == count then
+      return name
+    end
+  end
+  for _, name in ipairs(self.cfg.layout_names) do
+    if self.cfg.layouts[name].screens == count then
+      return name
+    end
+  end
+  return nil
+end
+
+local function free_name(base, ...)
+  local name, n = base, 1
+  local function taken(candidate, sets)
+    for _, set in ipairs(sets) do
+      if set and set[candidate] ~= nil then
+        return true
+      end
+    end
+    return false
+  end
+  local sets = { ... }
+  while taken(name, sets) do
+    n = n + 1
+    name = base .. "-" .. n
+  end
+  return name
+end
+
+-- A desk for the connected monitors, when no desk is them (§8): named
+-- after them, using the most recently used layout for as many screens, or
+-- a new default one. It is an edit like the editor's, in memory until
+-- saved (the editor and the bar show unsaved edits); where config.lua does
+-- not take desks from slots.lua it lives in the running config only.
+function Engine:new_desk()
+  if not self.cfg or self.refused or self.active then
+    return
+  end
+  local monitors = desk.order(desk.usable(adapter.monitors()))
+  if #monitors == 0 or desk.select(self.cfg, monitors) then
+    return
+  end
+  local data_desks = self.data and type(self.data.desks) == "table" and self.data.desks or nil
+  local data_layouts = self.data and type(self.data.layouts) == "table" and self.data.layouts or nil
+  local name = free_name(desk.name_for(monitors), self.cfg.desks, data_desks)
+  local selectors = {}
+  for i, monitor in ipairs(monitors) do
+    selectors[i] = desk.selector(monitor)
+  end
+  local layout = layout_for_new_desk(self, #monitors)
+  local trees
+  if not layout then
+    layout = free_name(name, self.cfg.layouts, data_layouts)
+    trees = desk.default_trees(monitors, self.cfg.slot_names)
+  end
+
+  local made = self.data and api.new_desk(self, name, selectors, layout, #monitors, trees)
+  if not made then
+    -- config.lua builds the desks (or loads no slots.lua): this run only.
+    if trees then
+      local parsed = {}
+      for screen, text in pairs(trees) do
+        parsed[screen] = assert(tree.parse(text))
+      end
+      self.cfg.layouts[layout] = { name = layout, screens = #monitors, default = parsed, workspaces = {} }
+      self.cfg.layout_names[#self.cfg.layout_names + 1] = layout
+      table.sort(self.cfg.layout_names)
+    end
+    self.cfg.desks[name] = { name = name, monitors = selectors, layout = layout, pinned = {}, pinned_list = {} }
+    self.cfg.desk_names[#self.cfg.desk_names + 1] = name
+    table.sort(self.cfg.desk_names)
+    self:apply_config(self.cfg, self.data, self.dirty)
+  end
+  self.auto_desks[name] = true
+  self.log:info("new desk %s (%s), layout %s", name, table.concat(selectors, ", "), layout)
+  adapter.notify(string.format("hyprslots: new desk '%s' for these monitors, layout '%s'%s", name, layout,
+    made and "; save it in the editor (Ctrl+S)" or ""), "info")
 end
 
 -- Assign every live window (on load: nothing survives a reload), except
@@ -166,7 +287,7 @@ function Engine:slot_of(hl_window)
   return self:assign(adapter.window(hl_window))
 end
 
--- { workspace, role, monitor, branch } for a workspace id, or nil.
+-- { workspace, screen, monitor, branch } for a workspace id, or nil.
 function Engine:entry_of_workspace(id)
   if self.refused or id == nil then
     return nil
@@ -174,7 +295,7 @@ function Engine:entry_of_workspace(id)
   return self.workspaces[id]
 end
 
--- The workspace id an assignment lives on in the active arrangement, or nil.
+-- The workspace id an assignment lives on under the active desk, or nil.
 function Engine:workspace_for(assignment)
   for id, entry in pairs(self.workspaces) do
     if entry.workspace == assignment.workspace then
@@ -209,12 +330,16 @@ end
 
 local function load_config(self, dir)
   self.config_dir = dir
-  local cfg, err, missing = config.load(dir)
+  local cfg, err, missing = config.load(dir, { monitors = adapter.monitors() })
   if cfg then
     self.cfg = cfg
     local file = cfg.data_files["slots.lua"]
     self.data = file and file.data
-    self.log:info("config loaded: %d arrangement(s)", #cfg.arrangement_names)
+    -- slots.lua in a shape of before: what runs differs from the file
+    -- until it is saved.
+    self.dirty = cfg.migrated == true and self.data ~= nil
+    self.log:info("config loaded: %d desk(s), %d layout(s)%s", #cfg.desk_names, #cfg.layout_names,
+      cfg.migrated and " (migrated from a shape of before; save to keep it)" or "")
     return
   end
   self.config_error = err
@@ -227,19 +352,22 @@ local function load_config(self, dir)
 end
 
 -- A layout for workspace N in every monitor block, for every workspace
--- some arrangement has a tree for: "scrolling" where the active arrangement
--- has a scroll branch (scroll.lua), lua:slots everywhere else. Workspace rules
--- apply when a workspace is created, so they are set up front, and again
--- when the arrangement or the trees change, for the workspaces whose layout
+-- some layout has a tree for (its own or the default ones): "scrolling"
+-- where the active desk's layout has a scroll branch (scroll.lua), lua:slots
+-- everywhere else. Workspace rules apply when a workspace is created, so
+-- they are set up front, and again when the desk or the trees change, for
+-- the workspaces whose layout
 -- changed. At load Omarchy's saved modes load afterwards and win; later
 -- (`runtime`), a workspace with a saved mode is left as it is, so Super+L's
 -- choice stands until Super+L brings slots back.
 workspace_rules = function(self, runtime)
   local cfg, ruled = self.cfg, self.ruled
   local with_trees = {}
-  for _, name in ipairs(cfg.arrangement_names) do
-    for n in pairs(cfg.arrangements[name].workspaces) do
-      with_trees[n] = true
+  for _, name in ipairs(cfg.layout_names) do
+    for n = 1, WORKSPACES do
+      if next(config.trees_for(cfg.layouts[name], n) or {}) ~= nil then
+        with_trees[n] = true
+      end
     end
   end
   local list = {}
@@ -325,7 +453,7 @@ function Engine:changed()
   adapter.emit_event("hyprslots changed " .. self.seq)
 end
 
--- Make Hyprland lay out every workspace of the active arrangement again
+-- Make Hyprland lay out every workspace of the active desk again
 -- (one zero resize per workspace holding a tiled window).
 function Engine:relayout()
   local nudged = {}
@@ -338,7 +466,7 @@ function Engine:relayout()
   end
 end
 
--- Run a newly loaded config: workspace rules, arrangement, assignments,
+-- Run a newly loaded config: workspace rules, desk, assignments,
 -- window rules and re-routing (an edit may have put a slot on another
 -- screen), layout, event. `data` is
 -- the slots.lua data it came from; `dirty` whether that differs from the
@@ -362,15 +490,16 @@ end
 -- Re-read config.lua and slots.lua from disk, dropping unsaved edits. Returns
 -- true, or nil and the error (the running config stays).
 function Engine:reload()
-  local cfg, err = config.load(self.config_dir)
+  local cfg, err = config.load(self.config_dir, { monitors = adapter.monitors() })
   if not cfg then
     self.log:error("reload: %s", err)
     return nil, err
   end
   local file = cfg.data_files["slots.lua"]
   resize.clear(self) -- keyboard-resized trees are unsaved edits too
-  self:apply_config(cfg, file and file.data, false)
-  self.log:info("config reloaded: %d arrangement(s)", #cfg.arrangement_names)
+  self.auto_desks = {} -- a desk made for these monitors is made again if they still need one
+  self:apply_config(cfg, file and file.data, cfg.migrated and file ~= nil)
+  self.log:info("config reloaded: %d desk(s), %d layout(s)", #cfg.desk_names, #cfg.layout_names)
   return true
 end
 

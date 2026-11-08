@@ -1,9 +1,9 @@
--- Monitor events -> arrangement selection and re-routing (docs/design.md §8).
+-- Monitor events -> desk selection and re-routing (docs/design.md §8).
 --
 -- Hyprland reports a monitor change from inside it, so nothing happens in the
 -- event itself. Two oneshot hops follow:
 --
---   1. re-select the arrangement for the monitors now connected;
+--   1. re-select the desk for the monitors now connected;
 --   2. re-route every assigned window to its slot's workspace under it,
 --      which ends by asking for the scroll pass (scroll.lua), so scroll
 --      columns are ordered only once the windows are where they belong.
@@ -43,7 +43,7 @@ function M.monitors_changed(engine, event)
         added[name] = true
       end
     end
-    engine:guard(event .. ": arrangement selection", engine.reselect, engine)
+    engine:guard(event .. ": desk selection", engine.reselect, engine)
     engine:guard(event .. ": window rules", window_rules.sync, engine)
     adapter.defer(function()
       engine:guard(event .. ": re-route", router.reroute_all, engine)

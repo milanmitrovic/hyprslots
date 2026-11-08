@@ -4,9 +4,9 @@
 
 local migrate = require("hyprslots.migrate")
 
-describe("migrate.data", function()
+describe("migrate.slots", function()
   it("turns per-workspace slots into global slots and per-workspace specs", function()
-    local out, migrated = migrate.data({
+    local out, migrated = migrate.slots({
       slots = {
         [1] = { left = "[Left]", main = "[Main]" },
         [3] = { left = "[DeltaF]", main = "com.mitchellh.ghostty/deltaf", right = "antigravity/deltaf" },
@@ -24,7 +24,7 @@ describe("migrate.data", function()
   end)
 
   it("moves each slot's description onto the global slot", function()
-    local out = migrate.data({
+    local out = migrate.slots({
       slots = { [3] = { main = "kitty/deltaf", right = "firefox" } },
       descriptions = { [3] = { main = "the editor" } },
     })
@@ -33,7 +33,7 @@ describe("migrate.data", function()
   end)
 
   it("keeps every different description of one slot name, in workspace order", function()
-    local out = migrate.data({
+    local out = migrate.slots({
       slots = { [2] = { main = "a" }, [3] = { main = "b" }, [5] = { main = "c" } },
       descriptions = { [5] = { main = "editor" }, [2] = { main = "notes" }, [3] = { main = "editor" } },
     })
@@ -41,7 +41,7 @@ describe("migrate.data", function()
   end)
 
   it("drops a description of a slot no workspace has", function()
-    local out = migrate.data({ slots = { [3] = { main = "a" } }, descriptions = { [3] = { gone = "x" } } })
+    local out = migrate.slots({ slots = { [3] = { main = "a" } }, descriptions = { [3] = { gone = "x" } } })
     assert.are.same({ main = {} }, out.slots)
   end)
 
@@ -51,37 +51,37 @@ describe("migrate.data", function()
       specs = { [3] = { main = "kitty" } },
       arrangements = {},
     }
-    local out, migrated = migrate.data(data)
+    local out, migrated = migrate.slots(data)
     assert.is_false(migrated)
     assert.are.same(data, out)
     assert.are_not.equal(data, out)
   end)
 
   it("leaves data with no slots alone", function()
-    local out, migrated = migrate.data({ arrangements = {} })
+    local out, migrated = migrate.slots({ arrangements = {} })
     assert.is_false(migrated)
     assert.are.same({ arrangements = {} }, out)
   end)
 
   it("never changes the table it is given", function()
     local data = { slots = { [3] = { main = "a" } }, descriptions = { [3] = { main = "x" } } }
-    migrate.data(data)
+    migrate.slots(data)
     assert.are.same({ slots = { [3] = { main = "a" } }, descriptions = { [3] = { main = "x" } } }, data)
   end)
 
   it("keeps what it cannot read for validation to report (a workspace that is no table)", function()
-    local out = migrate.data({ slots = { [3] = "kitty" } })
+    local out = migrate.slots({ slots = { [3] = "kitty" } })
     assert.are.same({ [3] = "kitty" }, out.specs)
   end)
 
   it("puts legacy slots under specs that are already there, the specs winning", function()
-    local out = migrate.data({ slots = { [3] = { main = "old", right = "r" } }, specs = { [3] = { main = "new" } } })
+    local out = migrate.slots({ slots = { [3] = { main = "old", right = "r" } }, specs = { [3] = { main = "new" } } })
     assert.are.same({ [3] = { main = "new", right = "r" } }, out.specs)
     assert.are.same({ main = {}, right = {} }, out.slots)
   end)
 
   it("moves descriptions given beside global slots onto them", function()
-    local out, migrated = migrate.data({ slots = { main = {} }, descriptions = { [3] = { main = "the editor" } } })
+    local out, migrated = migrate.slots({ slots = { main = {} }, descriptions = { [3] = { main = "the editor" } } })
     assert.is_true(migrated)
     assert.are.same({ main = { description = "the editor" } }, out.slots)
     assert.is_nil(out.descriptions)

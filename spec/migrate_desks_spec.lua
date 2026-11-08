@@ -91,3 +91,21 @@ describe("migrate.desks: arrangements become desks and layouts", function()
     assert.is_nil(copy.arrangements)
   end)
 end)
+
+describe("migrate.data", function()
+  it("reads both shapes of before at once: per-workspace slots and arrangements", function()
+    local out, changed = migrate.data({
+      slots = { [3] = { main = "t-main" } },
+      arrangements = { solo = { screens = { big = "HEADLESS-2" }, desks = { [3] = { big = "main" } } } },
+    })
+    assert.is_true(changed)
+    assert.are.same({ main = {} }, out.slots)
+    assert.are.same({ [3] = { main = "t-main" } }, out.specs)
+    assert.are.same({ monitors = { "HEADLESS-2" }, layout = "solo" }, out.desks.solo)
+  end)
+
+  it("says when nothing had to change", function()
+    local _, changed = migrate.data({ slots = { main = {} }, layouts = { x = { screens = 1 } } })
+    assert.is_false(changed)
+  end)
+end)

@@ -8,14 +8,15 @@
 -- record, assign, unassign, save, reload, arrange; for the slot list (the
 -- Layout tab's global slots) add_slot, remove_slot, rename_slot, describe_slot; for the
 -- Assignment view (each workspace's specs) take_spec, set_spec, clear_spec; for
--- the Arrangements view add_arrangement, rename_arrangement, delete_arrangement,
--- set_screens, set_pinned, copy_trees (the contract is in docs/design.md
--- §9). Every change bumps `seq` and emits hl.dsp.event("hyprslots changed
+-- the Desks & Layouts view add_desk, rename_desk, delete_desk, apply_layout,
+-- set_pinned, add_layout, fork_layout, rename_layout, delete_layout (the
+-- contract is in docs/design.md §9). Every change bumps `seq` and emits hl.dsp.event("hyprslots changed
 -- <seq>").
 
 local json = require("hyprslots.dkjson")
 local adapter = require("hyprslots.hl_adapter")
 local config = require("hyprslots.config")
+local desk = require("hyprslots.desk")
 local workspaces = require("hyprslots.workspaces")
 local edit = require("hyprslots.edit")
 local migrate = require("hyprslots.migrate")
@@ -29,6 +30,7 @@ local spec = require("hyprslots.spec")
 local tree = require("hyprslots.tree")
 
 local DATA_FILE = "slots.lua"
+local WORKSPACES = 10
 
 local M = {}
 
@@ -41,6 +43,14 @@ end
 
 local function array(t)
   return setmetatable(t or {}, ARRAY)
+end
+
+local function shallow(t)
+  local out = {}
+  for key, value in pairs(t or {}) do
+    out[key] = value
+  end
+  return out
 end
 
 local function sorted_keys(t)
@@ -57,12 +67,12 @@ local function sorted_keys(t)
   return keys
 end
 
--- The tree in force for an arrangement's workspace on a screen role: a
--- keyboard resize's in-memory override (resize.lua), else the config's. The
--- layout places the same tree. state reports it, set_ratio starts from it,
--- record compares against it and save writes it.
-function M.effective_branch(engine, arrangement, workspace, role)
-  return resize.effective_branch(engine, arrangement, workspace, role)
+-- The tree in force for a layout's workspace on a screen: a keyboard
+-- resize's in-memory override (resize.lua), else the config's. The layout
+-- places the same tree. state reports it, set_ratio starts from it, record
+-- compares against it and save writes it.
+function M.effective_branch(engine, layout, workspace, screen)
+  return resize.effective_branch(engine, layout, workspace, screen)
 end
 
 local function read_only_paths(cfg)
@@ -79,46 +89,92 @@ local function branch_info(node, resized)
     resized = resized or nil })
 end
 
--- "<arrangement>/<workspace>/<role>" -> { arrangement, workspace, role, tree,
+-- "<layout>/<workspace>/<screen>" -> { layout, workspace, screen, tree,
 -- ratio } for every unsaved keyboard-resized tree.
 local function resized_info(engine)
   local out = object()
   for _, override in ipairs(resize.overrides(engine)) do
-    out[override.key] = object({ arrangement = override.arrangement, workspace = override.workspace,
-      role = override.role,
-      tree = serialize.tree(override.tree), ratio = ratio.format(override.tree) })
+    out[override.key] = object({ layout = override.layout, workspace = override.workspace,
+      screen = override.screen, tree = serialize.tree(override.tree), ratio = ratio.format(override.tree) })
   end
   return out
 end
 
-local function arrangements_info(engine, read_only)
+-- { tree, ratio, slots, resized? } per screen ("1", "2"...) of one
+-- workspace's trees (or the default ones) of a layout.
+local function trees_info(engine, name, n, trees)
+  local out = object()
+  for _, screen in ipairs(sorted_keys(trees or {})) do
+    local configured = trees[screen]
+    local effective = n ~= "default" and M.effective_branch(engine, name, n, screen) or configured
+    out[tostring(screen)] = branch_info(effective, not rawequal(effective, configured))
+  end
+  return out
+end
+
+-- name -> { screens, default ("1" -> branch), workspaces ("3" -> "1" ->
+-- branch: the trees each workspace shows, its own or the default ones),
+-- own[] (the workspaces with trees of their own), used_by[] (desks),
+-- active, read_only }.
+local function layouts_info(engine, read_only)
   local out = object()
   local cfg = engine.cfg
   if not cfg then
     return out
   end
-  for _, name in ipairs(cfg.arrangement_names) do
-    local arrangement = cfg.arrangements[name]
-    local by_workspace = object()
-    for _, workspace in ipairs(sorted_keys(arrangement.workspaces)) do
-      local branches = object()
-      for _, role in ipairs(sorted_keys(arrangement.workspaces[workspace])) do
-        local configured = arrangement.workspaces[workspace][role]
-        local effective = M.effective_branch(engine, name, workspace, role) or configured
-        branches[role] = branch_info(effective, not rawequal(effective, configured))
+  local users = {}
+  for _, desk_name in ipairs(cfg.desk_names) do
+    local layout = cfg.desks[desk_name].layout
+    users[layout] = users[layout] or array()
+    users[layout][#users[layout] + 1] = desk_name
+  end
+  for _, name in ipairs(cfg.layout_names) do
+    local layout = cfg.layouts[name]
+    local workspaces = object()
+    for n = 1, WORKSPACES do
+      local trees = config.trees_for(layout, n)
+      if trees then
+        workspaces[tostring(n)] = trees_info(engine, name, n, trees)
       end
-      by_workspace[tostring(workspace)] = branches
-    end
-    local screens = object()
-    for role, selector in pairs(arrangement.screens) do
-      screens[role] = selector
     end
     out[name] = object({
-      screens = screens,
-      roles = array(arrangement.roles),
-      workspaces = by_workspace,
-      active = engine.active ~= nil and engine.active.name == name,
-      read_only = not edit.editable(read_only, "arrangements", name),
+      screens = layout.screens,
+      default = trees_info(engine, name, "default", layout.default),
+      workspaces = workspaces,
+      own = array(sorted_keys(layout.workspaces)),
+      used_by = users[name] or array(),
+      active = engine.active ~= nil and engine.active.layout == name,
+      read_only = not edit.editable(read_only, "layouts", name),
+    })
+  end
+  return out
+end
+
+-- name -> { monitors[] (selectors), connected[] (whether each is),
+-- layout, pinned[], active, screens[] (the active desk's connectors, left
+-- to right), auto (made for these monitors, not saved yet), read_only }.
+local function desks_info(engine, read_only, monitors)
+  local out = object()
+  local cfg = engine.cfg
+  if not cfg then
+    return out
+  end
+  for _, name in ipairs(cfg.desk_names) do
+    local entry = cfg.desks[name]
+    local connected = array()
+    for i, selector in ipairs(entry.monitors) do
+      connected[i] = desk.find(selector, monitors) ~= nil
+    end
+    local active = engine.active ~= nil and engine.active.desk == name
+    out[name] = object({
+      monitors = array(shallow(entry.monitors)),
+      connected = connected,
+      layout = entry.layout,
+      pinned = array(shallow(entry.pinned_list)),
+      active = active,
+      screens = active and array(shallow(engine.active.monitors)) or nil,
+      auto = engine.auto_desks[name] or nil,
+      read_only = not edit.editable(read_only, "desks", name),
     })
   end
   return out
@@ -148,23 +204,26 @@ local function specs_info(engine)
   return out
 end
 
--- The connected monitors, by connector: what an arrangement's screens can
--- select them by.
-local function monitors_info()
+-- The connected monitors, by connector: what a desk's monitors can be
+-- selected by, and where they are.
+local function monitors_info(monitors)
   local out = array()
-  local ok, monitors = pcall(adapter.monitors)
-  if not ok then
-    return out
+  local sorted = {}
+  for i, monitor in ipairs(monitors) do
+    sorted[i] = monitor
   end
-  table.sort(monitors, function(a, b) return tostring(a.name) < tostring(b.name) end)
-  for _, monitor in ipairs(monitors) do
+  table.sort(sorted, function(a, b) return tostring(a.name) < tostring(b.name) end)
+  for _, monitor in ipairs(sorted) do
     out[#out + 1] = object({ name = monitor.name, description = monitor.description or "",
-      serial = monitor.serial or "", focused = monitor.focused == true })
+      serial = monitor.serial or "", focused = monitor.focused == true, x = monitor.x, y = monitor.y,
+      width = monitor.width, height = monitor.height, internal = desk.internal(monitor),
+      selector = desk.selector(monitor) })
   end
   return out
 end
 
--- The workspaces with specs or trees.
+-- The workspaces with specs or trees (in any layout, the default ones
+-- counting for every workspace).
 local function used_workspaces(engine)
   local seen = {}
   local cfg = engine.cfg
@@ -172,16 +231,18 @@ local function used_workspaces(engine)
     for workspace in pairs(cfg.specs) do
       seen[workspace] = true
     end
-    for _, name in ipairs(cfg.arrangement_names) do
-      for workspace in pairs(cfg.arrangements[name].workspaces) do
-        seen[workspace] = true
+    for _, name in ipairs(cfg.layout_names) do
+      for n = 1, WORKSPACES do
+        if next(config.trees_for(cfg.layouts[name], n) or {}) ~= nil then
+          seen[n] = true
+        end
       end
     end
   end
   return array(sorted_keys(seen))
 end
 
--- The scroll branches of the active arrangement's workspaces and their
+-- The scroll branches of the active desk's workspaces and their
 -- columns (scroll.lua).
 local function scroll_info(engine)
   local out = array()
@@ -191,7 +252,7 @@ local function scroll_info(engine)
     return out
   end
   for _, s in ipairs(described) do
-    out[#out + 1] = object({ workspace_id = s.workspace_id, workspace = s.workspace, role = s.role,
+    out[#out + 1] = object({ workspace_id = s.workspace_id, workspace = s.workspace, screen = s.screen,
       slots = array(s.slots),
       layout = s.layout, managed = s.managed, columns = array(s.columns), members = object(s.members),
       in_order = s.in_order })
@@ -236,14 +297,14 @@ end
 
 -- The engine's state as a plain table.
 function M.snapshot(engine)
-  local screens, workspaces, assignments, overflow = object(), object(), object(), object()
+  local screens, workspaces, assignments, overflow = array(), object(), object(), object()
   if engine.active then
-    for role, monitor in pairs(engine.active.monitors) do
-      screens[role] = monitor
+    for i, monitor in ipairs(engine.active.monitors) do
+      screens[i] = monitor
     end
   end
   for id, entry in pairs(engine.workspaces) do
-    workspaces[tostring(id)] = object({ workspace = entry.workspace, role = entry.role, monitor = entry.monitor,
+    workspaces[tostring(id)] = object({ workspace = entry.workspace, screen = entry.screen, monitor = entry.monitor,
       layout = scroll.layout_for(engine, id) })
   end
   for address, assignment in pairs(engine.assignments) do
@@ -257,26 +318,30 @@ function M.snapshot(engine)
   local read_only = read_only_paths(engine.cfg)
   local dir = engine.config_dir or config.dir()
   local pinned = array()
-  for role in pairs(engine.cfg and engine.cfg.pinned or {}) do
-    pinned[#pinned + 1] = role
+  for screen in pairs(engine.active and engine.active.pinned or {}) do
+    pinned[#pinned + 1] = screen
   end
   table.sort(pinned)
+  local ok, monitors = pcall(adapter.monitors)
+  monitors = ok and desk.usable(monitors) or {}
   return {
     ok = true,
     seq = engine.seq,
     refused = engine.refused,
     config_error = engine.config_error,
-    arrangement = engine.active and engine.active.name or nil,
+    desk = engine.active and engine.active.desk or nil,
+    layout = engine.active and engine.active.layout or nil,
     screens = screens,
     workspaces = workspaces,
     assignments = assignments,
     overflow = overflow,
     unassigned = unassigned,
     log_seq = engine.log.seq,
-    arrangements = arrangements_info(engine, read_only),
+    desks = desks_info(engine, read_only, monitors),
+    layouts = layouts_info(engine, read_only),
     slots = slots_info(engine),
     specs = specs_info(engine),
-    monitors = monitors_info(),
+    monitors = monitors_info(monitors),
     used_workspaces = used_workspaces(engine),
     pinned = pinned,
     windows = windows_info(engine),
@@ -288,6 +353,7 @@ function M.snapshot(engine)
       data_file = dir .. "/" .. DATA_FILE,
       editable = engine.data ~= nil,
       read_only = array(read_only),
+      migrated = engine.cfg and engine.cfg.migrated or nil,
     }),
   }
 end
@@ -302,20 +368,21 @@ local function fail(message)
   return { ok = false, error = message }
 end
 
--- The arrangement a call means: args.arrangement, else the active one.
-local function target_arrangement(engine, args)
-  local name = args.arrangement
+-- The layout a call means: args.layout, else the active desk's; it must be
+-- the editor's to change.
+local function target_layout(engine, args)
+  local name = args.layout
   if name == nil then
     if not engine.active then
-      return nil, "no arrangement is active; name one with \"arrangement\""
+      return nil, "no desk is active; name a layout with \"layout\""
     end
-    name = engine.active.name
+    name = engine.active.layout
   end
-  if type(name) ~= "string" or not (engine.cfg and engine.cfg.arrangements[name]) then
-    return nil, "no arrangement '" .. tostring(name) .. "'"
+  if type(name) ~= "string" or not (engine.cfg and engine.cfg.layouts[name]) then
+    return nil, "no layout '" .. tostring(name) .. "'"
   end
-  if not edit.editable(read_only_paths(engine.cfg), "arrangements", name) then
-    return nil, "arrangement '" .. name .. "' is set by code in config.lua; edit it there"
+  if not edit.editable(read_only_paths(engine.cfg), "layouts", name) then
+    return nil, "layout '" .. name .. "' is set by code in config.lua; edit it there"
   end
   return name
 end
@@ -325,6 +392,32 @@ local function as_integer(value)
     return math.tointeger(value)
   end
   return value
+end
+
+-- A workspace number, or "default" (a layout's default trees).
+local function as_workspace(value)
+  if value == "default" then
+    return value
+  end
+  return as_integer(value)
+end
+
+-- A screen number (JSON object keys arrive as text).
+local function as_screen(value)
+  if type(value) == "string" and value:match("^%d+$") then
+    return math.tointeger(tonumber(value))
+  end
+  return as_integer(value)
+end
+
+-- The configured tree of a layout's workspace (or "default") on a screen.
+local function configured_tree(cfg, name, n, screen)
+  local layout = cfg.layouts[name]
+  if n == "default" then
+    return layout and layout.default[screen]
+  end
+  local trees = config.trees_for(layout, n)
+  return trees and trees[screen]
 end
 
 -- Run config.lua over edited data; on success the engine runs it. Returns the
@@ -338,63 +431,69 @@ local function apply_data(engine, data)
   return cfg
 end
 
-local function set_tree(engine, name, workspace, role, text)
+local function set_tree(engine, name, n, screen, text)
   if not engine.data then
     return nil, "config.lua loads no " .. DATA_FILE .. ", so there is nothing the editor may change"
   end
-  local data, err = edit.set_tree(engine.data, name, workspace, role, text)
+  local data, err = edit.set_tree(engine.data, name, n, screen, text)
   if not data then
     return nil, err
   end
   -- The new tree replaces a keyboard-resized one; it is kept if the edit fails.
-  local nudged = engine.resized and engine.resized[resize.key(name, workspace, role)]
-  resize.clear(engine, name, workspace, role)
+  local key = resize.key(name, n, screen)
+  local nudged = engine.resized and engine.resized[key]
+  resize.clear(engine, name, n, screen)
   local cfg, apply_err = apply_data(engine, data)
   if not cfg then
     if nudged then
-      engine.resized[resize.key(name, workspace, role)] = nudged
+      engine.resized[key] = nudged
     end
     return nil, apply_err
   end
-  return cfg.arrangements[name].workspaces[workspace][role]
+  return configured_tree(cfg, name, n, screen)
 end
 
--- set_tree { arrangement?, workspace, role, tree }
+-- set_tree { layout?, workspace (or "default"), screen, tree }
 function handlers.set_tree(engine, args)
-  local name, err = target_arrangement(engine, args)
+  local name, err = target_layout(engine, args)
   if not name then
     return fail(err)
   end
-  local workspace = as_integer(args.workspace)
-  local node, set_err = set_tree(engine, name, workspace, args.role, args.tree)
+  local n, screen = as_workspace(args.workspace), as_screen(args.screen)
+  local node, set_err = set_tree(engine, name, n, screen, args.tree)
   if not node then
     return fail(set_err)
   end
-  return { arrangement = name, workspace = workspace, role = args.role, tree = serialize.tree(node),
+  return { layout = name, workspace = n, screen = screen, tree = serialize.tree(node),
     ratio = ratio.format(node), seq = engine.seq }
 end
 
--- set_ratio { arrangement?, workspace, role, ratio }
+-- set_ratio { layout?, workspace (or "default"), screen, ratio }
 function handlers.set_ratio(engine, args)
-  local name, err = target_arrangement(engine, args)
+  local name, err = target_layout(engine, args)
   if not name then
     return fail(err)
   end
-  local workspace = as_integer(args.workspace)
-  local current = M.effective_branch(engine, name, workspace, args.role)
+  local n, screen = as_workspace(args.workspace), as_screen(args.screen)
+  local current
+  if n == "default" then
+    current = configured_tree(engine.cfg, name, n, screen)
+  else
+    current = M.effective_branch(engine, name, n, screen)
+  end
   if not current then
-    return fail(string.format("arrangement '%s' has no tree for workspace %s on '%s'", name, tostring(workspace),
-      tostring(args.role)))
+    return fail(string.format("layout '%s' has no tree for workspace %s on screen %s", name, tostring(n),
+      tostring(screen)))
   end
   local applied, ratio_err = ratio.apply(current, args.ratio)
   if not applied then
     return fail(ratio_err)
   end
-  local node, set_err = set_tree(engine, name, workspace, args.role, serialize.tree(applied))
+  local node, set_err = set_tree(engine, name, n, screen, serialize.tree(applied))
   if not node then
     return fail(set_err)
   end
-  return { arrangement = name, workspace = workspace, role = args.role, tree = serialize.tree(node),
+  return { layout = name, workspace = n, screen = screen, tree = serialize.tree(node),
     ratio = ratio.format(node), seq = engine.seq }
 end
 
@@ -418,11 +517,11 @@ local function apply_record(engine, args, reply)
     apply = #reply.missing == 0
   end
   if apply then
-    local editable, edit_err = target_arrangement(engine, { arrangement = reply.arrangement })
+    local editable, edit_err = target_layout(engine, { layout = reply.layout })
     if not editable then
       return fail(edit_err)
     end
-    local set, set_err = set_tree(engine, reply.arrangement, reply.workspace, reply.role, reply.tree)
+    local set, set_err = set_tree(engine, reply.layout, reply.workspace, reply.screen, reply.tree)
     if not set then
       return fail(set_err)
     end
@@ -468,22 +567,22 @@ record_scroll = function(engine, args, id, entry, name, branch)
   for i, slot in ipairs(present) do
     node.children[i] = slot == tree.OVERFLOW and { overflow = true, weight = 1 } or { slot = slot, weight = 1 }
   end
-  return apply_record(engine, args, { arrangement = name, workspace = entry.workspace, role = entry.role,
+  return apply_record(engine, args, { layout = name, workspace = entry.workspace, screen = entry.screen,
     workspace_id = id, tree = serialize.tree(node), ratio = ratio.format(node), missing = missing, applied = false })
 end
 
 -- record { workspace_id?, apply? }: the tree the windows on a Hyprland
 -- workspace (default: the focused one) show, for that workspace number and
--- screen of the active arrangement. It is applied when it places every slot
+-- screen of the active desk's layout. It is applied when it places every slot
 -- of the current tree, or when apply = true; apply = false only previews.
 function handlers.record(engine, args)
   local id = as_integer(args.workspace_id) or adapter.active_workspace_id()
   local entry = engine:entry_of_workspace(id)
   if not entry then
-    return fail("workspace " .. tostring(id) .. " has no tree in the active arrangement")
+    return fail("workspace " .. tostring(id) .. " has no tree in the active desk's layout")
   end
-  local name = engine.active.name
-  local branch = M.effective_branch(engine, name, entry.workspace, entry.role) or entry.branch
+  local name = engine.active.layout
+  local branch = M.effective_branch(engine, name, entry.workspace, entry.screen) or entry.branch
   if tree.scroll(branch) then
     return record_scroll(engine, args, id, entry, name, branch)
   end
@@ -513,7 +612,7 @@ function handlers.record(engine, args)
       missing[#missing + 1] = leaf.slot
     end
   end
-  return apply_record(engine, args, { arrangement = name, workspace = entry.workspace, role = entry.role,
+  return apply_record(engine, args, { layout = name, workspace = entry.workspace, screen = entry.screen,
     workspace_id = id, tree = serialize.tree(node), ratio = ratio.format(node), missing = missing, applied = false })
 end
 
@@ -525,20 +624,13 @@ function handlers.save(engine)
   local data = edit.copy(engine.data)
   local read_only = read_only_paths(engine.cfg)
   local written = {} -- override keys save makes part of the config
-  for _, name in ipairs(engine.cfg.arrangement_names) do
-    local entry = engine.cfg.arrangements[name]
-    local target = type(data.arrangements) == "table" and data.arrangements[name]
-    if type(target) == "table" and edit.editable(read_only, "arrangements", name) then
-      for workspace, branches in pairs(entry.workspaces) do
-        for role, node in pairs(branches) do
-          local effective = M.effective_branch(engine, name, workspace, role)
-          if effective and not rawequal(effective, node) then
-            target.desks = target.desks or {} -- slots.lua's data key
-            target.desks[workspace] = target.desks[workspace] or {}
-            target.desks[workspace][role] = serialize.tree(effective)
-            written[#written + 1] = { name, workspace, role }
-          end
-        end
+  for _, o in ipairs(resize.overrides(engine)) do
+    local configured = engine.cfg.layouts[o.layout] and configured_tree(engine.cfg, o.layout, o.workspace, o.screen)
+    if configured and not rawequal(configured, o.tree) and edit.editable(read_only, "layouts", o.layout) then
+      local next_data = edit.set_tree(data, o.layout, o.workspace, o.screen, serialize.tree(o.tree))
+      if next_data then
+        data = next_data
+        written[#written + 1] = { o.layout, o.workspace, o.screen }
       end
     end
   end
@@ -548,6 +640,7 @@ function handlers.save(engine)
     return fail(err)
   end
   engine.log:info("saved %s", path)
+  engine.auto_desks = {} -- the desks made for new monitors are slots.lua's now
   -- The written overrides are config now: run the saved data, then drop them.
   local cfg = #written > 0 and config.load(engine.config_dir, { data = { [DATA_FILE] = data } })
   if cfg then
@@ -570,7 +663,8 @@ function handlers.reload(engine)
   if not ok then
     return fail(err)
   end
-  return { arrangement = engine.active and engine.active.name or nil, seq = engine.seq }
+  return { desk = engine.active and engine.active.desk or nil, layout = engine.active and engine.active.layout or nil,
+    seq = engine.seq }
 end
 
 local function live_window(address)
@@ -643,13 +737,6 @@ end
 
 local NO_DATA = "config.lua loads no " .. DATA_FILE .. ", so there is nothing the editor may change"
 
-local function shallow(t)
-  local out = {}
-  for key, value in pairs(t or {}) do
-    out[key] = value
-  end
-  return out
-end
 
 -- Run edited data. `check(cfg)` returns why the edit did not take, or nil;
 -- `carry(engine)` moves in-memory state along (keyboard-resized trees,
@@ -682,7 +769,7 @@ local function not_taken(what)
 end
 
 -- Remember an edit that renames or removes what slots.lua names (a slot, an
--- arrangement, a screen role) until data is the file's again: reset reads
+-- layout) until data is the file's again: reset reads
 -- the saved trees through them. `op` is edit.lua's function and its
 -- arguments after the data.
 local function remember(engine, op, ...)
@@ -827,23 +914,33 @@ function handlers.remove_slot(engine, args)
 end
 
 local function count_changed_trees(before, after)
-  local n = 0
-  for name, entry in pairs(type(after.arrangements) == "table" and after.arrangements or {}) do
-    local old = before.arrangements and before.arrangements[name]
-    for workspace, branches in pairs(type(entry.desks) == "table" and entry.desks or {}) do
-      for role, text in pairs(branches) do
-        local was = old and old.desks and old.desks[workspace] and old.desks[workspace][role]
-        if was ~= nil and was ~= text then
-          n = n + 1
+  local was = {}
+  local function each(data, fn)
+    for name, entry in pairs(type(data.layouts) == "table" and data.layouts or {}) do
+      if type(entry) == "table" then
+        for n, trees in pairs(type(entry.workspaces) == "table" and entry.workspaces or {}) do
+          for screen, text in pairs(type(trees) == "table" and trees or {}) do
+            fn(name .. "/" .. tostring(n) .. "/" .. tostring(screen), text)
+          end
+        end
+        for screen, text in pairs(type(entry.default) == "table" and entry.default or {}) do
+          fn(name .. "/default/" .. tostring(screen), text)
         end
       end
     end
   end
+  each(before, function(key, text) was[key] = text end)
+  local n = 0
+  each(after, function(key, text)
+    if was[key] ~= nil and was[key] ~= text then
+      n = n + 1
+    end
+  end)
   return n
 end
 
--- rename_slot { slot, to }: everywhere: every tree of every workspace and
--- arrangement, every workspace's spec, the keyboard-resized trees and the
+-- rename_slot { slot, to }: everywhere: every tree of every layout, every
+-- workspace's spec, the keyboard-resized trees and the
 -- assignments (a hand-made one stays hand-made).
 function handlers.rename_slot(engine, args)
   local ok, err = editable_slots(engine)
@@ -983,248 +1080,382 @@ function handlers.take_spec(engine, args)
     displaced = displaced, seq = engine.seq }
 end
 
-local function arrangements_editable(engine)
+-- Desks and layouts (the Desks & Layouts view) --------------------------------
+
+local function section_editable(engine, section, name, what)
   if not engine.data then
     return nil, NO_DATA
   end
-  local read_only = read_only_paths(engine.cfg)
-  for _, path in ipairs(read_only) do
-    if path == "arrangements" then
-      return nil, "the arrangements are set by code in config.lua; edit them there"
-    end
+  if not edit.editable(read_only_paths(engine.cfg), section, name) then
+    return nil, what .. " is set by code in config.lua; edit it there"
   end
   return true
 end
 
-local function active_name(engine)
-  return engine.active and engine.active.name or nil
-end
-
--- The arrangement a rename or delete means: it must be named.
-local function named_arrangement(engine, args)
-  if args.arrangement == nil then
-    return nil, "name one with \"arrangement\""
+-- The desk a call means: args.desk, else the active one; it must be the
+-- editor's to change.
+local function target_desk(engine, args)
+  local name = args.desk
+  if name == nil then
+    if not engine.active then
+      return nil, "no desk is active; name one with \"desk\""
+    end
+    name = engine.active.desk
   end
-  local name, err = target_arrangement(engine, args)
-  if not name then
+  if type(name) ~= "string" or not (engine.cfg and engine.cfg.desks[name]) then
+    return nil, "no desk '" .. tostring(name) .. "'"
+  end
+  local ok, err = section_editable(engine, "desks", name, "desk '" .. name .. "'")
+  if not ok then
     return nil, err
-  end
-  if not engine.data then
-    return nil, NO_DATA
   end
   return name
 end
 
-local function on_arrangement_overrides(fn)
-  return function(engine)
-    carry_overrides(engine, function(o)
-      return fn(o)
-    end)
+local function active_desk(engine)
+  return engine.active and engine.active.desk or nil
+end
+
+local function active_layout(engine)
+  return engine.active and engine.active.layout or nil
+end
+
+local function took_desk(name, want)
+  return function(c)
+    local entry = c.desks[name]
+    if not entry then
+      return not_taken("desk '" .. name .. "'")
+    end
+    if want and not want(entry) then
+      return not_taken("desk '" .. name .. "'")
+    end
   end
 end
 
-local function copy_source(args)
-  if args.from ~= nil then
-    return args.from, true
-  end
-  if args.default == true then
-    return nil, true
-  end
-  return nil, false
-end
-
--- add_arrangement { name, screens, from? | default? , roles? }: a new
--- arrangement for these screens (role -> selector), empty, with another's
--- trees (`from`, roles mapped by `roles` or by name) or the default trees.
-function handlers.add_arrangement(engine, args)
-  local ok, err = arrangements_editable(engine)
+-- add_desk { name, monitors[], layout }: a desk for these monitor selectors.
+function handlers.add_desk(engine, args)
+  local ok, err = section_editable(engine, "desks", args.name, "the desks")
   if not ok then
     return fail(err)
   end
-  local name = args.name
-  local data, edit_err = edit.add_arrangement(engine.data, name, args.screens)
+  local data, edit_err = edit.add_desk(engine.data, args.name, args.monitors, args.layout)
   if not data then
     return fail(edit_err)
   end
-  local from, copying = copy_source(args)
-  if copying then
-    data, edit_err = edit.copy_trees(data, name, from, args.roles)
-    if not data then
-      return fail(edit_err)
-    end
-  end
-  local cfg, apply_err = apply_edit(engine, data, function(c)
-    if not c.arrangements[name] then
-      return not_taken("the arrangements")
-    end
-  end)
+  local cfg, apply_err = apply_edit(engine, data, took_desk(args.name))
   if not cfg then
     return fail(apply_err)
   end
-  return { arrangement = name, screens = object(shallow(data.arrangements[name].screens)), active = active_name(engine),
-    seq = engine.seq }
+  return { desk = args.name, monitors = array(shallow(cfg.desks[args.name].monitors)), layout = args.layout,
+    active = active_desk(engine), seq = engine.seq }
 end
 
--- rename_arrangement { arrangement, to }
-function handlers.rename_arrangement(engine, args)
-  local old, err = named_arrangement(engine, args)
+-- rename_desk { desk, to }
+function handlers.rename_desk(engine, args)
+  if args.desk == nil then
+    return fail("name the desk with \"desk\"")
+  end
+  local old, err = target_desk(engine, args)
   if not old then
     return fail(err)
   end
   local new = args.to
-  local data, edit_err = edit.rename_arrangement(engine.data, old, new)
+  local data, edit_err = edit.rename_desk(engine.data, old, new)
   if not data then
     return fail(edit_err)
   end
   local cfg, apply_err = apply_edit(engine, data, function(c)
-    if not c.arrangements[new] or (new ~= old and c.arrangements[old]) then
-      return not_taken("arrangement '" .. old .. "'")
-    end
-  end, on_arrangement_overrides(function(o)
-    if o.arrangement == old then
-      return resize.key(new, o.workspace, o.role), o.tree
-    end
-    return o.key, o.tree
-  end))
-  if not cfg then
-    return fail(apply_err)
-  end
-  remember(engine, "rename_arrangement", old, new)
-  return { arrangement = old, to = new, active = active_name(engine), seq = engine.seq }
-end
-
--- delete_arrangement { arrangement }: the active one too (these screens then
--- run nothing).
-function handlers.delete_arrangement(engine, args)
-  local name, err = named_arrangement(engine, args)
-  if not name then
-    return fail(err)
-  end
-  local data, edit_err = edit.delete_arrangement(engine.data, name)
-  if not data then
-    return fail(edit_err)
-  end
-  local cfg, apply_err = apply_edit(engine, data, function(c)
-    if c.arrangements[name] then
-      return not_taken("arrangement '" .. name .. "'")
-    end
-  end, on_arrangement_overrides(function(o)
-    if o.arrangement == name then
-      return nil
-    end
-    return o.key, o.tree
-  end))
-  if not cfg then
-    return fail(apply_err)
-  end
-  remember(engine, "delete_arrangement", name)
-  return { arrangement = name, active = active_name(engine), seq = engine.seq }
-end
-
--- set_screens { arrangement?, screens, renames? }: replace an arrangement's
--- screens (role -> selector); renames (old role -> new role) carry trees.
-function handlers.set_screens(engine, args)
-  local name, err = target_arrangement(engine, args)
-  if not name then
-    return fail(err)
-  end
-  if not engine.data then
-    return fail(NO_DATA)
-  end
-  local renames = type(args.renames) == "table" and args.renames or {}
-  local data, edit_err = edit.set_screens(engine.data, name, args.screens, renames)
-  if not data then
-    return fail(edit_err)
-  end
-  local screens = data.arrangements[name].screens
-  local cfg, apply_err = apply_edit(engine, data, function(c)
-    local entry = c.arrangements[name]
-    for role, selector in pairs(screens) do
-      if not entry or entry.screens[role] ~= selector then
-        return not_taken("arrangement '" .. name .. "'")
-      end
-    end
-  end, on_arrangement_overrides(function(o)
-    if o.arrangement ~= name then
-      return o.key, o.tree
-    end
-    local role = renames[o.role]
-    if role == nil and screens[o.role] ~= nil then
-      role = o.role
-    end
-    return role and resize.key(name, o.workspace, role), o.tree
-  end))
-  if not cfg then
-    return fail(apply_err)
-  end
-  remember(engine, "set_screens", name, args.screens, renames)
-  return { arrangement = name, screens = object(shallow(screens)), active = active_name(engine), seq = engine.seq }
-end
-
--- set_pinned { pinned[] }: the screen roles excluded from workspace switching.
-function handlers.set_pinned(engine, args)
-  if not engine.data then
-    return fail(NO_DATA)
-  end
-  for _, path in ipairs(read_only_paths(engine.cfg)) do
-    if path == "pinned" then
-      return fail("pinned is set by code in config.lua; edit it there")
-    end
-  end
-  local data, edit_err = edit.set_pinned(engine.data, args.pinned)
-  if not data then
-    return fail(edit_err)
-  end
-  local cfg, apply_err = apply_edit(engine, data, function(c)
-    local want = {}
-    for _, role in ipairs(data.pinned) do
-      want[role] = true
-      if not c.pinned[role] then
-        return not_taken("pinned")
-      end
-    end
-    for role in pairs(c.pinned) do
-      if not want[role] then
-        return not_taken("pinned")
-      end
+    if not c.desks[new] or (new ~= old and c.desks[old]) then
+      return not_taken("desk '" .. old .. "'")
     end
   end)
   if not cfg then
     return fail(apply_err)
   end
-  return { pinned = array(data.pinned), seq = engine.seq }
+  if engine.auto_desks[old] then
+    engine.auto_desks[old], engine.auto_desks[new] = nil, true
+  end
+  return { desk = old, to = new, active = active_desk(engine), seq = engine.seq }
 end
 
--- copy_trees { arrangement?, from? | default?, roles? }: replace an
--- arrangement's trees with another's (roles mapped by `roles`, else by
--- name), or with the default trees (each workspace's slots side by side on the
--- first screen role).
-function handlers.copy_trees(engine, args)
-  local name, err = target_arrangement(engine, args)
+-- delete_desk { desk }: the active one too; its monitors are then a setup
+-- no desk knows, which gets a new desk of its own (§8).
+function handlers.delete_desk(engine, args)
+  if args.desk == nil then
+    return fail("name the desk with \"desk\"")
+  end
+  local name, err = target_desk(engine, args)
   if not name then
     return fail(err)
   end
-  if not engine.data then
-    return fail(NO_DATA)
-  end
-  local from, copying = copy_source(args)
-  if not copying then
-    return fail("copy_trees needs \"from\" (an arrangement) or \"default\": true")
-  end
-  local data, edit_err = edit.copy_trees(engine.data, name, from, args.roles)
+  local data, edit_err = edit.delete_desk(engine.data, name)
   if not data then
     return fail(edit_err)
   end
-  local cfg, apply_err = apply_edit(engine, data, nil, on_arrangement_overrides(function(o)
-    if o.arrangement == name then
-      return nil
+  local cfg, apply_err = apply_edit(engine, data, function(c)
+    if c.desks[name] then
+      return not_taken("desk '" .. name .. "'")
     end
-    return o.key, o.tree
+  end)
+  if not cfg then
+    return fail(apply_err)
+  end
+  engine.auto_desks[name] = nil
+  return { desk = name, active = active_desk(engine), seq = engine.seq }
+end
+
+-- apply_layout { desk?, layout }: the desk (default: the active one) uses
+-- this layout, one for as many screens as it has monitors.
+function handlers.apply_layout(engine, args)
+  local name, err = target_desk(engine, args)
+  if not name then
+    return fail(err)
+  end
+  local data, edit_err = edit.set_desk_layout(engine.data, name, args.layout)
+  if not data then
+    return fail(edit_err)
+  end
+  local cfg, apply_err = apply_edit(engine, data, took_desk(name, function(entry)
+    return entry.layout == args.layout
   end))
   if not cfg then
     return fail(apply_err)
   end
-  return { arrangement = name, from = from, seq = engine.seq }
+  return { desk = name, layout = args.layout, active = active_desk(engine), seq = engine.seq }
+end
+
+-- set_pinned { desk?, pinned[] }: the desk's screens (1 the left-most)
+-- excluded from workspace switching.
+function handlers.set_pinned(engine, args)
+  local name, err = target_desk(engine, args)
+  if not name then
+    return fail(err)
+  end
+  local data, edit_err = edit.set_pinned(engine.data, name, args.pinned)
+  if not data then
+    return fail(edit_err)
+  end
+  local want = data.desks[name].pinned or {}
+  local cfg, apply_err = apply_edit(engine, data, took_desk(name, function(entry)
+    if #entry.pinned_list ~= #want then
+      return false
+    end
+    for i, index in ipairs(want) do
+      if entry.pinned_list[i] ~= index then
+        return false
+      end
+    end
+    return true
+  end))
+  if not cfg then
+    return fail(apply_err)
+  end
+  return { desk = name, pinned = array(shallow(want)), seq = engine.seq }
+end
+
+local function took_layout(name)
+  return function(c)
+    if not c.layouts[name] then
+      return not_taken("layout '" .. name .. "'")
+    end
+  end
+end
+
+-- The default trees of a new layout for `screens` screens: the active
+-- desk's monitors when it has that many (a laptop panel first scrolls),
+-- else plain monitors.
+local function default_trees(engine, screens)
+  local monitors = {}
+  if engine.active and #engine.active.monitors == screens then
+    local by_name = {}
+    for _, monitor in ipairs(adapter.monitors()) do
+      by_name[monitor.name] = monitor
+    end
+    for i, name in ipairs(engine.active.monitors) do
+      monitors[i] = by_name[name] or { name = name, x = i }
+    end
+  else
+    for i = 1, screens do
+      monitors[i] = { name = "screen-" .. i, x = i }
+    end
+  end
+  return desk.default_trees(monitors, engine.cfg and engine.cfg.slot_names or {})
+end
+
+-- add_layout { name, screens, default? }: a new layout for `screens`
+-- screens, empty, or with the default trees (default: true).
+function handlers.add_layout(engine, args)
+  local ok, err = section_editable(engine, "layouts", args.name, "the layouts")
+  if not ok then
+    return fail(err)
+  end
+  local screens = as_integer(args.screens)
+  local trees = args.default == true and math.type(screens) == "integer" and default_trees(engine, screens) or nil
+  local data, edit_err = edit.add_layout(engine.data, args.name, screens, trees)
+  if not data then
+    return fail(edit_err)
+  end
+  local cfg, apply_err = apply_edit(engine, data, took_layout(args.name))
+  if not cfg then
+    return fail(apply_err)
+  end
+  return { layout = args.name, screens = cfg.layouts[args.name].screens, seq = engine.seq }
+end
+
+-- fork_layout { layout?, to, desk? }: a copy of the layout (default: the
+-- active desk's), keyboard-resized trees included, which the desk (default:
+-- the active one) then uses when it has as many monitors as the layout has
+-- screens. Reply `desk`: the desk now using the copy, if any.
+function handlers.fork_layout(engine, args)
+  local source, err = target_layout(engine, args)
+  if not source then
+    return fail(err)
+  end
+  local new = args.to
+  local ok, sec_err = section_editable(engine, "layouts", new, "the layouts")
+  if not ok then
+    return fail(sec_err)
+  end
+  local data, edit_err = edit.copy_layout(engine.data, source, new)
+  if not data then
+    return fail(edit_err)
+  end
+  local repoint = args.desk
+  if repoint == nil then
+    repoint = active_desk(engine)
+  end
+  if repoint then
+    local desk_ok, desk_err = target_desk(engine, { desk = repoint })
+    if not desk_ok then
+      return fail(desk_err)
+    end
+    local entry = engine.cfg.desks[repoint]
+    if #entry.monitors == engine.cfg.layouts[source].screens then
+      data, edit_err = edit.set_desk_layout(data, repoint, new)
+      if not data then
+        return fail(edit_err)
+      end
+    else
+      repoint = nil
+    end
+  end
+  local cfg, apply_err = apply_edit(engine, data, function(c)
+    if not c.layouts[new] or (repoint and c.desks[repoint] and c.desks[repoint].layout ~= new) then
+      return not_taken("the layouts")
+    end
+  end, function(e)
+    local copies = {}
+    for _, o in ipairs(resize.overrides(e)) do
+      if o.layout == source then
+        copies[resize.key(new, o.workspace, o.screen)] = o.tree
+      end
+    end
+    for key, node in pairs(copies) do
+      e.resized[key] = node
+    end
+  end)
+  if not cfg then
+    return fail(apply_err)
+  end
+  return { layout = source, to = new, desk = repoint, active = active_layout(engine), seq = engine.seq }
+end
+
+-- rename_layout { layout, to }: the desks using it follow.
+function handlers.rename_layout(engine, args)
+  if args.layout == nil then
+    return fail("name the layout with \"layout\"")
+  end
+  local old, err = target_layout(engine, args)
+  if not old then
+    return fail(err)
+  end
+  local new = args.to
+  local data, edit_err = edit.rename_layout(engine.data, old, new)
+  if not data then
+    return fail(edit_err)
+  end
+  local cfg, apply_err = apply_edit(engine, data, function(c)
+    if not c.layouts[new] or (new ~= old and c.layouts[old]) then
+      return not_taken("layout '" .. old .. "'")
+    end
+  end, function(e)
+    carry_overrides(e, function(o)
+      if o.layout == old then
+        return resize.key(new, o.workspace, o.screen), o.tree
+      end
+      return o.key, o.tree
+    end)
+  end)
+  if not cfg then
+    return fail(apply_err)
+  end
+  remember(engine, "rename_layout", old, new)
+  return { layout = old, to = new, active = active_layout(engine), seq = engine.seq }
+end
+
+-- delete_layout { layout, remap? }: refused while desks use it, unless
+-- `remap` names a layout for as many screens for them to use instead.
+function handlers.delete_layout(engine, args)
+  if args.layout == nil then
+    return fail("name the layout with \"layout\"")
+  end
+  local name, err = target_layout(engine, args)
+  if not name then
+    return fail(err)
+  end
+  local users = edit.layout_users(engine.data, name)
+  local data, edit_err = edit.delete_layout(engine.data, name, args.remap)
+  if not data then
+    return fail(edit_err)
+  end
+  local cfg, apply_err = apply_edit(engine, data, function(c)
+    if c.layouts[name] then
+      return not_taken("layout '" .. name .. "'")
+    end
+  end, function(e)
+    carry_overrides(e, function(o)
+      if o.layout == name then
+        return nil
+      end
+      return o.key, o.tree
+    end)
+  end)
+  if not cfg then
+    return fail(apply_err)
+  end
+  remember(engine, "delete_layout", name, args.remap)
+  return { layout = name, remap = args.remap, desks = array(users), active = active_layout(engine), seq = engine.seq }
+end
+
+-- A desk the engine makes for monitors no desk knows (init.lua's
+-- Engine:new_desk): `name` for these selectors using `layout`, made too (for
+-- `screens` screens, with these default trees) when `trees` is given. An
+-- edit like any other, in memory until saved. Returns true, or nil and why
+-- not (config.lua does not take desks or layouts from slots.lua).
+function M.new_desk(engine, name, selectors, layout, screens, trees)
+  if not engine.data then
+    return nil, NO_DATA
+  end
+  local read_only = read_only_paths(engine.cfg)
+  if not edit.editable(read_only, "desks", name) or (trees and not edit.editable(read_only, "layouts", layout)) then
+    return nil, "config.lua sets the desks or layouts by code"
+  end
+  local data, err = engine.data, nil
+  if trees then
+    data, err = edit.add_layout(data, layout, screens, trees)
+    if not data then
+      return nil, err
+    end
+  end
+  data, err = edit.add_desk(data, name, selectors, layout)
+  if not data then
+    return nil, err
+  end
+  local cfg, apply_err = apply_edit(engine, data, took_desk(name))
+  if not cfg then
+    return nil, apply_err
+  end
+  return true
 end
 
 -- arrange {}: run the scroll pass now (order every scroll workspace
@@ -1289,29 +1520,37 @@ end
 
 -- Layout editing (the editor's Layout view) ---------------------------------
 
--- set_trees { arrangement?, workspace, trees = { role = tree, ... } }: several of a
--- workspace's trees in one edit, so a slot can move from one screen to another
--- (a slot sits on one screen of a workspace, so two set_tree calls could not do
--- it). All or nothing; each tree set replaces that branch's keyboard-resized
--- override, which is kept when the edit fails.
+-- set_trees { layout?, workspace (or "default"), trees = { ["1"] = tree, ... } }:
+-- several of a workspace's trees in one edit, so a slot can move from one
+-- screen to another (a slot sits on one screen of a workspace, so two
+-- set_tree calls could not do it). All or nothing; each tree set replaces
+-- that branch's keyboard-resized override, which is kept when the edit
+-- fails.
 function handlers.set_trees(engine, args)
-  local name, err = target_arrangement(engine, args)
+  local name, err = target_layout(engine, args)
   if not name then
     return fail(err)
   end
   if not engine.data then
     return fail("config.lua loads no " .. DATA_FILE .. ", so there is nothing the editor may change")
   end
-  local workspace = as_integer(args.workspace)
-  local data, set_err = edit.set_trees(engine.data, name, workspace, args.trees)
+  local n = as_workspace(args.workspace)
+  if type(args.trees) ~= "table" then
+    return fail("no trees to set: give \"trees\" as an object of screen -> tree")
+  end
+  local trees_in = {}
+  for screen, text in pairs(args.trees) do
+    trees_in[as_screen(screen)] = text
+  end
+  local data, set_err = edit.set_trees(engine.data, name, n, trees_in)
   if not data then
     return fail(set_err)
   end
   local nudged = {}
-  for role in pairs(args.trees) do
-    local key = resize.key(name, workspace, role)
+  for screen in pairs(trees_in) do
+    local key = resize.key(name, n, screen)
     nudged[key] = engine.resized and engine.resized[key]
-    resize.clear(engine, name, workspace, role)
+    resize.clear(engine, name, n, screen)
   end
   local cfg, apply_err = apply_data(engine, data)
   if not cfg then
@@ -1321,11 +1560,11 @@ function handlers.set_trees(engine, args)
     return fail(apply_err)
   end
   local trees = object()
-  for role in pairs(args.trees) do
-    local node = cfg.arrangements[name].workspaces[workspace][role]
-    trees[role] = object({ tree = serialize.tree(node), ratio = ratio.format(node) })
+  for screen in pairs(trees_in) do
+    local node = configured_tree(cfg, name, n, screen)
+    trees[tostring(screen)] = object({ tree = serialize.tree(node), ratio = ratio.format(node) })
   end
-  return { arrangement = name, workspace = workspace, trees = trees, seq = engine.seq }
+  return { layout = name, workspace = n, trees = trees, seq = engine.seq }
 end
 
 -- slots.lua as it is on disk (data only, read in an empty environment, in
@@ -1340,11 +1579,12 @@ local function saved_data(engine)
   if not ok or type(data) ~= "table" then
     return nil, "cannot read " .. DATA_FILE .. ": " .. (ok and "it returns no table" or tostring(data))
   end
-  return (migrate.data(data)) -- read as load_data reads it
+  local ok_monitors, monitors = pcall(adapter.monitors)
+  return (migrate.data(data, ok_monitors and monitors or nil)) -- read as load_data reads it
 end
 
 -- The saved data through the renames and removals made since (slots,
--- arrangements, screen roles), so its trees name what the running data
+-- layouts), so its trees name what the running data
 -- names. An edit that does not apply to the file (it renames a slot added
 -- since) is skipped.
 local function as_edited(engine, saved)
@@ -1355,25 +1595,26 @@ local function as_edited(engine, saved)
   return out
 end
 
--- reset { arrangement?, workspace, role }: a branch back to the tree slots.lua
--- holds on disk (no tree when it has none), read through the slot,
--- arrangement and role renames and removals made since, dropping both an
--- unsaved edit and a keyboard-resized override of it. Other branches keep their edits; the
--- engine is clean again when nothing differs from the file.
+-- reset { layout?, workspace (or "default"), screen }: a branch back to the
+-- tree slots.lua holds on disk (its own there, else the default one; no
+-- tree when it has neither), read through the slot and layout renames and
+-- removals made since, dropping both an unsaved edit and a keyboard-resized
+-- override of it. Other branches keep their edits; the engine is clean again
+-- when nothing differs from the file.
 function handlers.reset(engine, args)
-  local name, err = target_arrangement(engine, args)
+  local name, err = target_layout(engine, args)
   if not name then
     return fail(err)
   end
   if not engine.data then
     return fail("config.lua loads no " .. DATA_FILE .. ", so there is nothing the editor may change")
   end
-  local workspace = as_integer(args.workspace)
+  local n, screen = as_workspace(args.workspace), as_screen(args.screen)
   local saved, read_err = saved_data(engine)
   if not saved then
     return fail(read_err)
   end
-  local data, reset_err = edit.reset_tree(engine.data, as_edited(engine, saved), name, workspace, args.role)
+  local data, reset_err = edit.reset_tree(engine.data, as_edited(engine, saved), name, n, screen)
   if not data then
     return fail(reset_err)
   end
@@ -1381,11 +1622,10 @@ function handlers.reset(engine, args)
   if not cfg then
     return fail(load_err)
   end
-  resize.clear(engine, name, workspace, args.role)
+  resize.clear(engine, name, n, screen)
   engine:apply_config(cfg, data, serialize.dump(data) ~= serialize.dump(saved))
-  local branches = cfg.arrangements[name].workspaces[workspace]
-  local node = branches and branches[args.role]
-  return { arrangement = name, workspace = workspace, role = args.role, tree = node and serialize.tree(node) or nil,
+  local node = configured_tree(cfg, name, n, screen)
+  return { layout = name, workspace = n, screen = screen, tree = node and serialize.tree(node) or nil,
     ratio = node and ratio.format(node) or nil, seq = engine.seq }
 end
 

@@ -78,6 +78,28 @@ function M.match(selectors, monitors)
   return found
 end
 
+-- The active desk for these monitors ({ name, description, serial, x, y }
+-- each), or nil when no desk is them:
+--   { desk = name, layout = layout name, entry = cfg.layouts[layout],
+--     monitors = screen -> connector, screens = connector -> screen,
+--     pinned = screen -> true }
+function M.select(cfg, monitors)
+  monitors = M.usable(monitors)
+  for _, name in ipairs(cfg.desk_names or {}) do
+    local desk = cfg.desks[name]
+    if M.match(desk.monitors, monitors) then
+      local by_screen, by_monitor = {}, {}
+      for i, monitor in ipairs(M.order(monitors)) do
+        by_screen[i] = monitor.name
+        by_monitor[monitor.name] = i
+      end
+      return { desk = name, layout = desk.layout, entry = cfg.layouts[desk.layout], monitors = by_screen,
+        screens = by_monitor, pinned = desk.pinned or {} }
+    end
+  end
+  return nil
+end
+
 -- The connected monitor a selector finds on its own, or nil.
 function M.find(selector, monitors)
   return resolve(selector, monitors, {})
@@ -99,6 +121,84 @@ function M.selector(monitor)
     return monitor.serial
   end
   return monitor.name
+end
+
+local function slug(text)
+  local out = tostring(text):lower():gsub("[^%w]+", "-"):gsub("^%-+", ""):gsub("%-+$", "")
+  return out
+end
+
+-- A short name for one monitor: `laptop` for the laptop's panel, else the
+-- last word of its description that is not its serial (the model, as in
+-- "Samsung Electric Company Odyssey G95NC HNTW700044" -> g95nc), else its
+-- connector (headless-2).
+function M.short_name(monitor)
+  if M.internal(monitor) then
+    return "laptop"
+  end
+  local words = {}
+  for word in tostring(monitor.description or ""):gmatch("%S+") do
+    if word ~= monitor.serial then
+      words[#words + 1] = word
+    end
+  end
+  for i = #words, 1, -1 do
+    local name = slug(words[i])
+    if name ~= "" then
+      return name
+    end
+  end
+  local name = slug(monitor.name)
+  return name ~= "" and name or "screen"
+end
+
+-- A name for a desk of these monitors that is not in `taken` (name -> any):
+-- their short names left to right, joined with "+" (laptop+g95nc), then
+-- "-2", "-3"... when it is taken.
+function M.name_for(monitors, taken)
+  local parts = {}
+  for i, monitor in ipairs(M.order(monitors)) do
+    parts[i] = M.short_name(monitor)
+  end
+  local base = table.concat(parts, "+")
+  if base == "" then
+    base = "desk"
+  end
+  local name, n = base, 1
+  while taken and taken[name] ~= nil do
+    n = n + 1
+    name = base .. "-" .. n
+  end
+  return name
+end
+
+-- The trees of a new layout for these monitors (left to right), in data
+-- form ({ [1] = "h[left, main, right]" }): screen 1 shows `left`, `main`
+-- and `right` (those of them that are slots; else every slot, by name) side
+-- by side, as a scroll branch when it is a laptop's panel; the other screens
+-- show nothing. `slot_names` lists the global slots.
+function M.default_trees(monitors, slot_names)
+  local ordered = M.order(monitors)
+  local defined, names = {}, {}
+  for _, name in ipairs(slot_names or {}) do
+    defined[name] = true
+  end
+  for _, name in ipairs({ "left", "main", "right" }) do
+    if defined[name] then
+      names[#names + 1] = name
+    end
+  end
+  if #names == 0 then
+    for _, name in ipairs(slot_names or {}) do
+      names[#names + 1] = name
+    end
+  end
+  if #names == 0 or #ordered == 0 then
+    return {}
+  end
+  local kind = M.internal(ordered[1]) and "scroll" or "h"
+  local text = (#names == 1 and kind == "h") and names[1] or (kind .. "[" .. table.concat(names, ", ") .. "]")
+  return { [1] = text }
 end
 
 return M
