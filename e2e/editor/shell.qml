@@ -16,8 +16,8 @@ import "editor" as Editor
 // to the plugin and to Omarchy's shell modules (qs.Commons is the config
 // root's Commons/). The bar widget is loaded on demand (`smoke bar`), in a
 // strip at the top standing in for Omarchy's bar: a PluginBarApi like the
-// one the bar hands an installed widget, whose shell finds the service and
-// toggles the panel as the shell's scoped facade does.
+// one the bar hands an installed widget, whose shell toggles the panel as
+// a replacement bar's entry facade does (no serviceFor).
 ShellRoot {
   id: root
 
@@ -31,12 +31,13 @@ ShellRoot {
     manifest: ({ id: "milan.hyprslots" })
   }
 
-  // The shell's facade for the plugin: its own service, its own panel.
+  // The shell's facade for the plugin's bar entry as a replacement bar (a
+  // `kind: bar` plugin such as a clone of omarchy.bar) gets it: it toggles
+  // and summons the plugin's own panel but has no serviceFor (only the
+  // built-in bar's facade does), so the widget finds the service the way it
+  // must there.
   QtObject {
     id: fakeShell
-    function serviceFor(id) {
-      return id === "milan.hyprslots" ? engine : null
-    }
     function toggle(id, payloadJson) {
       if (id !== "milan.hyprslots") return false
       if (panel.opened) panel.close()
