@@ -1,11 +1,12 @@
 --- a/.local/bin/workspace-layout-current
 +++ b/.local/bin/workspace-layout-current
-@@ -1,13 +1,19 @@
+@@ -1,13 +1,30 @@
  #!/bin/bash
  # Print a workspace's layout like omarchy-hyprland-workspace-layout-current,
 -# but say "scrolling-wide" for full-width scrolling (see workspace-layout-cycle).
 +# but say "scrolling-wide" for full-width scrolling (see workspace-layout-cycle)
-+# and "slots" for hyprslots' lua:slots layout.
++# and "slots" for hyprslots' layouts: lua:slots, or a scroll desk on the
++# scrolling layout with no mode file of its own.
  # Usage: workspace-layout-current [workspace-id]
  
  MODE=$(omarchy-hyprland-workspace-layout-current "$@")
@@ -16,7 +17,17 @@
 +# hyprslots' lua:slots layout, unless the workspace floats on top of it.
 +TILED=$(hyprctl workspaces -j | jq -r --arg id "$ID" 'first(.[] | select((.id | tostring) == $id) | .tiledLayout) // empty')
 +
++# A scroll desk's slots mode: scrolling, no saved mode, and hyprslots says
++# that workspace is a scroll desk.
++scroll_desk() {
++  [[ ! -f ${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/workspace-layouts/$ID.lua ]] &&
++    hyprctl repl 'return hyprslots.api.call("state", "{}")' 2>/dev/null |
++      jq -e --arg id "$ID" '.workspaces[$id].layout == "scrolling"' >/dev/null 2>&1
++}
++
 +if [[ $MODE != floating && $TILED == lua:slots ]]; then
++  echo slots
++elif [[ $MODE == scrolling && $TILED == scrolling ]] && scroll_desk; then
 +  echo slots
 +elif [[ $MODE == scrolling && -f $WIDE_FILE ]] && grep -qx "$ID" "$WIDE_FILE"; then
    echo scrolling-wide

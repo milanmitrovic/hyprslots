@@ -1,38 +1,54 @@
 --- a/.local/bin/workspace-layout-cycle
 +++ b/.local/bin/workspace-layout-cycle
-@@ -1,7 +1,9 @@
+@@ -1,9 +1,15 @@
  #!/bin/bash
  # Cycle the active workspace through:
  #   tiling -> side-by-side scrolling -> full-width scrolling -> floating
 -# `back` goes the other way. Wraps omarchy-hyprland-workspace-layout-toggle and
+-# adds the full-width step, backed by ~/.config/hypr/wide-scrolling.lua. The bar
+-# (milan.workspaces) reads the result through workspace-layout-current.
 +# `back` goes the other way. On a hyprslots desk workspace the cycle has a
-+# slots stop (the lua:slots layout) between floating and tiling:
-+#   slots -> tiling -> side-by-side -> full-width -> floating -> slots Wraps omarchy-hyprland-workspace-layout-toggle and
- # adds the full-width step, backed by ~/.config/hypr/wide-scrolling.lua. The bar
- # (milan.workspaces) reads the result through workspace-layout-current.
++# slots stop between floating and tiling:
++#   slots -> tiling -> side-by-side -> full-width -> floating -> slots
++# The slots stop is the layout hyprslots gives the desk: lua:slots, or, for a
++# scroll[...] branch, Hyprland's scrolling layout with hyprslots keeping the
++# columns full width and in slot order. Wraps
++# omarchy-hyprland-workspace-layout-toggle and adds the full-width step, backed
++# by ~/.config/hypr/wide-scrolling.lua. The bar (milan.workspaces) reads the
++# result through workspace-layout-current.
  
-@@ -22,6 +24,12 @@
+ set -u
+ 
+@@ -22,6 +28,24 @@
  
  MODE=$(omarchy-hyprland-workspace-layout-current)
  
-+# hyprslots: Omarchy's mode files know nothing of lua:slots, so a workspace
-+# whose tiled layout is lua:slots (and that is not floating on top of it) is
-+# in the slots mode.
++# hyprslots desk workspaces are the ones the running engine lays out; it says
++# which layout it gives each: lua:slots, or scrolling for a scroll branch.
++DESK_LAYOUT=$(hyprctl repl 'return hyprslots.api.call("state", "{}")' 2>/dev/null |
++  jq -r --arg ws "$WS" '.workspaces[$ws] | if . then .layout // "lua:slots" else empty end' 2>/dev/null)
++
++# hyprslots: Omarchy's mode files know nothing of slots, so a workspace whose
++# tiled layout is lua:slots (and that is not floating on top of it) is in the
++# slots mode, and so is a scroll desk on the scrolling layout with no mode
++# file of its own (any Super+L stop saves one; slots removes it).
 +TILED=$(hyprctl activeworkspace -j | jq -r '.tiledLayout // empty')
-+[[ $MODE != floating && $TILED == lua:slots ]] && MODE=slots
++if [[ $MODE != floating ]]; then
++  if [[ $TILED == lua:slots ]]; then
++    MODE=slots
++  elif [[ $DESK_LAYOUT == scrolling && $TILED == scrolling && ! -f $STATE_DIR/workspace-layouts/$WS.lua ]]; then
++    MODE=slots
++  fi
++fi
 +
  # Same replace-id file as Omarchy's toggle, so one notification stays current.
  notify() {
    local state="$STATE_DIR/workspace-layout-notification" last id
-@@ -63,6 +71,57 @@
+@@ -63,6 +87,65 @@
    fi
  }
  
-+# hyprslots desk workspaces: the ones the running engine lays out.
-+is_desk() {
-+  hyprctl repl 'return hyprslots.api.call("state", "{}")' 2>/dev/null |
-+    jq -e --arg ws "$WS" '.workspaces[$ws] != null' >/dev/null 2>&1
-+}
++is_desk() { [[ -n $DESK_LAYOUT ]]; }
 +
 +apply_mode() {
 +  hyprctl eval "o.workspace_mode({ workspace = \"$WS\", mode = \"$1\" })" >/dev/null
@@ -49,19 +65,31 @@
 +}
 +
 +# Into slots: floating windows are tiled again first; no mode file, so the
-+# workspace rule hyprslots sets at load brings slots back after a reload.
++# workspace rule hyprslots sets at load brings slots back after a reload. A
++# scroll desk goes onto the scrolling layout and hyprslots puts its columns in
++# slot order and full width at once (it widens columns itself, so no
++# full-width mark).
 +enter_slots() {
 +  [[ $MODE == floating ]] && apply_mode dwindle
 +  is_wide && mark off
 +  rm -f "$STATE_DIR/workspace-layouts/$WS.lua"
-+  hyprctl eval "hl.workspace_rule({ workspace = \"$WS\", layout = \"lua:slots\" })" >/dev/null
-+  notify "Workspace layout set to slots"
++  hyprctl eval "hl.workspace_rule({ workspace = \"$WS\", layout = \"$DESK_LAYOUT\" })" >/dev/null
++  if [[ $DESK_LAYOUT == scrolling ]]; then
++    hyprctl repl 'return hyprslots.api.call("arrange", "{}")' >/dev/null 2>&1
++    notify "Workspace layout set to slots (full-width scrolling)"
++  else
++    notify "Workspace layout set to slots"
++  fi
 +  refresh_bar
 +}
 +
++# Out of slots: the mode is saved even when it is the default, so the
++# workspace stays out of slots across reloads (with no mode file, the rule
++# hyprslots sets at load would bring slots back) until Super+L enters slots.
 +leave_slots() {
 +  apply_mode "$1"
-+  save_mode "$1"
++  mkdir -p "$STATE_DIR/workspace-layouts" &&
++    printf 'o.workspace_mode({ workspace = "%s", mode = "%s" })\n' "$WS" "$1" >"$STATE_DIR/workspace-layouts/$WS.lua"
 +  if [[ $1 == floating ]]; then
 +    notify "$(omarchy-i18n layout.workspaceFloating)"
 +  else
