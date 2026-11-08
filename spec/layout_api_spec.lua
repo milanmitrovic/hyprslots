@@ -253,6 +253,96 @@ return { slots = data.slots, specs = data.specs, desks = data.desks, layouts = l
   -- The Slots and Desk view rename what the Layout view's calls
   -- name: set_trees targets the renamed layout, and reset reads the tree
   -- slots.lua holds through the renames, copies and removals made since.
+  -- The cutover's trees: each workspace a copy of the shared tree cut down
+  -- to its slots, and workspace 3 a real override (b twice as wide).
+  local FOLDING = [[
+return {
+  slots = { a = {}, b = {}, c = {} },
+  specs = { [3] = { a = "t-a", b = "t-b", c = "t-c" }, [5] = { a = "t-a" } },
+  desks = {
+    dual = { monitors = { "HEADLESS-2", "HEADLESS-3" }, layout = "dual" },
+    single = { monitors = { "HEADLESS-2" }, layout = "single" },
+  },
+  layouts = {
+    dual = { screens = 2, default = { [1] = "h[a, b, c]" }, workspaces = {
+      [3] = { [1] = "h[a, b:2, c]" },
+      [4] = { [1] = "h[b, c]" },
+      [5] = { [1] = "a" },
+    } },
+    single = { screens = 1, workspaces = { [3] = { [1] = "h[a, b, c]" } } },
+  },
+}
+]]
+
+  describe("fold_trees", function()
+    it("drops the workspaces' trees the shared ones lay out the same, keeping the real overrides", function()
+      setup({ ["config.lua"] = CONFIG, ["slots.lua"] = FOLDING })
+      local reply = call("fold_trees", {})
+      assert.is_true(reply.ok, reply.error)
+      assert.are.equal("dual", reply.layout)
+      assert.are.same({ 4, 5 }, reply.folded)
+      assert.are.same({ { workspace = 3, reason = "screen 1's tree is not the shared one with slots left out" } },
+        reply.kept)
+      local s = call("state")
+      assert.are.same({ 3 }, s.layouts.dual.own)
+      assert.are.equal("h[a, b, c]", s.layouts.dual.workspaces["4"]["1"].tree, "workspace 4 shows the shared tree")
+      assert.are.equal("h[a, b:2, c]", s.layouts.dual.workspaces["3"]["1"].tree)
+      assert.is_true(s.dirty)
+      assert.are.same({ "hyprslots changed 1" }, events())
+
+      assert.is_true(call("save").ok)
+      local saved = read(dir .. "/slots.lua")
+      assert.is_nil(saved:find('"h[b, c]"', 1, true), "slots.lua no longer has workspace 4's copy")
+      assert.matches('[1] = "h[a, b:2, c]"', saved, 1, true)
+    end)
+
+    it("folds the layout named, and changes nothing when there is nothing to fold", function()
+      setup({ ["config.lua"] = CONFIG, ["slots.lua"] = FOLDING })
+      local reply = call("fold_trees", { layout = "single" })
+      assert.is_true(reply.ok, reply.error)
+      assert.are.same({}, reply.folded, "single has no shared trees to fold into")
+      assert.are.same({ { workspace = 3, reason = "screen 1's tree is not the shared one with slots left out" } },
+        reply.kept)
+      assert.is_false(call("state").dirty)
+      assert.are.same({}, events())
+      assert.matches("no layout 'nope'", call("fold_trees", { layout = "nope" }).error)
+    end)
+  end)
+
+  describe("drop_override", function()
+    it("sends a workspace back to the shared trees", function()
+      setup({ ["config.lua"] = CONFIG, ["slots.lua"] = FOLDING })
+      local reply = call("drop_override", { workspace = 3 })
+      assert.is_true(reply.ok, reply.error)
+      assert.are.same({ layout = "dual", workspace = 3, own = false, seq = 1, ok = true }, reply)
+      local s = call("state")
+      assert.are.same({ 4, 5 }, s.layouts.dual.own)
+      assert.are.equal("h[a, b, c]", s.layouts.dual.workspaces["3"]["1"].tree)
+      assert.is_true(s.dirty)
+    end)
+
+    it("drops a keyboard-resized tree of the workspace with it", function()
+      setup({ ["config.lua"] = CONFIG, ["slots.lua"] = FOLDING })
+      local windows = {}
+      for i, class in ipairs({ "t-a", "t-b" }) do
+        windows[i] = hl_stub.window(i, class, { workspace = 3 })
+        hl.emit("window.open", windows[i])
+      end
+      hl.windows = windows
+      hl.active_window = windows[1]
+      assert.is_true(hl.layouts.slots.layout_msg(hl_stub.layout_ctx(AREA, windows), "nudge r 0.1"))
+      assert.is_true(call("drop_override", { workspace = 3 }).ok)
+      assert.are.same({}, call("state").resized)
+      assert.are.equal("h[a, b, c]", branch("dual", 1).tree)
+    end)
+
+    it("refuses a workspace on the shared trees already", function()
+      setup({ ["config.lua"] = CONFIG, ["slots.lua"] = FOLDING })
+      assert.matches("workspace 6 uses the shared trees already", call("drop_override", { workspace = 6 }).error)
+      assert.is_false(call("state").dirty)
+    end)
+  end)
+
   describe("after slot and layout edits", function()
     it("reset after rename_slot puts the saved tree back under the slot's new name", function()
       setup()

@@ -8,6 +8,7 @@
 -- record, assign, unassign, save, reload, arrange; for the slot list (the
 -- Layout tab's global slots) add_slot, remove_slot, rename_slot, describe_slot; for the
 -- Assignment view (each workspace's specs) take_spec, set_spec, clear_spec; for
+-- the Layout view's shared trees fold_trees, drop_override; for
 -- the Desk view add_desk, rename_desk, delete_desk, apply_layout,
 -- set_pinned, add_layout, fork_layout, rename_layout, delete_layout (the
 -- contract is in docs/design.md §9). Every change bumps `seq` and emits hl.dsp.event("hyprslots changed
@@ -1624,6 +1625,68 @@ function handlers.set_trees(engine, args)
     trees[tostring(screen)] = object({ tree = serialize.tree(node), ratio = ratio.format(node) })
   end
   return { layout = name, workspace = n, trees = trees, seq = engine.seq }
+end
+
+-- fold_trees { layout? }: drop every workspace's own trees in the layout
+-- that its shared (default) trees lay out the same (edit.fold_trees: the
+-- shared tree with slots missing, which close up anyway); reply `folded[]`
+-- (workspaces) and `kept[]` ({ workspace, reason }). Keyboard-resized trees
+-- stay (they are per workspace). Nothing to fold changes nothing.
+function handlers.fold_trees(engine, args)
+  local name, err = target_layout(engine, args)
+  if not name then
+    return fail(err)
+  end
+  if not engine.data then
+    return fail(NO_DATA)
+  end
+  local data, report = edit.fold_trees(engine.data, name)
+  if not data then
+    return fail(report)
+  end
+  local kept = array()
+  for i, k in ipairs(report.kept) do
+    kept[i] = object({ workspace = k.workspace, reason = k.reason })
+  end
+  if #report.folded > 0 then
+    local cfg, apply_err = apply_data(engine, data)
+    if not cfg then
+      return fail(apply_err)
+    end
+  end
+  return { layout = name, folded = array(report.folded), kept = kept, seq = engine.seq }
+end
+
+-- drop_override { layout?, workspace, screen? }: the workspace back to the
+-- layout's shared (default) trees (edit.drop_override; with `screen`, that
+-- screen's tree only), dropping its keyboard-resized trees there too; reply
+-- `own` (whether it still has trees of its own).
+function handlers.drop_override(engine, args)
+  local name, err = target_layout(engine, args)
+  if not name then
+    return fail(err)
+  end
+  if not engine.data then
+    return fail(NO_DATA)
+  end
+  local n, screen = as_integer(args.workspace), as_screen(args.screen)
+  local data, drop_err = edit.drop_override(engine.data, name, n, screen)
+  if not data then
+    return fail(drop_err)
+  end
+  local saved = shallow(engine.resized)
+  for s = 1, engine.cfg.layouts[name].screens do
+    if screen == nil or s == screen then
+      resize.clear(engine, name, n, s)
+    end
+  end
+  local cfg, apply_err = apply_data(engine, data)
+  if not cfg then
+    engine.resized = saved
+    return fail(apply_err)
+  end
+  return { layout = name, workspace = n, screen = screen, own = cfg.layouts[name].workspaces[n] ~= nil,
+    seq = engine.seq }
 end
 
 -- slots.lua as it is on disk (data only, read in an empty environment, in
