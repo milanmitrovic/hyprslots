@@ -774,11 +774,13 @@ order (its `*`, when it has one, a frame of the filmstrip like any
 column). Edits go to a **draft**
 per pane (`edited` on the pane, `edited, not applied (w)` in the header).
 The header shows the workspace, the layout, and the managed workspaces
-(config `workspaces`, 1 to 10 by default) by their keys and `def` (the
+(config `workspaces`, 1 to 10 by default) by their keys and `others`, the
+layout's default trees: the trees of every workspace without its own (the
 edited one reversed; the ones that show the default trees italic and
-dimmer; a click switches). A workspace that shows the default trees says
-so (`default trees: an edit gives workspace N its own`): its first edit
-gives it its own copy. Beside the panes, the **slot list**: the global slots by name,
+dimmer; a click switches). Editing them, the header reads `Trees for
+workspaces without their own`. A workspace that shows the default trees
+says so (`it shows the others' trees: an edit gives workspace N its own`):
+its first edit gives it its own copy. Beside the panes, the **slot list**: the global slots by name,
 each with its description and nothing else (below).
 
 | Key | Does |
@@ -798,7 +800,7 @@ each with its description and nothing else (below).
 | R | `record` the pane's workspace, show the tree, its ratio and what it would drop (`missing`), apply after y/n (not on the default trees) |
 | [ / ] | previous / next workspace, round from the last managed one to 1 (the arrows stay the picture's) |
 | 1–9, 0 | workspace 1–9, 10 (as Super+N; 0 only when ten are managed); unapplied edits are dropped, and the message says which |
-| - | the layout's default trees (`workspace: "default"`), for every workspace with none of its own |
+| - | `others`: the layout's default trees (`workspace: "default"`), the trees of every workspace without its own (the help row: `- others: trees for workspaces without their own`) |
 | f | fork the layout: a name (the next free `<name>-N` suggested), then `fork_layout`: the active desk uses the copy, edited drafts carried over |
 | s | the keys go to the slot list (its border lights up; s or Esc back) |
 

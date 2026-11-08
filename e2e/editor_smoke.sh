@@ -845,8 +845,8 @@ test_body() {
   else
     fail "pane titles: $title"
   fi
-  if [[ $(smoke help) == *'">-</font></b> default trees'* && $(smoke help) == *'">f</font></b>ork'* ]]; then
-    pass "the Layout help row has - and f"
+  if [[ $(smoke help) == *'">-</font></b> others: trees for workspaces without their own'* && $(smoke help) == *'">f</font></b>ork'* ]]; then
+    pass "the Layout help row has - (others: what it is) and f"
   else
     fail "help row: $(smoke help)"
   fi
@@ -965,9 +965,9 @@ test_body() {
   # - edits the layout's default trees: a puts main there, w applies it;
   # workspace 4, with no trees of its own, then shows them.
   expect_eq "-" "ok" "$(smoke press -)"
-  expect_eq "- edits the default trees" "Editing the default trees of solo." "$(smoke message)"
+  expect_eq "- edits the default trees (others)" "Editing the others' trees of solo." "$(smoke message)"
   expect_eq "which are none yet" "1: -" "$(smoke layout)"
-  if [[ $(smoke layoutHeader) == "Default trees   [solo]"* ]]; then
+  if [[ $(smoke layoutHeader) == "Trees for workspaces without their own   [solo]"* ]]; then
     pass "the header says so: $(smoke layoutHeader)"
   else
     fail "header: $(smoke layoutHeader)"
@@ -987,7 +987,7 @@ test_body() {
   shot 8c-layout-default-trees
   press_keys 4
   expect_eq "4: workspace 4 shows the default trees, and says an edit gives it its own" \
-    "Editing workspace 4 of solo. (default trees: an edit gives workspace 4 its own)" "$(smoke message)"
+    "Editing workspace 4 of solo. (it shows the others' trees: an edit gives workspace 4 its own)" "$(smoke message)"
   expect_eq "the default tree" "1: main" "$(smoke layout)"
   expect_eq "workspace 4 has no trees of its own" "[3]" "$(api_state | jq -c '.layouts.solo.own')"
   expect_eq "3" "ok" "$(smoke press 3)"

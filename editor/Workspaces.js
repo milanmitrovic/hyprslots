@@ -5,7 +5,8 @@
 // `workspace_count`, config `workspaces`: 1 to 10 by default, Omarchy's ten
 // per screen), the digits jump to one as Super+N does (0 is workspace 10,
 // no key when it manages fewer). The arrows stay the view's own; `-` is the
-// layout's default trees in the Layout view. Pure, so node can test it
+// layout's default trees ("others": the trees of workspaces without their
+// own) in the Layout view. Pure, so node can test it
 // (editor/tests/workspaces.test.mjs).
 
 var COUNT = 10
@@ -34,7 +35,7 @@ function ofDigit(text, last) {
 
 // The managed workspaces for a header strip, then the layout's default
 // trees (`-`): { workspace (1..N or "default"), label (the key: 0 for 10,
-// "def"), current, trees (trees of its own; the
+// "others" for the default trees), current, trees (trees of its own; the
 // default ones when there are any), shared (no trees of its own, showing the
 // default ones) }.
 function strip(state, layout, current) {
@@ -50,7 +51,7 @@ function strip(state, layout, current) {
       shared: !mine && !!branches && Object.keys(branches).length > 0 })
   }
   var def = entry && entry.default ? entry.default : {}
-  out.push({ workspace: "default", label: "def", current: current === "default", trees: Object.keys(def).length > 0,
+  out.push({ workspace: "default", label: "others", current: current === "default", trees: Object.keys(def).length > 0,
     shared: false })
   return out
 }

@@ -783,7 +783,7 @@ function defaultNote(state, layout, workspace) {
   if (own.indexOf(workspace) >= 0 || own.indexOf(String(workspace)) >= 0) return ""
   var shows = (entry.workspaces || {})[String(workspace)]
   if (!shows || Object.keys(shows).length === 0) return ""
-  return "(default trees: an edit gives workspace " + workspace + " its own)"
+  return "(it shows the others' trees: an edit gives workspace " + workspace + " its own)"
 }
 
 // Where the view opens: the focused workspace's number and screen, else the

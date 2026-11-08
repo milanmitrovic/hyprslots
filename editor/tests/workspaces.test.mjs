@@ -38,7 +38,7 @@ test("the strip marks the current workspace, the ones with trees of their own an
   assert.deepEqual(strip[0], { workspace: 1, label: "1", current: false, trees: false, shared: false });
   assert.deepEqual(strip[4], { workspace: 5, label: "5", current: false, trees: false, shared: true });
   assert.deepEqual(strip[9], { workspace: 10, label: "0", current: false, trees: true, shared: false });
-  assert.deepEqual(strip[10], { workspace: "default", label: "def", current: false, trees: true, shared: false });
+  assert.deepEqual(strip[10], { workspace: "default", label: "others", current: false, trees: true, shared: false });
   assert.equal(plain(W.strip(state, "solo", "default"))[10].current, true);
   assert.equal(plain(W.strip(null, "solo", 1)).filter((w) => w.trees).length, 0);
 });
@@ -60,7 +60,7 @@ test("with workspace_count 9: ] steps round from 9 to 1, 0 is no key, the strip 
   assert.equal(W.ofDigit("5", 4), null, "a digit past the count");
   const state = { workspace_count: 9, layouts: { solo: { screens: 1, own: [3], workspaces: {} } } };
   const strip = plain(W.strip(state, "solo", 3));
-  assert.deepEqual(strip.map((w) => w.label), ["1", "2", "3", "4", "5", "6", "7", "8", "9", "def"]);
+  assert.deepEqual(strip.map((w) => w.label), ["1", "2", "3", "4", "5", "6", "7", "8", "9", "others"]);
 });
 
 test("the help's jump keys follow the count", () => {

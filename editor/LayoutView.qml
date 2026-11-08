@@ -96,7 +96,7 @@ Item {
   readonly property string helpText: {
     if (prompting) return Help.escape(Prompts.help(prompt))
     var workspaceKeys = { title: "Workspace", items: [{ key: "[ ]", label: "prev/next" }, { key: Workspaces.jumpKeys(Workspaces.count(state)), label: "jump" },
-      { key: "-", label: "default trees" }] }
+      { key: "-", label: "others: trees for workspaces without their own" }] }
     if (slotFocus) {
       return Help.row([
         { title: "Slot list", items: [{ key: "↑/↓", label: "select" }, { key: "a", label: "new" },
@@ -141,9 +141,10 @@ Item {
     return currentPanes().filter(function(p) { return root.edited(p.key) }).map(function(p) { return p.key })
   }
 
-  // "workspace 3", or "the default trees".
+  // "workspace 3", or "the others' trees" (the layout's default trees: the
+  // workspaces without trees of their own show them).
   function workspaceName(n) {
-    return n === "default" ? "the default trees" : "workspace " + n
+    return n === "default" ? "the others' trees" : "workspace " + n
   }
 
   // Back to the opening target: the focused workspace's number and screen.
@@ -754,7 +755,7 @@ Item {
   function startReset() {
     if (refuseEdit()) return
     var k = screen
-    var what = workspace === "default" ? "The default trees" : "Workspace " + workspace
+    var what = workspace === "default" ? "The others' trees" : "Workspace " + workspace
     confirm("Put " + workspaceName(workspace) + " on screen " + k + " back to the tree slots.lua holds?", function() {
       root.engine.call("reset", { layout: root.layout, workspace: root.workspace, screen: parseInt(k, 10) }, function(reply) {
         if (!reply.ok) {
@@ -842,7 +843,7 @@ Item {
   // The header's text: what is edited, and the desks sharing it.
   function headerLine() {
     var note = Layout.defaultNote(state, layout, workspace)
-    return (workspace === "default" ? "Default trees" : "Workspace " + workspace) + "   [" + (layout || "no layout") + "]"
+    return (workspace === "default" ? "Trees for workspaces without their own" : "Workspace " + workspace) + "   [" + (layout || "no layout") + "]"
       + (note ? "   " + note : "")
   }
 
@@ -886,8 +887,8 @@ Item {
         font.pixelSize: Style.font.title
         font.bold: true
       }
-      // The managed workspaces by their keys ([ ] step, the digits jump) and the
-      // default trees (-): the one edited reversed, the ones with trees of
+      // The managed workspaces by their keys ([ ] step, the digits jump) and
+      // "others", the default trees (-): the one edited reversed, the ones with trees of
       // their own brighter, the ones showing the default trees dimmer.
       Row {
         id: workspaceStrip

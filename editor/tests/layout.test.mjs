@@ -417,7 +417,7 @@ test("a pane is labelled with the active desk's monitor at its position", () => 
 });
 
 test("a workspace that shows the default trees says an edit gives it its own", () => {
-  assert.equal(L.defaultNote(fixture(), "dual", 5), "(default trees: an edit gives workspace 5 its own)");
+  assert.equal(L.defaultNote(fixture(), "dual", 5), "(it shows the others' trees: an edit gives workspace 5 its own)");
   assert.equal(L.defaultNote(fixture(), "dual", 3), "", "trees of its own");
   assert.equal(L.defaultNote(fixture(), "dual", 7), "", "no trees at all");
   assert.equal(L.defaultNote(fixture(), "dual", "default"), "");
