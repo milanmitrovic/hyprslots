@@ -48,7 +48,17 @@ Item {
   property int cardWidth: Math.min(Style.space(1100), window.width - Style.gapsOut * 2)
   property int cardHeight: Math.min(Style.space(640), window.height - Style.gapsOut * 2)
 
+  // `{"record": true}` (the bar widget's Record) opens on the Layout tab and
+  // starts its record flow (R) once the state is read.
+  property bool pendingRecord: false
+
   function open(payloadJson) {
+    var payload = {}
+    try {
+      payload = JSON.parse(payloadJson || "{}") || {}
+    } catch (e) {
+      console.warn("hyprslots: ignoring a payload that is no JSON: " + payloadJson)
+    }
     root.opened = true
     if (root.engine) {
       root.engine.active = true
@@ -62,11 +72,23 @@ Item {
     slotsView.focusedWorkspace = assignmentView.focusedWorkspace
     slotsView.reset()
     arrangementsView.reset()
+    if (payload.record === true) {
+      root.tab = 1
+      root.pendingRecord = true
+      Qt.callLater(root.startPendingRecord)
+    }
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+  }
+
+  function startPendingRecord() {
+    if (!root.pendingRecord || !root.opened || !root.engine || root.engine.state === null) return
+    root.pendingRecord = false
+    if (!layoutView.prompting) layoutView.startRecord()
   }
 
   function close() {
     root.opened = false
+    root.pendingRecord = false
     if (root.engine) root.engine.active = false
   }
 
@@ -177,6 +199,13 @@ Item {
     if (root.tab === 2) return root.promptText(slotsView.prompt, slotsView.message)
     if (root.tab === 3) return root.promptText(arrangementsView.prompt, arrangementsView.message)
     return root.promptText(assignmentView.prompt, assignmentView.message)
+  }
+
+  Connections {
+    target: root.engine
+    function onStateRead(ok) {
+      if (ok) root.startPendingRecord()
+    }
   }
 
   Loader {
