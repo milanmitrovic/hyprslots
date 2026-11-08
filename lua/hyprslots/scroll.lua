@@ -159,13 +159,21 @@ function M.arrange(engine, opts)
   local active = adapter.active_window()
   local width = M.width(engine)
 
-  local ids = {}
+  local ids, scrolls = {}, {}
   for id, desk in pairs(engine.workspaces) do
     if tree.scroll(desk.branch) then
       ids[#ids + 1] = id
+      scrolls[id] = true
     end
   end
   table.sort(ids)
+  -- A workspace that is no scroll branch now forgets its columns: windows
+  -- that come back to it come back in new, narrow columns.
+  for id in pairs(engine.scroll_seen) do
+    if not scrolls[id] then
+      engine.scroll_seen[id] = nil
+    end
+  end
 
   for _, id in ipairs(ids) do
     if not M.managed(engine, id) then

@@ -445,6 +445,7 @@ function M.scrolling(hl)
   end
 
   local function remove(address)
+    hl.widths[address] = nil -- a column that comes back is a new one
     for _, columns in pairs(hl.columns) do
       for i, column in ipairs(columns) do
         if column == address then
@@ -482,7 +483,7 @@ function M.scrolling(hl)
       end
     end
     table.insert(columns, at, window.address)
-    hl.widths[window.address] = hl.widths[window.address] or DEFAULT_WIDTH
+    hl.widths[window.address] = DEFAULT_WIDTH
   end
 
   local function refresh()
