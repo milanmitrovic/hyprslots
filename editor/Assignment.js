@@ -14,7 +14,8 @@
 //   { kind: "window" | "missing" | "empty", status, address, cls, title,
 //     workspaceId, workspace, slot, screen, spec, placed }
 // (placed false: a global slot no tree of the active layout places on the
-// workspace, listed dim as "not in layout"; `a` into it places it)
+// workspace, listed after the placed ones and looking just like them; `a`
+// into it places it)
 // (workspaceId the Hyprland workspace id the window is on, workspace the
 // number 1 to 10 of its slot or its workspace, screen its screen number on
 // the active desk)
@@ -80,7 +81,7 @@ function slotNames(state) {
 // The slots of a workspace as [{ slot, screen, placed }]: those the active
 // layout's trees for it place (its own, else the default ones), in tree
 // order, screen by screen, then every other global slot (screen null, placed
-// false: "not in layout"), by name, with any the workspace has a spec for
+// false), by name, with any the workspace has a spec for
 // that is no global slot among them.
 function slotOrder(state, workspace) {
   var out = []
@@ -259,13 +260,12 @@ function specText(row) {
 }
 
 // What the Title column says: "Missing" for a slot whose window is not
-// open, a dash for an empty one, either followed by "not in layout" when no
-// tree of the workspace places the slot, else the window's title.
+// open, a dash for an empty one (placed by a tree or not: they look the
+// same), else the window's title.
 function titleText(row) {
-  var note = row.placed === false ? " · not in layout" : ""
-  if (row.kind === "missing") return "Missing" + note
-  if (row.kind === "empty") return row.placed === false ? "— not in layout" : "—"
-  return (row.title || "No Title") + note
+  if (row.kind === "missing") return "Missing"
+  if (row.kind === "empty") return "—"
+  return row.title || "No Title"
 }
 
 // The Screen column: the screen number and the active desk's monitor there.
@@ -390,7 +390,7 @@ function initialPage(state, workspaceId) {
   return 0
 }
 
-// The line under the header on a page with slots not in layout, when other
+// The line under the header on a page with slots no tree places, when other
 // desks share the active layout: `a` into one of them places it in that
 // layout, so there too. "" otherwise.
 function placeNote(state, rows) {
@@ -400,7 +400,7 @@ function placeNote(state, rows) {
   var others = (Array.isArray(l.used_by) ? l.used_by : []).filter(function(d) { return d !== state.desk })
   if (others.length === 0) return ""
   return "Layout '" + state.layout + "' is also used by " + (others.length === 1 ? "desk " : "desks ") + others.join(", ")
-    + ": a on a slot not in layout places it there too."
+    + ": a on a slot its trees lack places it there too."
 }
 
 // What the message after `a` adds when take_spec placed the slot (its reply's

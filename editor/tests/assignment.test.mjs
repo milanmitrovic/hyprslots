@@ -116,7 +116,7 @@ test("the slots no tree of the active layout shows follow the shown ones by name
   assert.deepEqual(rows.map((r) => [r.kind, r.slot || "", r.placed]),
     [["window", "main", true], ["window", "right", true], ["missing", "left", true], ["empty", "mail", false],
       ["missing", "spare", false], ["window", "main", true], ["window", "", true]]);
-  assert.deepEqual([A.specText(rows[4]), A.titleText(rows[4])], ["t-spare", "Missing · not in layout"]);
+  assert.deepEqual([A.specText(rows[4]), A.titleText(rows[4])], ["t-spare", "Missing"]);
 });
 
 test("a slot a tree places but the workspace has no spec for is empty, not Missing: no spec, no Missing title", () => {
@@ -133,14 +133,14 @@ test("a slot a tree places but the workspace has no spec for is empty, not Missi
   assert.equal(A.titleText({ kind: "window", title: "vim" }), "vim");
 });
 
-test("every global slot is a row of every workspace: one no tree places and no spec fills is empty, not in layout", () => {
+test("every global slot is a row of every workspace: one no tree places and no spec fills is empty, looking like a placed empty one", () => {
   const rows = plain(A.rows(fixture(), 4));
   assert.deepEqual(rows.map((r) => [r.kind, r.slot, r.placed]),
     [["missing", "mail", true], ["empty", "left", false], ["empty", "main", false], ["empty", "right", false]]);
-  assert.deepEqual([A.slotText(rows[1]), A.specText(rows[1]), A.titleText(rows[1])], ["left", "—", "— not in layout"]);
+  assert.deepEqual([A.slotText(rows[1]), A.specText(rows[1]), A.titleText(rows[1])], ["left", "—", "—"]);
 });
 
-test("workspace 8's scroll[main, right] with a spec for main only: main Missing, right and left both empty, left not in layout", () => {
+test("workspace 8's scroll[main, right] with a spec for main only: main Missing, right and left all empty alike", () => {
   const state = {
     ok: true, desk: "laptop", layout: "scroll", screens: ["eDP-1"], used_workspaces: [8],
     slots: [{ name: "left" }, { name: "main" }, { name: "right" }],
@@ -154,7 +154,7 @@ test("workspace 8's scroll[main, right] with a spec for main only: main Missing,
   assert.deepEqual(rows.map((r) => [A.slotText(r), A.specText(r), A.titleText(r)]), [
     ["main", "[Research]", "Missing"],
     ["right", "—", "—"],
-    ["left", "—", "— not in layout"],
+    ["left", "—", "—"],
   ]);
   assert.deepEqual(rows.map((r) => r.placed), [true, true, false]);
 });
@@ -256,17 +256,17 @@ test("no state yet means no pages but the every-window one, and no rows", () => 
   assert.deepEqual(plain(A.rows(null, null)), []);
 });
 
-test("a page with slots not in layout warns when other desks share the layout a places them in", () => {
+test("a page with slots no tree places warns when other desks share the layout a places them in", () => {
   const state = fixture();
   assert.equal(A.placeNote(state, A.rows(state, 3)), "", "used by no other desk");
   state.layouts.dual.used_by = ["docked", "office"];
   assert.equal(A.placeNote(state, A.rows(state, 3)),
-    "Layout 'dual' is also used by desk office: a on a slot not in layout places it there too.");
+    "Layout 'dual' is also used by desk office: a on a slot its trees lack places it there too.");
   state.slots = state.slots.filter((s) => s.name !== "mail");
   assert.equal(A.placeNote(state, A.rows(state, 3)), "", "every slot is in the layout");
 });
 
-test("the message after a takes a slot not in layout names the tree it went into, and who else uses it", () => {
+test("the message after a takes a slot no tree places names the tree it went into, and who else uses it", () => {
   const reply = { slot: "left", workspace: 8, spec: "kitty", placed: { layout: "scroll", screen: 1,
     tree: "scroll[left, main, right]", used_by: ["laptop", "travel"] } };
   assert.equal(A.placedText(reply, "laptop"),

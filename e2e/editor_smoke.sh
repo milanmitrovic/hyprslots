@@ -29,7 +29,7 @@
 # label (`<desk> · ws <n>`), the unsaved dot, its menu (Save, Re-apply,
 # Record), left clicks toggling the panel, and the error state while the
 # hyprslots global is gone. Then workspace 8 (scroll[main, right]) lists every
-# global slot, left "not in layout", and a puts a window into left, placing
+# global slot, left looking like any empty slot, and a puts a window into left, placing
 # it in the tree (scroll[left, main, right]), which Ctrl+S saves.
 # Screenshots of the nested compositor go to .e2e-tmp/editor-smoke-*.png.
 #
@@ -613,8 +613,8 @@ bar_widget() {
 
 # The user's case on workspace 8: its tree is scroll[main, right] and only
 # main has a spec. The Assignment page lists every global slot: main Missing,
-# right empty, and the slots no tree places (left among them) dim, "not in
-# layout". a on a window there, l, puts it in left and left into the tree in
+# right empty, and the slots no tree places (left among them) empty alike,
+# with no marker. a on a window there, l, puts it in left and left into the tree in
 # the global slot order: scroll[left, main, right]; Ctrl+S writes it.
 assignment_place() {
   local watch="qs ipc --pid $SMOKE_QS_PID call smoke" layout
@@ -646,15 +646,15 @@ assignment_place() {
   else
     fail "rows: $rows"
   fi
-  if [[ $rows == *"; left|—|— not in layout; "* ]]; then
-    pass "left is listed, dim: not in layout"
+  if [[ $rows == *"; left|—|—; "* ]]; then
+    pass "left is listed as a plain empty row"
   else
     fail "rows: $rows"
   fi
   want_slots=$(api_state | jq -r '.slots | length')
   expect_eq "every global slot is a row" "$want_slots" "$(grep -o '|—|\|Missing' <<<"$rows" | wc -l | tr -d ' ')"
   sleep 0.3
-  shot 24-assignment-not-in-layout
+  shot 24-assignment-unplaced
 
   local n
   for ((n = 0; n < 12; n++)); do

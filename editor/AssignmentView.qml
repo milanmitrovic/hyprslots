@@ -10,9 +10,9 @@ import "Help.js" as Help
 // Which live window fills which slot (aerolayout's AssignmentView). A table
 // of the windows on a workspace with the screen, slot, app and title of each,
 // plus a "Missing" row for every slot whose window is not running (a slot
-// the workspace has no spec for and no window in is a dim, empty row); every
-// global slot is a row, those no tree of the workspace places dim, "not in
-// layout", and `a` into one places it in the active layout's tree; then
+// the workspace has no spec for and no window in is an empty row); every
+// global slot is a row, those no tree of the workspace places looking the
+// same, and `a` into one places it in the active layout's tree; then
 // the windows overflowing on the workspace and any others on it, on any
 // screen. ←/→ (or [ ]) page through every window and each workspace, the
 // digits jump to a workspace's page (0 is workspace 10); ↑/↓ select. `a` puts
@@ -305,7 +305,7 @@ Item {
       }
     }
 
-    // Slots not in layout, in a layout other desks share: a places them
+    // Slots no tree places, in a layout other desks share: a places them
     // there too.
     Text {
       id: placeNote
@@ -388,8 +388,6 @@ Item {
         // empty (nothing says what fills it)
         readonly property bool missing: modelData.kind === "missing" || modelData.kind === "empty"
         readonly property bool empty: modelData.kind === "empty"
-        // a global slot no tree of the workspace places: dim, "not in layout"
-        readonly property bool unplaced: modelData.placed === false
         readonly property color ink: current ? root.selectedText : root.foreground
         width: ListView.view.width
         height: root.rowHeight
@@ -403,7 +401,6 @@ Item {
 
         Row {
           anchors.fill: parent
-          opacity: rowItem.unplaced && !rowItem.current ? 0.6 : 1
           Text {
             width: root.workspaceWidth
             visible: root.showWorkspace
