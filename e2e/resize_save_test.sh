@@ -3,7 +3,7 @@
 # survives an api reload and a full Hyprland config reload.
 #
 # Screen: HEADLESS-2, 2400x1350 at 0,0, Omarchy block 0 (workspace N = workspace id N).
-# Workspace 3, arrangement "solo": h[a, b]; t-other has no slot, so the layout is
+# Workspace 3, desk and layout "solo": h[a, b]; t-other has no slot, so the layout is
 # h[h[a, b]:3, *:1]: a 900, b 900, overflow 600 px.
 #
 # "nudge r 100px" on a moves the a|b edge exactly 100 px (a 1000, b 800) and
@@ -18,7 +18,7 @@ LUA
   mkdir -p "$E2E_CONFIG_HOME/hyprslots"
   cat >"$E2E_CONFIG_HOME/hyprslots/config.lua" <<'LUA'
 local data = load_data("slots.lua")
-return { slots = data.slots, specs = data.specs, arrangements = data.arrangements }
+return { slots = data.slots, specs = data.specs, desks = data.desks, layouts = data.layouts }
 LUA
   cat >"$E2E_CONFIG_HOME/hyprslots/slots.lua" <<'LUA'
 return {
@@ -26,10 +26,13 @@ return {
   specs = {
     [3] = { a = "t-a", b = "t-b" },
   },
-  arrangements = {
+  desks = {
+    solo = { monitors = { "HEADLESS-2" }, layout = "solo" },
+  },
+  layouts = {
     solo = {
-      screens = { main = "HEADLESS-2" },
-      desks = { [3] = { main = "h[a, b]" } },
+      screens = 1,
+      workspaces = { [3] = { [1] = "h[a, b]" } },
     },
   },
 }
@@ -45,7 +48,7 @@ api() {
 
 field() { jq -r "$1 | if . == null then \"\" else tostring end" 2>/dev/null; }
 
-main_tree() { api state | field '.arrangements.solo.workspaces["3"].main.tree'; }
+main_tree() { api state | field '.layouts.solo.workspaces["3"]["1"].tree'; }
 
 tree_is() { [[ $(main_tree) == "$1" ]]; }
 
@@ -85,8 +88,8 @@ test_body() {
   # Then the api reports the nudge as an unsaved override.
   local state
   state=$(api state)
-  expect_eq "state tree" "h[a:5, b:4]" "$(field '.arrangements.solo.workspaces["3"].main.tree' <<<"$state")"
-  expect_eq "override listed" "h[a:5, b:4]" "$(field '.resized["solo/3/main"].tree' <<<"$state")"
+  expect_eq "state tree" "h[a:5, b:4]" "$(field '.layouts.solo.workspaces["3"]["1"].tree' <<<"$state")"
+  expect_eq "override listed" "h[a:5, b:4]" "$(field '.resized["solo/3/1"].tree' <<<"$state")"
   expect_eq "unsaved" "true" "$(field .dirty <<<"$state")"
 
   # When saved, slots.lua holds the nudged tree and the override is gone.
@@ -94,7 +97,7 @@ test_body() {
   reply=$(api save)
   log "save -> $reply"
   expect_eq "save ok" "true" "$(field .ok <<<"$reply")"
-  if grep -q 'main = "h\[a:5, b:4\]"' "$E2E_CONFIG_HOME/hyprslots/slots.lua"; then
+  if grep -q '\[1\] = "h\[a:5, b:4\]"' "$E2E_CONFIG_HOME/hyprslots/slots.lua"; then
     pass "slots.lua holds the nudged tree"
   else
     fail "slots.lua does not hold the nudged tree:"

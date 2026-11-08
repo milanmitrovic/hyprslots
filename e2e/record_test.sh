@@ -1,7 +1,7 @@
 # Slice 6: the editor's api round trip on one screen.
 #
 # Screen: HEADLESS-2, 2400x1350 at 0,0, Omarchy block 0 (workspace N = workspace id N).
-# Workspace 3, arrangement "solo": h[a:1, b:2, c:1] -> 600 + 1200 + 600 px.
+# Workspace 3, desk and layout "solo": h[a:1, b:2, c:1] -> 600 + 1200 + 600 px.
 #
 # set_ratio changes the tree to 1:1:2 and the screen follows; record reads the
 # windows back into that same tree; save writes slots.lua; both an api reload
@@ -17,7 +17,7 @@ LUA
   mkdir -p "$E2E_CONFIG_HOME/hyprslots"
   cat >"$E2E_CONFIG_HOME/hyprslots/config.lua" <<'LUA'
 local data = load_data("slots.lua")
-return { slots = data.slots, specs = data.specs, arrangements = data.arrangements, pinned = {} }
+return { slots = data.slots, specs = data.specs, desks = data.desks, layouts = data.layouts }
 LUA
   cat >"$E2E_CONFIG_HOME/hyprslots/slots.lua" <<'LUA'
 return {
@@ -25,10 +25,13 @@ return {
   specs = {
     [3] = { a = "t-a", b = "t-b", c = "t-c" },
   },
-  arrangements = {
+  desks = {
+    solo = { monitors = { "HEADLESS-2" }, layout = "solo" },
+  },
+  layouts = {
     solo = {
-      screens = { main = "HEADLESS-2" },
-      desks = { [3] = { main = "h[a:1, b:2, c:1]" } },
+      screens = 1,
+      workspaces = { [3] = { [1] = "h[a:1, b:2, c:1]" } },
     },
   },
 }
@@ -46,7 +49,7 @@ api() {
 # A field of a JSON reply (jq path).
 field() { jq -r "$1 | if . == null then \"\" else tostring end" 2>/dev/null; }
 
-main_tree() { api state | field '.arrangements.solo.workspaces["3"].main.tree'; }
+main_tree() { api state | field '.layouts.solo.workspaces["3"]["1"].tree'; }
 
 tree_is() { [[ $(main_tree) == "$1" ]]; }
 
@@ -85,10 +88,12 @@ test_body() {
   # Given the tree h[a:1, b:2, c:1], when set_ratio makes it 1:1:2,
   # then the screen follows without anything else happening.
   local reply seq
-  reply=$(api set_ratio '{"workspace": 3, "role": "main", "ratio": "1:1:2"}')
+  reply=$(api set_ratio '{"workspace": 3, "screen": 1, "ratio": "1:1:2"}')
   log "set_ratio -> $reply"
   expect_eq "set_ratio ok" "true" "$(field .ok <<<"$reply")"
   expect_eq "set_ratio tree" "h[a, b, c:2]" "$(field .tree <<<"$reply")"
+  expect_eq "set_ratio layout" "solo" "$(field .layout <<<"$reply")"
+  expect_eq "set_ratio screen" "1" "$(field .screen <<<"$reply")"
   seq=$(field .seq <<<"$reply")
   settle
   expect_client t-a 3 0 0 600 1350
@@ -102,6 +107,9 @@ test_body() {
   log "record -> $reply"
   expect_eq "record ok" "true" "$(field .ok <<<"$reply")"
   expect_eq "recorded tree" "h[a, b, c:2]" "$(field .tree <<<"$reply")"
+  expect_eq "recorded layout" "solo" "$(field .layout <<<"$reply")"
+  expect_eq "recorded screen" "1" "$(field .screen <<<"$reply")"
+  expect_eq "recorded workspace" "3" "$(field .workspace <<<"$reply")"
   expect_eq "record applied" "true" "$(field .applied <<<"$reply")"
   expect_eq "unsaved" "true" "$(api state | field .dirty)"
 
@@ -111,7 +119,7 @@ test_body() {
   log "save -> $reply"
   expect_eq "save ok" "true" "$(field .ok <<<"$reply")"
   expect_eq "save path" "$slots_file" "$(field .path <<<"$reply")"
-  if grep -q 'main = "h\[a, b, c:2\]"' "$slots_file" && grep -q 'editor' "$slots_file"; then
+  if grep -q '\[1\] = "h\[a, b, c:2\]"' "$slots_file" && grep -q 'editor' "$slots_file"; then
     pass "slots.lua holds the saved tree"
   else
     fail "slots.lua does not hold the saved tree:"
@@ -124,6 +132,8 @@ test_body() {
   reply=$(api reload)
   log "reload -> $reply"
   expect_eq "reload ok" "true" "$(field .ok <<<"$reply")"
+  expect_eq "reload desk" "solo" "$(field .desk <<<"$reply")"
+  expect_eq "reload layout" "solo" "$(field .layout <<<"$reply")"
   expect_eq "tree after api reload" "h[a, b, c:2]" "$(main_tree)"
   settle
   expect_client t-a 3 0 0 600 1350
@@ -141,7 +151,7 @@ test_body() {
   expect_client t-c 3 1200 0 1200 1350
 
   # Errors come back as JSON, never as an empty reply.
-  reply=$(api set_ratio '{"workspace": 3, "role": "main", "ratio": "1:1"}')
+  reply=$(api set_ratio '{"workspace": 3, "screen": 1, "ratio": "1:1"}')
   expect_eq "a bad ratio is an error reply" "false" "$(field .ok <<<"$reply")"
   log "bad ratio -> $(field .error <<<"$reply")"
 

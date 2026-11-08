@@ -2,7 +2,7 @@
 # order.
 #
 # Screen: HEADLESS-2, 2400x1350 at 0,0, Omarchy block 0 (workspace N = workspace id N).
-# Workspace 3, arrangement "solo": scroll[left, main, right]. Gaps and borders are
+# Workspace 3, desk and layout "solo": scroll[left, main, right]. Gaps and borders are
 # off, so a full-width column (0.99, the default) is 2376 px wide.
 #
 # The slotted windows open on workspace 1 in shuffled order and are routed to the
@@ -22,7 +22,7 @@ LUA
   mkdir -p "$E2E_CONFIG_HOME/hyprslots"
   cat >"$E2E_CONFIG_HOME/hyprslots/config.lua" <<'LUA'
 local data = load_data("slots.lua")
-return { slots = data.slots, specs = data.specs, arrangements = data.arrangements }
+return { slots = data.slots, specs = data.specs, desks = data.desks, layouts = data.layouts }
 LUA
   cat >"$E2E_CONFIG_HOME/hyprslots/slots.lua" <<'LUA'
 return {
@@ -30,10 +30,13 @@ return {
   specs = {
     [3] = { left = "t-left", main = "t-main", right = "t-right" },
   },
-  arrangements = {
+  desks = {
+    solo = { monitors = { "HEADLESS-2" }, layout = "solo" },
+  },
+  layouts = {
     solo = {
-      screens = { main = "HEADLESS-2" },
-      desks = { [3] = { main = "scroll[left, main, right]" } },
+      screens = 1,
+      workspaces = { [3] = { [1] = "scroll[left, main, right]" } },
     },
   },
 }
@@ -44,7 +47,7 @@ state_field() {
   repl 'return hyprslots.api.call("state", "{}")' | jq -r --arg k "$1" '.[$k] // empty | tostring' 2>/dev/null
 }
 
-arrangement_is() { [[ $(state_field arrangement) == "$1" ]]; }
+desk_is() { [[ $(state_field desk) == "$1" ]]; }
 
 workspace_of() {
   hc clients -j | jq -r --arg c "$1" 'first(.[] | select(.class == $c)) | .workspace.id'
@@ -100,8 +103,9 @@ test_body() {
   load_error=$(hyprslots_load_error | head -n1)
   expect_eq "hyprslots loaded" "" "$load_error"
 
-  eventually 5 arrangement_is solo || true
-  expect_eq "active arrangement" "solo" "$(state_field arrangement)"
+  eventually 5 desk_is solo || true
+  expect_eq "active desk" "solo" "$(state_field desk)"
+  expect_eq "active layout" "solo" "$(state_field layout)"
 
   hc dispatch 'hl.dsp.cursor.move({ x = 300, y = 400 })' >/dev/null
   local cursor_before
@@ -161,7 +165,7 @@ test_body() {
 
   # When the branch places the overflow leaf among its columns, the window
   # with no slot goes there, and the focus stays.
-  log "set_tree -> $(repl 'return hyprslots.api.call("set_tree", "{\"workspace\": 3, \"role\": \"main\", \"tree\": \"scroll[left, *, main, right]\"}")')"
+  log "set_tree -> $(repl 'return hyprslots.api.call("set_tree", "{\"workspace\": 3, \"screen\": 1, \"tree\": \"scroll[left, *, main, right]\"}")')"
   eventually 5 columns_are 3 "t-left t-other t-main t-right" || true
   settle 3
   expect_eq "the window with no slot takes the overflow column" "t-left t-other t-main t-right" "$(columns 3)"

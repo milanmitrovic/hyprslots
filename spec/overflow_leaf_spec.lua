@@ -5,19 +5,16 @@ local hl_stub = require("helpers.hl_stub")
 
 local CONFIG = [[
 local data = load_data("slots.lua")
-return { slots = data.slots, specs = data.specs, arrangements = data.arrangements }
+return { slots = data.slots, specs = data.specs, desks = data.desks, layouts = data.layouts }
 ]]
 
 local function slots_lua(tree)
   return string.format([[
 return {
-  slots = { [3] = { x = "t-x", y = "t-y", z = "t-z", d = "t-d" } },
-  arrangements = {
-    solo = {
-      screens = { main = "HEADLESS-2" },
-      desks = { [3] = { main = %q } },
-    },
-  },
+  slots = { x = {}, y = {}, z = {}, d = {} },
+  specs = { [3] = { x = "t-x", y = "t-y", z = "t-z", d = "t-d" } },
+  desks = { solo = { monitors = { "HEADLESS-2" }, layout = "solo" } },
+  layouts = { solo = { screens = 1, workspaces = { [3] = { [1] = %q } } } },
 }
 ]], tree)
 end

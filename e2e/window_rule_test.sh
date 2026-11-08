@@ -17,9 +17,8 @@ LUA
 return {
   slots = { main = {} },
   specs = { [3] = { main = "t-main" } },
-  arrangements = {
-    solo = { screens = { big = "HEADLESS-2" }, desks = { [3] = { big = "main" } } },
-  },
+  desks = { solo = { monitors = { "HEADLESS-2" }, layout = "solo" } },
+  layouts = { solo = { screens = 1, workspaces = { [3] = { [1] = "main" } } } },
 }
 LUA
 }

@@ -158,10 +158,10 @@ describe("the Assignment view's api", function()
       local file = assert(io.open(state().config.data_file, "w"))
       file:write([[
 return {
-  slots = { [3] = { left = "t-left", main = "t-main" } },
-  arrangements = {
-    dual = { screens = { big = "HEADLESS-2", side = "HEADLESS-3" }, desks = { [3] = { side = "left", big = "main" } } },
-  },
+  slots = { left = {}, main = {} },
+  specs = { [3] = { left = "t-left", main = "t-main" } },
+  desks = { dual = { monitors = { "HEADLESS-2", "HEADLESS-3" }, layout = "dual" } },
+  layouts = { dual = { screens = 2, workspaces = { [3] = { [1] = "main", [2] = "left" } } } },
 }
 ]])
       file:close()
@@ -297,7 +297,7 @@ return {
         hl.add_workspace(3, "HEADLESS-2")
         hyprslots = engine.setup(engine.TWO_SCREENS, [[
 local data = load_data("slots.lua")
-return { slots = data.slots, specs = { [3] = { main = "t-main" } }, arrangements = data.arrangements }
+return { slots = data.slots, specs = { [3] = { main = "t-main" } }, desks = data.desks, layouts = data.layouts }
 ]])
         local first = open(1, "t-main", 1)
         local reply = call("unassign", { address = first.address, clear_spec = true })

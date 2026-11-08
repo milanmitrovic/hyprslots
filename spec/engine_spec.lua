@@ -5,19 +5,16 @@ local json = require("hyprslots.dkjson")
 
 local SLOTS = [[
 return {
-  slots = { [3] = { a = "t-a", b = "t-b", c = "t-c" } },
-  arrangements = {
-    solo = {
-      screens = { main = "HEADLESS-2" },
-      desks = { [3] = { main = "h[a:1, b:2, c:1]" } },
-    },
-  },
+  slots = { a = {}, b = {}, c = {} },
+  specs = { [3] = { a = "t-a", b = "t-b", c = "t-c" } },
+  desks = { solo = { monitors = { "HEADLESS-2" }, layout = "solo" } },
+  layouts = { solo = { screens = 1, workspaces = { [3] = { [1] = "h[a:1, b:2, c:1]" } } } },
 }
 ]]
 
 local CONFIG = [[
 local data = load_data("slots.lua")
-return { slots = data.slots, specs = data.specs, arrangements = data.arrangements }
+return { slots = data.slots, specs = data.specs, desks = data.desks, layouts = data.layouts }
 ]]
 
 local function config_dir(files)
@@ -92,14 +89,17 @@ describe("hyprslots engine", function()
       assert.is_nil(rules["4"], "workspace 4 has no tree")
     end)
 
-    it("selects the arrangement for the monitors already connected", function()
+    it("selects the desk for the monitors already connected", function()
       setup()
-      assert.are.equal("solo", state().arrangement)
-      assert.are.same({ workspace = 3, role = "main", monitor = "HEADLESS-2", layout = "lua:slots" }, state().workspaces["3"])
+      assert.are.equal("solo", state().desk)
+      assert.are.equal("solo", state().layout)
+      assert.are.same({ workspace = 3, screen = 1, monitor = "HEADLESS-2", layout = "lua:slots" }, state().workspaces["3"])
+      assert.is_false(state().dirty)
+      assert.is_nil(state().config.migrated)
     end)
 
     it("never raises, and reports a broken config with a notification", function()
-      setup({ ["config.lua"] = "return { slots = { [3] = { a = '[x' } } }" })
+      setup({ ["config.lua"] = "return { slots = { a = {} }, specs = { [3] = { a = '[x' } } }" })
       assert.are.equal(1, #hl.notifications)
       assert.matches("hyprslots", hl.notifications[1].text)
       assert.matches("%[x", state().config_error)
@@ -127,6 +127,78 @@ describe("hyprslots engine", function()
     end)
   end)
 
+  describe("a slots.lua of arrangements (the shape of before)", function()
+    local OLD = [[
+return {
+  slots = { a = {}, b = {}, c = {} },
+  specs = { [3] = { a = "t-a", b = "t-b", c = "t-c" } },
+  arrangements = {
+    solo = {
+      screens = { main = "HEADLESS-2" },
+      desks = { [3] = { main = "h[a:1, b:2, c:1]" } },
+    },
+  },
+  pinned = { "main" },
+}
+]]
+
+    it("runs as desks and layouts, dirty until saved", function()
+      setup({ ["config.lua"] = CONFIG, ["slots.lua"] = OLD })
+      local s = state()
+      assert.is_nil(s.config_error)
+      assert.are.equal("solo", s.desk)
+      assert.are.equal("solo", s.layout)
+      assert.are.same({ workspace = 3, screen = 1, monitor = "HEADLESS-2", layout = "lua:slots" }, s.workspaces["3"])
+      assert.are.same({ 1 }, s.desks.solo.pinned)
+      assert.is_true(s.config.migrated)
+      assert.is_true(s.dirty, "what runs differs from the file until it is saved")
+      local placed = recalculate({ hl_stub.window(1, "t-a", { workspace = 3 }), hl_stub.window(2, "t-b", { workspace = 3 }) })
+      assert.are.same({ x = 0, y = 0, w = 800, h = 1350 }, placed["t-a"])
+      assert.is_true(json.decode(hyprslots.api.call("set_tree", '{"workspace": 3, "screen": 1, "tree": "h[a, b]"}')).ok)
+      assert.is_true(state().config.migrated, "the file is still in the shape of before after an edit")
+    end)
+
+    it("save writes the new shape, which then loads clean", function()
+      setup({ ["config.lua"] = CONFIG, ["slots.lua"] = OLD })
+      assert.is_true(json.decode(hyprslots.api.call("save", "{}")).ok)
+      assert.is_false(state().dirty)
+      local written = assert(loadfile(dir .. "/slots.lua", "t", {}))()
+      assert.is_nil(written.arrangements)
+      assert.is_nil(written.pinned)
+      assert.are.same({ solo = { monitors = { "HEADLESS-2" }, layout = "solo", pinned = { 1 } } }, written.desks)
+      assert.are.same({ solo = { screens = 1, workspaces = { [3] = { [1] = "h[a:1, b:2, c:1]" } } } }, written.layouts)
+
+      hyprslots.setup({ config_dir = dir })
+      assert.is_false(state().dirty)
+      assert.is_nil(state().config.migrated)
+      assert.are.equal("solo", state().desk)
+    end)
+
+    local function call(name, args)
+      return json.decode(hyprslots.api.call(name, json.encode(args or {})))
+    end
+
+    it("stays dirty after a reset back to the file: the file is still in the shape of before", function()
+      setup({ ["config.lua"] = CONFIG, ["slots.lua"] = OLD })
+      assert.is_true(call("set_tree", { workspace = 3, screen = 1, tree = "v[a, b, c]" }).ok)
+      local reply = call("reset", { workspace = 3, screen = 1 })
+      assert.is_true(reply.ok, reply.error)
+      assert.are.equal("h[a, b:2, c]", reply.tree)
+      assert.is_true(state().dirty)
+    end)
+
+    it("forgets the renames made before a reload", function()
+      setup({ ["config.lua"] = CONFIG, ["slots.lua"] = OLD })
+      assert.is_true(call("rename_slot", { slot = "a", to = "x" }).ok)
+      assert.is_true(call("reload").ok)
+      assert.is_true(state().dirty)
+      assert.is_true(call("set_tree", { workspace = 3, screen = 1, tree = "v[a, b, c]" }).ok)
+      local reply = call("reset", { workspace = 3, screen = 1 })
+      assert.is_true(reply.ok, reply.error)
+      assert.are.equal("h[a, b:2, c]", reply.tree)
+    end)
+  end)
+
   describe("refusing to fight hyprmoncfg's workspace planner", function()
     for _, event in ipairs({ "hyprland.start", "config.reloaded" }) do
       it("refuses on " .. event .. " when o.workspaces.enabled is false", function()
@@ -149,27 +221,27 @@ describe("hyprslots engine", function()
     end)
   end)
 
-  describe("arrangement selection on hotplug", function()
+  describe("desk selection on hotplug", function()
     it("re-selects after a monitor is added, once the event has returned", function()
       hl.monitors = {}
       setup()
-      assert.is_nil(state().arrangement)
+      assert.is_nil(state().desk)
 
       hl.monitors = { hl_stub.monitor("HEADLESS-2", { focused = true }) }
       hl.emit("monitor.added", hl.monitors[1])
-      assert.is_nil(state().arrangement, "deferred, not inside the event")
+      assert.is_nil(state().desk, "deferred, not inside the event")
 
       hl.run_timers()
-      assert.are.equal("solo", state().arrangement)
+      assert.are.equal("solo", state().desk)
     end)
 
-    it("drops the arrangement when its monitor is removed", function()
+    it("drops the desk when its monitor is removed", function()
       setup()
       local gone = hl.monitors[1]
       hl.monitors = {}
       hl.emit("monitor.removed", gone)
       hl.run_timers()
-      assert.is_nil(state().arrangement)
+      assert.is_nil(state().desk)
     end)
   end)
 
@@ -203,7 +275,7 @@ describe("hyprslots engine", function()
       assert.are.same({}, hl.dispatched_of("window.move"))
     end)
 
-    it("leaves a matched window alone when no arrangement places its slot", function()
+    it("leaves a matched window alone when no desk places its slot", function()
       hl.monitors = { hl_stub.monitor("DP-9", { focused = true }) }
       setup()
       hl.emit("window.open", hl_stub.window(1, "t-b", { workspace = 1 }))
@@ -272,7 +344,7 @@ describe("hyprslots engine", function()
       assert.are.same({ x = 1800, y = 675, w = 600, h = 675 }, placed["foot"])
     end)
 
-    it("tiles a workspace the arrangement has no tree for in columns", function()
+    it("tiles a workspace the layout has no tree for in columns", function()
       setup()
       local placed = recalculate({ opened(1, "t-a", 4), opened(2, "foot", 4) })
       assert.are.same({ x = 0, y = 0, w = 1200, h = 1350 }, placed["t-a"])
@@ -335,8 +407,11 @@ describe("hyprslots engine", function()
       setup()
       local s = state()
       assert.is_true(s.ok)
-      assert.are.equal("solo", s.arrangement)
-      assert.are.same({ main = "HEADLESS-2" }, s.screens)
+      assert.are.equal("solo", s.desk)
+      assert.are.equal("solo", s.layout)
+      assert.are.same({ "HEADLESS-2" }, s.screens)
+      assert.is_nil(s.arrangement)
+      assert.is_nil(s.arrangements)
     end)
 
     it("reports malformed JSON as an error reply", function()
@@ -371,7 +446,7 @@ describe("hyprslots engine", function()
       setup()
       hl.emit("window.open", hl_stub.window(1, "t-b", { workspace = 1 }))
       local text = hyprslots.dump()
-      assert.matches('"arrangement":%s*"solo"', text)
+      assert.matches('"desk":%s*"solo"', text)
       assert.matches("t%-b", text)
     end)
   end)

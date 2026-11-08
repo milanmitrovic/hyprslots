@@ -6,8 +6,8 @@
 -- passed the data's own table straight through (the same table, by identity);
 -- a field it built in code is read-only, because changing slots.lua would not
 -- change it. Granularity: top-level keys, and one level below them
--- (`arrangements.<name>`, `specs.<workspace>`); the global `slots` are one
--- field, all or nothing.
+-- (`desks.<name>`, `layouts.<name>`, `specs.<workspace>`); the global
+-- `slots` are one field, all or nothing.
 --
 -- Every edit returns a new data table; the one given is never mutated. Pure:
 -- no `hl`, no I/O.
@@ -19,7 +19,7 @@ local tree = require("hyprslots.tree")
 local M = {}
 
 local WORKSPACES = 10
-local SLOT_NAME = "^[%a_][%w_%-]*$" -- config.lua's rule for slot and role names
+local SLOT_NAME = "^[%a_][%w_%-]*$" -- config.lua's rule for slot names
 
 local function sorted_keys(t)
   local keys = {}
@@ -50,9 +50,10 @@ end
 -- Fields that are one whole: a slot list partly built in code is code's.
 local WHOLE = { slots = true }
 
--- The config paths config.lua sets by code, sorted: "pinned",
--- "arrangements.work", "specs.4", "slots". `raw` is what config.lua returned,
--- `given` the table load_data("slots.lua") handed it (nil when it loaded none).
+-- The config paths config.lua sets by code, sorted: "desks.work",
+-- "layouts.office", "specs.4", "slots", "title_matching". `raw` is what
+-- config.lua returned, `given` the table load_data("slots.lua") handed it
+-- (nil when it loaded none).
 function M.read_only(raw, given)
   local out = {}
   for _, key in ipairs(sorted_keys(raw)) do
@@ -72,7 +73,7 @@ function M.read_only(raw, given)
   return out
 end
 
--- Whether `section.name` (e.g. arrangements.solo) is the data's to change.
+-- Whether `section.name` (e.g. layouts.solo) is the data's to change.
 function M.editable(read_only, section, name)
   local whole, one = section, section .. "." .. tostring(name)
   for _, path in ipairs(read_only) do
@@ -81,32 +82,6 @@ function M.editable(read_only, section, name)
     end
   end
   return true
-end
-
--- The data with arrangement's tree for workspace and screen role set to `text`
--- (normalized). Returns the new data, or nil and why not.
-function M.set_tree(data, arrangement, workspace, role, text)
-  local entry = data and type(data.arrangements) == "table" and data.arrangements[arrangement]
-  if type(entry) ~= "table" then
-    return nil, "no arrangement '" .. tostring(arrangement) .. "' in slots.lua"
-  end
-  if math.type(workspace) ~= "integer" or workspace < 1 or workspace > WORKSPACES then
-    return nil, "a workspace must be an integer from 1 to " .. WORKSPACES .. ", got " .. tostring(workspace)
-  end
-  if type(entry.screens) ~= "table" or entry.screens[role] == nil then
-    return nil, string.format("arrangement '%s' has no screen role '%s'", arrangement, tostring(role))
-  end
-  local node, err = tree.parse(text)
-  if not node then
-    return nil, err
-  end
-
-  local out = M.copy(data)
-  local target = out.arrangements[arrangement]
-  target.desks = target.desks or {}
-  target.desks[workspace] = target.desks[workspace] or {}
-  target.desks[workspace][role] = serialize.tree(node)
-  return out
 end
 
 local function check_workspace(workspace)
@@ -192,27 +167,43 @@ function M.remove_leaf(node, name)
   return out
 end
 
--- Rewrite every tree of every workspace in every arrangement with fn(node) ->
--- node or nil (nil drops the branch). Trees that do not parse are left as
--- they are (config.lua's validation reports them).
-local function rewrite_trees(out, fn)
-  for _, entry in pairs(type(out.arrangements) == "table" and out.arrangements or {}) do
-    local desks = type(entry) == "table" and type(entry.desks) == "table" and entry.desks or {}
-    for workspace, branches in pairs(desks) do
-      if type(branches) == "table" then
-        for role, text in pairs(branches) do
-          local node = tree.parse(text)
-          if node then
-            local changed = fn(node)
-            branches[role] = changed and serialize.tree(changed) or nil
-          end
-        end
-        if next(branches) == nil then
-          desks[workspace] = nil
+-- Every tree table of every layout: its default trees and each workspace's
+-- own, as (layout name, workspace or "default", screen -> text table).
+local function each_trees(data, fn)
+  for _, name in ipairs(sorted_keys(type(data.layouts) == "table" and data.layouts or {})) do
+    local entry = data.layouts[name]
+    if type(entry) == "table" then
+      if type(entry.default) == "table" then
+        fn(name, "default", entry.default, entry)
+      end
+      local workspaces = type(entry.workspaces) == "table" and entry.workspaces or {}
+      for _, n in ipairs(sorted_keys(workspaces)) do
+        if type(workspaces[n]) == "table" then
+          fn(name, n, workspaces[n], entry)
         end
       end
     end
   end
+end
+
+-- Rewrite every tree of every layout (default and per workspace) with
+-- fn(node) -> node or nil (nil drops the branch). Trees that do not parse
+-- are left as they are (config.lua's validation reports them). A
+-- workspace's trees are kept even when none is left (they still replace the
+-- default ones); empty default trees go.
+local function rewrite_trees(out, fn)
+  each_trees(out, function(_, n, trees, entry)
+    for screen, text in pairs(trees) do
+      local node = tree.parse(text)
+      if node then
+        local changed = fn(node)
+        trees[screen] = changed and serialize.tree(changed) or nil
+      end
+    end
+    if n == "default" and next(trees) == nil then
+      entry.default = nil
+    end
+  end)
 end
 
 -- Rewrite every workspace's spec for slot `old`: moved to `new`, or dropped when
@@ -235,27 +226,23 @@ local function rewrite_specs(out, old, new)
   end
 end
 
--- Where slot `name` is used: { trees = { "<arrangement>/<workspace>/<role>", ... },
--- specs = { workspace, ... } }, both sorted.
+-- Where slot `name` is used: { trees = { "<layout>/<workspace>/<screen>",
+-- ... } (workspace "default" for the default trees), specs = { workspace,
+-- ... } }, both sorted.
 function M.slot_uses(data, name)
   local trees, specs = {}, {}
-  for _, arrangement in ipairs(sorted_keys(type(data.arrangements) == "table" and data.arrangements or {})) do
-    local entry = data.arrangements[arrangement]
-    local desks = type(entry) == "table" and type(entry.desks) == "table" and entry.desks or {}
-    for _, workspace in ipairs(sorted_keys(desks)) do
-      local branches = type(desks[workspace]) == "table" and desks[workspace] or {}
-      for _, role in ipairs(sorted_keys(branches)) do
-        local node = tree.parse(branches[role])
-        if node then
-          for _, slot in ipairs(tree.slots(node)) do
-            if slot == name then
-              trees[#trees + 1] = arrangement .. "/" .. tostring(workspace) .. "/" .. role
-            end
+  each_trees(data, function(layout, n, branches)
+    for _, screen in ipairs(sorted_keys(branches)) do
+      local node = tree.parse(branches[screen])
+      if node then
+        for _, slot in ipairs(tree.slots(node)) do
+          if slot == name then
+            trees[#trees + 1] = layout .. "/" .. tostring(n) .. "/" .. tostring(screen)
           end
         end
       end
     end
-  end
+  end)
   local all = type(data.specs) == "table" and data.specs or {}
   for _, workspace in ipairs(sorted_keys(all)) do
     if type(all[workspace]) == "table" and all[workspace][name] ~= nil then
@@ -297,9 +284,9 @@ function M.remove_slot(data, name)
   return out
 end
 
--- The data with a global slot renamed: in every tree of every workspace of every
--- arrangement (aerolayout's rename_slot_everywhere) and in every workspace's
--- specs; its description follows.
+-- The data with a global slot renamed: in every tree of every layout
+-- (aerolayout's rename_slot_everywhere) and in every workspace's specs; its
+-- description follows.
 function M.rename_slot(data, old, new)
   local ok, err = existing_slot(data, old)
   if not ok then
@@ -379,260 +366,372 @@ function M.clear_spec(data, workspace, slot)
   return out
 end
 
-local function arrangement_entry(data, name)
-  local entry = data and type(data.arrangements) == "table" and data.arrangements[name]
-  if type(entry) ~= "table" then
-    return nil, "no arrangement '" .. tostring(name) .. "' in slots.lua"
-  end
-  return entry
-end
+-- Desks and layouts -----------------------------------------------------------
 
-local function arrangement_name(name)
+local MAX_SCREENS = 10
+
+local function entry_name(name, what)
   if type(name) ~= "string" or name:match("^%s*$") then
-    return nil, "an arrangement needs a name"
+    return nil, "a " .. what .. " needs a name"
   end
   if name:find("/", 1, true) or name ~= name:match("^%s*(.-)%s*$") then
-    return nil, "an arrangement name has no '/' and no spaces around it, got '" .. name .. "'"
+    return nil, "a " .. what .. " name has no '/' and no spaces around it, got '" .. name .. "'"
   end
   return name
 end
 
--- A copy of a screens map (role -> selector), or nil and why it is no good.
-local function screens_copy(screens)
-  if type(screens) ~= "table" or next(screens) == nil then
-    return nil, "an arrangement must name at least one screen: { role = \"description|serial|connector\" }"
+local function section(data, key)
+  return data and type(data[key]) == "table" and data[key] or {}
+end
+
+local function desk_entry(data, name)
+  local entry = section(data, "desks")[name]
+  if type(entry) ~= "table" then
+    return nil, "no desk '" .. tostring(name) .. "' in slots.lua"
   end
-  local out, by_selector = {}, {}
-  for role, selector in pairs(screens) do
-    local ok, err = check_name(role, "screen role")
-    if not ok then
-      return nil, err
+  return entry
+end
+
+local function layout_entry(data, name)
+  local entry = section(data, "layouts")[name]
+  if type(entry) ~= "table" then
+    return nil, "no layout '" .. tostring(name) .. "' in slots.lua"
+  end
+  return entry
+end
+
+local function screen_count(entry)
+  return math.type(entry.screens) == "integer" and entry.screens or 0
+end
+
+local function plural(n, word)
+  return n .. " " .. word .. (n == 1 and "" or "s")
+end
+
+-- The desks that use layout `name`, sorted.
+function M.layout_users(data, name)
+  local out = {}
+  for _, desk in ipairs(sorted_keys(section(data, "desks"))) do
+    local entry = data.desks[desk]
+    if type(entry) == "table" and entry.layout == name then
+      out[#out + 1] = desk
     end
+  end
+  return out
+end
+
+-- A copy of a monitors list, or nil and why it is no good.
+local function monitors_copy(monitors)
+  if type(monitors) ~= "table" or monitors[1] == nil then
+    return nil, "a desk must list at least one monitor (a description, serial or connector)"
+  end
+  local out, seen = {}, {}
+  for i, selector in ipairs(monitors) do
     if type(selector) ~= "string" or selector == "" then
-      return nil, string.format("screen role '%s' needs a selector (a monitor description, serial or connector)", role)
+      return nil, "monitor " .. i .. " needs a selector (a monitor description, serial or connector)"
     end
-    if by_selector[selector] then
-      local a, b = by_selector[selector], role
-      if b < a then
-        a, b = b, a
-      end
-      return nil, string.format("screen roles '%s' and '%s' both select '%s'", a, b, selector)
+    if seen[selector] then
+      return nil, "'" .. selector .. "' is listed twice"
     end
-    by_selector[selector] = role
-    out[role] = selector
+    seen[selector] = true
+    out[i] = selector
   end
   return out
 end
 
--- The data with a new arrangement for `screens` (role -> selector), with no
--- trees yet (copy_trees fills them).
-function M.add_arrangement(data, name, screens)
-  local ok, err = arrangement_name(name)
-  if not ok then
-    return nil, err
-  end
-  if data and type(data.arrangements) == "table" and data.arrangements[name] ~= nil then
-    return nil, "an arrangement called '" .. name .. "' already exists"
-  end
-  local copied, screens_err = screens_copy(screens)
-  if not copied then
-    return nil, screens_err
-  end
-  local out = M.copy(data or {})
-  out.arrangements = type(out.arrangements) == "table" and out.arrangements or {}
-  out.arrangements[name] = { screens = copied, desks = {} }
-  return out
-end
-
-function M.rename_arrangement(data, old, new)
-  local entry, err = arrangement_entry(data, old)
+local function check_fits(data, layout, count)
+  local entry, err = layout_entry(data, layout)
   if not entry then
     return nil, err
   end
-  local ok, name_err = arrangement_name(new)
+  if screen_count(entry) ~= count then
+    return nil, string.format("layout '%s' is for %s, and the desk has %s", layout, plural(screen_count(entry), "screen"),
+      plural(count, "monitor"))
+  end
+  return entry
+end
+
+-- The data with a new desk for `monitors` (selectors) using `layout`.
+function M.add_desk(data, name, monitors, layout)
+  local ok, err = entry_name(name, "desk")
+  if not ok then
+    return nil, err
+  end
+  if section(data, "desks")[name] ~= nil then
+    return nil, "a desk called '" .. name .. "' already exists"
+  end
+  local copied, monitors_err = monitors_copy(monitors)
+  if not copied then
+    return nil, monitors_err
+  end
+  local fits, fit_err = check_fits(data, layout, #copied)
+  if not fits then
+    return nil, fit_err
+  end
+  local out = M.copy(data or {})
+  out.desks = type(out.desks) == "table" and out.desks or {}
+  out.desks[name] = { monitors = copied, layout = layout }
+  return out
+end
+
+function M.rename_desk(data, old, new)
+  local entry, err = desk_entry(data, old)
+  if not entry then
+    return nil, err
+  end
+  local ok, name_err = entry_name(new, "desk")
   if not ok then
     return nil, name_err
   end
   if new == old then
     return M.copy(data)
   end
-  if data.arrangements[new] ~= nil then
-    return nil, "an arrangement called '" .. new .. "' already exists"
+  if data.desks[new] ~= nil then
+    return nil, "a desk called '" .. new .. "' already exists"
   end
   local out = M.copy(data)
-  out.arrangements[new], out.arrangements[old] = out.arrangements[old], nil
+  out.desks[new], out.desks[old] = out.desks[old], nil
   return out
 end
 
-function M.delete_arrangement(data, name)
-  local entry, err = arrangement_entry(data, name)
+function M.delete_desk(data, name)
+  local entry, err = desk_entry(data, name)
   if not entry then
     return nil, err
   end
   local out = M.copy(data)
-  out.arrangements[name] = nil
+  out.desks[name] = nil
   return out
 end
 
--- The data with an arrangement's screens replaced by `screens` (role ->
--- selector). `renames` (old role -> new role) carries trees to a renamed
--- role; the trees of a role that is in neither go.
-function M.set_screens(data, name, screens, renames)
-  local entry, err = arrangement_entry(data, name)
+-- The data with desk `name` using layout `layout` (one for as many screens
+-- as the desk has monitors).
+function M.set_desk_layout(data, name, layout)
+  local entry, err = desk_entry(data, name)
   if not entry then
     return nil, err
   end
-  local copied, screens_err = screens_copy(screens)
-  if not copied then
-    return nil, screens_err
-  end
-  renames = type(renames) == "table" and renames or {}
-  for old, new in pairs(renames) do
-    if copied[new] == nil then
-      return nil, string.format("cannot rename screen role '%s' to '%s': '%s' is not among the new screens",
-        tostring(old), tostring(new), tostring(new))
-    end
+  local fits, fit_err = check_fits(data, layout, type(entry.monitors) == "table" and #entry.monitors or 0)
+  if not fits then
+    return nil, fit_err
   end
   local out = M.copy(data)
-  local target = out.arrangements[name]
-  target.screens = copied
-  local desks = {}
-  for workspace, branches in pairs(type(target.desks) == "table" and target.desks or {}) do
-    local kept = {}
-    if type(branches) == "table" then
-      for role, text in pairs(branches) do
-        local now = renames[role]
-        if now == nil and copied[role] ~= nil then
-          now = role
-        end
-        if now ~= nil then
-          kept[now] = text
-        end
-      end
-    end
-    if next(kept) ~= nil then
-      desks[workspace] = kept
-    end
-  end
-  target.desks = desks
+  out.desks[name].layout = layout
   return out
 end
 
--- The data with `pinned` (screen roles excluded from workspace switching) set,
--- sorted and once each.
-function M.set_pinned(data, roles)
-  if type(roles) ~= "table" then
-    return nil, "pinned must be a list of screen roles"
+-- The data with desk `name`'s pinned screens (excluded from workspace
+-- switching) set, sorted and once each.
+function M.set_pinned(data, name, screens)
+  local entry, err = desk_entry(data, name)
+  if not entry then
+    return nil, err
   end
+  if type(screens) ~= "table" then
+    return nil, "pinned must be a list of screens (1 is the left-most)"
+  end
+  local count = type(entry.monitors) == "table" and #entry.monitors or 0
   local seen, list = {}, {}
-  for _, role in ipairs(roles) do
-    local ok, err = check_name(role, "screen role")
-    if not ok then
-      return nil, err
+  for _, index in ipairs(screens) do
+    if math.type(index) == "float" and index == math.floor(index) then
+      index = math.tointeger(index)
     end
-    if not seen[role] then
-      seen[role] = true
-      list[#list + 1] = role
+    if math.type(index) ~= "integer" or index < 1 or index > count then
+      return nil, string.format("desk '%s' has screens 1 to %d, got %s", name, count, tostring(index))
+    end
+    if not seen[index] then
+      seen[index] = true
+      list[#list + 1] = index
     end
   end
   table.sort(list)
-  local out = M.copy(data or {})
-  out.pinned = list
+  local out = M.copy(data)
+  out.desks[name].pinned = #list > 0 and list or nil
   return out
 end
 
-local function sorted_strings(t)
-  local out = {}
-  for key in pairs(t) do
-    out[#out + 1] = key
+-- The data with a new layout for `screens` screens: empty, or with these
+-- default trees (screen -> text).
+function M.add_layout(data, name, screens, default)
+  local ok, err = entry_name(name, "layout")
+  if not ok then
+    return nil, err
   end
-  table.sort(out, function(a, b)
-    if type(a) == type(b) then
-      return a < b
-    end
-    return type(a) == "number"
-  end)
+  if section(data, "layouts")[name] ~= nil then
+    return nil, "a layout called '" .. name .. "' already exists"
+  end
+  if math.type(screens) == "float" and screens == math.floor(screens) then
+    screens = math.tointeger(screens)
+  end
+  if math.type(screens) ~= "integer" or screens < 1 or screens > MAX_SCREENS then
+    return nil, "a layout is for 1 to " .. MAX_SCREENS .. " screens, got " .. tostring(screens)
+  end
+  local out = M.copy(data or {})
+  out.layouts = type(out.layouts) == "table" and out.layouts or {}
+  out.layouts[name] = { screens = screens, default = default and next(default) ~= nil and M.copy(default) or nil }
   return out
 end
 
--- The data with arrangement `name`'s trees replaced by those of `source`.
--- `roles` maps each of name's screen roles to the source role whose trees it
--- takes (default: the role of the same name). With no source (the default),
--- the slots each workspace has a spec for go side by side, by name, on name's
--- first screen role.
-function M.copy_trees(data, name, source, roles)
-  local entry, err = arrangement_entry(data, name)
+-- The data with layout `source` copied as `name`.
+function M.copy_layout(data, source, name)
+  local entry, err = layout_entry(data, source)
   if not entry then
     return nil, err
   end
-  local target_roles = sorted_strings(type(entry.screens) == "table" and entry.screens or {})
-  local desks = {}
-  if source == nil then
-    local first = target_roles[1]
-    if first == nil then
-      return nil, "arrangement '" .. name .. "' has no screens"
-    end
-    for workspace, specs in pairs(type(data.specs) == "table" and data.specs or {}) do
-      local names = type(specs) == "table" and sorted_strings(specs) or {}
-      if #names == 1 then
-        desks[workspace] = { [first] = names[1] }
-      elseif #names > 1 then
-        desks[workspace] = { [first] = "h[" .. table.concat(names, ", ") .. "]" }
-      end
-    end
-  else
-    local from, from_err = arrangement_entry(data, source)
-    if not from then
-      return nil, from_err
-    end
-    local map = {}
-    if type(roles) == "table" then
-      for role, source_role in pairs(roles) do
-        if entry.screens[role] == nil then
-          return nil, string.format("arrangement '%s' has no screen role '%s'", name, tostring(role))
-        end
-        if type(from.screens) ~= "table" or from.screens[source_role] == nil then
-          return nil, string.format("arrangement '%s' has no screen role '%s'", source, tostring(source_role))
-        end
-        map[role] = source_role
-      end
-    else
-      for _, role in ipairs(target_roles) do
-        if type(from.screens) == "table" and from.screens[role] ~= nil then
-          map[role] = role
-        end
-      end
-    end
-    for workspace, branches in pairs(type(from.desks) == "table" and from.desks or {}) do
-      local copied = {}
-      for role, source_role in pairs(map) do
-        local text = type(branches) == "table" and branches[source_role]
-        if text ~= nil and text ~= false then
-          local node = tree.parse(text)
-          copied[role] = node and serialize.tree(node) or text
-        end
-      end
-      if next(copied) ~= nil then
-        desks[workspace] = copied
-      end
-    end
+  local ok, name_err = entry_name(name, "layout")
+  if not ok then
+    return nil, name_err
+  end
+  if data.layouts[name] ~= nil then
+    return nil, "a layout called '" .. name .. "' already exists"
   end
   local out = M.copy(data)
-  out.arrangements[name].desks = M.copy(desks)
+  out.layouts[name] = M.copy(entry)
   return out
 end
 
--- The data with several of a workspace's trees set at once (`trees`: role ->
--- text), so a slot can move from one screen role to another in one edit.
--- Returns the new data, or nil and why not (the first refusal).
-function M.set_trees(data, arrangement, workspace, trees)
+-- The data with layout `old` called `new`; the desks using it follow.
+function M.rename_layout(data, old, new)
+  local entry, err = layout_entry(data, old)
+  if not entry then
+    return nil, err
+  end
+  local ok, name_err = entry_name(new, "layout")
+  if not ok then
+    return nil, name_err
+  end
+  if new == old then
+    return M.copy(data)
+  end
+  if data.layouts[new] ~= nil then
+    return nil, "a layout called '" .. new .. "' already exists"
+  end
+  local out = M.copy(data)
+  out.layouts[new], out.layouts[old] = out.layouts[old], nil
+  for _, desk in pairs(section(out, "desks")) do
+    if type(desk) == "table" and desk.layout == old then
+      desk.layout = new
+    end
+  end
+  return out
+end
+
+-- The data without layout `name`. Refused while desks use it, unless
+-- `remap` names a layout for as many screens, which they then use.
+function M.delete_layout(data, name, remap)
+  local entry, err = layout_entry(data, name)
+  if not entry then
+    return nil, err
+  end
+  local users = M.layout_users(data, name)
+  if #users > 0 then
+    if remap == nil then
+      return nil, string.format("layout '%s' is used by %s %s; delete it with remap: <another layout for %s>",
+        name, #users == 1 and "desk" or "desks", table.concat(users, ", "), plural(screen_count(entry), "screen"))
+    end
+    if remap == name then
+      return nil, "cannot remap layout '" .. name .. "' to itself"
+    end
+    local target, target_err = layout_entry(data, remap)
+    if not target then
+      return nil, target_err
+    end
+    if screen_count(target) ~= screen_count(entry) then
+      return nil, string.format("layout '%s' is for %s, and '%s' for %s", remap, plural(screen_count(target), "screen"),
+        name, plural(screen_count(entry), "screen"))
+    end
+  end
+  local out = M.copy(data)
+  out.layouts[name] = nil
+  for _, desk in ipairs(users) do
+    out.desks[desk].layout = remap
+  end
+  return out
+end
+
+-- Layout trees ----------------------------------------------------------------
+--
+-- A layout holds a tree per screen for each workspace that has its own
+-- (`workspaces[n][screen]`), and default trees (`default[screen]`) for the
+-- workspaces with none of their own. `n` is a workspace 1 to 10 or
+-- "default".
+
+local function check_workspace_or_default(n)
+  if n == "default" then
+    return true
+  end
+  return check_workspace(n)
+end
+
+local function as_screen(screen)
+  if type(screen) == "string" and screen:match("^%d+$") then
+    return math.tointeger(tonumber(screen))
+  end
+  if math.type(screen) == "float" and screen == math.floor(screen) then
+    return math.tointeger(screen)
+  end
+  return screen
+end
+
+local function check_screen(name, entry, screen)
+  local count = screen_count(entry)
+  if math.type(screen) ~= "integer" or screen < 1 or screen > count then
+    return nil, string.format("layout '%s' has screens 1 to %d, got %s", name, count, tostring(screen))
+  end
+  return true
+end
+
+-- The table of trees (screen -> text) workspace n's edits go into, made
+-- when missing: a workspace with none of its own starts from a copy of the
+-- default ones, which it then replaces whole.
+local function trees_of(entry, n)
+  if n == "default" then
+    entry.default = type(entry.default) == "table" and entry.default or {}
+    return entry.default
+  end
+  entry.workspaces = type(entry.workspaces) == "table" and entry.workspaces or {}
+  if type(entry.workspaces[n]) ~= "table" then
+    entry.workspaces[n] = type(entry.default) == "table" and M.copy(entry.default) or {}
+  end
+  return entry.workspaces[n]
+end
+
+-- The data with a layout's tree for workspace n (or "default") on a screen
+-- set to `text` (normalized). Returns the new data, or nil and why not.
+function M.set_tree(data, layout, n, screen, text)
+  local entry, err = layout_entry(data, layout)
+  if not entry then
+    return nil, err
+  end
+  local ok, ws_err = check_workspace_or_default(n)
+  if not ok then
+    return nil, ws_err
+  end
+  screen = as_screen(screen)
+  local fits, screen_err = check_screen(layout, entry, screen)
+  if not fits then
+    return nil, screen_err
+  end
+  local node, parse_err = tree.parse(text)
+  if not node then
+    return nil, parse_err
+  end
+  local out = M.copy(data)
+  trees_of(out.layouts[layout], n)[screen] = serialize.tree(node)
+  return out
+end
+
+-- The data with several of a workspace's trees set at once (`trees`:
+-- screen -> text), so a slot can move from one screen to another in one
+-- edit. Returns the new data, or nil and why not (the first refusal).
+function M.set_trees(data, layout, n, trees)
   if type(trees) ~= "table" or next(trees) == nil then
-    return nil, "no trees to set: give \"trees\" as an object of screen role -> tree"
+    return nil, "no trees to set: give \"trees\" as an object of screen -> tree"
   end
   local out = data
-  for _, role in ipairs(sorted_keys(trees)) do
+  for _, screen in ipairs(sorted_keys(trees)) do
     local err
-    out, err = M.set_tree(out, arrangement, workspace, role, trees[role])
+    out, err = M.set_tree(out, layout, n, screen, trees[screen])
     if not out then
       return nil, err
     end
@@ -640,32 +739,56 @@ function M.set_trees(data, arrangement, workspace, trees)
   return out
 end
 
--- The data with arrangement's tree for workspace and screen role put back to the
--- one `saved` (the data as slots.lua holds it) has: the same text, or no tree
--- at all when `saved` has none. Returns the new data, or nil and why not.
-function M.reset_tree(data, saved, arrangement, workspace, role)
-  local entry = data and type(data.arrangements) == "table" and data.arrangements[arrangement]
-  if type(entry) ~= "table" then
-    return nil, "no arrangement '" .. tostring(arrangement) .. "' in slots.lua"
+-- The data with a layout's tree for workspace n (or "default") on a screen
+-- put back to the one `saved` (the data as slots.lua holds it) gives it:
+-- the workspace's own tree there, else (it has none of its own there) the
+-- saved default one, or no tree at all. A workspace whose trees are then the
+-- saved default ones, and has none of its own in `saved`, goes back to
+-- using the default ones. Returns the new data, or nil and why not.
+function M.reset_tree(data, saved, layout, n, screen)
+  local entry, err = layout_entry(data, layout)
+  if not entry then
+    return nil, err
   end
-  if type(entry.screens) ~= "table" or entry.screens[role] == nil then
-    return nil, string.format("arrangement '%s' has no screen role '%s'", arrangement, tostring(role))
+  local ok, ws_err = check_workspace_or_default(n)
+  if not ok then
+    return nil, ws_err
   end
-  local saved_entry = saved and type(saved.arrangements) == "table" and saved.arrangements[arrangement]
-  local saved_branches = type(saved_entry) == "table" and type(saved_entry.desks) == "table"
-    and saved_entry.desks[workspace]
-  local text = type(saved_branches) == "table" and saved_branches[role] or nil
+  screen = as_screen(screen)
+  local fits, screen_err = check_screen(layout, entry, screen)
+  if not fits then
+    return nil, screen_err
+  end
+  local saved_entry = section(saved, "layouts")[layout]
+  saved_entry = type(saved_entry) == "table" and saved_entry or {}
+  local saved_default = type(saved_entry.default) == "table" and saved_entry.default or {}
+  local saved_own = n ~= "default" and type(saved_entry.workspaces) == "table" and saved_entry.workspaces[n] or nil
+  saved_own = type(saved_own) == "table" and saved_own or nil
+  local text
+  if n == "default" then
+    text = saved_default[screen]
+  elseif saved_own then
+    text = saved_own[screen]
+  else
+    text = saved_default[screen]
+  end
 
   local out = M.copy(data)
-  local target = out.arrangements[arrangement]
-  if text ~= nil then
-    target.desks = target.desks or {}
-    target.desks[workspace] = target.desks[workspace] or {}
-    target.desks[workspace][role] = text
-  elseif type(target.desks) == "table" and type(target.desks[workspace]) == "table" then
-    target.desks[workspace][role] = nil
-    if next(target.desks[workspace]) == nil and saved_branches == nil then
-      target.desks[workspace] = nil
+  local target = out.layouts[layout]
+  local has_own = n ~= "default" and type(target.workspaces) == "table" and type(target.workspaces[n]) == "table"
+  if n ~= "default" and not has_own and text == (type(target.default) == "table" and target.default[screen] or nil) then
+    return out -- it shows the default trees, and the reset changes none of them
+  end
+  local trees = trees_of(target, n)
+  trees[screen] = text
+  if n == "default" then
+    if next(trees) == nil then
+      target.default = nil
+    end
+  elseif not saved_own and serialize.dump(trees) == serialize.dump(type(target.default) == "table" and target.default or {}) then
+    target.workspaces[n] = nil
+    if next(target.workspaces) == nil then
+      target.workspaces = nil
     end
   end
   return out

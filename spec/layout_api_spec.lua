@@ -7,23 +7,22 @@ local json = require("hyprslots.dkjson")
 
 local SLOTS = [[
 return {
-  slots = { [3] = { a = "t-a", b = "t-b", c = "t-c" } },
-  arrangements = {
-    dual = {
-      screens = { big = "HEADLESS-2", side = "HEADLESS-3" },
-      desks = { [3] = { big = "h[a:2, b]", side = "c" } },
-    },
-    single = {
-      screens = { big = "HEADLESS-2" },
-      desks = { [3] = { big = "h[a, b, c]" } },
-    },
+  slots = { a = {}, b = {}, c = {} },
+  specs = { [3] = { a = "t-a", b = "t-b", c = "t-c" } },
+  desks = {
+    dual = { monitors = { "HEADLESS-2", "HEADLESS-3" }, layout = "dual" },
+    single = { monitors = { "HEADLESS-2" }, layout = "single" },
+  },
+  layouts = {
+    dual = { screens = 2, workspaces = { [3] = { [1] = "h[a:2, b]", [2] = "c" } } },
+    single = { screens = 1, workspaces = { [3] = { [1] = "h[a, b, c]" } } },
   },
 }
 ]]
 
 local CONFIG = [[
 local data = load_data("slots.lua")
-return { slots = data.slots, specs = data.specs, arrangements = data.arrangements }
+return { slots = data.slots, specs = data.specs, desks = data.desks, layouts = data.layouts }
 ]]
 
 local function config_dir(files)
@@ -77,8 +76,8 @@ describe("layout editing api", function()
     return json.decode(text)
   end
 
-  local function branch(arrangement, role)
-    return call("state").arrangements[arrangement].workspaces["3"][role]
+  local function branch(layout, screen)
+    return call("state").layouts[layout].workspaces["3"][tostring(screen)]
   end
 
   local function events()
@@ -88,7 +87,7 @@ describe("layout editing api", function()
   before_each(function()
     local big = hl_stub.monitor("HEADLESS-2", { focused = true })
     big.active_workspace = { id = 3, name = "3" }
-    local side = hl_stub.monitor("HEADLESS-3", { id = 1 })
+    local side = hl_stub.monitor("HEADLESS-3", { id = 1, x = 2400 })
     side.active_workspace = { id = 13, name = "13" }
     hl = hl_stub.new({ monitors = { big, side } })
     _G.hl, _G.o = hl, hl_stub.omarchy({ ["HEADLESS-2"] = 0, ["HEADLESS-3"] = 1 })
@@ -103,41 +102,42 @@ describe("layout editing api", function()
   describe("set_trees", function()
     it("moves a slot from one screen to another in one edit", function()
       setup()
-      local reply = call("set_trees", { workspace = 3, trees = { big = "h[a:2, b, c]", side = "b" } })
+      local reply = call("set_trees", { workspace = 3, trees = { ["1"] = "h[a:2, b, c]", ["2"] = "b" } })
       -- b cannot be on both screens, so the two trees go in together or not at all
       assert.is_false(reply.ok)
       assert.matches("both", reply.error)
-      assert.are.equal("h[a:2, b]", branch("dual", "big").tree)
+      assert.are.equal("h[a:2, b]", branch("dual", 1).tree)
 
-      reply = call("set_trees", { workspace = 3, trees = { big = "h[a:2, b, c]", side = "*" } })
+      reply = call("set_trees", { workspace = 3, trees = { ["1"] = "h[a:2, b, c]", ["2"] = "*" } })
       assert.is_true(reply.ok, reply.error)
-      assert.are.equal("dual", reply.arrangement)
+      assert.are.equal("dual", reply.layout)
       assert.are.equal(3, reply.workspace)
-      assert.are.same({ big = { tree = "h[a:2, b, c]", ratio = "2:1:1" }, side = { tree = "*", ratio = "" } },
+      assert.are.same({ ["1"] = { tree = "h[a:2, b, c]", ratio = "2:1:1" }, ["2"] = { tree = "*", ratio = "" } },
         reply.trees)
-      assert.are.equal("h[a:2, b, c]", branch("dual", "big").tree)
-      assert.are.equal("*", branch("dual", "side").tree)
+      assert.are.equal("h[a:2, b, c]", branch("dual", 1).tree)
+      assert.are.equal("*", branch("dual", 2).tree)
       assert.is_true(call("state").dirty)
     end)
 
     it("announces the edit once", function()
       setup()
-      call("set_trees", { workspace = 3, trees = { big = "h[a, b, c]", side = "*" } })
+      call("set_trees", { workspace = 3, trees = { ["1"] = "h[a, b, c]", ["2"] = "*" } })
       assert.are.same({ "hyprslots changed 1" }, events())
     end)
 
-    it("edits an arrangement that is not the active one", function()
+    it("edits a layout that is not the active one", function()
       setup()
-      local reply = call("set_trees", { arrangement = "single", workspace = 3, trees = { big = "v[c, b, a]" } })
+      local reply = call("set_trees", { layout = "single", workspace = 3, trees = { ["1"] = "v[c, b, a]" } })
       assert.is_true(reply.ok, reply.error)
-      assert.are.equal("v[c, b, a]", branch("single", "big").tree)
-      assert.are.equal("h[a:2, b]", branch("dual", "big").tree)
+      assert.are.equal("v[c, b, a]", branch("single", 1).tree)
+      assert.are.equal("h[a:2, b]", branch("dual", 1).tree)
     end)
 
-    it("refuses an empty set of trees and a screen role the arrangement lacks", function()
+    it("refuses an empty set of trees and a screen the layout lacks", function()
       setup()
       assert.matches("no trees", call("set_trees", { workspace = 3, trees = {} }).error)
-      assert.matches("no screen role 'nope'", call("set_trees", { workspace = 3, trees = { nope = "a" } }).error)
+      assert.matches("layout 'dual' has screens 1 to 2, got 3", call("set_trees", { workspace = 3, trees = { ["3"] = "a" } }).error)
+      assert.matches("got nope", call("set_trees", { workspace = 3, trees = { nope = "a" } }).error)
       assert.matches("trees", call("set_trees", { workspace = 3, trees = "h[a, b]" }).error)
     end)
 
@@ -151,15 +151,15 @@ describe("layout editing api", function()
       hl.windows = windows
       hl.active_window = windows[1]
       assert.is_true(hl.layouts.slots.layout_msg(hl_stub.layout_ctx(AREA, windows), "nudge r 0.1"))
-      local resized = branch("dual", "big").tree
-      assert.is_true(branch("dual", "big").resized)
+      local resized = branch("dual", 1).tree
+      assert.is_true(branch("dual", 1).resized)
 
-      assert.is_false(call("set_trees", { workspace = 3, trees = { big = "h[a, zzz]" } }).ok)
-      assert.are.equal(resized, branch("dual", "big").tree)
+      assert.is_false(call("set_trees", { workspace = 3, trees = { ["1"] = "h[a, zzz]" } }).ok)
+      assert.are.equal(resized, branch("dual", 1).tree)
 
-      assert.is_true(call("set_trees", { workspace = 3, trees = { big = "v[a, b]" } }).ok)
-      assert.are.equal("v[a, b]", branch("dual", "big").tree)
-      assert.is_nil(branch("dual", "big").resized)
+      assert.is_true(call("set_trees", { workspace = 3, trees = { ["1"] = "v[a, b]" } }).ok)
+      assert.are.equal("v[a, b]", branch("dual", 1).tree)
+      assert.is_nil(branch("dual", 1).resized)
       assert.are.same({}, call("state").resized)
     end)
   end)
@@ -167,18 +167,18 @@ describe("layout editing api", function()
   describe("reset", function()
     it("puts a branch back to the tree slots.lua holds, dropping the edit", function()
       setup()
-      call("set_tree", { workspace = 3, role = "big", tree = "v[b, a]" })
-      call("set_tree", { workspace = 3, role = "side", tree = "h[c, *]" })
-      local reply = call("reset", { workspace = 3, role = "big" })
+      call("set_tree", { workspace = 3, screen = 1, tree = "v[b, a]" })
+      call("set_tree", { workspace = 3, screen = 2, tree = "h[c, *]" })
+      local reply = call("reset", { workspace = 3, screen = 1 })
       assert.is_true(reply.ok, reply.error)
       assert.are.same("h[a:2, b]", reply.tree)
       assert.are.equal("2:1", reply.ratio)
-      assert.are.equal("h[a:2, b]", branch("dual", "big").tree)
+      assert.are.equal("h[a:2, b]", branch("dual", 1).tree)
       -- the other screen keeps its edit, so there is still something unsaved
-      assert.are.equal("h[c, *]", branch("dual", "side").tree)
+      assert.are.equal("h[c, *]", branch("dual", 2).tree)
       assert.is_true(call("state").dirty)
 
-      call("reset", { workspace = 3, role = "side" })
+      call("reset", { workspace = 3, screen = 2 })
       assert.is_false(call("state").dirty, "nothing differs from slots.lua any more")
     end)
 
@@ -194,32 +194,32 @@ describe("layout editing api", function()
       hl.layouts.slots.layout_msg(hl_stub.layout_ctx(AREA, windows), "nudge r 0.1")
       assert.is_true(call("state").dirty)
 
-      assert.is_true(call("reset", { workspace = 3, role = "big" }).ok)
-      assert.are.equal("h[a:2, b]", branch("dual", "big").tree)
+      assert.is_true(call("reset", { workspace = 3, screen = 1 }).ok)
+      assert.are.equal("h[a:2, b]", branch("dual", 1).tree)
       assert.are.same({}, call("state").resized)
       assert.is_false(call("state").dirty)
     end)
 
     it("goes back to the file as saved, not as first loaded", function()
       setup()
-      call("set_tree", { workspace = 3, role = "big", tree = "v[a, b]" })
+      call("set_tree", { workspace = 3, screen = 1, tree = "v[a, b]" })
       call("save")
-      call("set_tree", { workspace = 3, role = "big", tree = "h[b, a]" })
-      assert.is_true(call("reset", { workspace = 3, role = "big" }).ok)
-      assert.are.equal("v[a, b]", branch("dual", "big").tree)
+      call("set_tree", { workspace = 3, screen = 1, tree = "h[b, a]" })
+      assert.is_true(call("reset", { workspace = 3, screen = 1 }).ok)
+      assert.are.equal("v[a, b]", branch("dual", 1).tree)
       assert.is_false(call("state").dirty)
     end)
 
     it("removes a branch slots.lua does not have", function()
       setup()
-      write(dir .. "/slots.lua", (SLOTS:gsub('big = "h%[a:2, b%]", side = "c"', 'big = "h[a:2, b, c]"')))
+      write(dir .. "/slots.lua", (SLOTS:gsub('%[1%] = "h%[a:2, b%]", %[2%] = "c"', '[1] = "h[a:2, b, c]"')))
       assert.is_true(call("reload").ok)
-      call("set_trees", { workspace = 3, trees = { big = "h[a, b]", side = "c" } })
-      assert.are.equal("c", branch("dual", "side").tree)
+      call("set_trees", { workspace = 3, trees = { ["1"] = "h[a, b]", ["2"] = "c" } })
+      assert.are.equal("c", branch("dual", 2).tree)
 
-      assert.is_true(call("reset", { workspace = 3, role = "side" }).ok)
-      assert.is_nil(branch("dual", "side"))
-      assert.matches("c", call("reset", { workspace = 3, role = "big" }).tree)
+      assert.is_true(call("reset", { workspace = 3, screen = 2 }).ok)
+      assert.is_nil(branch("dual", 2))
+      assert.matches("c", call("reset", { workspace = 3, screen = 1 }).tree)
       assert.is_false(call("state").dirty)
     end)
 
@@ -227,43 +227,43 @@ describe("layout editing api", function()
       setup({
         ["config.lua"] = [[
 local data = load_data("slots.lua")
-local arrangements = { dual = data.arrangements.dual,
-  work = { screens = { big = "DP-1" }, desks = { [3] = { big = "a" } } } }
-return { slots = data.slots, specs = data.specs, arrangements = arrangements }
+local layouts = { dual = data.layouts.dual, single = data.layouts.single,
+  work = { screens = 1, workspaces = { [3] = { [1] = "a" } } } }
+return { slots = data.slots, specs = data.specs, desks = data.desks, layouts = layouts }
 ]],
         ["slots.lua"] = SLOTS,
       })
-      assert.matches("config.lua", call("reset", { arrangement = "work", workspace = 3, role = "big" }).error)
-      assert.matches("no screen role", call("reset", { workspace = 3, role = "nope" }).error)
+      assert.matches("layout 'work' is set by code in config.lua", call("reset", { layout = "work", workspace = 3, screen = 1 }).error)
+      assert.matches("layout 'dual' has screens 1 to 2, got 3", call("reset", { workspace = 3, screen = 3 }).error)
 
       write(dir .. "/slots.lua", "return {")
-      local reply = call("reset", { workspace = 3, role = "big" })
+      local reply = call("reset", { workspace = 3, screen = 1 })
       assert.is_false(reply.ok)
       assert.matches("slots.lua", reply.error)
     end)
 
     it("announces the reset", function()
       setup()
-      call("set_tree", { workspace = 3, role = "big", tree = "v[a, b]" })
-      call("reset", { workspace = 3, role = "big" })
+      call("set_tree", { workspace = 3, screen = 1, tree = "v[a, b]" })
+      call("reset", { workspace = 3, screen = 1 })
       assert.are.same({ "hyprslots changed 1", "hyprslots changed 2" }, events())
     end)
   end)
 
-  -- The Slots and Arrangements views rename what the Layout view's calls
-  -- name: set_trees targets the renamed arrangement, and reset reads the
-  -- tree slots.lua holds through the renames and removals made since.
-  describe("after slot and arrangement edits", function()
+  -- The Slots and Desks & Layouts views rename what the Layout view's calls
+  -- name: set_trees targets the renamed layout, and reset reads the tree
+  -- slots.lua holds through the renames, copies and removals made since.
+  describe("after slot and layout edits", function()
     it("reset after rename_slot puts the saved tree back under the slot's new name", function()
       setup()
-      call("set_tree", { workspace = 3, role = "big", tree = "v[b, a]" })
+      call("set_tree", { workspace = 3, screen = 1, tree = "v[b, a]" })
       assert.is_true(call("rename_slot", { slot = "a", to = "x" }).ok)
-      assert.are.equal("v[b, x]", branch("dual", "big").tree)
+      assert.are.equal("v[b, x]", branch("dual", 1).tree)
 
-      local reply = call("reset", { workspace = 3, role = "big" })
+      local reply = call("reset", { workspace = 3, screen = 1 })
       assert.is_true(reply.ok, reply.error)
       assert.are.equal("h[x:2, b]", reply.tree)
-      assert.are.equal("h[x:2, b]", branch("dual", "big").tree)
+      assert.are.equal("h[x:2, b]", branch("dual", 1).tree)
       assert.is_true(call("state").dirty, "the rename is still unsaved")
     end)
 
@@ -271,54 +271,69 @@ return { slots = data.slots, specs = data.specs, arrangements = arrangements }
       setup()
       call("rename_slot", { slot = "a", to = "x" })
       call("rename_slot", { slot = "x", to = "y" })
-      assert.are.equal("h[y:2, b]", call("reset", { workspace = 3, role = "big" }).tree)
+      assert.are.equal("h[y:2, b]", call("reset", { workspace = 3, screen = 1 }).tree)
 
       call("save")
       call("rename_slot", { slot = "y", to = "z" })
-      call("set_tree", { workspace = 3, role = "big", tree = "v[b, z]" })
-      assert.are.equal("h[z:2, b]", call("reset", { workspace = 3, role = "big" }).tree)
+      call("set_tree", { workspace = 3, screen = 1, tree = "v[b, z]" })
+      assert.are.equal("h[z:2, b]", call("reset", { workspace = 3, screen = 1 }).tree)
     end)
 
     it("reset after remove_slot leaves the removed slot out", function()
       setup()
       assert.is_true(call("remove_slot", { slot = "b", force = true }).ok)
-      call("set_tree", { workspace = 3, role = "big", tree = "v[a, *]" })
-      local reply = call("reset", { workspace = 3, role = "big" })
+      call("set_tree", { workspace = 3, screen = 1, tree = "v[a, *]" })
+      local reply = call("reset", { workspace = 3, screen = 1 })
       assert.is_true(reply.ok, reply.error)
       assert.are.equal("a", reply.tree)
     end)
 
-    it("reset after rename_arrangement finds the tree saved under the old name", function()
+    it("reset after rename_layout finds the tree saved under the old name", function()
       setup()
-      assert.is_true(call("rename_arrangement", { arrangement = "dual", to = "duo" }).ok)
-      call("set_tree", { arrangement = "duo", workspace = 3, role = "big", tree = "v[b, a]" })
-      local reply = call("reset", { arrangement = "duo", workspace = 3, role = "big" })
+      assert.is_true(call("rename_layout", { layout = "dual", to = "duo" }).ok)
+      call("set_tree", { layout = "duo", workspace = 3, screen = 1, tree = "v[b, a]" })
+      local reply = call("reset", { layout = "duo", workspace = 3, screen = 1 })
       assert.is_true(reply.ok, reply.error)
       assert.are.equal("h[a:2, b]", reply.tree)
-      assert.are.equal("h[a:2, b]", branch("duo", "big").tree)
-      assert.is_nil(call("state").arrangements.dual)
+      assert.are.equal("h[a:2, b]", branch("duo", 1).tree)
+      assert.is_nil(call("state").layouts.dual)
+      assert.are.equal("duo", call("state").desks.dual.layout)
+      assert.is_true(call("state").dirty, "the rename is still unsaved")
     end)
 
-    it("reset after a screen role is renamed finds the tree saved under the old role", function()
+    it("reset after fork_layout finds the tree saved under the layout it was copied from", function()
       setup()
-      assert.is_true(call("set_screens", { arrangement = "dual", screens = { main = "HEADLESS-2", side = "HEADLESS-3" },
-        renames = { big = "main" } }).ok)
-      call("set_tree", { workspace = 3, role = "main", tree = "v[b, a]" })
-      local reply = call("reset", { workspace = 3, role = "main" })
+      assert.is_true(call("fork_layout", { to = "dual-2" }).ok)
+      call("set_tree", { workspace = 3, screen = 1, tree = "v[b, a]" })
+      assert.are.equal("v[b, a]", branch("dual-2", 1).tree)
+      assert.are.equal("h[a:2, b]", branch("dual", 1).tree, "the source keeps its tree")
+      local reply = call("reset", { workspace = 3, screen = 1 })
       assert.is_true(reply.ok, reply.error)
+      assert.are.equal("dual-2", reply.layout)
       assert.are.equal("h[a:2, b]", reply.tree)
+      assert.are.equal("c", branch("dual-2", 2).tree)
+    end)
+
+    it("reset in a layout added since the save takes its tree away", function()
+      setup()
+      assert.is_true(call("add_layout", { name = "wide", screens = 2 }).ok)
+      call("set_tree", { layout = "wide", workspace = 3, screen = 1, tree = "h[a, b]" })
+      local reply = call("reset", { layout = "wide", workspace = 3, screen = 1 })
+      assert.is_true(reply.ok, reply.error)
+      assert.is_nil(reply.tree)
+      assert.is_nil(call("state").layouts.wide.workspaces["3"])
     end)
 
     it("forgets the edits once they are reloaded away", function()
       setup()
       call("rename_slot", { slot = "a", to = "x" })
       assert.is_true(call("reload").ok)
-      call("set_tree", { workspace = 3, role = "big", tree = "v[b, a]" })
-      assert.are.equal("h[a:2, b]", call("reset", { workspace = 3, role = "big" }).tree)
+      call("set_tree", { workspace = 3, screen = 1, tree = "v[b, a]" })
+      assert.are.equal("h[a:2, b]", call("reset", { workspace = 3, screen = 1 }).tree)
       assert.is_false(call("state").dirty)
     end)
 
-    it("set_trees after rename_arrangement edits the renamed one and replaces its resized tree", function()
+    it("set_trees after rename_layout edits the renamed one and replaces its resized tree", function()
       setup()
       local windows = {}
       for i, class in ipairs({ "t-a", "t-b" }) do
@@ -328,21 +343,22 @@ return { slots = data.slots, specs = data.specs, arrangements = arrangements }
       hl.windows = windows
       hl.active_window = windows[1]
       assert.is_true(hl.layouts.slots.layout_msg(hl_stub.layout_ctx(AREA, windows), "nudge r 0.1"))
-      assert.is_true(call("rename_arrangement", { arrangement = "dual", to = "duo" }).ok)
-      assert.is_true(branch("duo", "big").resized, "the resized tree moved with the rename")
+      assert.is_true(call("rename_layout", { layout = "dual", to = "duo" }).ok)
+      assert.is_true(branch("duo", 1).resized, "the resized tree moved with the rename")
 
-      local reply = call("set_trees", { arrangement = "duo", workspace = 3, trees = { big = "v[a, b, c]", side = "*" } })
+      local reply = call("set_trees", { layout = "duo", workspace = 3, trees = { ["1"] = "v[a, b, c]", ["2"] = "*" } })
       assert.is_true(reply.ok, reply.error)
-      assert.are.equal("duo", reply.arrangement)
-      assert.are.equal("v[a, b, c]", branch("duo", "big").tree)
-      assert.is_nil(branch("duo", "big").resized)
+      assert.are.equal("duo", reply.layout)
+      assert.are.equal("v[a, b, c]", branch("duo", 1).tree)
+      assert.is_nil(branch("duo", 1).resized)
       assert.are.same({}, call("state").resized)
 
       assert.is_true(call("save").ok)
       local saved = read(dir .. "/slots.lua")
       assert.matches('duo = {', saved, 1, true)
-      assert.matches('big = "v[a, b, c]"', saved, 1, true)
-      assert.is_nil(saved:find("dual = {", 1, true))
+      assert.matches('[1] = "v[a, b, c]"', saved, 1, true)
+      assert.matches('layout = "duo"', saved, 1, true)
+      assert.is_nil(saved:find('layout = "dual"', 1, true))
     end)
   end)
 end)

@@ -1,13 +1,13 @@
-# Cross-slice: a scroll branch on the side screen of the two-screen
-# arrangement survives unplugging and replugging that screen.
+# Cross-slice: a scroll branch on the side screen of the two-screen desk
+# survives unplugging and replugging that screen.
 #
-# Screens (matched by connector):
-#   big  = HEADLESS-2, 2400x1350 at 0,0      Omarchy block 0: workspace N = workspace id N
-#   side = HEADLESS-3, 1920x1080 at 2400,0   Omarchy block 1: workspace N = workspace id 10+N
+# Monitors (desks select them by connector; screens are numbered left to right):
+#   big  = HEADLESS-2, 2400x1350 at 0,0      screen 1, Omarchy block 0: workspace N = workspace id N
+#   side = HEADLESS-3, 1920x1080 at 2400,0   screen 2, Omarchy block 1: workspace N = workspace id 10+N
 #
 # Workspace 3:
-#   dual   (big + side): side = scroll[x, y], big = main
-#   single (big only):   big = scroll[main, x, y]
+#   desk dual   (big + side), layout dual:   screen 1 = main, screen 2 = scroll[x, y]
+#   desk single (big only),   layout single: screen 1 = scroll[main, x, y]
 #
 # x and y scroll on side in full-width columns (0.99 of 1920 = 1901 px, gaps
 # and borders off) in slot order; with side gone, big's workspace 3 goes from
@@ -25,7 +25,7 @@ LUA
   mkdir -p "$E2E_CONFIG_HOME/hyprslots"
   cat >"$E2E_CONFIG_HOME/hyprslots/config.lua" <<'LUA'
 local data = load_data("slots.lua")
-return { slots = data.slots, specs = data.specs, arrangements = data.arrangements }
+return { slots = data.slots, specs = data.specs, desks = data.desks, layouts = data.layouts }
 LUA
   cat >"$E2E_CONFIG_HOME/hyprslots/slots.lua" <<'LUA'
 return {
@@ -33,23 +33,27 @@ return {
   specs = {
     [3] = { x = "t-x", y = "t-y", main = "t-main" },
   },
-  arrangements = {
+  desks = {
+    dual = { monitors = { "HEADLESS-2", "HEADLESS-3" }, layout = "dual" },
+    single = { monitors = { "HEADLESS-2" }, layout = "single" },
+  },
+  layouts = {
     dual = {
-      screens = { big = "HEADLESS-2", side = "HEADLESS-3" },
-      desks = { [3] = { side = "scroll[x, y]", big = "main" } },
+      screens = 2,
+      workspaces = { [3] = { [1] = "main", [2] = "scroll[x, y]" } },
     },
     single = {
-      screens = { big = "HEADLESS-2" },
-      desks = { [3] = { big = "scroll[main, x, y]" } },
+      screens = 1,
+      workspaces = { [3] = { [1] = "scroll[main, x, y]" } },
     },
   },
 }
 LUA
 }
 
-arrangement() { repl 'return hyprslots.api.state()' | jq -r '.arrangement // empty'; }
+active_desk() { repl 'return hyprslots.api.state()' | jq -r '.desk // empty'; }
 
-is_arrangement() { [[ $(arrangement) == "$1" ]]; }
+is_desk() { [[ $(active_desk) == "$1" ]]; }
 
 workspace_of() {
   hc clients -j | jq -r --arg c "$1" 'first(.[] | select(.class == $c)) | .workspace.id'
@@ -82,8 +86,8 @@ test_body() {
   output_create HEADLESS-2
   output_create HEADLESS-3
   expect_eq "hyprslots loaded" "" "$(hyprslots_load_error | head -n1)"
-  eventually 10 is_arrangement dual || true
-  expect_eq "arrangement with both screens" "dual" "$(arrangement)"
+  eventually 10 is_desk dual || true
+  expect_eq "desk with both screens" "dual" "$(active_desk)"
 
   # Given y, main and x opened on big's workspace 1, and workspace 3 shown.
   focus_monitor HEADLESS-2
@@ -106,7 +110,7 @@ test_body() {
 
   # When side is unplugged, big's workspace 3 scrolls with main, x and y.
   output_remove HEADLESS-3
-  eventually 10 is_arrangement single || fail "arrangement never became single: $(arrangement)"
+  eventually 10 is_desk single || fail "desk never became single: $(active_desk)"
   eventually 15 columns_are 3 "t-main t-x t-y" || true
   focus_monitor HEADLESS-2
   repl 'return hyprslots.api.call("workspace", "{\"workspace\": 3}")' >/dev/null
@@ -119,7 +123,7 @@ test_body() {
   # When side comes back, x and y return to it in order and main fills big
   # again.
   output_create HEADLESS-3
-  eventually 10 is_arrangement dual || fail "arrangement never became dual: $(arrangement)"
+  eventually 10 is_desk dual || fail "desk never became dual: $(active_desk)"
   eventually 15 columns_are 13 "t-x t-y" || true
   repl 'return hyprslots.api.call("workspace", "{\"workspace\": 3}")' >/dev/null
   focus_monitor HEADLESS-3

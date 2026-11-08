@@ -31,7 +31,7 @@ LUA
   mkdir -p "$E2E_CONFIG_HOME/hyprslots"
   cat >"$E2E_CONFIG_HOME/hyprslots/config.lua" <<'LUA'
 local data = load_data("slots.lua")
-return { slots = data.slots, specs = data.specs, arrangements = data.arrangements }
+return { slots = data.slots, specs = data.specs, desks = data.desks, layouts = data.layouts }
 LUA
   cat >"$E2E_CONFIG_HOME/hyprslots/slots.lua" <<'LUA'
 return {
@@ -40,12 +40,15 @@ return {
     [3] = { a = "t-a", b = "t-b", c = "t-c" },
     [4] = { d = "t-d", e = "t-e" },
   },
-  arrangements = {
+  desks = {
+    solo = { monitors = { "HEADLESS-2" }, layout = "solo" },
+  },
+  layouts = {
     solo = {
-      screens = { main = "HEADLESS-2" },
-      desks = {
-        [3] = { main = "h[a, b:2, c]" },
-        [4] = { main = "scroll[d, e]" },
+      screens = 1,
+      workspaces = {
+        [3] = { [1] = "h[a, b:2, c]" },
+        [4] = { [1] = "scroll[d, e]" },
       },
     },
   },
@@ -57,7 +60,7 @@ state_field() {
   repl 'return hyprslots.api.call("state", "{}")' | jq -r --arg k "$1" '.[$k] // empty | tostring' 2>/dev/null
 }
 
-arrangement_is() { [[ $(state_field arrangement) == "$1" ]]; }
+desk_is() { [[ $(state_field desk) == "$1" ]]; }
 
 workspace_of() {
   hc clients -j | jq -r --arg c "$1" 'first(.[] | select(.class == $c)) | .workspace.id'
@@ -79,8 +82,9 @@ test_body() {
   local load_error
   load_error=$(hyprslots_load_error | head -n1)
   expect_eq "hyprslots loaded" "" "$load_error"
-  eventually 5 arrangement_is solo || true
-  expect_eq "active arrangement" "solo" "$(state_field arrangement)"
+  eventually 5 desk_is solo || true
+  expect_eq "active desk" "solo" "$(state_field desk)"
+  expect_eq "active layout" "solo" "$(state_field layout)"
 
   for class in t-c t-a t-b; do
     spawn_and_wait "$class"

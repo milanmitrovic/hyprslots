@@ -111,22 +111,24 @@ end)
 
 local CONFIG = [[
 local data = load_data("slots.lua")
-return { slots = data.slots, specs = data.specs, arrangements = data.arrangements, scroll = %s }
+return { slots = data.slots, specs = data.specs, desks = data.desks, layouts = data.layouts, scroll = %s }
 ]]
 
 -- Workspace 3: scroll[left, main, right] on the laptop screen; workspace 4: a split.
 local SLOTS = [[
 return {
-  slots = {
+  slots = { left = {}, main = {}, right = {}, a = {}, b = {} },
+  specs = {
     [3] = { left = "t-left", main = "t-main", right = "t-right" },
     [4] = { a = "t-a", b = "t-b" },
   },
-  arrangements = {
+  desks = { laptop = { monitors = { "eDP-1" }, layout = "laptop" } },
+  layouts = {
     laptop = {
-      screens = { lap = "eDP-1" },
-      desks = {
-        [3] = { lap = "scroll[left, main, right]" },
-        [4] = { lap = "h[a, b]" },
+      screens = 1,
+      workspaces = {
+        [3] = { [1] = "scroll[left, main, right]" },
+        [4] = { [1] = "h[a, b]" },
       },
     },
   },
@@ -239,7 +241,7 @@ describe("a scroll branch", function()
     assert.are.equal("lua:slots", rule_for(4))
   end)
 
-  it("keeps a workspace's saved Omarchy mode when the arrangement changes at runtime", function()
+  it("keeps a workspace's saved Omarchy mode when the desk changes at runtime", function()
     hl.monitors = {}
     setup()
     saved_mode(3, "dwindle")
@@ -282,13 +284,13 @@ describe("a scroll branch", function()
     open(4, "t-left", 3)
     hl.run_timers()
     assert.are.same({ "t-left", "t-main", "t-right", "foot" }, hl.column_classes(3))
-    local reply = call("set_tree", json.encode({ workspace = 3, role = "lap", tree = "scroll[left, *, main, right]" }))
+    local reply = call("set_tree", json.encode({ workspace = 3, screen = 1, tree = "scroll[left, *, main, right]" }))
     assert.is_true(reply.ok, reply.error)
     hl.run_timers()
     assert.are.same({ "t-left", "foot", "t-main", "t-right" }, hl.column_classes(3))
     local described = call("state").scroll[1]
-    assert.are.same({ workspace_id = 3, workspace = 3, role = "lap" },
-      { workspace_id = described.workspace_id, workspace = described.workspace, role = described.role })
+    assert.are.same({ workspace_id = 3, workspace = 3, screen = 1 },
+      { workspace_id = described.workspace_id, workspace = described.workspace, screen = described.screen })
     assert.are.same({ "left", "main", "right" }, described.slots)
     assert.is_true(described.in_order)
   end)
@@ -406,9 +408,9 @@ describe("a scroll branch", function()
       local described = call("state").scroll
       assert.are.equal(1, #described)
       local ws = described[1]
+      assert.are.equal(3, ws.workspace_id)
       assert.are.equal(3, ws.workspace)
-      assert.are.equal(3, ws.workspace)
-      assert.are.equal("lap", ws.role)
+      assert.are.equal(1, ws.screen)
       assert.are.same({ "left", "main", "right" }, ws.slots)
       assert.are.equal("scrolling", ws.layout)
       assert.is_true(ws.managed)
@@ -458,7 +460,7 @@ describe("a scroll branch", function()
       assert.are.equal("scroll[right, main, left]", reply.tree)
       assert.is_true(reply.applied)
       assert.are.same({}, reply.missing)
-      assert.are.equal("scroll[right, main, left]", call("state").arrangements.laptop.workspaces["3"].lap.tree)
+      assert.are.equal("scroll[right, main, left]", call("state").layouts.laptop.workspaces["3"]["1"].tree)
       local _ = main
     end)
 
@@ -478,7 +480,7 @@ describe("a scroll branch", function()
       local left = open(1, "t-left", 3)
       open(2, "t-main", 3)
       local foot = open(3, "foot", 3)
-      assert.is_true(call("set_tree", json.encode({ workspace = 3, role = "lap", tree = "scroll[left, main, *]" })).ok)
+      assert.is_true(call("set_tree", json.encode({ workspace = 3, screen = 1, tree = "scroll[left, main, *]" })).ok)
       hl.run_timers()
       hl.dispatch(hl.dsp.window.swap({ window = "address:" .. left.address, target = "address:" .. foot.address }))
       local reply = call("record", '{"workspace_id": 3}')
@@ -491,7 +493,7 @@ describe("a scroll branch", function()
       setup()
       open(1, "t-left", 3)
       open(2, "t-main", 3)
-      assert.is_true(call("set_tree", json.encode({ workspace = 3, role = "lap", tree = "scroll[left, *, main]" })).ok)
+      assert.is_true(call("set_tree", json.encode({ workspace = 3, screen = 1, tree = "scroll[left, *, main]" })).ok)
       hl.run_timers()
       local reply = call("record", '{"workspace_id": 3}')
       assert.are.equal("scroll[left, main]", reply.tree)
@@ -506,10 +508,10 @@ describe("a scroll branch", function()
     focus(main)
     hl.run_timers()
     assert.are.equal(2, #layout_msgs())
-    assert.is_true(call("set_tree", '{"workspace": 3, "role": "lap", "tree": "h[left, main, right]"}').ok)
+    assert.is_true(call("set_tree", '{"workspace": 3, "screen": 1, "tree": "h[left, main, right]"}').ok)
     hl.run_timers()
     assert.are.equal("lua:slots", hl.get_workspace(3).tiled_layout)
-    assert.is_true(call("set_tree", '{"workspace": 3, "role": "lap", "tree": "scroll[left, main, right]"}').ok)
+    assert.is_true(call("set_tree", '{"workspace": 3, "screen": 1, "tree": "scroll[left, main, right]"}').ok)
     hl.run_timers()
     assert.are.equal("scrolling", hl.get_workspace(3).tiled_layout)
     assert.are.same({ "colresize all 0.99", "fit_into_view", "colresize all 0.99", "fit_into_view" }, layout_msgs())

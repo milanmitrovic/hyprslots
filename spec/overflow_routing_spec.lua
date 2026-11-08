@@ -34,7 +34,7 @@ describe("matched windows with no free slot", function()
     hl.add_workspace(1, "HEADLESS-2")
     hl.add_workspace(3, "HEADLESS-2")
     hl.add_workspace(13, "HEADLESS-3")
-    -- dual: side = "left", big = "h[main:2, right:1]"
+    -- dual: screen 1 "h[main:2, right:1]", screen 2 "left"
     hyprslots = engine.setup(engine.TWO_SCREENS)
   end)
 
@@ -69,7 +69,7 @@ describe("matched windows with no free slot", function()
     for _ = 1, 4 do
       hl.run_timers()
     end
-    assert.are.equal("single", engine.state(hyprslots).arrangement)
+    assert.are.equal("single", engine.state(hyprslots).desk)
     assert.are.equal(3, workspace_of(extra))
   end)
 
@@ -104,10 +104,10 @@ describe("a late title on an overflowing window", function()
     hl.add_workspace(1, "HEADLESS-2")
     hyprslots = engine.setup([[
 return {
-  slots = { [2] = { term = "foot" }, [3] = { main = "foot/deltaf" } },
-  arrangements = {
-    solo = { screens = { big = "HEADLESS-2" }, desks = { [2] = { big = "term" }, [3] = { big = "main" } } },
-  },
+  slots = { term = {}, main = {} },
+  specs = { [2] = { term = "foot" }, [3] = { main = "foot/deltaf" } },
+  desks = { solo = { monitors = { "HEADLESS-2" }, layout = "solo" } },
+  layouts = { solo = { screens = 1, workspaces = { [2] = { [1] = "term" }, [3] = { [1] = "main" } } } },
 }
 ]])
     local function open(id, title)

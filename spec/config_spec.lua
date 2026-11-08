@@ -24,19 +24,13 @@ return {
   specs = {
     [3] = { left = "t-left", main = "t-main", right = "t-right" },
   },
-  arrangements = {
-    dual = {
-      screens = { big = "HEADLESS-2", side = "HEADLESS-3" },
-      desks = {
-        [3] = { side = "left", big = "h[main:2, right:1]" },
-      },
-    },
-    single = {
-      screens = { big = "HEADLESS-2" },
-      desks = {
-        [3] = { big = "h[left, main, right]" },
-      },
-    },
+  desks = {
+    dual = { monitors = { "HEADLESS-2", "HEADLESS-3" }, layout = "dual", pinned = { 2 } },
+    single = { monitors = { "HEADLESS-2" }, layout = "single" },
+  },
+  layouts = {
+    dual = { screens = 2, workspaces = { [3] = { [1] = "h[main:2, right:1]", [2] = "left" } } },
+    single = { screens = 1, default = { [1] = "h[left, main, right]" } },
   },
 }
 ]]
@@ -46,8 +40,9 @@ local data = load_data("slots.lua")
 return {
   slots = data.slots,
   specs = data.specs,
-  arrangements = data.arrangements,
-  pinned = { "laptop" },
+  desks = data.desks,
+  layouts = data.layouts,
+  title_matching = { browser_apps = { "firefox" } },
 }
 ]]
 
@@ -65,10 +60,14 @@ describe("config.load", function()
     assert.are.same({ "left", "main", "right" }, cfg.slot_names)
     assert.are.equal("the editor", cfg.slots.main.description)
     assert.are.equal("t-main", cfg.specs[3].main.class)
-    assert.are.same({ "dual", "single" }, cfg.arrangement_names)
-    assert.are.equal("HEADLESS-3", cfg.arrangements.dual.screens.side)
-    assert.are.same({ "main", "right" }, require("hyprslots.tree").slots(cfg.arrangements.dual.workspaces[3].big))
-    assert.are.same({ laptop = true }, cfg.pinned)
+    assert.are.same({ "dual", "single" }, cfg.desk_names)
+    assert.are.same({ "HEADLESS-2", "HEADLESS-3" }, cfg.desks.dual.monitors)
+    assert.are.equal("dual", cfg.desks.dual.layout)
+    assert.are.same({ [2] = true }, cfg.desks.dual.pinned)
+    assert.are.same({ "dual", "single" }, cfg.layout_names)
+    assert.are.equal(2, cfg.layouts.dual.screens)
+    assert.are.same({ "main", "right" }, require("hyprslots.tree").slots(cfg.layouts.dual.workspaces[3][1]))
+    assert.is_falsy(cfg.migrated)
   end)
 
   it("reports a missing config.lua as missing", function()
@@ -105,7 +104,7 @@ describe("config.load", function()
     _G.hl = { dispatch = function() end }
     dir = config_dir({
       ["config.lua"] = [[
-        return { slots = {}, arrangements = {},
+        return { slots = {}, desks = {},
           probe = { os_execute = os.execute, io = io, hl = hl, require = require, dofile = dofile } }
       ]],
     })
@@ -129,7 +128,7 @@ describe("config.load", function()
       ["config.lua"] = [[
         assert(type(hostname()) == "string")
         assert(os.getenv("HOME"))
-        return { slots = {}, arrangements = {} }
+        return { slots = {}, desks = {} }
       ]],
     })
     assert(config.load(dir))
@@ -137,7 +136,7 @@ describe("config.load", function()
 
   it("loads slots.lua as data only", function()
     dir = config_dir({
-      ["config.lua"] = 'local d = load_data("slots.lua"); return { slots = d.slots, arrangements = {} }',
+      ["config.lua"] = 'local d = load_data("slots.lua"); return { slots = d.slots, desks = {} }',
       ["slots.lua"] = 'os.execute("true"); return { slots = {} }',
     })
     local cfg, err = config.load(dir)
@@ -148,7 +147,7 @@ describe("config.load", function()
 
   it("refuses to load data from outside the config directory", function()
     dir = config_dir({
-      ["config.lua"] = 'local d = load_data("../etc/passwd"); return { slots = {}, arrangements = {} }',
+      ["config.lua"] = 'local d = load_data("../etc/passwd"); return { slots = {}, desks = {} }',
     })
     local cfg, err = config.load(dir)
     assert.is_nil(cfg)
@@ -167,6 +166,7 @@ return {
 ]],
     })
     local cfg = assert(config.load(dir))
+    assert.is_true(cfg.migrated)
     assert.are.same({ "main", "right" }, cfg.slot_names)
     assert.are.equal("the editor", cfg.slots.main.description)
     assert.are.equal("t-main", cfg.specs[3].main.class)
@@ -177,9 +177,49 @@ return {
     assert.is_nil(file.data.descriptions)
   end)
 
+  it("reads a slots.lua with arrangements as desks and layouts, ordered by the monitors connected", function()
+    dir = config_dir({
+      ["config.lua"] = CONFIG_LUA,
+      ["slots.lua"] = [[
+return {
+  slots = { left = {}, main = {} },
+  pinned = { "side" },
+  arrangements = {
+    dual = { screens = { big = "HEADLESS-2", side = "HEADLESS-3" }, desks = { [3] = { side = "left", big = "main" } } },
+  },
+}
+]],
+    })
+    local monitors = {
+      { name = "HEADLESS-2", description = "", serial = "", x = 1920, y = 0 },
+      { name = "HEADLESS-3", description = "", serial = "", x = 0, y = 0 },
+    }
+    local cfg = assert(config.load(dir, { monitors = monitors }))
+    assert.is_true(cfg.migrated)
+    assert.are.same({ "HEADLESS-3", "HEADLESS-2" }, cfg.desks.dual.monitors)
+    assert.are.same({ [1] = true }, cfg.desks.dual.pinned)
+    assert.are.same({ "left" }, require("hyprslots.tree").slots(cfg.layouts.dual.workspaces[3][1]))
+    local file = cfg.data_files["slots.lua"]
+    assert.is_nil(file.data.arrangements)
+    assert.are.same({ monitors = { "HEADLESS-3", "HEADLESS-2" }, layout = "dual", pinned = { 1 } }, file.data.desks.dual)
+  end)
+
+  it("refuses a config.lua that passes arrangements on, saying what to add", function()
+    dir = config_dir({
+      ["config.lua"] = [[
+local data = load_data("slots.lua")
+return { slots = data.slots, specs = data.specs, arrangements = data.arrangements, pinned = data.pinned }
+]],
+      ["slots.lua"] = SLOTS_LUA,
+    })
+    local cfg, err = config.load(dir)
+    assert.is_nil(cfg)
+    assert.matches("desks = data%.desks, layouts = data%.layouts", err)
+  end)
+
   it("refuses a config.lua that passes slots.lua's slots on but drops its specs, saying what to add", function()
     dir = config_dir({
-      ["config.lua"] = 'local d = load_data("slots.lua"); return { slots = d.slots, arrangements = d.arrangements }',
+      ["config.lua"] = 'local d = load_data("slots.lua"); return { slots = d.slots, desks = d.desks, layouts = d.layouts }',
       ["slots.lua"] = SLOTS_LUA,
     })
     local cfg, err = config.load(dir)
@@ -200,9 +240,8 @@ describe("config.validate", function()
     return {
       slots = { left = {}, main = {} },
       specs = { [3] = { left = "t-left", main = "t-main" } },
-      arrangements = {
-        solo = { screens = { big = "HEADLESS-2" }, desks = { [3] = { big = "h[left, main:2]" } } },
-      },
+      desks = { solo = { monitors = { "HEADLESS-2" }, layout = "solo" } },
+      layouts = { solo = { screens = 1, workspaces = { [3] = { [1] = "h[left, main:2]" } } } },
     }
   end
 
@@ -215,13 +254,15 @@ describe("config.validate", function()
 
   it("accepts a well-formed config", function()
     local cfg = assert(config.validate(valid()))
-    assert.are.same({ "solo" }, cfg.arrangement_names)
-    assert.are.same({}, cfg.pinned)
+    assert.are.same({ "solo" }, cfg.desk_names)
+    assert.are.same({}, cfg.desks.solo.pinned)
+    assert.are.same({ "solo" }, cfg.layout_names)
   end)
 
-  it("accepts a config with no slots or arrangements", function()
+  it("accepts a config with no slots, desks or layouts", function()
     local cfg = assert(config.validate({}))
-    assert.are.same({}, cfg.arrangement_names)
+    assert.are.same({}, cfg.desk_names)
+    assert.are.same({}, cfg.layout_names)
   end)
 
   it("rejects a non-table", function() rejects(nil, "table") end)
@@ -263,6 +304,7 @@ describe("config.validate", function()
       descriptions = { [3] = { main = "the editor" } },
       arrangements = { solo = { screens = { big = "HEADLESS-2" }, desks = { [3] = { big = "h[left, main]" } } } },
     }))
+    assert.are.same({ "solo" }, cfg.desk_names)
     assert.are.same({ "left", "main" }, cfg.slot_names)
     assert.are.equal("t-main", cfg.specs[3].main.class)
     assert.are.equal("the editor", cfg.slots.main.description)
@@ -295,53 +337,106 @@ describe("config.validate", function()
   it("lets a tree place a global slot no workspace has a spec for (filled by hand)", function()
     local raw = valid()
     raw.slots.right = {}
-    raw.arrangements.solo.desks[3].big = "h[left, main, right]"
+    raw.layouts.solo.workspaces[3][1] = "h[left, main, right]"
     assert(config.validate(raw))
   end)
 
-  it("rejects an arrangement without screens", function()
+  it("rejects a desk without monitors, or listing one twice", function()
     local raw = valid()
-    raw.arrangements.solo.screens = {}
-    rejects(raw, "arrangements%.solo%.screens")
+    raw.desks.solo.monitors = {}
+    rejects(raw, "desks%.solo%.monitors: must list at least one monitor")
+    raw.desks.solo.monitors = { "A", "A" }
+    rejects(raw, "desks%.solo%.monitors%[2%]: 'A' is listed twice")
   end)
 
-  it("rejects a workspace tree for a role the arrangement has no screen for", function()
+  it("rejects a desk whose layout is missing or for another number of screens", function()
     local raw = valid()
-    raw.arrangements.solo.desks[3].side = "left"
-    rejects(raw, "arrangements%.solo%.desks%[3%]%.side: no screen role 'side'")
+    raw.desks.solo.layout = "nope"
+    rejects(raw, "desks%.solo%.layout: no layout 'nope'")
+    raw.desks.solo.layout = "solo"
+    raw.desks.solo.monitors = { "HEADLESS-2", "HEADLESS-3" }
+    rejects(raw, "desks%.solo%.layout: layout 'solo' is for 1 screen, and the desk has 2 monitors")
+  end)
+
+  it("lets several desks use one layout", function()
+    local raw = valid()
+    raw.desks.office = { monitors = { "DP-1" }, layout = "solo" }
+    local cfg = assert(config.validate(raw))
+    assert.are.equal(cfg.desks.office.layout, cfg.desks.solo.layout)
+  end)
+
+  it("rejects a desk's pinned screen it does not have", function()
+    local raw = valid()
+    raw.desks.solo.pinned = { 2 }
+    rejects(raw, "desks%.solo%.pinned%[1%]: must be a screen from 1 to 1")
+  end)
+
+  it("rejects a desk or layout name with a '/'", function()
+    local raw = valid()
+    raw.desks["a/b"] = { monitors = { "X" }, layout = "solo" }
+    rejects(raw, "no '/'")
+  end)
+
+  it("rejects a layout without its screen count, or a tree for a screen it does not have", function()
+    local raw = valid()
+    raw.layouts.solo.screens = nil
+    rejects(raw, "layouts%.solo%.screens: must be how many screens")
+    raw.layouts.solo.screens = 1
+    raw.layouts.solo.workspaces[3][2] = "left"
+    rejects(raw, "layouts%.solo%.workspaces%[3%]%[2%]: a screen must be an integer from 1 to 1")
+  end)
+
+  it("takes default trees for the workspaces with none of their own", function()
+    local raw = valid()
+    raw.layouts.solo.default = { [1] = "main" }
+    local cfg = assert(config.validate(raw))
+    local layout = cfg.layouts.solo
+    assert.are.same({ "left", "main" }, require("hyprslots.tree").slots(config.trees_for(layout, 3)[1]))
+    assert.are.same({ "main" }, require("hyprslots.tree").slots(config.trees_for(layout, 5)[1]))
+    raw.layouts.solo.default = nil
+    assert.is_nil(config.trees_for(assert(config.validate(raw)).layouts.solo, 5))
+  end)
+
+  it("rejects arrangements beside desks and layouts, and top-level pinned", function()
+    local raw = valid()
+    raw.arrangements = {}
+    rejects(raw, "arrangements: arrangements are desks and layouts now")
+    raw = valid()
+    raw.pinned = { "laptop" }
+    rejects(raw, "pinned: pinned screens are per desk now")
   end)
 
   it("rejects an unparsable tree with its path", function()
     local raw = valid()
-    raw.arrangements.solo.desks[3].big = "h[left, main"
-    rejects(raw, "arrangements%.solo%.desks%[3%]%.big: expected ']'")
+    raw.layouts.solo.workspaces[3][1] = "h[left, main"
+    rejects(raw, "layouts%.solo%.workspaces%[3%]%[1%]: expected ']'")
   end)
 
   it("rejects a tree naming a slot that is not defined under slots", function()
     local raw = valid()
-    raw.arrangements.solo.desks[3].big = "h[left, mian]"
-    rejects(raw, "desks%[3%]%.big: no slot 'mian' %(define it under slots%)")
+    raw.layouts.solo.workspaces[3][1] = "h[left, mian]"
+    rejects(raw, "workspaces%[3%]%[1%]: no slot 'mian' %(define it under slots%)")
   end)
 
   it("accepts an overflow leaf", function()
     local raw = valid()
-    raw.arrangements.solo.desks[3].big = "h[left:2, v[main, *]]"
+    raw.layouts.solo.workspaces[3][1] = "h[left:2, v[main, *]]"
     assert(config.validate(raw))
   end)
 
   it("refuses an accordion with its path, pointing to scroll[...]", function()
     local raw = valid()
-    raw.arrangements.solo.desks[3].big = "a[left, main]"
-    rejects(raw, "arrangements%.solo%.desks%[3%]%.big: a%[...%] %(an accordion, a Hyprland group with tabs%) is gone: "
+    raw.layouts.solo.workspaces[3][1] = "a[left, main]"
+    rejects(raw, "layouts%.solo%.workspaces%[3%]%[1%]: a%[...%] %(an accordion, a Hyprland group with tabs%) is gone: "
       .. "write scroll%[left, main%]")
   end)
 
   it("accepts a scroll branch, checking its slots", function()
     local raw = valid()
-    raw.arrangements.solo.desks[3].big = "scroll[left, main]"
+    raw.layouts.solo.workspaces[3][1] = "scroll[left, main]"
     assert(config.validate(raw))
-    raw.arrangements.solo.desks[3].big = "scroll[left, mian]"
-    rejects(raw, "desks%[3%]%.big: no slot 'mian'")
+    raw.layouts.solo.workspaces[3][1] = "scroll[left, mian]"
+    rejects(raw, "workspaces%[3%]%[1%]: no slot 'mian'")
   end)
 
   it("takes the scroll columns' width, a fraction of the screen", function()
@@ -359,25 +454,26 @@ describe("config.validate", function()
 
   it("rejects a slot placed on two screens of one workspace", function()
     local raw = valid()
-    raw.arrangements.solo.screens.side = "HEADLESS-3"
-    raw.arrangements.solo.desks[3].side = "main"
-    rejects(raw, "slot 'main' is placed on both")
+    raw.layouts.solo.screens = 2
+    raw.desks.solo.monitors = { "HEADLESS-2", "HEADLESS-3" }
+    raw.layouts.solo.workspaces[3][2] = "main"
+    rejects(raw, "slot 'main' is placed on both screen 1 and screen 2")
   end)
 
-  it("rejects pinned that is not a list of roles", function()
+  it("rejects pinned that is not a list of screens", function()
     local raw = valid()
-    raw.pinned = "laptop"
-    rejects(raw, "pinned")
+    raw.desks.solo.pinned = "laptop"
+    rejects(raw, "desks%.solo%.pinned")
   end)
 
   it("reports every error, not just the first", function()
     local raw = valid()
     raw.specs[3].main = ""
-    raw.arrangements.solo.desks[3].big = "h["
+    raw.layouts.solo.workspaces[3][1] = "h["
     local cfg, err = config.validate(raw)
     assert.is_nil(cfg)
     assert.matches("specs%[3%]%.main", err)
-    assert.matches("desks%[3%]%.big", err)
+    assert.matches("workspaces%[3%]%[1%]", err)
   end)
   describe("title_matching", function()
     it("matches title specs through the configured extractors", function()
@@ -444,9 +540,9 @@ describe("config.load with the data file in memory", function()
   it("hands config.lua the given data instead of reading slots.lua", function()
     dir = config_dir({ ["config.lua"] = CONFIG_LUA, ["slots.lua"] = SLOTS_LUA })
     local data = assert(load(SLOTS_LUA, "=slots", "t", {}))()
-    data.arrangements.single.desks[3].big = "v[left, main, right]"
+    data.layouts.single.default[1] = "v[left, main, right]"
     local cfg = assert(config.load(dir, { data = { ["slots.lua"] = data } }))
-    assert.are.equal("v", cfg.arrangements.single.workspaces[3].big.split)
+    assert.are.equal("v", cfg.layouts.single.default[1].split)
   end)
 
   it("keeps what slots.lua held, untouched by config.lua", function()
@@ -454,7 +550,7 @@ describe("config.load with the data file in memory", function()
       ["config.lua"] = [[
 local data = load_data("slots.lua")
 data.specs[3].main = "changed-by-code"
-return { slots = data.slots, specs = data.specs, arrangements = data.arrangements }
+return { slots = data.slots, specs = data.specs, desks = data.desks, layouts = data.layouts }
 ]],
       ["slots.lua"] = SLOTS_LUA,
     })
@@ -470,7 +566,7 @@ return { slots = data.slots, specs = data.specs, arrangements = data.arrangement
       ["config.lua"] = [[
 local data = load_data("slots.lua")
 data.specs[3].main = "changed-by-code"
-return { slots = data.slots, specs = data.specs, arrangements = data.arrangements }
+return { slots = data.slots, specs = data.specs, desks = data.desks, layouts = data.layouts }
 ]],
     })
     local data = assert(load(SLOTS_LUA, "=slots", "t", {}))()
@@ -481,7 +577,7 @@ return { slots = data.slots, specs = data.specs, arrangements = data.arrangement
   it("keeps the table config.lua returned", function()
     dir = config_dir({ ["config.lua"] = CONFIG_LUA, ["slots.lua"] = SLOTS_LUA })
     local cfg = assert(config.load(dir))
-    assert.are.same({ "laptop" }, cfg.raw.pinned)
+    assert.are.same({ "firefox" }, cfg.raw.title_matching.browser_apps)
     assert.are.equal(cfg.data_files["slots.lua"].given.slots, cfg.raw.slots)
   end)
 

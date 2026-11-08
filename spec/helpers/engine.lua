@@ -4,7 +4,7 @@
 --   local engine = require("helpers.engine")
 --   local hl, o = engine.stub({ "HEADLESS-2", "HEADLESS-3" }, { ["HEADLESS-2"] = 0, ["HEADLESS-3"] = 1 })
 --   local hyprslots = engine.setup(engine.TWO_SCREENS)
---   engine.state(hyprslots).arrangement
+--   engine.state(hyprslots).desk
 
 local hl_stub = require("helpers.hl_stub")
 local json = require("hyprslots.dkjson")
@@ -13,7 +13,7 @@ local M = {}
 
 M.CONFIG = [[
 local data = load_data("slots.lua")
-return { slots = data.slots, specs = data.specs, arrangements = data.arrangements, pinned = data.pinned }
+return { slots = data.slots, specs = data.specs, desks = data.desks, layouts = data.layouts }
 ]]
 
 -- The completion test's config (docs/design.md §12).
@@ -21,15 +21,13 @@ M.TWO_SCREENS = [[
 return {
   slots = { left = {}, main = {}, right = {} },
   specs = { [3] = { left = "t-left", main = "t-main", right = "t-right" } },
-  arrangements = {
-    dual = {
-      screens = { big = "HEADLESS-2", side = "HEADLESS-3" },
-      desks = { [3] = { side = "left", big = "h[main:2, right:1]" } },
-    },
-    single = {
-      screens = { big = "HEADLESS-2" },
-      desks = { [3] = { big = "h[left, main, right]" } },
-    },
+  desks = {
+    dual = { monitors = { "HEADLESS-2", "HEADLESS-3" }, layout = "dual" },
+    single = { monitors = { "HEADLESS-2" }, layout = "single" },
+  },
+  layouts = {
+    dual = { screens = 2, workspaces = { [3] = { [1] = "h[main:2, right:1]", [2] = "left" } } },
+    single = { screens = 1, workspaces = { [3] = { [1] = "h[left, main, right]" } } },
   },
 }
 ]]
@@ -63,7 +61,7 @@ end
 function M.stub(names, blocks)
   local monitors = {}
   for i, name in ipairs(names) do
-    monitors[i] = hl_stub.monitor(name, { id = i - 1, focused = i == 1 })
+    monitors[i] = hl_stub.monitor(name, { id = i - 1, focused = i == 1, x = (i - 1) * 2400, y = 0 })
   end
   local hl = hl_stub.new({ monitors = monitors })
   local o = hl_stub.omarchy(blocks)

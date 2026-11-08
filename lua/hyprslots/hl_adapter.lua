@@ -14,18 +14,26 @@ local function hl()
   return _G.hl
 end
 
+local vec2 -- defined below
+
 -- Connected monitors that show workspaces of their own (mirrors excluded):
--- { name, description, serial, id, focused }.
+-- { name, description, serial, id, focused, x, y, width, height } (the
+-- position orders a desk's screens left to right, desk.lua).
 function M.monitors()
   local out = {}
   for _, monitor in ipairs(hl().get_monitors() or {}) do
     if not monitor.is_mirror then
+      local px, py = vec2(monitor.position)
       out[#out + 1] = {
         name = monitor.name,
         description = monitor.description or "",
         serial = monitor.serial or "",
         id = monitor.id,
         focused = monitor.focused,
+        x = monitor.x or px or 0,
+        y = monitor.y or py or 0,
+        width = monitor.width,
+        height = monitor.height,
       }
     end
   end
@@ -33,7 +41,7 @@ function M.monitors()
 end
 
 -- An HL.Vec2-like value ({ x, y } or { [1], [2] }) as two numbers.
-local function vec2(value)
+function vec2(value)
   if type(value) ~= "table" then
     return nil
   end

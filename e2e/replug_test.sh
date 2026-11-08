@@ -1,5 +1,5 @@
 # Hotplug both ways (docs/design.md §8): unplugging side gathers workspace 3 on
-# big; plugging it back re-selects dual, sends t-left back to side's
+# big; plugging it back re-selects desk dual, sends t-left back to side's
 # workspace 3 after Omarchy's own reconcile, and shows the active workspace
 # (3) on side again without moving focus.
 #
@@ -12,9 +12,9 @@ workspace_monitor() {
   hc workspaces -j | jq -r --argjson id "$1" 'first(.[] | select(.id == $id)) | .monitor // empty'
 }
 
-arrangement() { repl 'return hyprslots.api.state()' | jq -r .arrangement; }
+active_desk() { repl 'return hyprslots.api.state()' | jq -r .desk; }
 
-is_arrangement() { [[ $(arrangement) == "$1" ]]; }
+is_desk() { [[ $(active_desk) == "$1" ]]; }
 
 test_body() {
   output_create HEADLESS-2
@@ -27,13 +27,13 @@ test_body() {
   settle
 
   output_remove HEADLESS-3
-  eventually 10 is_arrangement single || fail "arrangement never became single"
+  eventually 10 is_desk single || fail "desk never became single: $(active_desk)"
   settle
   expect_client t-left 3 0 0 800 1350
 
   # When side comes back.
   output_create HEADLESS-3
-  eventually 10 is_arrangement dual || fail "arrangement never became dual: $(arrangement)"
+  eventually 10 is_desk dual || fail "desk never became dual: $(active_desk)"
   settle
 
   # Then side shows the active workspace again (workspace 3 was the last switched

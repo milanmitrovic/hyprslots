@@ -2,10 +2,13 @@
 --
 -- `dump(data)` is the text of a data-only Lua file: one `return { ... }`
 -- table literal under a header comment, two-space indentation, one entry per
--- line with a trailing comma. Key order is fixed (slots, specs, arrangements,
--- screens, desks first, then integer keys ascending, then string keys
--- sorted), strings are written with %q, so the same data always gives the
--- same bytes and load(dump(x)) == x.
+-- line with a trailing comma; a desk's `monitors` and `pinned` lists of
+-- scalars go on one line (`monitors = { "eDP-1", "DP-1" },`), trees stay one
+-- screen per line. Key order is fixed (slots, specs, desks, layouts, then a
+-- desk's monitors, layout, pinned and a layout's screens, default,
+-- workspaces, then integer keys ascending, then string keys sorted), strings
+-- are written with %q, so the same data always gives the same bytes and
+-- load(dump(x)) == x.
 --
 -- `write(path, data)` replaces a file atomically: the dump goes to a temp
 -- file next to it, which is then renamed over the target.
@@ -44,7 +47,11 @@ M.HEADER = [[
 ]]
 
 -- Keys that come first, in this order, wherever they appear.
-local KEY_ORDER = { slots = 1, specs = 2, arrangements = 3, screens = 4, desks = 5 }
+local KEY_ORDER = { slots = 1, specs = 2, desks = 3, layouts = 4, monitors = 5, layout = 6, pinned = 7, screens = 8,
+  default = 9, workspaces = 10 }
+
+-- Keys whose list of scalars is written on one line.
+local INLINE = { monitors = true, pinned = true }
 
 local KEYWORDS = {}
 for word in ([[and break do else elseif end false for function goto if in
@@ -105,7 +112,31 @@ local function key_text(key)
   error("serialize: a data file cannot have a " .. type(key) .. " key", 0)
 end
 
-local function emit(value, indent, out, seen)
+-- The values of a non-empty list of strings and numbers (keys 1..n), or nil.
+local function scalar_list(value)
+  local n = #value
+  if n == 0 then
+    return nil
+  end
+  local count = 0
+  for key, item in pairs(value) do
+    count = count + 1
+    if math.type(key) ~= "integer" or key < 1 or key > n or (type(item) ~= "string" and type(item) ~= "number") then
+      return nil
+    end
+  end
+  return count == n and value or nil
+end
+
+local function emit(value, indent, out, seen, inline)
+  if inline and type(value) == "table" and scalar_list(value) then
+    local items = {}
+    for i, item in ipairs(value) do
+      items[i] = scalar(item)
+    end
+    out[#out + 1] = "{ " .. table.concat(items, ", ") .. " }"
+    return
+  end
   if type(value) ~= "table" then
     out[#out + 1] = scalar(value)
     return
@@ -128,7 +159,7 @@ local function emit(value, indent, out, seen)
   out[#out + 1] = "{\n"
   for _, key in ipairs(keys) do
     out[#out + 1] = inner .. key_text(key) .. " = "
-    emit(value[key], inner, out, seen)
+    emit(value[key], inner, out, seen, INLINE[key] == true)
     out[#out + 1] = ",\n"
   end
   out[#out + 1] = indent .. "}"

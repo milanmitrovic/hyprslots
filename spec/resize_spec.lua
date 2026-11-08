@@ -5,19 +5,16 @@ local hl_stub = require("helpers.hl_stub")
 
 local SLOTS = [[
 return {
-  slots = { [3] = { a = "t-a", b = "t-b", c = "t-c" } },
-  arrangements = {
-    solo = {
-      screens = { main = "HEADLESS-2" },
-      desks = { [3] = { main = "v[h[a, b], c]" } },
-    },
-  },
+  slots = { a = {}, b = {}, c = {} },
+  specs = { [3] = { a = "t-a", b = "t-b", c = "t-c" } },
+  desks = { solo = { monitors = { "HEADLESS-2" }, layout = "solo" } },
+  layouts = { solo = { screens = 1, workspaces = { [3] = { [1] = "v[h[a, b], c]" } } } },
 }
 ]]
 
 local CONFIG = [[
 local data = load_data("slots.lua")
-return { slots = data.slots, specs = data.specs, arrangements = data.arrangements }
+return { slots = data.slots, specs = data.specs, desks = data.desks, layouts = data.layouts }
 ]]
 
 local AREA = { x = 0, y = 0, w = 2400, h = 1350 }
@@ -160,11 +157,23 @@ describe("keyboard resize", function()
     end)
   end)
 
-  it("keeps a nudge across re-selecting the same arrangement", function()
+  it("keeps a nudge, keyed by layout, workspace and screen, across re-selecting the same desk", function()
     msg("nudge r 0.1")
     hl.emit("monitor.added", hl.monitors[1])
     hl.run_timers()
     assert.are.same(1440, placed()["t-a"].w)
+    local state = require("hyprslots.dkjson").decode(hyprslots.api.state())
+    assert.are.same({ "solo/3/1" }, (function()
+      local keys = {}
+      for key in pairs(state.resized) do
+        keys[#keys + 1] = key
+      end
+      return keys
+    end)())
+    assert.are.same({ layout = "solo", workspace = 3, screen = 1, tree = "v[h[a:3, b:2], c]",
+      ratio = "1[3:2]:1" }, state.resized["solo/3/1"])
+    assert.is_true(state.layouts.solo.workspaces["3"]["1"].resized)
+    assert.is_true(state.dirty)
   end)
 
   describe("refusals change nothing and say why", function()

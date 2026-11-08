@@ -1,6 +1,6 @@
 -- Test seam S2: class-only specs generate hl.window_rule entries that open a
--- window straight on its slot's workspace under the active arrangement
--- (docs/design.md §7), kept current as arrangements and slots change.
+-- window straight on its slot's workspace under the active desk's layout
+-- (docs/design.md §7), kept current as desks, layouts and slots change.
 
 local engine = require("helpers.engine")
 local hl_stub = require("helpers.hl_stub")
@@ -59,7 +59,7 @@ describe("generated window rules", function()
       assert.are.equal("3 silent", rule("hyprslots-t-right").workspace)
     end)
 
-    it("follows the arrangement when a screen goes away", function()
+    it("follows the desk when a screen goes away", function()
       local side = hl.monitors[2]
       hl.monitors = { hl.monitors[1] }
       hl.emit("monitor.removed", side)
@@ -84,14 +84,14 @@ describe("generated window rules", function()
         local reply = engine.call(hyprslots, name, require("hyprslots.dkjson").encode(args))
         assert.is_true(reply.ok, reply.error)
       end
-      call("set_tree", { arrangement = "dual", workspace = 3, role = "big", tree = "main" })
-      call("set_tree", { arrangement = "dual", workspace = 3, role = "side", tree = "h[left, right]" })
+      call("set_tree", { layout = "dual", workspace = 3, screen = 1, tree = "main" })
+      call("set_tree", { layout = "dual", workspace = 3, screen = 2, tree = "h[left, right]" })
       assert.are.equal("13 silent", rule("hyprslots-t-right").workspace)
     end)
 
     it("follows slots that a reload moved", function()
       local slots = engine.TWO_SCREENS
-        :gsub('side = "left", big = "h%[main:2, right:1%]"', 'side = "right", big = "h[main:2, left:1]"')
+        :gsub('%[1%] = "h%[main:2, right:1%]", %[2%] = "left"', '[1] = "h[main:2, left:1]", [2] = "right"')
       local file = assert(io.open(engine.state(hyprslots).config.data_file, "w"))
       file:write(slots)
       file:close()
@@ -124,8 +124,10 @@ describe("generated window rules", function()
     hl = engine.stub({ "HEADLESS-2" }, BLOCKS)
     hyprslots = engine.setup([[
 return {
-  slots = { [3] = { main = "org.gnome.Nautilus" } },
-  arrangements = { solo = { screens = { big = "HEADLESS-2" }, desks = { [3] = { big = "main" } } } },
+  slots = { main = {} },
+  specs = { [3] = { main = "org.gnome.Nautilus" } },
+  desks = { solo = { monitors = { "HEADLESS-2" }, layout = "solo" } },
+  layouts = { solo = { screens = 1, workspaces = { [3] = { [1] = "main" } } } },
 }
 ]])
     assert.are.same({ class = [[^(org\.gnome\.Nautilus)$]] }, rule("hyprslots-org.gnome.Nautilus").match)
@@ -137,10 +139,10 @@ return {
     hl.add_workspace(1, "HEADLESS-2")
     hyprslots = engine.setup([[
 return {
-  slots = { [2] = { main = "foot/deltaf" }, [3] = { main = "foot" }, [4] = { main = "t-only/x" } },
-  arrangements = {
-    solo = { screens = { big = "HEADLESS-2" }, desks = { [2] = { big = "main" }, [3] = { big = "main" }, [4] = { big = "main" } } },
-  },
+  slots = { main = {} },
+  specs = { [2] = { main = "foot/deltaf" }, [3] = { main = "foot" }, [4] = { main = "t-only/x" } },
+  desks = { solo = { monitors = { "HEADLESS-2" }, layout = "solo" } },
+  layouts = { solo = { screens = 1, default = { [1] = "main" } } },
 }
 ]])
     assert.are.same({ "hyprslots-foot" }, names(), "a class with title specs only gets no rule")
@@ -159,16 +161,16 @@ return {
     hl = engine.stub({ "HEADLESS-2" }, BLOCKS)
     hyprslots = engine.setup([[
 return {
-  slots = { [2] = { main = "[Work]" }, [3] = { main = "chromium" } },
-  arrangements = {
-    solo = { screens = { big = "HEADLESS-2" }, desks = { [2] = { big = "main" }, [3] = { big = "main" } } },
-  },
+  slots = { main = {} },
+  specs = { [2] = { main = "[Work]" }, [3] = { main = "chromium" } },
+  desks = { solo = { monitors = { "HEADLESS-2" }, layout = "solo" } },
+  layouts = { solo = { screens = 1, workspaces = { [2] = { [1] = "main" }, [3] = { [1] = "main" } } } },
 }
 ]])
     assert.is_false(rule("hyprslots-chromium").enabled)
   end)
 
-  it("turns every rule off when no arrangement matches the screens", function()
+  it("turns every rule off when no desk matches the screens", function()
     hl = engine.stub({ "DP-9" }, BLOCKS)
     hyprslots = engine.setup(engine.TWO_SCREENS)
     assert.are.equal(3, #names())

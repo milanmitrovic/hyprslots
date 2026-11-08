@@ -1,7 +1,7 @@
 # Keyboard resize (slice 5): layout messages to the slots provider.
 #
 # Screen: HEADLESS-2, 2400x1350 at 0,0, Omarchy block 0 (workspace N = workspace id N).
-# Workspace 3, arrangement "solo": h[a:1, b:1] -> 1200 + 1200 px.
+# Workspace 3, desk and layout "solo": h[a:1, b:1] -> 1200 + 1200 px.
 #
 # With a focused, `hl.dsp.layout("nudge r 0.1")` moves the a|b edge right by
 # 0.1 of the split (240 px): a 1440, b 960. "reset" goes back to 1200 + 1200.
@@ -15,7 +15,7 @@ LUA
   mkdir -p "$E2E_CONFIG_HOME/hyprslots"
   cat >"$E2E_CONFIG_HOME/hyprslots/config.lua" <<'LUA'
 local data = load_data("slots.lua")
-return { slots = data.slots, specs = data.specs, arrangements = data.arrangements }
+return { slots = data.slots, specs = data.specs, desks = data.desks, layouts = data.layouts }
 LUA
   cat >"$E2E_CONFIG_HOME/hyprslots/slots.lua" <<'LUA'
 return {
@@ -23,10 +23,13 @@ return {
   specs = {
     [3] = { a = "t-a", b = "t-b" },
   },
-  arrangements = {
+  desks = {
+    solo = { monitors = { "HEADLESS-2" }, layout = "solo" },
+  },
+  layouts = {
     solo = {
-      screens = { main = "HEADLESS-2" },
-      desks = { [3] = { main = "h[a:1, b:1]" } },
+      screens = 1,
+      workspaces = { [3] = { [1] = "h[a:1, b:1]" } },
     },
   },
 }

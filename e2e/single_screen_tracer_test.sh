@@ -1,7 +1,7 @@
 # Tracer (slice 1): one screen, one workspace tree, laid out by lua:slots.
 #
 # Screen: HEADLESS-2, 2400x1350 at 0,0, Omarchy block 0 (workspace N = workspace id N).
-# Workspace 3, arrangement "solo": h[a:1, b:2, c:1] -> 600 + 1200 + 600 px.
+# Workspace 3, desk and layout "solo": h[a:1, b:2, c:1] -> 600 + 1200 + 600 px.
 #
 # The windows open on workspace 1 in shuffled order; the router moves each to workspace
 # 3 as it opens, and activating workspace 3 shows them in their slots.
@@ -15,7 +15,7 @@ LUA
   mkdir -p "$E2E_CONFIG_HOME/hyprslots"
   cat >"$E2E_CONFIG_HOME/hyprslots/config.lua" <<'LUA'
 local data = load_data("slots.lua")
-return { slots = data.slots, specs = data.specs, arrangements = data.arrangements }
+return { slots = data.slots, specs = data.specs, desks = data.desks, layouts = data.layouts }
 LUA
   cat >"$E2E_CONFIG_HOME/hyprslots/slots.lua" <<'LUA'
 return {
@@ -23,10 +23,13 @@ return {
   specs = {
     [3] = { a = "t-a", b = "t-b", c = "t-c" },
   },
-  arrangements = {
+  desks = {
+    solo = { monitors = { "HEADLESS-2" }, layout = "solo" },
+  },
+  layouts = {
     solo = {
-      screens = { main = "HEADLESS-2" },
-      desks = { [3] = { main = "h[a:1, b:2, c:1]" } },
+      screens = 1,
+      workspaces = { [3] = { [1] = "h[a:1, b:2, c:1]" } },
     },
   },
 }
@@ -38,7 +41,7 @@ state_field() {
   repl 'return hyprslots.api.call("state", "{}")' | jq -r --arg k "$1" '.[$k] // empty | tostring' 2>/dev/null
 }
 
-arrangement_is() { [[ $(state_field arrangement) == "$1" ]]; }
+desk_is() { [[ $(state_field desk) == "$1" ]]; }
 
 workspace_of() {
   hc clients -j | jq -r --arg c "$1" 'first(.[] | select(.class == $c)) | .workspace.id'
@@ -53,10 +56,12 @@ test_body() {
   load_error=$(hyprslots_load_error | head -n1)
   expect_eq "hyprslots loaded" "" "$load_error"
 
-  # The arrangement for the connected screen is selected (after the monitor
-  # appeared, so through monitor.added).
-  eventually 5 arrangement_is solo || true
-  expect_eq "active arrangement" "solo" "$(state_field arrangement)"
+  # The desk for the connected monitor, and its layout, are selected (after
+  # the monitor appeared, so through monitor.added).
+  eventually 5 desk_is solo || true
+  expect_eq "active desk" "solo" "$(state_field desk)"
+  expect_eq "screens" '["HEADLESS-2"]' "$(state_field screens)"
+  expect_eq "active layout" "solo" "$(state_field layout)"
 
   # Given workspace 1 is showing, when the three windows open in shuffled order,
   # then each is routed to workspace 3 as it opens.

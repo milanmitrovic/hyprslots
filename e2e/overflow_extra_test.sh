@@ -3,7 +3,7 @@
 # takes the slot when the first window closes.
 #
 # Screen: HEADLESS-2, 2400x1350 at 0,0, Omarchy block 0 (workspace N = workspace id N).
-# Workspace 3, arrangement "solo": h[main, right]. With an extra window the layout
+# Workspace 3, desk and layout "solo": h[main, right]. With an extra window the layout
 # is h[h[main, right]:3, *:1]: main 900, right 900, overflow 600 px.
 
 test_setup() {
@@ -15,7 +15,7 @@ LUA
   mkdir -p "$E2E_CONFIG_HOME/hyprslots"
   cat >"$E2E_CONFIG_HOME/hyprslots/config.lua" <<'LUA'
 local data = load_data("slots.lua")
-return { slots = data.slots, specs = data.specs, arrangements = data.arrangements }
+return { slots = data.slots, specs = data.specs, desks = data.desks, layouts = data.layouts }
 LUA
   cat >"$E2E_CONFIG_HOME/hyprslots/slots.lua" <<'LUA'
 return {
@@ -23,10 +23,13 @@ return {
   specs = {
     [3] = { main = "t-main", right = "t-right" },
   },
-  arrangements = {
+  desks = {
+    solo = { monitors = { "HEADLESS-2" }, layout = "solo" },
+  },
+  layouts = {
     solo = {
-      screens = { main = "HEADLESS-2" },
-      desks = { [3] = { main = "h[main, right]" } },
+      screens = 1,
+      workspaces = { [3] = { [1] = "h[main, right]" } },
     },
   },
 }

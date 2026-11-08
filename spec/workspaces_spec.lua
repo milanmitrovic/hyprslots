@@ -1,11 +1,11 @@
--- Test seam S2: workspace switching across every screen of the arrangement
+-- Test seam S2: workspace switching across every screen of the active desk
 -- (docs/design.md §5), through api.call("workspace") and hyprslots.workspace(n).
 
 local engine = require("helpers.engine")
 
 local BLOCKS = { ["HEADLESS-2"] = 0, ["HEADLESS-3"] = 1 }
 
-local PINNED_SIDE = engine.TWO_SCREENS:gsub("^return {", 'return {\n  pinned = { "side" },')
+local PINNED_SIDE = engine.TWO_SCREENS:gsub('layout = "dual" }', 'layout = "dual", pinned = { 2 } }', 1)
 
 describe("workspaces across screens", function()
   local hl, o, hyprslots
@@ -68,12 +68,29 @@ describe("workspaces across screens", function()
       local focused = hl.dispatched_of("focus")
       assert.are.same({ monitor = "HEADLESS-3" }, focused[#focused])
     end)
+
+    it("skips a screen set_pinned pins on the active desk, and switches it again once unpinned", function()
+      hyprslots = engine.setup(engine.TWO_SCREENS)
+      local reply = engine.call(hyprslots, "set_pinned", '{"pinned": [2]}')
+      assert.is_true(reply.ok, reply.error)
+      assert.are.equal("dual", reply.desk)
+      assert.are.same({ 2 }, reply.pinned)
+      assert.are.same({ 2 }, engine.state(hyprslots).pinned)
+      assert.are.same({ 2 }, engine.state(hyprslots).desks.dual.pinned)
+      engine.call(hyprslots, "workspace", '{"workspace": 3}')
+      assert.are.same({ { workspace = 3, monitor = "HEADLESS-2" } }, o.workspaces.focused)
+
+      assert.is_true(engine.call(hyprslots, "set_pinned", '{"desk": "dual", "pinned": []}').ok)
+      assert.are.same({}, engine.state(hyprslots).pinned)
+      engine.call(hyprslots, "workspace", '{"workspace": 4}')
+      assert.are.same({ workspace = 4, monitor = "HEADLESS-3" }, o.workspaces.focused[2])
+    end)
   end)
 
-  it("switches only the focused screen when no arrangement matches", function()
+  it("switches only the focused screen when no desk matches", function()
     hl, o = engine.stub({ "HEADLESS-2", "DP-9" }, BLOCKS)
     hyprslots = engine.setup(engine.TWO_SCREENS)
-    assert.is_nil(engine.state(hyprslots).arrangement)
+    assert.is_nil(engine.state(hyprslots).desk)
     engine.call(hyprslots, "workspace", '{"workspace": 3}')
     assert.are.same({ { workspace = 3, monitor = "HEADLESS-2" } }, o.workspaces.focused)
   end)

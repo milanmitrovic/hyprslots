@@ -11,12 +11,13 @@
 --   slots = { main = { description = "the editor" }, right = {} },
 --   specs = { [3] = { main = "kitty/deltaf", right = "firefox" } },
 --
--- `data` returns the second shape for either: every slot name some workspace
+-- `slots` returns the second shape for either: every slot name some workspace
 -- had becomes a global slot, each workspace's specs move under `specs`
 -- unchanged, and a slot's descriptions move onto it (every different one, in
 -- workspace order, joined with "; "; one for a slot no workspace has is
 -- dropped). What it cannot read is carried over as it is, for config.validate
--- to report. Pure; the table given is never changed.
+-- to report. `data` reads both this and the arrangements of before (`desks`,
+-- below). Pure; the table given is never changed.
 
 local desk = require("hyprslots.desk")
 local serialize = require("hyprslots.serialize")
@@ -69,7 +70,15 @@ function M.legacy(data)
 end
 
 -- The data in the global shape (a copy), and whether it had to change.
-function M.data(data)
+function M.data(data, monitors)
+  local out, changed = M.slots(data)
+  local converted, moved = M.desks(out, monitors)
+  return converted, changed or moved
+end
+
+-- The per-workspace slots of before read as global slots (a copy), and
+-- whether it had to change.
+function M.slots(data)
   local out = copy(data)
   if not M.legacy(data) then
     return out, false

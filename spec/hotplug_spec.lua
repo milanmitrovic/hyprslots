@@ -1,4 +1,4 @@
--- Test seam S2: monitor hotplug re-selects the arrangement and re-routes every
+-- Test seam S2: monitor hotplug re-selects the desk and re-routes every
 -- assigned window to its slot's workspace (docs/design.md §8), after
 -- Omarchy's own deferred reconcile.
 
@@ -7,7 +7,7 @@ local hl_stub = require("helpers.hl_stub")
 
 local BLOCKS = { ["HEADLESS-2"] = 0, ["HEADLESS-3"] = 1 }
 
-local PINNED_SIDE = engine.TWO_SCREENS:gsub("^return {", 'return {\n  pinned = { "side" },')
+local PINNED_SIDE = engine.TWO_SCREENS:gsub('layout = "dual" }', 'layout = "dual", pinned = { 2 } }', 1)
 
 describe("hotplug", function()
   local hl, o, hyprslots, side
@@ -64,14 +64,14 @@ describe("hotplug", function()
       window_on(2, "t-main", 3)
       window_on(3, "t-right", 3)
       hyprslots = engine.setup(engine.TWO_SCREENS)
-      assert.are.equal("dual", engine.state(hyprslots).arrangement)
+      assert.are.equal("dual", engine.state(hyprslots).desk)
     end)
 
-    it("re-routes each window to its slot under the arrangement for what is left", function()
+    it("re-routes each window to its slot under the desk for what is left", function()
       unplug_side()
       hl.run_timers()
       hl.run_timers()
-      assert.are.equal("single", engine.state(hyprslots).arrangement)
+      assert.are.equal("single", engine.state(hyprslots).desk)
       assert.are.equal(3, workspace_of("t-left"))
       assert.are.equal(3, workspace_of("t-main"))
       assert.are.equal(3, workspace_of("t-right"))
@@ -101,7 +101,7 @@ describe("hotplug", function()
       window_on(1, "t-left", 3)
       window_on(2, "t-main", 3)
       hyprslots = engine.setup(engine.TWO_SCREENS)
-      assert.are.equal("single", engine.state(hyprslots).arrangement)
+      assert.are.equal("single", engine.state(hyprslots).desk)
     end)
 
     it("moves the slots of the new screen's branch onto its workspace there", function()
@@ -109,7 +109,7 @@ describe("hotplug", function()
       hl.emit("monitor.added", side)
       hl.run_timers()
       hl.run_timers()
-      assert.are.equal("dual", engine.state(hyprslots).arrangement)
+      assert.are.equal("dual", engine.state(hyprslots).desk)
       assert.are.equal(13, workspace_of("t-left"))
       assert.are.equal("HEADLESS-3", hl.get_workspace(13).monitor.name)
       assert.are.equal(3, workspace_of("t-main"))
@@ -160,7 +160,7 @@ describe("hotplug", function()
       hl.emit("monitor.added", side)
       hl.run_timers()
       hl.run_timers()
-      assert.are.equal("dual", engine.state(hyprslots).arrangement)
+      assert.are.equal("dual", engine.state(hyprslots).desk)
       assert.are.same({}, o.workspaces.focused)
       assert.are.same({}, hl.dispatched_of("focus"))
     end)
@@ -173,29 +173,28 @@ describe("hotplug", function()
       unplug_side()
       hl.run_timers()
       hl.run_timers()
-      assert.are.equal("single", engine.state(hyprslots).arrangement)
+      assert.are.equal("single", engine.state(hyprslots).desk)
       assert.are.equal(3, workspace_of("t-left"))
       assert.are.same({}, hl.dispatched_of("focus"))
       assert.are.same({}, o.workspaces.focused)
     end)
   end)
 
-  describe("with a scroll branch in the arrangement that is left", function()
-    -- dual tiles x and y side by side on side; single puts main, x and y in
-    -- scrolling columns on big, which only a scroll pass after the re-route
+  describe("with a scroll branch in the layout of the desk that is left", function()
+    -- dual tiles x and y side by side on screen 2; single puts main, x and y
+    -- in scrolling columns on screen 1, which only a scroll pass after the re-route
     -- can put in slot order.
     local SLOTS = [==[
 return {
-  slots = { [3] = { x = "t-x", y = "t-y", main = "t-main" } },
-  arrangements = {
-    dual = {
-      screens = { big = "HEADLESS-2", side = "HEADLESS-3" },
-      desks = { [3] = { side = "h[x, y]", big = "main" } },
-    },
-    single = {
-      screens = { big = "HEADLESS-2" },
-      desks = { [3] = { big = "scroll[main, x, y]" } },
-    },
+  slots = { x = {}, y = {}, main = {} },
+  specs = { [3] = { x = "t-x", y = "t-y", main = "t-main" } },
+  desks = {
+    dual = { monitors = { "HEADLESS-2", "HEADLESS-3" }, layout = "dual" },
+    single = { monitors = { "HEADLESS-2" }, layout = "single" },
+  },
+  layouts = {
+    dual = { screens = 2, workspaces = { [3] = { [1] = "main", [2] = "h[x, y]" } } },
+    single = { screens = 1, workspaces = { [3] = { [1] = "scroll[main, x, y]" } } },
   },
 }
 ]==]
@@ -228,7 +227,7 @@ return {
 
       unplug_side()
       drain()
-      assert.are.equal("single", engine.state(hyprslots).arrangement)
+      assert.are.equal("single", engine.state(hyprslots).desk)
       assert.are.equal("scrolling", hl.get_workspace(3).tiled_layout)
       assert.are.same({ 3, 3 }, { workspace_of("t-x"), workspace_of("t-y") })
       assert.are.same({ "t-main", "t-x", "t-y" }, hl.column_classes(3))
@@ -238,14 +237,21 @@ return {
     end)
   end)
 
-  it("moves nothing when no arrangement fits what is left", function()
+  it("moves nothing while no desk fits what is left, then gives it a desk of its own", function()
     window_on(1, "t-left", 13)
     hyprslots = engine.setup(engine.TWO_SCREENS)
     hl.monitors = { side }
     hl.emit("monitor.removed", hl_stub.monitor("HEADLESS-2"))
     hl.run_timers()
+    assert.is_nil(engine.state(hyprslots).desk)
+    assert.are.same({}, hl.dispatched_of("window.move"))
     hl.run_timers()
-    assert.is_nil(engine.state(hyprslots).arrangement)
+    hl.run_timers()
+    local state = engine.state(hyprslots)
+    assert.are.equal("headless-3", state.desk)
+    assert.are.equal("single", state.layout, "the first 1-screen layout by name (none ran yet)")
+    assert.are.same({ "HEADLESS-3" }, state.screens)
+    assert.are.equal(13, workspace_of("t-left"), "left is on screen 1 of single, HEADLESS-3's workspace 3")
     assert.are.same({}, hl.dispatched_of("window.move"))
   end)
 end)

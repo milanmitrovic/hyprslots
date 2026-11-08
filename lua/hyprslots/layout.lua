@@ -1,7 +1,7 @@
 -- The "slots" layout provider (docs/design.md §6), used as `lua:slots`.
 --
--- recalculate(ctx) is arithmetic only: find the workspace's number and screen
--- role, take that branch of the active arrangement's tree, divide ctx.area by
+-- recalculate(ctx) is arithmetic only: find the workspace's number and
+-- screen, take that branch of the active desk's layout, divide ctx.area by
 -- its integer weights, and place each target in its window's slot. It never
 -- dispatches. Targets with no slot in the branch stack equally in its
 -- overflow leaf (`*`), or in a column appended at 3 : 1 when it has none; an

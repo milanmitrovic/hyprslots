@@ -8,19 +8,16 @@ local json = require("hyprslots.dkjson")
 
 local SLOTS = [[
 return {
-  slots = { [3] = { a = "t-a", b = "t-b", c = "t-c" } },
-  arrangements = {
-    solo = {
-      screens = { main = "HEADLESS-2" },
-      desks = { [3] = { main = "h[a:1, b:2, c:1]" } },
-    },
-  },
+  slots = { a = {}, b = {}, c = {} },
+  specs = { [3] = { a = "t-a", b = "t-b", c = "t-c" } },
+  desks = { solo = { monitors = { "HEADLESS-2" }, layout = "solo" } },
+  layouts = { solo = { screens = 1, workspaces = { [3] = { [1] = "h[a:1, b:2, c:1]" } } } },
 }
 ]]
 
 local CONFIG = [[
 local data = load_data("slots.lua")
-return { slots = data.slots, specs = data.specs, arrangements = data.arrangements }
+return { slots = data.slots, specs = data.specs, desks = data.desks, layouts = data.layouts }
 ]]
 
 local function config_dir(files)
@@ -125,13 +122,20 @@ describe("hyprslots editor api", function()
   end)
 
   describe("state", function()
-    it("reports the arrangements with their trees and ratios", function()
+    it("reports the desks and layouts, with their trees and ratios", function()
       setup()
       local s = state()
-      assert.are.equal("solo", s.arrangement)
-      local solo = s.arrangements.solo
-      assert.are.same({ main = "HEADLESS-2" }, solo.screens)
-      assert.are.same({ tree = "h[a, b:2, c]", ratio = "1:2:1", slots = { "a", "b", "c" } }, solo.workspaces["3"].main)
+      assert.are.equal("solo", s.desk)
+      assert.are.equal("solo", s.layout)
+      assert.are.same({ "HEADLESS-2" }, s.screens)
+      assert.are.same({ monitors = { "HEADLESS-2" }, connected = { true }, layout = "solo", pinned = {}, active = true,
+        screens = { "HEADLESS-2" }, read_only = false }, s.desks.solo)
+      local solo = s.layouts.solo
+      assert.are.equal(1, solo.screens)
+      assert.are.same({ tree = "h[a, b:2, c]", ratio = "1:2:1", slots = { "a", "b", "c" } }, solo.workspaces["3"]["1"])
+      assert.are.same({}, solo.default)
+      assert.are.same({ 3 }, solo.own)
+      assert.are.same({ "solo" }, solo.used_by)
       assert.is_true(solo.active)
       assert.is_false(solo.read_only)
     end)
@@ -165,15 +169,21 @@ describe("hyprslots editor api", function()
       setup({
         ["config.lua"] = [[
 local data = load_data("slots.lua")
-local arrangements = { solo = data.arrangements.solo, work = { screens = { big = "DP-1" } } }
-return { slots = data.slots, specs = data.specs, arrangements = arrangements, pinned = { "big" } }
+local desks = { solo = data.desks.solo, work = { monitors = { "DP-1" }, layout = "work" } }
+local layouts = { solo = data.layouts.solo, work = { screens = 1 } }
+return { slots = data.slots, specs = data.specs, desks = desks, layouts = layouts }
 ]],
         ["slots.lua"] = SLOTS,
       })
       local s = state()
-      assert.are.same({ "arrangements.work", "pinned" }, s.config.read_only)
-      assert.is_true(s.arrangements.work.read_only)
-      assert.is_false(s.arrangements.solo.read_only)
+      assert.are.same({ "desks.work", "layouts.work" }, s.config.read_only)
+      assert.is_true(s.desks.work.read_only)
+      assert.are.same({ false }, s.desks.work.connected)
+      assert.is_false(s.desks.work.active)
+      assert.is_nil(s.desks.work.screens, "only the active desk lists its screens")
+      assert.is_false(s.desks.solo.read_only)
+      assert.is_true(s.layouts.work.read_only)
+      assert.is_false(s.layouts.solo.read_only)
     end)
 
     it("starts clean, at seq 0", function()
@@ -189,10 +199,10 @@ return { slots = data.slots, specs = data.specs, arrangements = arrangements, pi
     it("changes the tree in memory and lays the workspace out anew", function()
       setup()
       local windows = laid_out_windows({ "t-a", "t-b", "t-c" })
-      local reply = call("set_tree", { workspace = 3, role = "main", tree = "v[a, b, c]" })
+      local reply = call("set_tree", { workspace = 3, screen = 1, tree = "v[a, b, c]" })
       assert.is_true(reply.ok, reply.error)
       assert.are.equal("v[a, b, c]", reply.tree)
-      assert.are.equal("v[a, b, c]", state().arrangements.solo.workspaces["3"].main.tree)
+      assert.are.equal("v[a, b, c]", state().layouts.solo.workspaces["3"]["1"].tree)
       assert.is_true(state().dirty)
 
       local placed = recalculate(windows)
@@ -200,39 +210,49 @@ return { slots = data.slots, specs = data.specs, arrangements = arrangements, pi
       assert.is_true(#hl.dispatched_of("window.resize") >= 1, "a nudge makes Hyprland recalculate")
     end)
 
-    it("defaults to the active arrangement but takes another", function()
+    it("defaults to the active desk's layout but takes another", function()
       setup()
-      local reply = call("set_tree", { arrangement = "nope", workspace = 3, role = "main", tree = "a" })
+      local reply = call("set_tree", { layout = "nope", workspace = 3, screen = 1, tree = "a" })
       assert.is_false(reply.ok)
-      assert.matches("nope", reply.error)
+      assert.matches("no layout 'nope'", reply.error)
+      reply = call("set_tree", { layout = "solo", workspace = 3, screen = 1, tree = "a" })
+      assert.is_true(reply.ok, reply.error)
+      assert.are.equal("solo", reply.layout)
+    end)
+
+    it("refuses a screen the layout does not have", function()
+      setup()
+      local reply = call("set_tree", { workspace = 3, screen = 2, tree = "a" })
+      assert.is_false(reply.ok)
+      assert.matches("layout 'solo' has screens 1 to 1, got 2", reply.error)
     end)
 
     it("refuses a tree the config would reject, changing nothing", function()
       setup()
-      local reply = call("set_tree", { workspace = 3, role = "main", tree = "h[a, zzz]" })
+      local reply = call("set_tree", { workspace = 3, screen = 1, tree = "h[a, zzz]" })
       assert.is_false(reply.ok)
       assert.matches("zzz", reply.error)
-      assert.are.equal("h[a, b:2, c]", state().arrangements.solo.workspaces["3"].main.tree)
+      assert.are.equal("h[a, b:2, c]", state().layouts.solo.workspaces["3"]["1"].tree)
       assert.is_false(state().dirty)
     end)
 
-    it("refuses to change an arrangement config.lua builds in code", function()
+    it("refuses to change a layout config.lua builds in code", function()
       setup({
         ["config.lua"] = [[
 local data = load_data("slots.lua")
-local arrangements = { solo = { screens = data.arrangements.solo.screens, desks = { [3] = { main = "a" } } } }
-return { slots = data.slots, specs = data.specs, arrangements = arrangements }
+local layouts = { solo = { screens = 1, workspaces = { [3] = { [1] = "a" } } } }
+return { slots = data.slots, specs = data.specs, desks = data.desks, layouts = layouts }
 ]],
         ["slots.lua"] = SLOTS,
       })
-      local reply = call("set_tree", { workspace = 3, role = "main", tree = "h[a, b]" })
+      local reply = call("set_tree", { workspace = 3, screen = 1, tree = "h[a, b]" })
       assert.is_false(reply.ok)
-      assert.matches("config.lua", reply.error)
+      assert.matches("layout 'solo' is set by code in config.lua", reply.error)
     end)
 
     it("announces the change with a custom event", function()
       setup()
-      call("set_tree", { workspace = 3, role = "main", tree = "v[a, b, c]" })
+      call("set_tree", { workspace = 3, screen = 1, tree = "v[a, b, c]" })
       assert.are.same({ "hyprslots changed 1" }, events())
       assert.are.equal(1, state().seq)
     end)
@@ -241,7 +261,7 @@ return { slots = data.slots, specs = data.specs, arrangements = arrangements }
   describe("set_ratio", function()
     it("applies the ratio grammar to the current tree", function()
       setup()
-      local reply = call("set_ratio", { workspace = 3, role = "main", ratio = "3:1:1" })
+      local reply = call("set_ratio", { workspace = 3, screen = 1, ratio = "3:1:1" })
       assert.is_true(reply.ok, reply.error)
       assert.are.equal("h[a:3, b, c]", reply.tree)
       assert.are.equal("3:1:1", reply.ratio)
@@ -250,15 +270,15 @@ return { slots = data.slots, specs = data.specs, arrangements = arrangements }
 
     it("reports a ratio that does not fit the tree", function()
       setup()
-      local reply = call("set_ratio", { workspace = 3, role = "main", ratio = "1:1" })
+      local reply = call("set_ratio", { workspace = 3, screen = 1, ratio = "1:1" })
       assert.is_false(reply.ok)
       assert.matches("expected 3 values", reply.error)
       assert.are.same({}, events())
     end)
 
-    it("reports a workspace the arrangement has no tree for", function()
+    it("reports a workspace the layout has no tree for", function()
       setup()
-      local reply = call("set_ratio", { workspace = 4, role = "main", ratio = "1:1" })
+      local reply = call("set_ratio", { workspace = 4, screen = 1, ratio = "1:1" })
       assert.is_false(reply.ok)
       assert.matches("workspace 4", reply.error)
     end)
@@ -271,8 +291,8 @@ return { slots = data.slots, specs = data.specs, arrangements = arrangements }
       local reply = call("record")
       assert.is_true(reply.ok, reply.error)
       assert.are.equal("h[a, b:2, c]", reply.tree)
-      assert.are.same({ arrangement = "solo", workspace = 3, role = "main", workspace_id = 3 },
-        { arrangement = reply.arrangement, workspace = reply.workspace, role = reply.role,
+      assert.are.same({ layout = "solo", workspace = 3, screen = 1, workspace_id = 3 },
+        { layout = reply.layout, workspace = reply.workspace, screen = reply.screen,
           workspace_id = reply.workspace_id })
       assert.is_true(reply.applied)
     end)
@@ -290,7 +310,7 @@ return { slots = data.slots, specs = data.specs, arrangements = arrangements }
       local before = #events()
       local reply = call("record")
       assert.are.equal("h[a, b, c]", reply.tree)
-      assert.are.equal("h[a, b, c]", state().arrangements.solo.workspaces["3"].main.tree)
+      assert.are.equal("h[a, b, c]", state().layouts.solo.workspaces["3"]["1"].tree)
       assert.are.equal(before + 1, #events())
       assert.are.equal("hyprslots changed " .. reply.seq, events()[#events()])
     end)
@@ -303,7 +323,7 @@ return { slots = data.slots, specs = data.specs, arrangements = arrangements }
       assert.are.equal("h[a, b:2]", reply.tree)
       assert.is_false(reply.applied)
       assert.are.same({ "c" }, reply.missing)
-      assert.are.equal("h[a, b:2, c]", state().arrangements.solo.workspaces["3"].main.tree)
+      assert.are.equal("h[a, b:2, c]", state().layouts.solo.workspaces["3"]["1"].tree)
     end)
 
     it("applies it anyway when asked to", function()
@@ -311,7 +331,7 @@ return { slots = data.slots, specs = data.specs, arrangements = arrangements }
       laid_out_windows({ "t-a", "t-b" })
       local reply = call("record", { apply = true })
       assert.is_true(reply.applied)
-      assert.are.equal("h[a, b:2]", state().arrangements.solo.workspaces["3"].main.tree)
+      assert.are.equal("h[a, b:2]", state().layouts.solo.workspaces["3"]["1"].tree)
     end)
 
     it("previews without applying when asked to", function()
@@ -323,7 +343,7 @@ return { slots = data.slots, specs = data.specs, arrangements = arrangements }
       assert.is_false(state().dirty)
     end)
 
-    it("refuses a workspace the arrangement has no tree for", function()
+    it("refuses a workspace the layout has no tree for", function()
       setup()
       local reply = call("record", { workspace_id = 7 })
       assert.is_false(reply.ok)
@@ -380,9 +400,9 @@ return { slots = data.slots, specs = data.specs, arrangements = arrangements }
 
     it("is what state reports, as an unsaved override", function()
       local s = state()
-      assert.are.equal("h[a:7, b:8, c:5]", s.arrangements.solo.workspaces["3"].main.tree)
-      assert.is_true(s.arrangements.solo.workspaces["3"].main.resized)
-      assert.are.same({ ["solo/3/main"] = { arrangement = "solo", workspace = 3, role = "main",
+      assert.are.equal("h[a:7, b:8, c:5]", s.layouts.solo.workspaces["3"]["1"].tree)
+      assert.is_true(s.layouts.solo.workspaces["3"]["1"].resized)
+      assert.are.same({ ["solo/3/1"] = { layout = "solo", workspace = 3, screen = 1,
         tree = "h[a:7, b:8, c:5]", ratio = "7:8:5" } }, s.resized)
       assert.is_true(s.dirty)
     end)
@@ -401,7 +421,7 @@ return { slots = data.slots, specs = data.specs, arrangements = arrangements }
     end)
 
     it("is what set_ratio starts from, and set_ratio replaces it", function()
-      local reply = call("set_ratio", { workspace = 3, role = "main", ratio = "7:8:10" })
+      local reply = call("set_ratio", { workspace = 3, screen = 1, ratio = "7:8:10" })
       assert.is_true(reply.ok, reply.error)
       assert.are.equal("h[a:7, b:8, c:10]", reply.tree)
       assert.are.same({}, state().resized)
@@ -422,12 +442,12 @@ return { slots = data.slots, specs = data.specs, arrangements = arrangements }
     it("is written by save, which then holds it as the config and clears the override", function()
       local reply = call("save")
       assert.is_true(reply.ok, reply.error)
-      assert.matches('main = "h%[a:7, b:8, c:5%]"', read(dir .. "/slots.lua"))
+      assert.matches('%[1%] = "h%[a:7, b:8, c:5%]"', read(dir .. "/slots.lua"))
       local s = state()
       assert.are.same({}, s.resized)
       assert.is_false(s.dirty)
-      assert.are.equal("h[a:7, b:8, c:5]", s.arrangements.solo.workspaces["3"].main.tree)
-      assert.is_nil(s.arrangements.solo.workspaces["3"].main.resized)
+      assert.are.equal("h[a:7, b:8, c:5]", s.layouts.solo.workspaces["3"]["1"].tree)
+      assert.is_nil(s.layouts.solo.workspaces["3"]["1"].resized)
       assert.are.same({ x = 0, y = 0, w = 840, h = 1350 }, recalculate(windows)["t-a"])
       -- A reset now has nothing to go back to: the saved tree is the config.
       hl.active_window = windows[1]
@@ -438,7 +458,7 @@ return { slots = data.slots, specs = data.specs, arrangements = arrangements }
     it("survives a reload once saved", function()
       call("save")
       assert.is_true(call("reload").ok)
-      assert.are.equal("h[a:7, b:8, c:5]", state().arrangements.solo.workspaces["3"].main.tree)
+      assert.are.equal("h[a:7, b:8, c:5]", state().layouts.solo.workspaces["3"]["1"].tree)
       assert.are.same({ x = 0, y = 0, w = 840, h = 1350 }, recalculate(windows)["t-a"])
     end)
 
@@ -447,7 +467,7 @@ return { slots = data.slots, specs = data.specs, arrangements = arrangements }
       local s = state()
       assert.are.same({}, s.resized)
       assert.is_false(s.dirty)
-      assert.are.equal("h[a, b:2, c]", s.arrangements.solo.workspaces["3"].main.tree)
+      assert.are.equal("h[a, b:2, c]", s.layouts.solo.workspaces["3"]["1"].tree)
       assert.are.same({ x = 0, y = 0, w = 600, h = 1350 }, recalculate(windows)["t-a"])
     end)
   end)
@@ -455,7 +475,7 @@ return { slots = data.slots, specs = data.specs, arrangements = arrangements }
   describe("save", function()
     it("writes slots.lua atomically, and a reload reads the same layout", function()
       setup()
-      call("set_ratio", { workspace = 3, role = "main", ratio = "1:1:2" })
+      call("set_ratio", { workspace = 3, screen = 1, ratio = "1:1:2" })
       local reply = call("save")
       assert.is_true(reply.ok, reply.error)
       assert.are.equal(dir .. "/slots.lua", reply.path)
@@ -465,11 +485,11 @@ return { slots = data.slots, specs = data.specs, arrangements = arrangements }
       -- A fresh engine (a Hyprland config reload) reads the saved file.
       hyprslots = fresh_module()
       hyprslots.setup({ config_dir = dir })
-      assert.are.equal("h[a, b, c:2]", state().arrangements.solo.workspaces["3"].main.tree)
+      assert.are.equal("h[a, b, c:2]", state().layouts.solo.workspaces["3"]["1"].tree)
     end)
 
     it("refuses when there is no data file to save", function()
-      setup({ ["config.lua"] = "return { slots = {}, arrangements = {} }" })
+      setup({ ["config.lua"] = "return { slots = {}, desks = {}, layouts = {} }" })
       local reply = call("save")
       assert.is_false(reply.ok)
       assert.matches("slots.lua", reply.error)
@@ -485,10 +505,10 @@ return { slots = data.slots, specs = data.specs, arrangements = arrangements }
   describe("reload", function()
     it("re-reads the files, dropping unsaved edits", function()
       setup()
-      call("set_ratio", { workspace = 3, role = "main", ratio = "5:1:1" })
+      call("set_ratio", { workspace = 3, screen = 1, ratio = "5:1:1" })
       local reply = call("reload")
       assert.is_true(reply.ok, reply.error)
-      assert.are.equal("h[a, b:2, c]", state().arrangements.solo.workspaces["3"].main.tree)
+      assert.are.equal("h[a, b:2, c]", state().layouts.solo.workspaces["3"]["1"].tree)
       assert.is_false(state().dirty)
     end)
 
@@ -498,7 +518,7 @@ return { slots = data.slots, specs = data.specs, arrangements = arrangements }
       file:write((SLOTS:gsub("h%[a:1, b:2, c:1%]", "v[a, b, c]")))
       file:close()
       assert.is_true(hyprslots.reload_config())
-      assert.are.equal("v[a, b, c]", state().arrangements.solo.workspaces["3"].main.tree)
+      assert.are.equal("v[a, b, c]", state().layouts.solo.workspaces["3"]["1"].tree)
     end)
 
     it("keeps the running config when the files are broken", function()
@@ -508,8 +528,8 @@ return { slots = data.slots, specs = data.specs, arrangements = arrangements }
       file:close()
       local reply = call("reload")
       assert.is_false(reply.ok)
-      assert.are.equal("solo", state().arrangement)
-      assert.are.equal("h[a, b:2, c]", state().arrangements.solo.workspaces["3"].main.tree)
+      assert.are.equal("solo", state().desk)
+      assert.are.equal("h[a, b:2, c]", state().layouts.solo.workspaces["3"]["1"].tree)
     end)
 
     it("announces the reload", function()
@@ -528,7 +548,7 @@ return { slots = data.slots, specs = data.specs, arrangements = arrangements }
       assert.are.same({ "hyprslots changed 1", "hyprslots changed 2" }, events())
     end)
 
-    it("follow an arrangement change on hotplug", function()
+    it("follow a desk change on hotplug", function()
       setup()
       hl.monitors = {}
       hl.emit("monitor.removed", {})
@@ -552,7 +572,7 @@ return { slots = data.slots, specs = data.specs, arrangements = arrangements }
       laid_out_windows({ "t-a", "t-b", "t-c" })
       for _, name in ipairs({ "state", "set_ratio", "record", "save", "reload" }) do
         local started = os.clock()
-        call(name, name == "set_ratio" and { workspace = 3, role = "main", ratio = "1:2:1" } or nil)
+        call(name, name == "set_ratio" and { workspace = 3, screen = 1, ratio = "1:2:1" } or nil)
         assert.is_true(os.clock() - started < 0.05, name .. " took too long")
       end
     end)

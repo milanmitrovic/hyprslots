@@ -55,17 +55,19 @@ local DATA = {
     [3] = { left = "t-left", main = "t-main", right = "t-right" },
     [1] = { ["web-1"] = "firefox", term = "kitty/deltaf" },
   },
-  arrangements = {
-    single = {
-      screens = { big = "HEADLESS-2" },
-      desks = { [3] = { big = "h[left, main, right]" } },
-    },
+  desks = {
+    single = { monitors = { "HEADLESS-2" }, layout = "single" },
+    dual = { pinned = { 2 }, layout = "dual", monitors = { "HEADLESS-2", "Samsung Odyssey G95NC HNTW700044" } },
+  },
+  layouts = {
+    single = { screens = 1, workspaces = { [3] = { [1] = "h[left, main, right]" } } },
     dual = {
-      screens = { side = "HEADLESS-3", big = "HEADLESS-2" },
-      desks = {
-        [3] = { side = "left", big = "h[main:2, right]" },
-        [1] = { big = "h[term, web-1]" },
+      workspaces = {
+        [3] = { [2] = "left", [1] = "h[main:2, right]" },
+        [1] = { [1] = "h[term, web-1]" },
       },
+      default = { [1] = "main" },
+      screens = 2,
     },
   },
 }
@@ -121,29 +123,38 @@ return {
       right = "t-right",
     },
   },
-  arrangements = {
+  desks = {
     dual = {
-      screens = {
-        big = "HEADLESS-2",
-        side = "HEADLESS-3",
+      monitors = { "HEADLESS-2", "Samsung Odyssey G95NC HNTW700044" },
+      layout = "dual",
+      pinned = { 2 },
+    },
+    single = {
+      monitors = { "HEADLESS-2" },
+      layout = "single",
+    },
+  },
+  layouts = {
+    dual = {
+      screens = 2,
+      default = {
+        [1] = "main",
       },
-      desks = {
+      workspaces = {
         [1] = {
-          big = "h[term, web-1]",
+          [1] = "h[term, web-1]",
         },
         [3] = {
-          big = "h[main:2, right]",
-          side = "left",
+          [1] = "h[main:2, right]",
+          [2] = "left",
         },
       },
     },
     single = {
-      screens = {
-        big = "HEADLESS-2",
-      },
-      desks = {
+      screens = 1,
+      workspaces = {
         [3] = {
-          big = "h[left, main, right]",
+          [1] = "h[left, main, right]",
         },
       },
     },
@@ -160,18 +171,34 @@ return {
     assert.are.same(data, load_text(serialize.dump(data)))
   end)
 
+  it("writes only monitors and pinned lists of scalars on one line", function()
+    local data = { desks = { d = { monitors = { "a \"b\"", "c" }, pinned = { 1, 3 } } },
+      other = { monitors = { { "nested" } }, pinned = { x = 1 }, list = { "a", "b" } },
+      gappy = { pinned = { [1] = 1, [3] = 3 } } }
+    local text = serialize.dump(data)
+    assert.matches('\n      monitors = { "a \\"b\\"", "c" },\n', text, 1, true)
+    assert.matches("\n      pinned = { 1, 3 },\n", text, 1, true)
+    assert.matches('list = {\n      [1] = "a",\n', text, 1, true)
+    assert.matches('monitors = {\n      [1] = {\n', text, 1, true)
+    assert.matches('pinned = {\n      x = 1,\n', text, 1, true)
+    assert.matches('pinned = {\n      [1] = 1,\n      [3] = 3,\n', text, 1, true)
+    assert.are.same(data, load_text(text))
+  end)
+
   it("keeps numbers, booleans and lists", function()
     local data = { extra = { list = { "a", "b", "c" }, n = 3, f = 1.5, yes = true, no = false } }
     assert.are.same(data, load_text(serialize.dump(data)))
   end)
 
   it("puts known keys first in a fixed order, then the rest sorted", function()
-    local text = serialize.dump({ zeta = 1, arrangements = {}, alpha = 2, specs = {}, slots = {} })
+    local text = serialize.dump({ zeta = 1, workspaces = {}, layouts = {}, alpha = 2, specs = {}, desks = {},
+      slots = {}, default = {}, screens = 1, pinned = {}, layout = "x", monitors = {} })
     local order = {}
     for key in text:gmatch("\n  ([%w_]+) = ") do
       order[#order + 1] = key
     end
-    assert.are.same({ "slots", "specs", "arrangements", "alpha", "zeta" }, order)
+    assert.are.same({ "slots", "specs", "desks", "layouts", "monitors", "layout", "pinned", "screens", "default",
+      "workspaces", "alpha", "zeta" }, order)
   end)
 
   it("refuses what a data file cannot hold", function()

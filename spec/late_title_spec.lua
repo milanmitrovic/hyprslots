@@ -7,13 +7,10 @@ local hl_stub = require("helpers.hl_stub")
 
 local SLOTS = [[
 return {
-  slots = { [3] = { main = "foot/deltaf", side = "foot/notes" } },
-  arrangements = {
-    solo = {
-      screens = { big = "HEADLESS-2" },
-      desks = { [3] = { big = "h[main, side]" } },
-    },
-  },
+  slots = { main = {}, side = {} },
+  specs = { [3] = { main = "foot/deltaf", side = "foot/notes" } },
+  desks = { solo = { monitors = { "HEADLESS-2" }, layout = "solo" } },
+  layouts = { solo = { screens = 1, workspaces = { [3] = { [1] = "h[main, side]" } } } },
 }
 ]]
 

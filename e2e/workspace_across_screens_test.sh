@@ -1,13 +1,13 @@
 # Completion test for slice 2 (docs/design.md §12): one workspace spans two
-# screens, and losing a screen switches to the arrangement for what is left.
+# screens, and losing a screen switches to the desk for what is left.
 #
-# Screens (matched by connector):
-#   big  = HEADLESS-2, 2400x1350 at 0,0      Omarchy block 0: workspace N = workspace id N
-#   side = HEADLESS-3, 1920x1080 at 2400,0   Omarchy block 1: workspace N = workspace id 10+N
+# Monitors (desks select them by connector; screens are numbered left to right):
+#   big  = HEADLESS-2, 2400x1350 at 0,0      screen 1, Omarchy block 0: workspace N = workspace id N
+#   side = HEADLESS-3, 1920x1080 at 2400,0   screen 2, Omarchy block 1: workspace N = workspace id 10+N
 #
-# Arrangements for workspace 3:
-#   dual   (big + side): side = left, big = h[main:2, right:1]
-#   single (big only):   big = h[left, main, right]
+# Desks and their layouts, for workspace 3:
+#   dual   (big + side), layout dual (2 screens): screen 1 = h[main:2, right:1], screen 2 = left
+#   single (big only), layout single (1 screen):  screen 1 = h[left, main, right]
 
 test_setup() {
   cat >"$E2E_CONFIG_HOME/hypr/test-extra.lua" <<'LUA'
@@ -22,7 +22,8 @@ local data = load_data("slots.lua")
 return {
   slots = data.slots,
   specs = data.specs,
-  arrangements = data.arrangements,
+  desks = data.desks,
+  layouts = data.layouts,
 }
 LUA
   cat >"$E2E_CONFIG_HOME/hyprslots/slots.lua" <<'LUA'
@@ -31,17 +32,21 @@ return {
   specs = {
     [3] = { left = "t-left", main = "t-main", right = "t-right" },
   },
-  arrangements = {
+  desks = {
+    dual = { monitors = { "HEADLESS-2", "HEADLESS-3" }, layout = "dual" },
+    single = { monitors = { "HEADLESS-2" }, layout = "single" },
+  },
+  layouts = {
     dual = {
-      screens = { big = "HEADLESS-2", side = "HEADLESS-3" },
-      desks = {
-        [3] = { side = "left", big = "h[main:2, right:1]" },
+      screens = 2,
+      workspaces = {
+        [3] = { [1] = "h[main:2, right:1]", [2] = "left" },
       },
     },
     single = {
-      screens = { big = "HEADLESS-2" },
-      desks = {
-        [3] = { big = "h[left, main, right]" },
+      screens = 1,
+      workspaces = {
+        [3] = { [1] = "h[left, main, right]" },
       },
     },
   },
@@ -72,6 +77,8 @@ test_body() {
   local load_error
   load_error=$(hyprslots_load_error | head -n1)
   expect_eq "hyprslots loaded" "" "$load_error"
+  expect_eq "desk with both screens" "dual" "$(repl 'return hyprslots.api.state()' | jq -r .desk)"
+  expect_eq "screens left to right" '["HEADLESS-2","HEADLESS-3"]' "$(repl 'return hyprslots.api.state()' | jq -c .screens)"
 
   # When workspace 3 is activated through the Super+3 path.
   log "workspace 3 -> $(repl 'return hyprslots.api.call("workspace", "{\"workspace\": 3}")' 2>&1)"
@@ -89,7 +96,9 @@ test_body() {
   sleep 0.5
   settle
 
-  # Then arrangement single tiles all three 1:1:1 on big's workspace 3.
+  # Then desk single (layout single) tiles all three 1:1:1 on big's workspace 3.
+  expect_eq "desk" "single" "$(repl 'return hyprslots.api.state()' | jq -r .desk)"
+  expect_eq "layout" "single" "$(repl 'return hyprslots.api.state()' | jq -r .layout)"
   expect_monitor_workspace HEADLESS-2 3
   expect_client t-left 3 0 0 800 1350
   expect_client t-main 3 800 0 800 1350

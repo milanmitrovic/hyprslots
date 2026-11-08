@@ -9,7 +9,7 @@
 -- timer), never inside an event:
 --
 --   order  after a window opens or moves to a workspace, the workspace is
---          shown (a workspace switch included), an arrangement change, a re-route
+--          shown (a workspace switch included), a desk change, a re-route
 --          or an edit: Hyprland's window.swap between pairs of windows, which
 --          keeps the focus; the cursor is kept from warping to the swapped
 --          window (cursor:no_warps for the duration).
@@ -111,7 +111,7 @@ function M.width(engine)
   return scroll and scroll.width or M.DEFAULT_WIDTH
 end
 
--- The layout workspace `id` should have under the active arrangement:
+-- The layout workspace `id` should have under the active desk:
 -- "scrolling" for a scroll branch, else "lua:slots".
 function M.layout_for(engine, id)
   local entry = engine.workspaces[id]
@@ -122,7 +122,7 @@ function M.layout_for(engine, id)
 end
 
 -- Whether hyprslots keeps workspace `id`'s columns: a scroll branch of the
--- active arrangement, on the scrolling layout, with no saved Omarchy mode.
+-- active desk, on the scrolling layout, with no saved Omarchy mode.
 function M.managed(engine, id)
   local entry = engine:entry_of_workspace(id)
   if not entry or not tree.scroll(entry.branch) then
@@ -277,8 +277,8 @@ function M.attach(engine)
   end)
 end
 
--- Every scroll branch on a workspace of the active arrangement, for the
--- api's state: { workspace_id, workspace, role, slots, layout = its tiled layout,
+-- Every scroll branch on a workspace of the active desk, for the
+-- api's state: { workspace_id, workspace, screen, slots, layout = its tiled layout,
 -- managed, columns = addresses in column order, members = slot -> address,
 -- in_order = whether the columns are in slot order }.
 function M.describe(engine)
@@ -304,7 +304,7 @@ function M.describe(engine)
       end
     end
     out[#out + 1] = {
-      workspace_id = id, workspace = entry.workspace, role = entry.role, slots = tree.scroll(entry.branch),
+      workspace_id = id, workspace = entry.workspace, screen = entry.screen, slots = tree.scroll(entry.branch),
       layout = adapter.workspace_tiled_layout(id), managed = M.managed(engine, id),
       columns = order, members = members, in_order = #M.plan(order_of, windows) == 0,
     }
