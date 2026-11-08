@@ -447,8 +447,8 @@ stop and hyprslots' slots stop look alike there: slots also orders.
 |---|---|
 | `App` | class (Wayland app-id) equal to `App` |
 | `App/pat` | class `App` and `pat` in the window's extracted title: a case-insensitive **plain substring**; everything after the first `/` is `pat` |
-| `[Tag]` | a window of a `browser_apps` class whose title contains `[Tag]` |
-| `[Tag]/Profile` | ... and `(Profile)` after it: Chromium's profile title `[Tag] - Page - Person (Profile)` |
+| `[Tag]` | a window of a `browser_apps` class whose title contains `[Tag]`, in any case (`[keep]` is `[Keep]`'s window) |
+| `[Tag]/Profile` | ... and `(Profile)` after it, in any case: Chromium's profile title `[Tag] - Page - Person (Profile)` |
 
 Title extraction is configured per class under `title_matching` in
 `config.lua` (ported from aerolayout):

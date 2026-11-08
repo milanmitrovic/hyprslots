@@ -149,6 +149,16 @@ describe("spec", function()
       assert.is_false(spec.match(parsed("[Main]"), window("chromium", "")))
     end)
 
+    it("a tag matches whatever its case in the title (Chrome's named windows are often lower case)", function()
+      assert.is_true(spec.match(parsed("[Keep]"), window("google-chrome", "[keep] - Google Keep")))
+      assert.is_true(spec.match(parsed("[music]"), window("google-chrome", "[MUSIC] - YouTube Music")))
+    end)
+
+    it("a profile matches whatever its case in the title", function()
+      assert.is_true(spec.match(parsed("[Gmail]/Work"), window("google-chrome", "[gmail] - Inbox - Me (work)")))
+      assert.is_false(spec.match(parsed("[Gmail]/Work"), window("google-chrome", "[gmail] - Inbox - Me (Personal)")))
+    end)
+
     it("a tag is matched literally, not as a pattern", function()
       assert.is_false(spec.match(parsed("[M.in]"), window("chromium", "[Main] page")))
       assert.is_true(spec.match(parsed("[a%b]"), window("chromium", "[a%b] page")))

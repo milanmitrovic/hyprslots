@@ -4,9 +4,10 @@
 --   App/pattern    that class, and `pattern` found in the window's extracted
 --                  title: a case-insensitive plain substring (not a Lua
 --                  pattern); everything after the first '/' is the pattern
---   [Tag]          a browser window whose title contains "[Tag]"
---   [Tag]/Profile  ... and, after it, "(Profile)": the title Chromium gives a
---                  profile window, "[Tag] - Page Title - Person (Profile)"
+--   [Tag]          a browser window whose title contains "[Tag]", in any case
+--   [Tag]/Profile  ... and, after it, "(Profile)" (any case): the title
+--                  Chromium gives a profile window,
+--                  "[Tag] - Page Title - Person (Profile)"
 --
 -- Tag specs only match classes in title_matching.browser_apps, so a chat
 -- window titled "[Research] ..." never takes a browser slot.
@@ -170,14 +171,17 @@ local function match_tag(spec, window)
   if not spec.tm.browser_apps[window.class] or type(title) ~= "string" then
     return false
   end
-  local _, tag_end = title:find("[" .. spec.tag .. "]", 1, true)
+  -- Case-insensitive: Chrome's "Name window..." keeps whatever was typed,
+  -- so "[keep]" is the window a "[Keep]" spec means.
+  local lowered = title:lower()
+  local _, tag_end = lowered:find("[" .. spec.tag:lower() .. "]", 1, true)
   if not tag_end then
     return false
   end
   if not spec.profile then
     return true
   end
-  return title:find("(" .. spec.profile .. ")", tag_end + 1, true) ~= nil
+  return lowered:find("(" .. spec.profile:lower() .. ")", tag_end + 1, true) ~= nil
 end
 
 -- Whether some title would let this window match the spec: its class is the
