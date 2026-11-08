@@ -92,11 +92,20 @@ function M.show_active(engine, monitors)
   end
 end
 
--- The action bound to SUPER + N in place of o.workspaces.focus(N).
+-- The action bound to SUPER + N in place of o.workspaces.focus(N). While
+-- hyprslots is not running (refused, e.g. hyprmoncfg's workspace planner was
+-- turned back on, or setup failed) the key does what Omarchy's own Super+N
+-- does, through whatever o.workspaces.focus is now, so it never goes dead.
 function M.action(engine_ref, desk)
   local action = function()
     local engine = engine_ref()
-    if not engine then
+    if not engine or engine.refused then
+      if M.valid(desk) and adapter.omarchy_workspaces() then
+        adapter.focus_desk(desk)
+      end
+      if engine then
+        engine.log:warn("desk %s: hyprslots is not running, Omarchy's switch instead", tostring(desk))
+      end
       return
     end
     local ok, err = M.activate(engine, desk)

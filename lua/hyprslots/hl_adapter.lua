@@ -139,7 +139,8 @@ function M.workspace_id(monitor_name, desk)
   return M.omarchy_workspaces().workspace_id({ name = monitor_name }, desk)
 end
 
--- Show desk N on a monitor, the way Omarchy's Super+N does.
+-- Show desk N on a monitor, the way Omarchy's Super+N does (the focused
+-- monitor when monitor_name is nil).
 function M.focus_desk(desk, monitor_name)
   return hl().dispatch(M.omarchy_workspaces().focus(desk, monitor_name))
 end

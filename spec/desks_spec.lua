@@ -78,6 +78,40 @@ describe("desks across screens", function()
     assert.are.same({ { desk = 3, monitor = "HEADLESS-2" } }, o.workspaces.focused)
   end)
 
+  describe("when hyprslots is not running", function()
+    before_each(function()
+      hl, o = engine.stub({ "HEADLESS-2", "HEADLESS-3" }, BLOCKS)
+    end)
+
+    it("Super+N falls back to Omarchy's own switch on a refused engine", function()
+      hyprslots = engine.setup(engine.TWO_SCREENS)
+      o.workspaces.enabled = false -- hyprmoncfg's planner took over
+      hl.emit("config.reloaded")
+      assert.is_truthy(engine.state(hyprslots).refused)
+
+      hl.dispatch(hyprslots.desk(4))
+      assert.are.same({ { desk = 4 } }, o.workspaces.focused, "o.workspaces.focus(4), the focused screen only")
+    end)
+
+    it("the api's desk call still reports the refusal and switches nothing", function()
+      hyprslots = engine.setup(engine.TWO_SCREENS)
+      o.workspaces.enabled = false
+      hl.emit("config.reloaded")
+      local reply = engine.call(hyprslots, "desk", '{"desk": 4}')
+      assert.is_false(reply.ok)
+      assert.matches("not running", reply.error)
+      assert.are.same({}, o.workspaces.focused)
+    end)
+
+    it("an out-of-range desk is no fallback", function()
+      hyprslots = engine.setup(engine.TWO_SCREENS)
+      o.workspaces.enabled = false
+      hl.emit("config.reloaded")
+      hl.dispatch(hyprslots.desk(11))
+      assert.are.same({}, o.workspaces.focused)
+    end)
+  end)
+
   describe("bind_desk_keys", function()
     before_each(function()
       hl, o = engine.stub({ "HEADLESS-2", "HEADLESS-3" }, BLOCKS)
