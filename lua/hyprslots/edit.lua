@@ -131,7 +131,7 @@ end
 
 local function existing_slot(data, slot)
   if type(slot) ~= "string" or global_slots(data)[slot] == nil then
-    return nil, string.format("no slot '%s' (add it in the Slots view)", tostring(slot))
+    return nil, string.format("no slot '%s' (add it in the editor's Layout tab, s then a)", tostring(slot))
   end
   return true
 end

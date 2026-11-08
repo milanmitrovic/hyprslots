@@ -247,7 +247,7 @@ describe("edit.set_spec", function()
   end)
 
   it("refuses a slot that is not defined, and a desk out of range", function()
-    assert.matches("no slot 'zz' %(add it in the Slots view%)", select(2, edit.set_spec(two(), 3, "zz", "x")))
+    assert.matches("no slot 'zz' %(add it in the editor's Layout tab, s then a%)", select(2, edit.set_spec(two(), 3, "zz", "x")))
     assert.matches("desk", select(2, edit.set_spec(two(), 0, "a", "x")))
   end)
 end)

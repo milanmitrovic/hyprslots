@@ -5,8 +5,8 @@
 --
 -- Every reply is a JSON string: { "ok": true, ... } or { "ok": false, "error": "..." }.
 -- Nothing here raises into Hyprland. Calls: state, desk, set_tree, set_ratio,
--- record, assign, unassign, save, reload, arrange; for the Slots view (the
--- global slots) add_slot, remove_slot, rename_slot, describe_slot; for the
+-- record, assign, unassign, save, reload, arrange; for the slot list (the
+-- Layout tab's global slots) add_slot, remove_slot, rename_slot, describe_slot; for the
 -- Assignment view (each desk's specs) take_spec, set_spec, clear_spec; for
 -- the Arrangements view add_arrangement, rename_arrangement, delete_arrangement,
 -- set_screens, set_pinned, copy_trees (the contract is in docs/design.md
@@ -591,7 +591,7 @@ function handlers.assign(engine, args)
     return fail("a desk must be an integer from 1 to 10, got " .. tostring(args.desk))
   end
   if not (engine.cfg and type(args.slot) == "string" and engine.cfg.slots[args.slot]) then
-    return fail(string.format("no slot '%s' (add it in the Slots view)", tostring(args.slot)))
+    return fail(string.format("no slot '%s' (add it in the editor's Layout tab, s then a)", tostring(args.slot)))
   end
   local assignment, displaced = router.assign(engine, window, desk, args.slot)
   return { address = window.address, desk = assignment.desk, slot = assignment.slot, displaced = displaced,
@@ -612,7 +612,7 @@ function handlers.unassign(engine, args)
     slot = previous and previous.slot or nil, seq = engine.seq }
 end
 
--- The Slots and Arrangements views' edits. Each builds new slots.lua data
+-- The slot list's, Assignment and Arrangements views' edits. Each builds new slots.lua data
 -- (edit.lua), re-runs config.lua over it, checks the edit took effect (a
 -- field config.lua builds in code, or does not take from slots.lua, would
 -- not), and only then runs it like any edit: re-assign, re-route, window

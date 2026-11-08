@@ -313,7 +313,7 @@ describe("spec", function()
   end)
 end)
 
--- The Slots view's "take spec from window" (aerolayout's Window.to_spec).
+-- The Assignment view's "take spec from window" (aerolayout's Window.to_spec).
 describe("spec.from_window", function()
   it("is the class for a window whose class has no title rules", function()
     assert.are.equal("firefox", spec.from_window(window("firefox", "Mozilla Firefox")))
