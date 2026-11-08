@@ -21,10 +21,6 @@
 --
 -- Scrolling: M.scrolling(hl) keeps Hyprland's scrolling layout's columns per
 -- workspace (see there).
---
--- Groups: M.group({ w1, w2 }) puts windows in an HL.Group-like group;
--- dispatching group.toggle / window.move{out_of_group} changes membership the
--- way Hyprland would, and HL.Group:add is recorded in hl.group_adds.
 
 local M = {}
 
@@ -193,7 +189,6 @@ function M.new(opts)
     event = dispatcher("event"),
     layout = dispatcher("layout"),
     window = { move = dispatcher("window.move"), resize = dispatcher("window.resize"), swap = dispatcher("window.swap") },
-    group = { toggle = dispatcher("group.toggle") },
     workspace = { move = dispatcher("workspace.move") },
   }
 
@@ -273,8 +268,6 @@ function M.new(opts)
       return {}
     end,
   }
-
-  hl.group_adds = {}
 
   hl.config_values, hl.config_calls = {}, {}
   local function merge(into, from)
@@ -613,75 +606,8 @@ function M.scrolling(hl)
   return hl
 end
 
--- An HL.Group-like group. `size` and `current` are derived from `members`,
--- as Hyprland's are live.
-local Group = {}
-
-local function group_index(self, key)
-  if key == "size" then
-    return #rawget(self, "members")
-  elseif key == "current" then
-    return rawget(self, "members")[rawget(self, "current_index")]
-  end
-  return Group[key]
-end
-
-function Group.add(self, window, index)
-  local members = rawget(self, "members")
-  table.insert(members, index or (#members + 1), window)
-  window.group = self
-  if self.hl then
-    self.hl.group_adds[#self.hl.group_adds + 1] = { window = window.address, into = members[1].address }
-  end
-end
-
-function Group.remove(self, window)
-  local members = rawget(self, "members")
-  for i, member in ipairs(members) do
-    if member == window then
-      table.remove(members, i)
-      window.group = nil
-      if rawget(self, "current_index") > #members then
-        rawset(self, "current_index", math.max(1, #members))
-      end
-      return
-    end
-  end
-end
-
--- Group `windows` (HL.Window-like tables); `current` is the index shown.
-function M.group(windows, current, hl)
-  local group = setmetatable({ members = {}, current_index = current or 1, hl = hl }, { __index = group_index })
-  for _, window in ipairs(windows) do
-    rawget(group, "members")[#rawget(group, "members") + 1] = window
-    window.group = group
-  end
-  return group
-end
-
--- What dispatching a described dispatcher does to the stub's windows.
-M.effects = {
-  ["group.toggle"] = function(hl, args)
-    local window = hl.get_window(args.window)
-    if not window then
-      return
-    end
-    if window.group then
-      for _, member in ipairs(rawget(window.group, "members")) do
-        member.group = nil
-      end
-    else
-      M.group({ window }, 1, hl)
-    end
-  end,
-  ["window.move"] = function(hl, args)
-    if args.out_of_group then
-      local window = hl.get_window(args.window)
-      if window and window.group then
-        window.group:remove(window)
-      end
-    end
-  end,
-}
+-- What dispatching a described dispatcher does to the stub's windows (none
+-- yet; M.simulate and M.scrolling layer their effects over hl.dispatch).
+M.effects = {}
 
 return M
