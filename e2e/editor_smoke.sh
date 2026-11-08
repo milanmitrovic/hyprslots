@@ -15,7 +15,10 @@
 # edits the global slots (a refused then a good rename, the trees and specs
 # following; add, which the Layout tab's a then places and x takes out
 # again; delete; describe), the Arrangements tab creates one for the
-# connected screen, and a save must write all of it to slots.lua.
+# connected screen, and a save must write all of it to slots.lua. Last, the
+# bar widget on a stand-in bar strip: its label, the unsaved dot, its menu
+# (Save, Re-apply, Record), left clicks toggling the panel, and the error
+# state while the hyprslots global is gone.
 # Screenshots of the nested compositor go to .e2e-tmp/editor-smoke-*.png.
 #
 # Screen: HEADLESS-2, 1920x1080, Omarchy block 0 (desk N = workspace N).
@@ -332,6 +335,102 @@ arrangement_edits() {
   shot 15-arrangements-edited
 }
 
+# The bar widget (the plugin's bar-widget entry point) on the smoke's
+# stand-in bar: its label follows the engine's state through the shared
+# service (no poller of its own), a dot while edits are unsaved; a left
+# click opens and closes the panel; the right-click menu's Save saves and
+# Re-apply lays the desk out again; with the hyprslots global gone the
+# widget turns red and says why, and comes back with it.
+bar_widget() {
+  local watch="qs ipc --pid $SMOKE_QS_PID call smoke"
+  expect_eq "the widget loads" "ok" "$(smoke bar)"
+  eventually 5 bash -c "[[ \$($watch barLabel) == 'dirty 󰕰 home · 3 •' ]]" || true
+  expect_eq "it shows the running arrangement and desk, a dot for the unsaved edits" \
+    "dirty 󰕰 home · 3 •" "$(smoke barLabel)"
+  expect_eq "its tooltip says so" $'Hyprslots: home, desk 3 · unsaved edits\nClick: editor · Right-click: menu' \
+    "$(smoke barTooltip)"
+  sleep 0.3
+  shot 17-bar-widget
+
+  expect_eq "right click" "ok" "$(smoke barClick right)"
+  expect_eq "opens the menu, Save on with unsaved edits" "open: arrange on, record on, save on, reload on" \
+    "$(smoke barMenu)"
+  sleep 0.5
+  shot 18-bar-menu
+  expect_eq "Save" "ok" "$(smoke barChoose save)"
+  if eventually 5 bash -c "[[ \$($watch barLabel) == 'normal 󰕰 home · 3' ]]"; then
+    pass "the menu's Save saved: the dot is gone"
+  else
+    fail "after Save the widget shows $(smoke barLabel); dirty $(api_state | jq -r .dirty)"
+  fi
+  expect_eq "the menu closed" "closed: arrange on, record on, save off, reload on" "$(smoke barMenu)"
+  eventually 5 bash -c "[[ \$($watch barRun) == *Saved* ]]" || true
+  expect_eq "and the outcome is a notification" \
+    "notify-send -a Hyprslots Hyprslots 'Saved $E2E_CONFIG_HOME/hyprslots/slots.lua.'" "$(smoke barRun)"
+  eventually 5 smoke_idle || true
+
+  expect_eq "Re-apply layout" "ok" "$(smoke barChoose arrange)"
+  if eventually 5 bash -c "[[ \$($watch barRun) == *'Desk 3 laid out again.'* ]]"; then
+    pass "Re-apply ran desk 3, then arrange"
+  else
+    fail "Re-apply: $(smoke barRun); errors: $(smoke errors)"
+  fi
+  eventually 5 smoke_idle || true
+
+  expect_eq "the panel is closed" "no" "$(smoke ready)"
+  expect_eq "left click" "ok" "$(smoke barClick left)"
+  if eventually 5 smoke_ready; then
+    pass "a left click opened the panel"
+  else
+    fail "the panel did not open: $(smoke errors)"
+  fi
+  sleep 0.5
+  shot 19-bar-panel
+  expect_eq "left click again" "ok" "$(smoke barClick left)"
+  expect_eq "closed it" "no" "$(smoke ready)"
+
+  # Record opens the panel on the Layout tab's record flow (R): the preview
+  # asks before applying anything; n keeps the tree.
+  expect_eq "Record desk" "ok" "$(smoke barChoose record)"
+  if eventually 5 bash -c "[[ \$($watch message) == Recorded*'Apply it?'* ]]"; then
+    pass "Record opened the panel on the record preview"
+  else
+    fail "Record: ready $(smoke ready), message $(smoke message)"
+  fi
+  log "record: $(smoke message)"
+  sleep 0.3
+  shot 20-bar-record
+  press_keys n Escape
+  expect_eq "nothing applied" "false" "$(api_state | jq -r .dirty)"
+  expect_eq "the panel closed" "no" "$(smoke ready)"
+
+  # hyprslots not loaded: the next state read fails, the widget turns red.
+  repl 'hyprslots_smoke = hyprslots; hyprslots = nil; return "gone"' >/dev/null
+  repl 'hl.dispatch(hl.dsp.event("hyprslots changed 900")); return "ok"' >/dev/null
+  if eventually 5 bash -c "[[ \$($watch barLabel) == 'error '* ]]"; then
+    pass "with hyprslots gone the widget is an error"
+  else
+    fail "the widget shows $(smoke barLabel)"
+  fi
+  local tooltip
+  tooltip=$(smoke barTooltip)
+  if [[ $tooltip == "Hyprslots: "*"attempt to index a nil value (global 'hyprslots')"* ]]; then
+    pass "its tooltip names the error"
+  else
+    fail "tooltip: $tooltip"
+  fi
+  expect_eq "only Reload is offered" "closed: arrange off, record off, save off, reload on" "$(smoke barMenu)"
+  sleep 0.3
+  shot 21-bar-error
+  repl 'hyprslots = hyprslots_smoke; hyprslots_smoke = nil; return "back"' >/dev/null
+  repl 'hl.dispatch(hl.dsp.event("hyprslots changed 901")); return "ok"' >/dev/null
+  if eventually 5 bash -c "[[ \$($watch barLabel) == 'normal 󰕰 home · 3' ]]"; then
+    pass "with hyprslots back the widget is too"
+  else
+    fail "the widget shows $(smoke barLabel)"
+  fi
+}
+
 test_body() {
   for tool in qs grim wtype; do
     command -v "$tool" >/dev/null || harness_fail "the editor smoke needs $tool"
@@ -537,6 +636,8 @@ test_body() {
   expect_eq "no editor errors but the refused pin" \
     " | config.lua does not take pinned from slots.lua, so the edit would change nothing; change it in config.lua" \
     "$(smoke errors)"
+  bar_widget
+
   log "assign round trip takes $(time_ms repl "return hyprslots.api.call(\"assign\", \"{\\\"address\\\":\\\"$stray\\\",\\\"desk\\\":3,\\\"slot\\\":\\\"side\\\"}\")") ms"
 
   log "qs log (warnings):"
