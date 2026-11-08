@@ -23,7 +23,7 @@ return {
 
 local CONFIG = [[
 local data = load_data("slots.lua")
-return { slots = data.slots, arrangements = data.arrangements }
+return { slots = data.slots, specs = data.specs, arrangements = data.arrangements }
 ]]
 
 local function config_dir(files)
@@ -229,7 +229,7 @@ describe("layout editing api", function()
 local data = load_data("slots.lua")
 local arrangements = { dual = data.arrangements.dual,
   work = { screens = { big = "DP-1" }, desks = { [3] = { big = "a" } } } }
-return { slots = data.slots, arrangements = arrangements }
+return { slots = data.slots, specs = data.specs, arrangements = arrangements }
 ]],
         ["slots.lua"] = SLOTS,
       })
@@ -257,7 +257,7 @@ return { slots = data.slots, arrangements = arrangements }
     it("reset after rename_slot puts the saved tree back under the slot's new name", function()
       setup()
       call("set_tree", { desk = 3, role = "big", tree = "v[b, a]" })
-      assert.is_true(call("rename_slot", { desk = 3, slot = "a", to = "x" }).ok)
+      assert.is_true(call("rename_slot", { slot = "a", to = "x" }).ok)
       assert.are.equal("v[b, x]", branch("dual", "big").tree)
 
       local reply = call("reset", { desk = 3, role = "big" })
@@ -269,19 +269,19 @@ return { slots = data.slots, arrangements = arrangements }
 
     it("follows a slot renamed twice, and one renamed after a save only from there", function()
       setup()
-      call("rename_slot", { desk = 3, slot = "a", to = "x" })
-      call("rename_slot", { desk = 3, slot = "x", to = "y" })
+      call("rename_slot", { slot = "a", to = "x" })
+      call("rename_slot", { slot = "x", to = "y" })
       assert.are.equal("h[y:2, b]", call("reset", { desk = 3, role = "big" }).tree)
 
       call("save")
-      call("rename_slot", { desk = 3, slot = "y", to = "z" })
+      call("rename_slot", { slot = "y", to = "z" })
       call("set_tree", { desk = 3, role = "big", tree = "v[b, z]" })
       assert.are.equal("h[z:2, b]", call("reset", { desk = 3, role = "big" }).tree)
     end)
 
     it("reset after remove_slot leaves the removed slot out", function()
       setup()
-      assert.is_true(call("remove_slot", { desk = 3, slot = "b" }).ok)
+      assert.is_true(call("remove_slot", { slot = "b", force = true }).ok)
       call("set_tree", { desk = 3, role = "big", tree = "v[a, *]" })
       local reply = call("reset", { desk = 3, role = "big" })
       assert.is_true(reply.ok, reply.error)
@@ -311,7 +311,7 @@ return { slots = data.slots, arrangements = arrangements }
 
     it("forgets the edits once they are reloaded away", function()
       setup()
-      call("rename_slot", { desk = 3, slot = "a", to = "x" })
+      call("rename_slot", { slot = "a", to = "x" })
       assert.is_true(call("reload").ok)
       call("set_tree", { desk = 3, role = "big", tree = "v[b, a]" })
       assert.are.equal("h[a:2, b]", call("reset", { desk = 3, role = "big" }).tree)

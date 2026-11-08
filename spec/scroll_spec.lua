@@ -88,7 +88,7 @@ end)
 
 local CONFIG = [[
 local data = load_data("slots.lua")
-return { slots = data.slots, arrangements = data.arrangements, scroll = %s }
+return { slots = data.slots, specs = data.specs, arrangements = data.arrangements, scroll = %s }
 ]]
 
 -- Desk 3: scroll[left, main, right] on the laptop screen; desk 4: a split.

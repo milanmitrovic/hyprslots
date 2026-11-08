@@ -13,13 +13,14 @@ local M = {}
 
 M.CONFIG = [[
 local data = load_data("slots.lua")
-return { slots = data.slots, arrangements = data.arrangements, pinned = data.pinned }
+return { slots = data.slots, specs = data.specs, arrangements = data.arrangements, pinned = data.pinned }
 ]]
 
 -- The completion test's config (docs/design.md §12).
 M.TWO_SCREENS = [[
 return {
-  slots = { [3] = { left = "t-left", main = "t-main", right = "t-right" } },
+  slots = { left = {}, main = {}, right = {} },
+  specs = { [3] = { left = "t-left", main = "t-main", right = "t-right" } },
   arrangements = {
     dual = {
       screens = { big = "HEADLESS-2", side = "HEADLESS-3" },

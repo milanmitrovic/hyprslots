@@ -20,7 +20,8 @@ end
 
 local SLOTS_LUA = [[
 return {
-  slots = {
+  slots = { left = {}, main = { description = "the editor" }, right = {} },
+  specs = {
     [3] = { left = "t-left", main = "t-main", right = "t-right" },
   },
   arrangements = {
@@ -44,6 +45,7 @@ local CONFIG_LUA = [[
 local data = load_data("slots.lua")
 return {
   slots = data.slots,
+  specs = data.specs,
   arrangements = data.arrangements,
   pinned = { "laptop" },
 }
@@ -60,7 +62,9 @@ describe("config.load", function()
     dir = config_dir({ ["config.lua"] = CONFIG_LUA, ["slots.lua"] = SLOTS_LUA })
     local cfg = assert(config.load(dir))
 
-    assert.are.equal("t-main", cfg.slots[3].main.class)
+    assert.are.same({ "left", "main", "right" }, cfg.slot_names)
+    assert.are.equal("the editor", cfg.slots.main.description)
+    assert.are.equal("t-main", cfg.specs[3].main.class)
     assert.are.same({ "dual", "single" }, cfg.arrangement_names)
     assert.are.equal("HEADLESS-3", cfg.arrangements.dual.screens.side)
     assert.are.same({ "main", "right" }, require("hyprslots.tree").slots(cfg.arrangements.dual.desks[3].big))
@@ -151,6 +155,38 @@ describe("config.load", function()
     assert.matches("load_data", err)
   end)
 
+  it("reads a slots.lua in the per-desk shape of before as global slots and per-desk specs", function()
+    dir = config_dir({
+      ["config.lua"] = CONFIG_LUA,
+      ["slots.lua"] = [[
+return {
+  slots = { [3] = { main = "t-main", right = "t-right" }, [4] = { main = "t-mail" } },
+  descriptions = { [3] = { main = "the editor" } },
+  arrangements = { solo = { screens = { big = "HEADLESS-2" }, desks = { [3] = { big = "h[main, right]" } } } },
+}
+]],
+    })
+    local cfg = assert(config.load(dir))
+    assert.are.same({ "main", "right" }, cfg.slot_names)
+    assert.are.equal("the editor", cfg.slots.main.description)
+    assert.are.equal("t-main", cfg.specs[3].main.class)
+    assert.are.equal("t-mail", cfg.specs[4].main.class)
+    local file = cfg.data_files["slots.lua"]
+    assert.are.same({ [3] = { main = "t-main", right = "t-right" }, [4] = { main = "t-mail" } }, file.data.specs,
+      "the editor's data is in the global shape")
+    assert.is_nil(file.data.descriptions)
+  end)
+
+  it("refuses a config.lua that passes slots.lua's slots on but drops its specs, saying what to add", function()
+    dir = config_dir({
+      ["config.lua"] = 'local d = load_data("slots.lua"); return { slots = d.slots, arrangements = d.arrangements }',
+      ["slots.lua"] = SLOTS_LUA,
+    })
+    local cfg, err = config.load(dir)
+    assert.is_nil(cfg)
+    assert.matches("specs = data%.specs", err)
+  end)
+
   it("reports a missing data file", function()
     dir = config_dir({ ["config.lua"] = 'load_data("nope.lua"); return {}' })
     local cfg, err = config.load(dir)
@@ -162,7 +198,8 @@ end)
 describe("config.validate", function()
   local function valid()
     return {
-      slots = { [3] = { left = "t-left", main = "t-main" } },
+      slots = { left = {}, main = {} },
+      specs = { [3] = { left = "t-left", main = "t-main" } },
       arrangements = {
         solo = { screens = { big = "HEADLESS-2" }, desks = { [3] = { big = "h[left, main:2]" } } },
       },
@@ -201,34 +238,65 @@ describe("config.validate", function()
     rejects(raw, "unknown key 'title_rules'")
   end)
 
-  it("accepts slot descriptions, the editor's notes (a config may return the data file whole)", function()
+  it("keeps each global slot's description, the editor's note", function()
     local raw = valid()
-    raw.descriptions = { [3] = { main = "the editor" } }
-    assert(config.validate(raw))
+    raw.slots.main = { description = "the editor" }
+    local cfg = assert(config.validate(raw))
+    assert.are.equal("the editor", cfg.slots.main.description)
+    assert.is_nil(cfg.slots.left.description)
+    assert.are.same({ "left", "main" }, cfg.slot_names)
   end)
 
-  it("rejects descriptions that are not desk -> slot -> text", function()
+  it("rejects a global slot that is not { description = text }", function()
     local raw = valid()
-    raw.descriptions = { [3] = { main = 4 } }
-    rejects(raw, "descriptions%[3%]%.main: must be text")
+    raw.slots.main = { description = 4 }
+    rejects(raw, "slots%.main%.description: must be text")
+    raw.slots.main = { descripton = "x" }
+    rejects(raw, "slots%.main: unknown key 'descripton'")
+    raw.slots.main = "t-main"
+    rejects(raw, "slots%.main: must be a table { description = \"%.%.%.\" }")
   end)
 
-  it("rejects a desk that is not 1-10", function()
+  it("still reads the per-desk shape of before (slots = desk -> slot -> spec, descriptions per desk)", function()
+    local cfg = assert(config.validate({
+      slots = { [3] = { left = "t-left", main = "t-main" } },
+      descriptions = { [3] = { main = "the editor" } },
+      arrangements = { solo = { screens = { big = "HEADLESS-2" }, desks = { [3] = { big = "h[left, main]" } } } },
+    }))
+    assert.are.same({ "left", "main" }, cfg.slot_names)
+    assert.are.equal("t-main", cfg.specs[3].main.class)
+    assert.are.equal("the editor", cfg.slots.main.description)
+  end)
+
+  it("rejects a specs desk that is not 1-10", function()
     local raw = valid()
-    raw.slots[11] = { x = "y" }
-    rejects(raw, "slots%[11%]: a desk must be an integer from 1 to 10")
+    raw.specs[11] = { main = "y" }
+    rejects(raw, "specs%[11%]: a desk must be an integer from 1 to 10")
   end)
 
   it("rejects a bad slot name", function()
     local raw = valid()
-    raw.slots[3]["has space"] = "x"
+    raw.slots["has space"] = {}
     rejects(raw, "slot name")
+  end)
+
+  it("rejects a spec for a slot that is not defined under slots", function()
+    local raw = valid()
+    raw.specs[3].mian = "x"
+    rejects(raw, "specs%[3%]%.mian: no slot 'mian' %(define it under slots%)")
   end)
 
   it("rejects a bad spec with its path", function()
     local raw = valid()
-    raw.slots[3].main = "kitty/"
-    rejects(raw, "slots%[3%]%.main: spec 'kitty/'")
+    raw.specs[3].main = "kitty/"
+    rejects(raw, "specs%[3%]%.main: spec 'kitty/'")
+  end)
+
+  it("lets a tree place a global slot no desk has a spec for (filled by hand)", function()
+    local raw = valid()
+    raw.slots.right = {}
+    raw.arrangements.solo.desks[3].big = "h[left, main, right]"
+    assert(config.validate(raw))
   end)
 
   it("rejects an arrangement without screens", function()
@@ -249,10 +317,10 @@ describe("config.validate", function()
     rejects(raw, "arrangements%.solo%.desks%[3%]%.big: expected ']'")
   end)
 
-  it("rejects a tree naming a slot the desk does not have", function()
+  it("rejects a tree naming a slot that is not defined under slots", function()
     local raw = valid()
     raw.arrangements.solo.desks[3].big = "h[left, mian]"
-    rejects(raw, "desks%[3%]%.big: desk 3 has no slot 'mian'")
+    rejects(raw, "desks%[3%]%.big: no slot 'mian' %(define it under slots%)")
   end)
 
   it("accepts an overflow leaf", function()
@@ -273,7 +341,7 @@ describe("config.validate", function()
     raw.arrangements.solo.desks[3].big = "scroll[left, main]"
     assert(config.validate(raw))
     raw.arrangements.solo.desks[3].big = "scroll[left, mian]"
-    rejects(raw, "desks%[3%]%.big: desk 3 has no slot 'mian'")
+    rejects(raw, "desks%[3%]%.big: no slot 'mian'")
   end)
 
   it("takes the scroll columns' width, a fraction of the screen", function()
@@ -304,38 +372,38 @@ describe("config.validate", function()
 
   it("reports every error, not just the first", function()
     local raw = valid()
-    raw.slots[3].main = ""
+    raw.specs[3].main = ""
     raw.arrangements.solo.desks[3].big = "h["
     local cfg, err = config.validate(raw)
     assert.is_nil(cfg)
-    assert.matches("slots%[3%]%.main", err)
+    assert.matches("specs%[3%]%.main", err)
     assert.matches("desks%[3%]%.big", err)
   end)
   describe("title_matching", function()
     it("matches title specs through the configured extractors", function()
       local raw = valid()
-      raw.slots[3].main = "MyEditor/hyprslots"
+      raw.specs[3].main = "MyEditor/hyprslots"
       raw.title_matching = { extractors = { MyEditor = " — " } }
       local cfg = assert(config.validate(raw))
-      local main = cfg.slots[3].main
+      local main = cfg.specs[3].main
       assert.is_true(spec.match(main, { class = "MyEditor", title = "hyprslots — init.lua" }))
       assert.is_false(spec.match(main, { class = "MyEditor", title = "x — hyprslots" }))
     end)
 
     it("restricts tag specs to the configured browsers", function()
       local raw = valid()
-      raw.slots[3].main = "[Docs]"
+      raw.specs[3].main = "[Docs]"
       raw.title_matching = { browser_apps = { "firefox" } }
       local cfg = assert(config.validate(raw))
-      assert.is_true(spec.match(cfg.slots[3].main, { class = "firefox", title = "[Docs] x" }))
-      assert.is_false(spec.match(cfg.slots[3].main, { class = "chromium", title = "[Docs] x" }))
+      assert.is_true(spec.match(cfg.specs[3].main, { class = "firefox", title = "[Docs] x" }))
+      assert.is_false(spec.match(cfg.specs[3].main, { class = "chromium", title = "[Docs] x" }))
     end)
 
     it("uses the defaults when absent", function()
       local raw = valid()
-      raw.slots[3].main = "kitty/build"
+      raw.specs[3].main = "kitty/build"
       local cfg = assert(config.validate(raw))
-      assert.is_true(spec.match(cfg.slots[3].main, { class = "kitty", title = "build | fish" }))
+      assert.is_true(spec.match(cfg.specs[3].main, { class = "kitty", title = "build | fish" }))
     end)
 
     it("rejects an unknown key", function()
@@ -385,29 +453,29 @@ describe("config.load with the data file in memory", function()
     dir = config_dir({
       ["config.lua"] = [[
 local data = load_data("slots.lua")
-data.slots[3].main = "changed-by-code"
-return { slots = data.slots, arrangements = data.arrangements }
+data.specs[3].main = "changed-by-code"
+return { slots = data.slots, specs = data.specs, arrangements = data.arrangements }
 ]],
       ["slots.lua"] = SLOTS_LUA,
     })
     local cfg = assert(config.load(dir))
-    assert.are.equal("changed-by-code", cfg.slots[3].main.class)
+    assert.are.equal("changed-by-code", cfg.specs[3].main.class)
     local loaded = cfg.data_files["slots.lua"]
-    assert.are.equal("t-main", loaded.data.slots[3].main, "the file's own content")
-    assert.are.equal("changed-by-code", loaded.given.slots[3].main, "what config.lua was handed")
+    assert.are.equal("t-main", loaded.data.specs[3].main, "the file's own content")
+    assert.are.equal("changed-by-code", loaded.given.specs[3].main, "what config.lua was handed")
   end)
 
   it("never lets config.lua change the data it was given", function()
     dir = config_dir({
       ["config.lua"] = [[
 local data = load_data("slots.lua")
-data.slots[3].main = "changed-by-code"
-return { slots = data.slots, arrangements = data.arrangements }
+data.specs[3].main = "changed-by-code"
+return { slots = data.slots, specs = data.specs, arrangements = data.arrangements }
 ]],
     })
     local data = assert(load(SLOTS_LUA, "=slots", "t", {}))()
     assert(config.load(dir, { data = { ["slots.lua"] = data } }))
-    assert.are.equal("t-main", data.slots[3].main)
+    assert.are.equal("t-main", data.specs[3].main)
   end)
 
   it("keeps the table config.lua returned", function()

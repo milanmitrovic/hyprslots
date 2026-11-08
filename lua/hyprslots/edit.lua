@@ -6,7 +6,8 @@
 -- passed the data's own table straight through (the same table, by identity);
 -- a field it built in code is read-only, because changing slots.lua would not
 -- change it. Granularity: top-level keys, and one level below them
--- (`arrangements.<name>`, `slots.<desk>`).
+-- (`arrangements.<name>`, `specs.<desk>`); the global `slots` are one field,
+-- all or nothing.
 --
 -- Every edit returns a new data table; the one given is never mutated. Pure:
 -- no `hl`, no I/O.
@@ -46,16 +47,19 @@ function M.copy(value)
   return out
 end
 
+-- Fields that are one whole: a slot list partly built in code is code's.
+local WHOLE = { slots = true }
+
 -- The config paths config.lua sets by code, sorted: "pinned",
--- "arrangements.work", "slots.4". `raw` is what config.lua returned, `given`
--- the table load_data("slots.lua") handed it (nil when it loaded none).
+-- "arrangements.work", "specs.4", "slots". `raw` is what config.lua returned,
+-- `given` the table load_data("slots.lua") handed it (nil when it loaded none).
 function M.read_only(raw, given)
   local out = {}
   for _, key in ipairs(sorted_keys(raw)) do
     local value, source = raw[key], given and given[key]
     if source ~= nil and rawequal(value, source) then
       -- passed straight through: all of it is the data's
-    elseif type(value) == "table" and type(source) == "table" then
+    elseif type(value) == "table" and type(source) == "table" and not WHOLE[key] then
       for _, sub in ipairs(sorted_keys(value)) do
         if not rawequal(value[sub], source[sub]) then
           out[#out + 1] = key .. "." .. tostring(sub)
@@ -120,22 +124,14 @@ local function check_name(name, what)
   return true
 end
 
--- The data's slots of a desk, or nil and why not.
-local function desk_slots(data, desk)
-  local ok, err = check_desk(desk)
-  if not ok then
-    return nil, err
-  end
-  return data and type(data.slots) == "table" and type(data.slots[desk]) == "table" and data.slots[desk] or {}
+-- The data's global slots (name -> { description? }), never nil.
+local function global_slots(data)
+  return data and type(data.slots) == "table" and data.slots or {}
 end
 
-local function existing_slot(data, desk, slot)
-  local slots, err = desk_slots(data, desk)
-  if not slots then
-    return nil, err
-  end
-  if type(slot) ~= "string" or slots[slot] == nil then
-    return nil, string.format("desk %s has no slot '%s'", tostring(desk), tostring(slot))
+local function existing_slot(data, slot)
+  if type(slot) ~= "string" or global_slots(data)[slot] == nil then
+    return nil, string.format("no slot '%s' (add it in the Slots view)", tostring(slot))
   end
   return true
 end
@@ -196,110 +192,116 @@ function M.remove_leaf(node, name)
   return out
 end
 
--- Rewrite every tree of desk `desk` in every arrangement with fn(node) ->
+-- Rewrite every tree of every desk in every arrangement with fn(node) ->
 -- node or nil (nil drops the branch). Trees that do not parse are left as
 -- they are (config.lua's validation reports them).
-local function rewrite_trees(out, desk, fn)
+local function rewrite_trees(out, fn)
   for _, entry in pairs(type(out.arrangements) == "table" and out.arrangements or {}) do
-    local branches = type(entry) == "table" and type(entry.desks) == "table" and entry.desks[desk]
-    if type(branches) == "table" then
-      for role, text in pairs(branches) do
-        local node = tree.parse(text)
-        if node then
-          local changed = fn(node)
-          branches[role] = changed and serialize.tree(changed) or nil
+    local desks = type(entry) == "table" and type(entry.desks) == "table" and entry.desks or {}
+    for desk, branches in pairs(desks) do
+      if type(branches) == "table" then
+        for role, text in pairs(branches) do
+          local node = tree.parse(text)
+          if node then
+            local changed = fn(node)
+            branches[role] = changed and serialize.tree(changed) or nil
+          end
         end
-      end
-      if next(branches) == nil then
-        entry.desks[desk] = nil
+        if next(branches) == nil then
+          desks[desk] = nil
+        end
       end
     end
   end
 end
 
-local function set_description(out, desk, slot, text)
-  out.descriptions = type(out.descriptions) == "table" and out.descriptions or {}
-  local entries = type(out.descriptions[desk]) == "table" and out.descriptions[desk] or {}
-  out.descriptions[desk] = entries
-  if text == nil or text == "" then
-    entries[slot] = nil
-  else
-    entries[slot] = text
+-- Rewrite every desk's spec for slot `old`: moved to `new`, or dropped when
+-- `new` is nil. A desk left with no specs goes.
+local function rewrite_specs(out, old, new)
+  local specs = type(out.specs) == "table" and out.specs or {}
+  for desk, entries in pairs(specs) do
+    if type(entries) == "table" and entries[old] ~= nil then
+      if new ~= nil then
+        entries[new] = entries[old]
+      end
+      entries[old] = nil
+      if next(entries) == nil then
+        specs[desk] = nil
+      end
+    end
   end
-  if next(entries) == nil then
-    out.descriptions[desk] = nil
-  end
-  if next(out.descriptions) == nil then
-    out.descriptions = nil
+  if out.specs ~= nil and next(specs) == nil then
+    out.specs = nil
   end
 end
 
-local function description_of(data, desk, slot)
-  local entries = type(data.descriptions) == "table" and data.descriptions[desk]
-  return type(entries) == "table" and entries[slot] or nil
+-- Where slot `name` is used: { trees = { "<arrangement>/<desk>/<role>", ... },
+-- specs = { desk, ... } }, both sorted.
+function M.slot_uses(data, name)
+  local trees, specs = {}, {}
+  for _, arrangement in ipairs(sorted_keys(type(data.arrangements) == "table" and data.arrangements or {})) do
+    local entry = data.arrangements[arrangement]
+    local desks = type(entry) == "table" and type(entry.desks) == "table" and entry.desks or {}
+    for _, desk in ipairs(sorted_keys(desks)) do
+      local branches = type(desks[desk]) == "table" and desks[desk] or {}
+      for _, role in ipairs(sorted_keys(branches)) do
+        local node = tree.parse(branches[role])
+        if node then
+          for _, slot in ipairs(tree.slots(node)) do
+            if slot == name then
+              trees[#trees + 1] = arrangement .. "/" .. tostring(desk) .. "/" .. role
+            end
+          end
+        end
+      end
+    end
+  end
+  local all = type(data.specs) == "table" and data.specs or {}
+  for _, desk in ipairs(sorted_keys(all)) do
+    if type(all[desk]) == "table" and all[desk][name] ~= nil then
+      specs[#specs + 1] = desk
+    end
+  end
+  return { trees = trees, specs = specs }
 end
 
--- The data with a slot's spec set (normalized). Nil and why not.
-function M.set_spec(data, desk, slot, text)
-  local ok, err = existing_slot(data, desk, slot)
-  if not ok then
-    return nil, err
-  end
-  local normalized, spec_err = spec_text(text)
-  if not normalized then
-    return nil, spec_err
-  end
-  local out = M.copy(data)
-  out.slots[desk][slot] = normalized
-  return out
-end
-
--- The data with a new slot on a desk (description optional).
-function M.add_slot(data, desk, name, text, description)
-  local slots, err = desk_slots(data, desk)
-  if not slots then
-    return nil, err
-  end
+-- The data with a new global slot (description optional).
+function M.add_slot(data, name, description)
   local ok, name_err = check_name(name, "slot")
   if not ok then
     return nil, name_err
   end
-  if slots[name] ~= nil then
-    return nil, string.format("desk %d already has a slot '%s'", desk, name)
+  if global_slots(data)[name] ~= nil then
+    return nil, string.format("there is a slot '%s' already", name)
   end
-  local normalized, spec_err = spec_text(text)
-  if not normalized then
-    return nil, spec_err
+  if description ~= nil and type(description) ~= "string" then
+    return nil, "a description must be text"
   end
   local out = M.copy(data or {})
   out.slots = type(out.slots) == "table" and out.slots or {}
-  out.slots[desk] = type(out.slots[desk]) == "table" and out.slots[desk] or {}
-  out.slots[desk][name] = normalized
-  if type(description) == "string" and description ~= "" then
-    set_description(out, desk, name, description)
-  end
+  out.slots[name] = (description ~= nil and description ~= "") and { description = description } or {}
   return out
 end
 
--- The data without a slot: gone from the desk, from every tree that placed
--- it (a branch it was all of goes too) and from the descriptions.
-function M.remove_slot(data, desk, slot)
-  local ok, err = existing_slot(data, desk, slot)
+-- The data without a global slot: gone from every tree of every desk that
+-- placed it (a branch it was all of goes too) and from every desk's specs.
+function M.remove_slot(data, name)
+  local ok, err = existing_slot(data, name)
   if not ok then
     return nil, err
   end
   local out = M.copy(data)
-  out.slots[desk][slot] = nil
-  rewrite_trees(out, desk, function(node) return M.remove_leaf(node, slot) end)
-  set_description(out, desk, slot, nil)
+  out.slots[name] = nil
+  rewrite_trees(out, function(node) return M.remove_leaf(node, name) end)
+  rewrite_specs(out, name, nil)
   return out
 end
 
--- The data with a slot renamed, on its desk and in every tree of every
--- arrangement that places it (aerolayout's rename_slot_everywhere), its
--- description following.
-function M.rename_slot(data, desk, old, new)
-  local ok, err = existing_slot(data, desk, old)
+-- The data with a global slot renamed: in every tree of every desk of every
+-- arrangement (aerolayout's rename_slot_everywhere) and in every desk's
+-- specs; its description follows.
+function M.rename_slot(data, old, new)
+  local ok, err = existing_slot(data, old)
   if not ok then
     return nil, err
   end
@@ -310,23 +312,19 @@ function M.rename_slot(data, desk, old, new)
   if new == old then
     return M.copy(data)
   end
-  if data.slots[desk][new] ~= nil then
-    return nil, string.format("desk %d already has a slot '%s'", desk, new)
+  if data.slots[new] ~= nil then
+    return nil, string.format("there is a slot '%s' already", new)
   end
   local out = M.copy(data)
-  out.slots[desk][new], out.slots[desk][old] = out.slots[desk][old], nil
-  rewrite_trees(out, desk, function(node) return M.rename_leaf(node, old, new) end)
-  local description = description_of(data, desk, old)
-  set_description(out, desk, old, nil)
-  if description then
-    set_description(out, desk, new, description)
-  end
+  out.slots[new], out.slots[old] = out.slots[old], nil
+  rewrite_trees(out, function(node) return M.rename_leaf(node, old, new) end)
+  rewrite_specs(out, old, new)
   return out
 end
 
--- The data with a slot's description set; "" (or nil) removes it.
-function M.describe_slot(data, desk, slot, text)
-  local ok, err = existing_slot(data, desk, slot)
+-- The data with a global slot's description set; "" (or nil) removes it.
+function M.describe_slot(data, name, text)
+  local ok, err = existing_slot(data, name)
   if not ok then
     return nil, err
   end
@@ -334,7 +332,50 @@ function M.describe_slot(data, desk, slot, text)
     return nil, "a description must be text"
   end
   local out = M.copy(data)
-  set_description(out, desk, slot, text)
+  local entry = type(out.slots[name]) == "table" and out.slots[name] or {}
+  entry.description = (text ~= nil and text ~= "") and text or nil
+  out.slots[name] = entry
+  return out
+end
+
+-- The data with the app that fills slot `slot` on desk `desk` set (spec
+-- text, normalized), replacing the desk's spec for it if it had one.
+function M.set_spec(data, desk, slot, text)
+  local ok, err = check_desk(desk)
+  if not ok then
+    return nil, err
+  end
+  local defined, slot_err = existing_slot(data, slot)
+  if not defined then
+    return nil, slot_err
+  end
+  local normalized, spec_err = spec_text(text)
+  if not normalized then
+    return nil, spec_err
+  end
+  local out = M.copy(data)
+  out.specs = type(out.specs) == "table" and out.specs or {}
+  out.specs[desk] = type(out.specs[desk]) == "table" and out.specs[desk] or {}
+  out.specs[desk][slot] = normalized
+  return out
+end
+
+-- The data without desk `desk`'s spec for slot `slot` (the global slot and
+-- the trees stay; a window can still be put there by hand).
+function M.clear_spec(data, desk, slot)
+  local ok, err = check_desk(desk)
+  if not ok then
+    return nil, err
+  end
+  local entries = data and type(data.specs) == "table" and data.specs[desk]
+  if type(entries) ~= "table" or type(slot) ~= "string" or entries[slot] == nil then
+    return nil, string.format("desk %s has no spec for '%s'", tostring(desk), tostring(slot))
+  end
+  local out = M.copy(data)
+  out.specs[desk][slot] = nil
+  if next(out.specs[desk]) == nil then
+    out.specs[desk] = nil
+  end
   return out
 end
 
@@ -517,7 +558,8 @@ end
 -- The data with arrangement `name`'s trees replaced by those of `source`.
 -- `roles` maps each of name's screen roles to the source role whose trees it
 -- takes (default: the role of the same name). With no source (the default),
--- each desk's slots go side by side, by name, on name's first screen role.
+-- the slots each desk has a spec for go side by side, by name, on name's
+-- first screen role.
 function M.copy_trees(data, name, source, roles)
   local entry, err = arrangement_entry(data, name)
   if not entry then
@@ -530,8 +572,8 @@ function M.copy_trees(data, name, source, roles)
     if first == nil then
       return nil, "arrangement '" .. name .. "' has no screens"
     end
-    for desk, slots in pairs(type(data.slots) == "table" and data.slots or {}) do
-      local names = type(slots) == "table" and sorted_strings(slots) or {}
+    for desk, specs in pairs(type(data.specs) == "table" and data.specs or {}) do
+      local names = type(specs) == "table" and sorted_strings(specs) or {}
       if #names == 1 then
         desks[desk] = { [first] = names[1] }
       elseif #names > 1 then

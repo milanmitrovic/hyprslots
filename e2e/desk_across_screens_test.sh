@@ -21,6 +21,7 @@ LUA
 local data = load_data("slots.lua")
 return {
   slots = data.slots,
+  specs = data.specs,
   arrangements = data.arrangements,
 }
 LUA

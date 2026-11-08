@@ -17,7 +17,7 @@ return {
 
 local CONFIG = [[
 local data = load_data("slots.lua")
-return { slots = data.slots, arrangements = data.arrangements }
+return { slots = data.slots, specs = data.specs, arrangements = data.arrangements }
 ]]
 
 local AREA = { x = 0, y = 0, w = 2400, h = 1350 }

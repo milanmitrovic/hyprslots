@@ -5,9 +5,10 @@
 --
 -- Every reply is a JSON string: { "ok": true, ... } or { "ok": false, "error": "..." }.
 -- Nothing here raises into Hyprland. Calls: state, desk, set_tree, set_ratio,
--- record, assign, unassign, save, reload, arrange; for the Slots view set_spec,
--- add_slot, remove_slot, rename_slot, describe_slot, take_spec; for the
--- Arrangements view add_arrangement, rename_arrangement, delete_arrangement,
+-- record, assign, unassign, save, reload, arrange; for the Slots view (the
+-- global slots) add_slot, remove_slot, rename_slot, describe_slot; for the
+-- Assignment view (each desk's specs) take_spec, set_spec, clear_spec; for
+-- the Arrangements view add_arrangement, rename_arrangement, delete_arrangement,
 -- set_screens, set_pinned, copy_trees (the contract is in docs/design.md
 -- §9). Every change bumps `seq` and emits hl.dsp.event("hyprslots changed
 -- <seq>").
@@ -17,6 +18,7 @@ local adapter = require("hyprslots.hl_adapter")
 local config = require("hyprslots.config")
 local desks = require("hyprslots.desks")
 local edit = require("hyprslots.edit")
+local migrate = require("hyprslots.migrate")
 local ratio = require("hyprslots.ratio")
 local record = require("hyprslots.record")
 local resize = require("hyprslots.resize")
@@ -121,39 +123,26 @@ local function arrangements_info(engine, read_only)
   return out
 end
 
--- desk -> slot -> spec text, as config.lua returned them.
+-- The global slots, by name: [{ name, description? }].
 local function slots_info(engine)
-  local out = object()
-  local raw = engine.cfg and engine.cfg.raw and engine.cfg.raw.slots
-  if type(raw) ~= "table" then
-    return out
-  end
-  for _, desk in ipairs(sorted_keys(raw)) do
-    local entries = object()
-    for name, spec_text in pairs(raw[desk]) do
-      entries[name] = type(spec_text) == "string" and spec_text or tostring(spec_text)
-    end
-    out[tostring(desk)] = entries
+  local out = array()
+  local cfg = engine.cfg
+  for _, name in ipairs(cfg and cfg.slot_names or {}) do
+    out[#out + 1] = object({ name = name, description = cfg.slots[name].description })
   end
   return out
 end
 
--- desk -> slot -> description, from the slots.lua data (the editor's notes;
--- config.lua need not pass them through).
-local function descriptions_info(engine)
+-- desk -> slot -> spec text: which app fills which slot on each desk.
+local function specs_info(engine)
   local out = object()
-  local raw = engine.data and engine.data.descriptions
-  if type(raw) ~= "table" then
-    return out
-  end
-  for _, desk in ipairs(sorted_keys(raw)) do
-    if type(raw[desk]) == "table" then
-      local entries = object()
-      for name, text in pairs(raw[desk]) do
-        entries[name] = tostring(text)
-      end
-      out[tostring(desk)] = entries
+  local specs = engine.cfg and engine.cfg.specs or {}
+  for _, desk in ipairs(sorted_keys(specs)) do
+    local entries = object()
+    for name, parsed in pairs(specs[desk]) do
+      entries[name] = parsed.text
     end
+    out[tostring(desk)] = entries
   end
   return out
 end
@@ -178,7 +167,7 @@ local function desks_list(engine)
   local seen = {}
   local cfg = engine.cfg
   if cfg then
-    for desk in pairs(cfg.slots) do
+    for desk in pairs(cfg.specs) do
       seen[desk] = true
     end
     for _, name in ipairs(cfg.arrangement_names) do
@@ -282,7 +271,7 @@ function M.snapshot(engine)
     log_seq = engine.log.seq,
     arrangements = arrangements_info(engine, read_only),
     slots = slots_info(engine),
-    descriptions = descriptions_info(engine),
+    specs = specs_info(engine),
     monitors = monitors_info(),
     desks = desks_list(engine),
     pinned = pinned,
@@ -589,9 +578,11 @@ function handlers.assign(engine, args)
     return fail("no open window " .. tostring(args.address))
   end
   local desk = as_desk(args.desk)
-  local slots = engine.cfg and engine.cfg.slots[desk]
-  if not (slots and type(args.slot) == "string" and slots[args.slot]) then
-    return fail(string.format("desk %s has no slot '%s'", tostring(desk), tostring(args.slot)))
+  if math.type(desk) ~= "integer" or desk < 1 or desk > 10 then
+    return fail("a desk must be an integer from 1 to 10, got " .. tostring(args.desk))
+  end
+  if not (engine.cfg and type(args.slot) == "string" and engine.cfg.slots[args.slot]) then
+    return fail(string.format("no slot '%s' (add it in the Slots view)", tostring(args.slot)))
   end
   local assignment, displaced = router.assign(engine, window, desk, args.slot)
   return { address = window.address, desk = assignment.desk, slot = assignment.slot, displaced = displaced,
@@ -667,19 +658,31 @@ local function remember(engine, op, ...)
   engine.since_save[#engine.since_save + 1] = { op = op, args = table.pack(...) }
 end
 
--- The desk of a slot edit, if its slots are the editor's.
-local function editable_desk(engine, args)
+-- Whether the global slots are the editor's to change.
+local function editable_slots(engine)
+  if not engine.data then
+    return nil, NO_DATA
+  end
+  if not edit.editable(read_only_paths(engine.cfg), "slots") then
+    return nil, "the slots are set by code in config.lua; edit them there"
+  end
+  return true
+end
+
+-- The desk of a spec edit, if its specs are the editor's.
+local function editable_specs(engine, args)
   if not engine.data then
     return nil, NO_DATA
   end
   local desk = as_desk(args.desk)
-  if not edit.editable(read_only_paths(engine.cfg), "slots", desk) then
-    return nil, "desk " .. tostring(desk) .. "'s slots are set by code in config.lua; edit them there"
+  if not edit.editable(read_only_paths(engine.cfg), "specs", desk) then
+    return nil, "desk " .. tostring(desk) .. "'s specs are set by code in config.lua; edit them there"
   end
   return desk
 end
 
--- Rewrite every keyboard-resized tree of a desk with fn(node) -> node or nil.
+-- Rewrite every keyboard-resized tree with keep(override) -> key, node (nil
+-- drops it).
 local function carry_overrides(engine, keep)
   local out = {}
   for _, override in ipairs(resize.overrides(engine)) do
@@ -691,23 +694,21 @@ local function carry_overrides(engine, keep)
   engine.resized = out
 end
 
-local function on_desk_trees(desk, fn)
+-- Carry every keyboard-resized tree through fn(node) -> node or nil.
+local function on_every_tree(fn)
   return function(engine)
     carry_overrides(engine, function(o)
-      if o.desk ~= desk then
-        return o.key, o.tree
-      end
       local node = fn(o.tree)
       return node and o.key, node
     end)
   end
 end
 
-local function rename_assignments(engine, desk, old, new)
+local function rename_assignments(engine, old, new)
   for _, map in ipairs({ "assignments", "overflow" }) do
     local renamed = {}
     for address, a in pairs(engine[map] or {}) do
-      if a.desk == desk and a.slot == old then
+      if a.slot == old then
         local copy = shallow(a)
         copy.slot = new
         renamed[address] = copy
@@ -719,74 +720,78 @@ local function rename_assignments(engine, desk, old, new)
   end
 end
 
-local function slot_spec(cfg, desk, slot)
-  local entry = cfg.slots[desk] and cfg.slots[desk][slot]
+local function desk_spec(cfg, desk, slot)
+  local entry = cfg.specs[desk] and cfg.specs[desk][slot]
   return entry and entry.text
 end
 
--- set_spec { desk, slot, spec }
-function handlers.set_spec(engine, args)
-  local desk, err = editable_desk(engine, args)
-  if not desk then
-    return fail(err)
+local function list(items, last)
+  if #items <= 1 then
+    return table.concat(items)
   end
-  local data, edit_err = edit.set_spec(engine.data, desk, args.slot, args.spec)
-  if not data then
-    return fail(edit_err)
-  end
-  local text = data.slots[desk][args.slot]
-  local cfg, apply_err = apply_edit(engine, data, function(c)
-    if slot_spec(c, desk, args.slot) ~= text then
-      return not_taken("desk " .. desk .. "'s slots")
-    end
-  end)
-  if not cfg then
-    return fail(apply_err)
-  end
-  return { desk = desk, slot = args.slot, spec = text, seq = engine.seq }
+  return table.concat(items, ", ", 1, #items - 1) .. (last or " and ") .. items[#items]
 end
 
--- add_slot { desk, slot, spec, description? }
+-- add_slot { slot, description? }: a global slot every desk's trees may place.
 function handlers.add_slot(engine, args)
-  local desk, err = editable_desk(engine, args)
-  if not desk then
+  local ok, err = editable_slots(engine)
+  if not ok then
     return fail(err)
   end
-  local data, edit_err = edit.add_slot(engine.data, desk, args.slot, args.spec, args.description)
+  local data, edit_err = edit.add_slot(engine.data, args.slot, args.description)
   if not data then
     return fail(edit_err)
   end
   local cfg, apply_err = apply_edit(engine, data, function(c)
-    if slot_spec(c, desk, args.slot) == nil then
-      return not_taken("desk " .. desk .. "'s slots")
+    if not c.slots[args.slot] then
+      return not_taken("the slots")
     end
   end)
   if not cfg then
     return fail(apply_err)
   end
-  return { desk = desk, slot = args.slot, spec = data.slots[desk][args.slot], seq = engine.seq }
+  return { slot = args.slot, description = cfg.slots[args.slot].description, seq = engine.seq }
 end
 
--- remove_slot { desk, slot }: also out of every tree that places it.
+-- remove_slot { slot, force? }: refused while trees place the slot or desks
+-- have specs for it, saying where, unless force; then it goes from all of
+-- them too.
 function handlers.remove_slot(engine, args)
-  local desk, err = editable_desk(engine, args)
-  if not desk then
+  local ok, err = editable_slots(engine)
+  if not ok then
     return fail(err)
   end
-  local data, edit_err = edit.remove_slot(engine.data, desk, args.slot)
+  local slot = args.slot
+  local data, edit_err = edit.remove_slot(engine.data, slot)
   if not data then
     return fail(edit_err)
   end
-  local cfg, apply_err = apply_edit(engine, data, function(c)
-    if c.slots[desk] and c.slots[desk][args.slot] ~= nil then
-      return not_taken("desk " .. desk .. "'s slots")
+  local uses = edit.slot_uses(engine.data, slot)
+  if (#uses.trees > 0 or #uses.specs > 0) and args.force ~= true then
+    local where = {}
+    if #uses.trees > 0 then
+      where[#where + 1] = "placed by " .. table.concat(uses.trees, ", ")
     end
-  end, on_desk_trees(desk, function(node) return edit.remove_leaf(node, args.slot) end))
+    if #uses.specs > 0 then
+      local desks = {}
+      for i, desk in ipairs(uses.specs) do
+        desks[i] = tostring(desk)
+      end
+      where[#where + 1] = "filled on desk" .. (#desks > 1 and "s " or " ") .. list(desks)
+    end
+    return fail(string.format("slot '%s' is %s; remove it with force: true to take it out of all of them",
+      slot, table.concat(where, " and ")))
+  end
+  local cfg, apply_err = apply_edit(engine, data, function(c)
+    if c.slots[slot] then
+      return not_taken("the slots")
+    end
+  end, on_every_tree(function(node) return edit.remove_leaf(node, slot) end))
   if not cfg then
     return fail(apply_err)
   end
-  remember(engine, "remove_slot", desk, args.slot)
-  return { desk = desk, slot = args.slot, seq = engine.seq }
+  remember(engine, "remove_slot", slot)
+  return { slot = slot, trees = array(uses.trees), specs = array(uses.specs), seq = engine.seq }
 end
 
 local function count_changed_trees(before, after)
@@ -805,66 +810,145 @@ local function count_changed_trees(before, after)
   return n
 end
 
--- rename_slot { desk, slot, to }: in every tree of every arrangement too.
+-- rename_slot { slot, to }: everywhere: every tree of every desk and
+-- arrangement, every desk's spec, the keyboard-resized trees and the
+-- assignments (a hand-made one stays hand-made).
 function handlers.rename_slot(engine, args)
-  local desk, err = editable_desk(engine, args)
-  if not desk then
+  local ok, err = editable_slots(engine)
+  if not ok then
     return fail(err)
   end
   local old, new = args.slot, args.to
-  local data, edit_err = edit.rename_slot(engine.data, desk, old, new)
+  local data, edit_err = edit.rename_slot(engine.data, old, new)
   if not data then
     return fail(edit_err)
   end
+  local uses = edit.slot_uses(engine.data, old)
   local trees = count_changed_trees(engine.data, data)
   local cfg, apply_err = apply_edit(engine, data, function(c)
-    if slot_spec(c, desk, new) == nil then
-      return not_taken("desk " .. desk .. "'s slots")
+    if not c.slots[new] or (new ~= old and c.slots[old]) then
+      return not_taken("the slots")
     end
   end, function(e)
-    on_desk_trees(desk, function(node) return edit.rename_leaf(node, old, new) end)(e)
-    rename_assignments(e, desk, old, new)
+    on_every_tree(function(node) return edit.rename_leaf(node, old, new) end)(e)
+    rename_assignments(e, old, new)
   end)
   if not cfg then
     return fail(apply_err)
   end
-  remember(engine, "rename_slot", desk, old, new)
-  return { desk = desk, slot = old, to = new, trees = trees, seq = engine.seq }
+  remember(engine, "rename_slot", old, new)
+  return { slot = old, to = new, trees = trees, specs = array(uses.specs), seq = engine.seq }
 end
 
--- describe_slot { desk, slot, description }: "" removes it.
+-- describe_slot { slot, description }: "" removes it.
 function handlers.describe_slot(engine, args)
-  if not engine.data then
-    return fail(NO_DATA)
+  local ok, err = editable_slots(engine)
+  if not ok then
+    return fail(err)
   end
-  local desk = as_desk(args.desk)
-  local data, edit_err = edit.describe_slot(engine.data, desk, args.slot, args.description)
+  local data, edit_err = edit.describe_slot(engine.data, args.slot, args.description)
   if not data then
     return fail(edit_err)
   end
-  engine.data = data
-  engine.dirty = true
-  engine:changed()
-  return { desk = desk, slot = args.slot, description = args.description or "", seq = engine.seq }
+  local want = (args.description ~= nil and args.description ~= "") and args.description or nil
+  local cfg, apply_err = apply_edit(engine, data, function(c)
+    if not c.slots[args.slot] or c.slots[args.slot].description ~= want then
+      return not_taken("the slots")
+    end
+  end)
+  if not cfg then
+    return fail(apply_err)
+  end
+  return { slot = args.slot, description = args.description or "", seq = engine.seq }
 end
 
--- take_spec { desk, slot, address }: the window's spec (spec.from_window)
--- written into the slot, as aerolayout's Assignment `a` did.
+-- set_spec { desk, slot, spec }: the app that fills a global slot on a desk.
+function handlers.set_spec(engine, args)
+  local desk, err = editable_specs(engine, args)
+  if not desk then
+    return fail(err)
+  end
+  local data, edit_err = edit.set_spec(engine.data, desk, args.slot, args.spec)
+  if not data then
+    return fail(edit_err)
+  end
+  local text = data.specs[desk][args.slot]
+  local cfg, apply_err = apply_edit(engine, data, function(c)
+    if desk_spec(c, desk, args.slot) ~= text then
+      return not_taken("desk " .. desk .. "'s specs")
+    end
+  end)
+  if not cfg then
+    return fail(apply_err)
+  end
+  return { desk = desk, slot = args.slot, spec = text, seq = engine.seq }
+end
+
+-- clear_spec { desk, slot }: the desk no longer says which app fills the
+-- slot (the slot and the trees stay; its window leaves it unless put there
+-- by hand).
+function handlers.clear_spec(engine, args)
+  local desk, err = editable_specs(engine, args)
+  if not desk then
+    return fail(err)
+  end
+  local data, edit_err = edit.clear_spec(engine.data, desk, args.slot)
+  if not data then
+    return fail(edit_err)
+  end
+  local was = engine.data.specs[desk][args.slot]
+  local cfg, apply_err = apply_edit(engine, data, function(c)
+    if desk_spec(c, desk, args.slot) ~= nil then
+      return not_taken("desk " .. desk .. "'s specs")
+    end
+  end)
+  if not cfg then
+    return fail(apply_err)
+  end
+  return { desk = desk, slot = args.slot, spec = was, seq = engine.seq }
+end
+
+-- take_spec { desk, slot, address }: the Assignment view's a (aerolayout's):
+-- the window's spec (spec.from_window) becomes the desk's spec for the slot,
+-- replacing the one it had, and the window takes the slot (over any other
+-- window the spec matches; the one that held it is routed again). The edit
+-- is checked before anything moves.
 function handlers.take_spec(engine, args)
   local window = live_window(args.address)
   if not window then
     return fail("no open window " .. tostring(args.address))
   end
+  local desk, err = editable_specs(engine, args)
+  if not desk then
+    return fail(err)
+  end
   local text = spec.from_window(window, engine.cfg and engine.cfg.title_matching)
   if not text then
     return fail("window " .. tostring(args.address) .. " has no class to make a spec of")
   end
-  local reply = handlers.set_spec(engine, { desk = args.desk, slot = args.slot, spec = text })
-  if reply.ok == false then
-    return reply
+  local data, edit_err = edit.set_spec(engine.data, desk, args.slot, text)
+  if not data then
+    return fail(edit_err)
   end
-  reply.address = window.address
-  return reply
+  text = data.specs[desk][args.slot]
+  local cfg, load_err = config.load(engine.config_dir, { data = { [DATA_FILE] = data } })
+  if cfg and desk_spec(cfg, desk, args.slot) ~= text then
+    cfg, load_err = nil, not_taken("desk " .. desk .. "'s specs")
+  end
+  if not cfg then
+    return fail(load_err)
+  end
+  local before = engine.data.specs and engine.data.specs[desk]
+  local replaced = type(before) == "table" and before[args.slot] or nil
+  -- Into the slot first, so the re-solve under the new spec keeps it there;
+  -- the spec names the window, so it is an ordinary assignment, not by hand.
+  local _, displaced = router.assign(engine, window, desk, args.slot)
+  if spec.admits(cfg.specs[desk][args.slot], window) then
+    engine.assignments[window.address] = { desk = desk, slot = args.slot }
+  end
+  engine:apply_config(cfg, data, true)
+  return { desk = desk, slot = args.slot, spec = text, replaced = replaced, address = window.address,
+    displaced = displaced, seq = engine.seq }
 end
 
 local function arrangements_editable(engine)
@@ -1212,8 +1296,8 @@ function handlers.set_trees(engine, args)
   return { arrangement = name, desk = desk, trees = trees, seq = engine.seq }
 end
 
--- slots.lua as it is on disk (data only, read in an empty environment), or
--- nil and why not.
+-- slots.lua as it is on disk (data only, read in an empty environment, in
+-- today's shape), or nil and why not.
 local function saved_data(engine)
   local path = (engine.config_dir or config.dir()) .. "/" .. DATA_FILE
   local chunk, err = loadfile(path, "t", {})
@@ -1224,7 +1308,7 @@ local function saved_data(engine)
   if not ok or type(data) ~= "table" then
     return nil, "cannot read " .. DATA_FILE .. ": " .. (ok and "it returns no table" or tostring(data))
   end
-  return data
+  return (migrate.data(data)) -- read as load_data reads it
 end
 
 -- The saved data through the renames and removals made since (slots,

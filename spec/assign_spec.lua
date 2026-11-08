@@ -61,6 +61,23 @@ describe("assign.solve", function()
     assert.are.same({}, assign.solve(cfg, {}, previous))
   end)
 
+  it("keeps a window put into a slot by hand while the slot is defined, even with no spec on that desk", function()
+    local global = assert(config.validate({
+      slots = { main = {}, side = {} },
+      specs = { [3] = { main = "t-main" } },
+    }))
+    local previous = { ["0x1"] = { desk = 5, slot = "side", manual = true } }
+    assert.are.same({ ["0x1"] = { desk = 5, slot = "side", manual = true } },
+      assign.solve(global, { win(1, "firefox") }, previous))
+    local gone = { ["0x1"] = { desk = 5, slot = "gone", manual = true } }
+    assert.are.same({}, assign.solve(global, { win(1, "firefox") }, gone))
+  end)
+
+  it("hands out only the slots a desk has a spec for", function()
+    local global = assert(config.validate({ slots = { main = {}, side = {} }, specs = { [3] = { main = "t-main" } } }))
+    assert.are.same({ ["0x1"] = { desk = 3, slot = "main" } }, assign.solve(global, { win(1, "t-main"), win(2, "t-side") }))
+  end)
+
   it("does not change the previous table", function()
     local previous = { ["0x1"] = { desk = 3, slot = "main" } }
     assign.solve(cfg, { win(2, "t-main") }, previous)

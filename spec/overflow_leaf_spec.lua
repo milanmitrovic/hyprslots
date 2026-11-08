@@ -5,7 +5,7 @@ local hl_stub = require("helpers.hl_stub")
 
 local CONFIG = [[
 local data = load_data("slots.lua")
-return { slots = data.slots, arrangements = data.arrangements }
+return { slots = data.slots, specs = data.specs, arrangements = data.arrangements }
 ]]
 
 local function slots_lua(tree)

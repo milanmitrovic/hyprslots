@@ -17,7 +17,7 @@ LUA
   mkdir -p "$E2E_CONFIG_HOME/hyprslots"
   cat >"$E2E_CONFIG_HOME/hyprslots/config.lua" <<'LUA'
 local data = load_data("slots.lua")
-return { slots = data.slots, arrangements = data.arrangements, pinned = {} }
+return { slots = data.slots, specs = data.specs, arrangements = data.arrangements, pinned = {} }
 LUA
   cat >"$E2E_CONFIG_HOME/hyprslots/slots.lua" <<'LUA'
 return {

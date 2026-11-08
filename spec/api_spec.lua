@@ -20,7 +20,7 @@ return {
 
 local CONFIG = [[
 local data = load_data("slots.lua")
-return { slots = data.slots, arrangements = data.arrangements }
+return { slots = data.slots, specs = data.specs, arrangements = data.arrangements }
 ]]
 
 local function config_dir(files)
@@ -136,9 +136,10 @@ describe("hyprslots editor api", function()
       assert.is_false(solo.read_only)
     end)
 
-    it("reports the slots of every desk with their specs", function()
+    it("reports the global slots, and each desk's specs", function()
       setup()
-      assert.are.same({ ["3"] = { a = "t-a", b = "t-b", c = "t-c" } }, state().slots)
+      assert.are.same({ { name = "a" }, { name = "b" }, { name = "c" } }, state().slots)
+      assert.are.same({ ["3"] = { a = "t-a", b = "t-b", c = "t-c" } }, state().specs)
     end)
 
     it("lists the desks", function()
@@ -165,7 +166,7 @@ describe("hyprslots editor api", function()
         ["config.lua"] = [[
 local data = load_data("slots.lua")
 local arrangements = { solo = data.arrangements.solo, work = { screens = { big = "DP-1" } } }
-return { slots = data.slots, arrangements = arrangements, pinned = { "big" } }
+return { slots = data.slots, specs = data.specs, arrangements = arrangements, pinned = { "big" } }
 ]],
         ["slots.lua"] = SLOTS,
       })
@@ -220,7 +221,7 @@ return { slots = data.slots, arrangements = arrangements, pinned = { "big" } }
         ["config.lua"] = [[
 local data = load_data("slots.lua")
 local arrangements = { solo = { screens = data.arrangements.solo.screens, desks = { [3] = { main = "a" } } } }
-return { slots = data.slots, arrangements = arrangements }
+return { slots = data.slots, specs = data.specs, arrangements = arrangements }
 ]],
         ["slots.lua"] = SLOTS,
       })

@@ -5,7 +5,8 @@ local edit = require("hyprslots.edit")
 
 local function data()
   return {
-    slots = { [3] = { a = "t-a", b = "t-b", c = "t-c" } },
+    slots = { a = {}, b = {}, c = {} },
+    specs = { [3] = { a = "t-a", b = "t-b", c = "t-c" } },
     arrangements = {
       solo = {
         screens = { main = "HEADLESS-2" },
@@ -18,32 +19,40 @@ end
 describe("edit.read_only", function()
   it("finds nothing read-only when config.lua passes the data straight through", function()
     local given = data()
-    local raw = { slots = given.slots, arrangements = given.arrangements }
+    local raw = { slots = given.slots, specs = given.specs, arrangements = given.arrangements }
     assert.are.same({}, edit.read_only(raw, given))
   end)
 
   it("reports a field config.lua sets by code", function()
     local given = data()
-    local raw = { slots = given.slots, arrangements = given.arrangements, pinned = { "laptop" }, title_matching = {} }
+    local raw = { slots = given.slots, specs = given.specs, arrangements = given.arrangements, pinned = { "laptop" },
+      title_matching = {} }
     assert.are.same({ "pinned", "title_matching" }, edit.read_only(raw, given))
   end)
 
   it("reports an arrangement built in code among ones from the data", function()
     local given = data()
     local arrangements = { solo = given.arrangements.solo, work = { screens = { big = "DP-1" } } }
-    local raw = { slots = given.slots, arrangements = arrangements }
+    local raw = { slots = given.slots, specs = given.specs, arrangements = arrangements }
     assert.are.same({ "arrangements.work" }, edit.read_only(raw, given))
   end)
 
-  it("reports a desk's slots set by code", function()
+  it("reports a desk's specs set by code", function()
     local given = data()
-    local raw = { slots = { [3] = given.slots[3], [4] = { x = "foo" } }, arrangements = given.arrangements }
-    assert.are.same({ "slots.4" }, edit.read_only(raw, given))
+    local raw = { slots = given.slots, specs = { [3] = given.specs[3], [4] = { a = "foo" } },
+      arrangements = given.arrangements }
+    assert.are.same({ "specs.4" }, edit.read_only(raw, given))
+  end)
+
+  it("reports the global slots as one field: a list built in code is read-only whole", function()
+    local given = data()
+    local raw = { slots = { a = given.slots.a, b = {}, c = {} }, specs = given.specs, arrangements = given.arrangements }
+    assert.are.same({ "slots" }, edit.read_only(raw, given))
   end)
 
   it("reports everything when there is no data file", function()
-    local raw = { slots = {}, arrangements = {} }
-    assert.are.same({ "arrangements", "slots" }, edit.read_only(raw, nil))
+    local raw = { slots = {}, specs = {}, arrangements = {} }
+    assert.are.same({ "arrangements", "slots", "specs" }, edit.read_only(raw, nil))
   end)
 end)
 
@@ -101,19 +110,21 @@ describe("edit.copy", function()
     local original = data()
     local copy = edit.copy(original)
     assert.are.same(original, copy)
-    copy.slots[3].a = "changed"
-    assert.are.equal("t-a", original.slots[3].a)
+    copy.specs[3].a = "changed"
+    assert.are.equal("t-a", original.specs[3].a)
   end)
 end)
 
--- Slots view (D3): the data of two arrangements sharing desk 3's slots.
+-- Global slots a, b, c, mail; desks 3 and 4 say which app fills which; two
+-- arrangements place them.
 local function two()
   return {
-    slots = { [3] = { a = "t-a", b = "t-b", c = "t-c" }, [4] = { mail = "thunderbird" } },
+    slots = { a = {}, b = { description = "middle" }, c = {}, mail = {} },
+    specs = { [3] = { a = "t-a", b = "t-b", c = "t-c" }, [4] = { mail = "thunderbird", b = "t-b4" } },
     arrangements = {
       solo = {
         screens = { main = "HEADLESS-2" },
-        desks = { [3] = { main = "h[a:1, b:2, c:1]" }, [4] = { main = "mail" } },
+        desks = { [3] = { main = "h[a:1, b:2, c:1]" }, [4] = { main = "h[mail, b]" } },
       },
       dual = {
         screens = { big = "HEADLESS-2", side = "HEADLESS-3" },
@@ -123,12 +134,110 @@ local function two()
   }
 end
 
+describe("edit.add_slot", function()
+  it("defines a global slot, with a description when given one", function()
+    local after = assert(edit.add_slot(two(), "notes", "scratch"))
+    assert.are.same({ description = "scratch" }, after.slots.notes)
+    assert.are.same({}, assert(edit.add_slot(two(), "x")).slots.x)
+    assert.are.same({ x = {} }, assert(edit.add_slot({}, "x")).slots, "data with no slots yet")
+  end)
+
+  it("refuses a name that is taken or malformed", function()
+    assert.matches("there is a slot 'a' already", select(2, edit.add_slot(two(), "a")))
+    assert.matches("slot name", select(2, edit.add_slot(two(), "1x")))
+  end)
+
+  it("never changes the data it is given", function()
+    local before = two()
+    edit.add_slot(before, "notes")
+    assert.are.same(two(), before)
+  end)
+end)
+
+describe("edit.remove_slot", function()
+  it("removes the slot, takes it out of every tree of every desk, and drops every desk's spec for it", function()
+    local after = assert(edit.remove_slot(two(), "b"))
+    assert.is_nil(after.slots.b)
+    assert.are.equal("h[a, c]", after.arrangements.solo.desks[3].main)
+    assert.are.equal("mail", after.arrangements.solo.desks[4].main)
+    assert.are.equal("h[a:2, *]", after.arrangements.dual.desks[3].big)
+    assert.are.same({ a = "t-a", c = "t-c" }, after.specs[3])
+    assert.are.same({ mail = "thunderbird" }, after.specs[4])
+  end)
+
+  it("drops a branch the slot was all of, and a desk's specs left empty", function()
+    local after = assert(edit.remove_slot(two(), "mail"))
+    assert.is_nil(after.specs[4].mail)
+    after = assert(edit.remove_slot(after, "b"))
+    assert.is_nil(after.specs[4], "desk 4 has no specs left")
+    assert.is_nil(after.arrangements.solo.desks[4], "nor a tree")
+    after = assert(edit.remove_slot(two(), "c"))
+    assert.is_nil(after.arrangements.dual.desks[3].side)
+  end)
+
+  it("refuses a slot that is not defined", function()
+    assert.matches("no slot 'zz'", select(2, edit.remove_slot(two(), "zz")))
+  end)
+end)
+
+describe("edit.slot_uses", function()
+  it("says which trees place a slot and which desks have a spec for it", function()
+    assert.are.same({ trees = { "dual/3/big", "solo/3/main", "solo/4/main" }, specs = { 3, 4 } },
+      edit.slot_uses(two(), "b"))
+    assert.are.same({ trees = {}, specs = {} }, edit.slot_uses(assert(edit.add_slot(two(), "x")), "x"))
+  end)
+end)
+
+describe("edit.rename_slot", function()
+  it("renames the slot, every tree of every desk and arrangement, and every desk's spec for it", function()
+    local after = assert(edit.rename_slot(two(), "b", "middle"))
+    assert.is_nil(after.slots.b)
+    assert.are.same({ description = "middle" }, after.slots.middle, "its description follows")
+    assert.are.equal("h[a, middle:2, c]", after.arrangements.solo.desks[3].main)
+    assert.are.equal("h[mail, middle]", after.arrangements.solo.desks[4].main)
+    assert.are.equal("h[a:2, v[middle, *]]", after.arrangements.dual.desks[3].big)
+    assert.are.same({ a = "t-a", middle = "t-b", c = "t-c" }, after.specs[3])
+    assert.are.same({ mail = "thunderbird", middle = "t-b4" }, after.specs[4])
+  end)
+
+  it("renames to itself as a no-op", function()
+    assert.are.same(two(), assert(edit.rename_slot(two(), "b", "b")))
+  end)
+
+  it("refuses a name that is taken or malformed, and a missing slot", function()
+    assert.matches("there is a slot 'c' already", select(2, edit.rename_slot(two(), "b", "c")))
+    assert.matches("slot name", select(2, edit.rename_slot(two(), "b", "a b")))
+    assert.matches("no slot 'zz'", select(2, edit.rename_slot(two(), "zz", "y")))
+  end)
+end)
+
+describe("edit.describe_slot", function()
+  it("sets a slot's description, and an empty one removes it", function()
+    local after = assert(edit.describe_slot(two(), "a", "the editor"))
+    assert.are.same({ description = "the editor" }, after.slots.a)
+    local cleared = assert(edit.describe_slot(after, "a", ""))
+    assert.are.same({}, cleared.slots.a)
+  end)
+
+  it("refuses a slot that is not defined, and a description that is no text", function()
+    assert.matches("no slot 'zz'", select(2, edit.describe_slot(two(), "zz", "x")))
+    assert.matches("text", select(2, edit.describe_slot(two(), "a", 4)))
+  end)
+end)
+
 describe("edit.set_spec", function()
-  it("writes a slot's spec, trimmed, into a copy", function()
+  it("writes the app that fills a global slot on a desk, trimmed, into a copy", function()
     local before = two()
     local after = assert(edit.set_spec(before, 3, "a", "  kitty/deltaf "))
-    assert.are.equal("kitty/deltaf", after.slots[3].a)
-    assert.are.equal("t-a", before.slots[3].a)
+    assert.are.equal("kitty/deltaf", after.specs[3].a)
+    assert.are.equal("t-a", before.specs[3].a)
+  end)
+
+  it("gives a desk that had no specs its first one, replacing nothing else", function()
+    local after = assert(edit.set_spec(two(), 7, "mail", "thunderbird"))
+    assert.are.same({ mail = "thunderbird" }, after.specs[7])
+    assert.are.same(two().specs[3], after.specs[3])
+    assert.are.same({ [5] = { a = "x" } }, assert(edit.set_spec({ slots = { a = {} } }, 5, "a", "x")).specs)
   end)
 
   it("refuses a spec the grammar rejects, with why", function()
@@ -137,92 +246,24 @@ describe("edit.set_spec", function()
     assert.matches("closing ']'", err)
   end)
 
-  it("refuses a slot the desk does not have", function()
-    local after, err = edit.set_spec(two(), 3, "zz", "x")
-    assert.is_nil(after)
-    assert.matches("desk 3 has no slot 'zz'", err)
+  it("refuses a slot that is not defined, and a desk out of range", function()
+    assert.matches("no slot 'zz' %(add it in the Slots view%)", select(2, edit.set_spec(two(), 3, "zz", "x")))
+    assert.matches("desk", select(2, edit.set_spec(two(), 0, "a", "x")))
   end)
 end)
 
-describe("edit.add_slot", function()
-  it("adds a slot with its spec, on a desk that had none too", function()
-    local after = assert(edit.add_slot(two(), 3, "d", "t-d"))
-    assert.are.equal("t-d", after.slots[3].d)
-    local fresh = assert(edit.add_slot(two(), 7, "x", "foo"))
-    assert.are.same({ x = "foo" }, fresh.slots[7])
+describe("edit.clear_spec", function()
+  it("drops a desk's spec for a slot, and the desk's specs when none is left", function()
+    local after = assert(edit.clear_spec(two(), 4, "b"))
+    assert.are.same({ mail = "thunderbird" }, after.specs[4])
+    after = assert(edit.clear_spec(after, 4, "mail"))
+    assert.is_nil(after.specs[4])
+    assert.are.same({ description = "middle" }, after.slots.b, "the global slot stays")
+    assert.are.equal("h[mail, b]", after.arrangements.solo.desks[4].main, "and so do the trees")
   end)
 
-  it("refuses a name that is taken, malformed, or a bad spec", function()
-    assert.matches("already has a slot 'a'", select(2, edit.add_slot(two(), 3, "a", "x")))
-    assert.matches("slot name", select(2, edit.add_slot(two(), 3, "1x", "x")))
-    assert.matches("empty", select(2, edit.add_slot(two(), 3, "d", " ")))
-    assert.matches("desk", select(2, edit.add_slot(two(), 0, "d", "x")))
-  end)
-
-  it("keeps a description when given one", function()
-    local after = assert(edit.add_slot(two(), 3, "d", "t-d", "the fourth"))
-    assert.are.equal("the fourth", after.descriptions[3].d)
-  end)
-end)
-
-describe("edit.remove_slot", function()
-  it("removes the slot and takes it out of every tree that places it", function()
-    local after = assert(edit.remove_slot(two(), 3, "b"))
-    assert.is_nil(after.slots[3].b)
-    assert.are.equal("h[a, c]", after.arrangements.solo.desks[3].main)
-    assert.are.equal("h[a:2, *]", after.arrangements.dual.desks[3].big)
-  end)
-
-  it("drops a branch the slot was all of, and the slot's description", function()
-    local data = two()
-    data.descriptions = { [3] = { c = "right column" } }
-    local after = assert(edit.remove_slot(data, 3, "c"))
-    assert.is_nil(after.arrangements.dual.desks[3].side)
-    assert.is_nil(after.descriptions, "an empty descriptions table goes too")
-  end)
-
-  it("refuses a slot the desk does not have", function()
-    assert.matches("no slot 'zz'", select(2, edit.remove_slot(two(), 3, "zz")))
-  end)
-end)
-
-describe("edit.rename_slot", function()
-  it("renames the slot and rewrites every tree of every arrangement that uses it", function()
-    local data = two()
-    data.descriptions = { [3] = { b = "middle" } }
-    local after = assert(edit.rename_slot(data, 3, "b", "middle"))
-    assert.is_nil(after.slots[3].b)
-    assert.are.equal("t-b", after.slots[3].middle)
-    assert.are.equal("h[a, middle:2, c]", after.arrangements.solo.desks[3].main)
-    assert.are.equal("h[a:2, v[middle, *]]", after.arrangements.dual.desks[3].big)
-    assert.are.same({ middle = "middle" }, after.descriptions[3])
-  end)
-
-  it("leaves other desks' slots of the same name alone", function()
-    local data = two()
-    data.slots[4].b = "x"
-    data.arrangements.solo.desks[4].main = "h[mail, b]"
-    local after = assert(edit.rename_slot(data, 3, "b", "z"))
-    assert.are.equal("h[mail, b]", after.arrangements.solo.desks[4].main)
-  end)
-
-  it("refuses a name that is taken or malformed, and a missing slot", function()
-    assert.matches("already has a slot 'c'", select(2, edit.rename_slot(two(), 3, "b", "c")))
-    assert.matches("slot name", select(2, edit.rename_slot(two(), 3, "b", "a b")))
-    assert.matches("no slot 'zz'", select(2, edit.rename_slot(two(), 3, "zz", "y")))
-  end)
-end)
-
-describe("edit.describe_slot", function()
-  it("sets a slot's description, and an empty one removes it", function()
-    local after = assert(edit.describe_slot(two(), 3, "a", "the editor"))
-    assert.are.equal("the editor", after.descriptions[3].a)
-    local cleared = assert(edit.describe_slot(after, 3, "a", ""))
-    assert.is_nil(cleared.descriptions)
-  end)
-
-  it("refuses a slot the desk does not have", function()
-    assert.matches("no slot 'zz'", select(2, edit.describe_slot(two(), 3, "zz", "x")))
+  it("refuses a desk with no spec for the slot", function()
+    assert.matches("desk 7 has no spec for 'a'", select(2, edit.clear_spec(two(), 7, "a")))
   end)
 end)
 
@@ -331,7 +372,7 @@ describe("edit.copy_trees", function()
     local data = assert(edit.add_arrangement(two(), "work", { wide = "DP-1" }))
     data.arrangements.work.desks = { [9] = { wide = "x" } }
     local after = assert(edit.copy_trees(data, "work", "solo", { wide = "main" }))
-    assert.are.same({ [3] = { wide = "h[a, b:2, c]" }, [4] = { wide = "mail" } }, after.arrangements.work.desks)
+    assert.are.same({ [3] = { wide = "h[a, b:2, c]" }, [4] = { wide = "h[mail, b]" } }, after.arrangements.work.desks)
   end)
 
   it("maps roles of the same name when no map is given", function()
@@ -343,7 +384,7 @@ describe("edit.copy_trees", function()
   it("from the default, lays each desk's slots side by side on the first screen", function()
     local data = assert(edit.add_arrangement(two(), "new", { a = "DP-1", b = "DP-2" }))
     local after = assert(edit.copy_trees(data, "new", nil))
-    assert.are.same({ [3] = { a = "h[a, b, c]" }, [4] = { a = "mail" } }, after.arrangements.new.desks)
+    assert.are.same({ [3] = { a = "h[a, b, c]" }, [4] = { a = "h[b, mail]" } }, after.arrangements.new.desks)
   end)
 
   it("refuses a missing arrangement on either side, and a map naming a role the source lacks", function()

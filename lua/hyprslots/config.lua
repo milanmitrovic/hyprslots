@@ -11,7 +11,15 @@
 --
 -- `validate` turns the returned table into the normalized form the engine
 -- uses: specs and trees parsed, every error reported with its path.
+--
+-- Slots are global logical names (`slots = { main = { description = ... } }`),
+-- defined once; a desk says which app fills which of them (`specs = { [3] =
+-- { main = "kitty/deltaf" } }`), and a tree may only place a slot defined
+-- under `slots`. The per-desk shape of before (slots = desk -> slot -> spec)
+-- is still read, through migrate.lua, in a data file and in what config.lua
+-- returns.
 
+local migrate = require("hyprslots.migrate")
 local spec = require("hyprslots.spec")
 local tree = require("hyprslots.tree")
 
@@ -110,6 +118,7 @@ function M.sandbox(dir, data, loaded)
         error("load_data: " .. err, 2)
       end
     end
+    held = migrate.data(held)
     local given = deep_copy(held)
     if loaded then
       loaded[name] = { data = deep_copy(held), given = given }
@@ -154,41 +163,76 @@ local function key_path(prefix, key)
   return prefix .. "[" .. tostring(key) .. "]"
 end
 
-local function validate_slots(raw, fail, title_matching)
-  local slots = {}
+-- The global slots: name -> { description? }. Returns name -> { description }
+-- and the names, sorted.
+local function validate_slots(raw, fail)
+  local slots, names = {}, {}
   if raw == nil then
-    return slots
+    return slots, names
   end
   if type(raw) ~= "table" then
-    fail("slots", "must be a table of desk -> { slot = spec }")
-    return slots
+    fail("slots", "must be a table of slot name -> { description = \"...\" }")
+    return slots, names
+  end
+  for _, name in ipairs(sorted_keys(raw)) do
+    local path = key_path("slots", name)
+    local entry = raw[name]
+    if type(name) ~= "string" or not name:match(SLOT_NAME) then
+      fail(path, "a slot name must be letters, digits, '_' or '-', got '" .. tostring(name) .. "'")
+    elseif type(entry) ~= "table" then
+      fail(path, "must be a table { description = \"...\" } (or {}), got " .. type(entry))
+    else
+      for key in pairs(entry) do
+        if key ~= "description" then
+          fail(path, "unknown key '" .. tostring(key) .. "'")
+        end
+      end
+      if entry.description ~= nil and type(entry.description) ~= "string" then
+        fail(path .. ".description", "must be text")
+      end
+      slots[name] = { name = name, description = type(entry.description) == "string" and entry.description or nil }
+      names[#names + 1] = name
+    end
+  end
+  return slots, names
+end
+
+-- Each desk's specs: desk -> slot -> spec text, every slot a global one.
+-- Returns desk -> slot -> parsed spec.
+local function validate_specs(raw, slots, fail, title_matching)
+  local specs = {}
+  if raw == nil then
+    return specs
+  end
+  if type(raw) ~= "table" then
+    fail("specs", "must be a table of desk -> { slot = spec }")
+    return specs
   end
   for _, desk in ipairs(sorted_keys(raw)) do
-    local path = key_path("slots", desk)
+    local path = key_path("specs", desk)
     local entries = raw[desk]
     if not is_desk(desk) then
       fail(path, "a desk must be an integer from 1 to " .. DESKS)
     elseif type(entries) ~= "table" then
       fail(path, "must be a table of slot = spec")
     else
-      slots[desk] = {}
+      specs[desk] = {}
       for _, name in ipairs(sorted_keys(entries)) do
         local slot_path = key_path(path, name)
-        if type(name) ~= "string" or not name:match(SLOT_NAME) then
-          fail(slot_path, "a slot name must be letters, digits, '_' or '-', got '" .. tostring(name) .. "'")
+        if type(name) ~= "string" or not slots[name] then
+          fail(slot_path, "no slot '" .. tostring(name) .. "' (define it under slots)")
         else
           local parsed, err = spec.parse(entries[name], title_matching)
           if parsed then
-            slots[desk][name] = parsed
+            specs[desk][name] = parsed
           else
             fail(slot_path, err)
-            slots[desk][name] = false -- the slot exists; its spec is broken
           end
         end
       end
     end
   end
-  return slots
+  return specs
 end
 
 local function validate_arrangement(name, raw, slots, fail)
@@ -248,8 +292,8 @@ local function validate_arrangement(name, raw, slots, fail)
           else
             arrangement.desks[desk][role] = node
             for _, slot in ipairs(tree.slots(node)) do
-              if not (slots[desk] and slots[desk][slot] ~= nil) then
-                fail(branch_path, string.format("desk %d has no slot '%s' (define it under slots[%d])", desk, slot, desk))
+              if not slots[slot] then
+                fail(branch_path, string.format("no slot '%s' (define it under slots)", slot))
               elseif placed[slot] then
                 fail(branch_path, string.format("slot '%s' is placed on both '%s' and '%s'", slot, placed[slot], role))
               else
@@ -337,30 +381,6 @@ local function validate_title_matching(raw, fail)
   return spec.title_matching(raw)
 end
 
--- descriptions (desk -> slot -> text) are the editor's notes on slots
--- (aerolayout's logical slot descriptions); the engine does not use them.
-local function validate_descriptions(raw, fail)
-  if raw == nil then
-    return
-  end
-  if type(raw) ~= "table" then
-    fail("descriptions", "must be a table of desk -> { slot = text }")
-    return
-  end
-  for _, desk in ipairs(sorted_keys(raw)) do
-    local path = key_path("descriptions", desk)
-    if not is_desk(desk) or type(raw[desk]) ~= "table" then
-      fail(path, "must be a desk from 1 to " .. DESKS .. " holding { slot = text }")
-    else
-      for _, slot in ipairs(sorted_keys(raw[desk])) do
-        if type(raw[desk][slot]) ~= "string" then
-          fail(key_path(path, slot), "must be text")
-        end
-      end
-    end
-  end
-end
-
 -- scroll = { width = <fraction of the screen> }: how wide scroll branches'
 -- columns are (scroll.lua; default 0.99, Omarchy's full-width scrolling).
 local function validate_scroll(raw, fail)
@@ -387,7 +407,7 @@ local function validate_scroll(raw, fail)
   return { width = width }
 end
 
-local KNOWN = { slots = true, arrangements = true, pinned = true, title_matching = true, descriptions = true,
+local KNOWN = { slots = true, specs = true, arrangements = true, pinned = true, title_matching = true,
   scroll = true }
 
 -- Normalize a raw config table. Returns the config, or nil and every error
@@ -396,6 +416,7 @@ function M.validate(raw)
   if type(raw) ~= "table" then
     return nil, "the config must be a table, got " .. type(raw)
   end
+  raw = migrate.data(raw) -- the per-desk shape of before, read as today's
 
   local errors, fail = collector()
 
@@ -406,9 +427,11 @@ function M.validate(raw)
   end
 
   local title_matching = validate_title_matching(raw.title_matching, fail)
-  validate_descriptions(raw.descriptions, fail)
+  local slots, slot_names = validate_slots(raw.slots, fail)
   local cfg = {
-    slots = validate_slots(raw.slots, fail, title_matching),
+    slots = slots,
+    slot_names = slot_names,
+    specs = validate_specs(raw.specs, slots, fail, title_matching),
     title_matching = title_matching,
     arrangements = {},
     arrangement_names = {},
@@ -460,6 +483,16 @@ function M.load(dir, opts)
   end
   if type(raw) ~= "table" then
     return nil, path .. " must return a table, got " .. type(raw)
+  end
+
+  -- A config.lua written for the per-desk shape passes slots.lua's slots on
+  -- and nothing else; the specs that now sit beside them would be lost.
+  for name, file in pairs(loaded) do
+    if raw.specs == nil and type(file.data) == "table" and type(file.data.specs) == "table"
+      and next(file.data.specs) ~= nil then
+      return nil, path .. ": " .. name .. " holds specs (desk -> slot -> app) that config.lua does not return: "
+        .. "add `specs = data.specs` beside `slots = data.slots`"
+    end
   end
 
   local cfg, invalid = M.validate(raw)

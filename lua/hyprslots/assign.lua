@@ -1,12 +1,15 @@
 -- Windows -> slots.
 --
--- Every (desk, slot) pair is a candidate, tried in desk order then slot-name
--- order; a window takes the first free one whose spec matches it. Windows are
+-- Every (desk, slot) pair a desk has a spec for is a candidate (cfg.specs:
+-- slots are global, a desk says which app fills which), tried in desk order
+-- then slot-name order; a window takes the first free one whose spec matches
+-- it. Windows are
 -- considered oldest first (by stable_id), so the result never depends on the
 -- order Hyprland lists them in. Assignment is sticky: a previous assignment
 -- whose slot still exists and whose spec still admits the window's class is
 -- kept, whatever its title says now, before anything new is handed out; one
--- made by hand is kept whatever the window is. Pure.
+-- made by hand is kept whatever the window is, while the slot is defined
+-- (with or without a spec on that desk). Pure.
 
 local spec = require("hyprslots.spec")
 
@@ -15,7 +18,7 @@ local M = {}
 -- The (desk, slot) pairs in the order they are tried.
 local function candidates(cfg)
   local desks = {}
-  for desk in pairs(cfg.slots) do
+  for desk in pairs(cfg.specs) do
     desks[#desks + 1] = desk
   end
   table.sort(desks)
@@ -23,12 +26,12 @@ local function candidates(cfg)
   local out = {}
   for _, desk in ipairs(desks) do
     local names = {}
-    for name in pairs(cfg.slots[desk]) do
+    for name in pairs(cfg.specs[desk]) do
       names[#names + 1] = name
     end
     table.sort(names)
     for _, name in ipairs(names) do
-      out[#out + 1] = { desk = desk, slot = name, spec = cfg.slots[desk][name] }
+      out[#out + 1] = { desk = desk, slot = name, spec = cfg.specs[desk][name] }
     end
   end
   return out
@@ -41,16 +44,17 @@ local function key(desk, slot)
   return desk .. "\0" .. slot
 end
 
--- A previous assignment holds while its slot exists and its spec still
+-- A previous assignment holds while its desk's spec for the slot still
 -- admits the window's class: a title that changed after the window won its
 -- slot does not take the slot away (assignment is sticky, as in claim). One
--- made by hand (`manual`, the editor's assign) holds while the slot exists.
+-- made by hand (`manual`, the editor's assign) holds while the slot is
+-- defined, spec or none.
 local function still_holds(cfg, assignment, window)
-  local desk = cfg.slots[assignment.desk]
-  local parsed = desk and desk[assignment.slot]
-  if parsed and assignment.manual then
-    return true
+  if assignment.manual then
+    return cfg.slots[assignment.slot] ~= nil
   end
+  local desk = cfg.specs[assignment.desk]
+  local parsed = desk and desk[assignment.slot]
   return parsed and spec.admits(parsed, window) or false
 end
 
