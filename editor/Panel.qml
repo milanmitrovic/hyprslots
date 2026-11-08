@@ -8,6 +8,7 @@ import qs.Commons as Commons
 import qs.Ui
 import "Prompts.js" as Prompts
 import "DesksLayouts.js" as DesksLayouts
+import "Assignment.js" as Assignment
 
 // The hyprslots editor panel (docs/design.md §9): aerolayout's `edit` TUI as
 // an Omarchy shell panel. Three tabs, cycled with Tab / Shift+Tab as in the
@@ -184,6 +185,16 @@ Item {
     if (root.tab === 2) return desksView.selectedRow ? desksView.selectedRow.key : ""
     var row = assignmentView.selectedRow
     return row ? row.status + " " + (row.slot || "-") + " " + (row.cls || row.spec || "-") : ""
+  }
+
+  // The Assignment view's rows, "<slot>|<app>|<title>" joined by "; ", and
+  // the line under its header: for the e2e smoke.
+  function assignmentRowsText() {
+    return assignmentView.rows.map(function(row) {
+      var kept = row.kind !== "window"
+      return Assignment.slotText(row) + "|" + (kept ? Assignment.specText(row) : row.cls) + "|"
+        + (kept ? Assignment.titleText(row) : "window")
+    }).join("; ") + (assignmentView.placeNoteText !== "" ? " | " + assignmentView.placeNoteText : "")
   }
 
   // The Layout view's draft trees, "1: h[a, b]; 2: c" (edited ones marked

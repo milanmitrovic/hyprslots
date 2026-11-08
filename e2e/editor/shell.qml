@@ -122,6 +122,11 @@ ShellRoot {
       return panel.selectionText()
     }
 
+    // The Assignment view's rows ("<slot>|<app>|<title>; ...").
+    function rows(): string {
+      return panel.assignmentRowsText()
+    }
+
     // The Assignment view's message or prompt line.
     function message(): string {
       return panel.messageText()

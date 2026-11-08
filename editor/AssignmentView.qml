@@ -10,7 +10,9 @@ import "Help.js" as Help
 // Which live window fills which slot (aerolayout's AssignmentView). A table
 // of the windows on a workspace with the screen, slot, app and title of each,
 // plus a "Missing" row for every slot whose window is not running (a slot
-// the workspace has no spec for and no window in is a dim, empty row), then
+// the workspace has no spec for and no window in is a dim, empty row); every
+// global slot is a row, those no tree of the workspace places dim, "not in
+// layout", and `a` into one places it in the active layout's tree; then
 // the windows overflowing on the workspace and any others on it, on any
 // screen. ←/→ (or [ ]) page through every window and each workspace, the
 // digits jump to a workspace's page (0 is workspace 10); ↑/↓ select. `a` puts
@@ -65,6 +67,7 @@ Item {
     return count > 1
   }
   readonly property bool showWorkspace: currentPage.workspace === null
+  readonly property string placeNoteText: Assignment.placeNote(state, rows)
 
   // The controls strip (StyledText: each trigger key highlighted, Help.js).
   readonly property string accent: String(Commons.Color.accent)
@@ -172,7 +175,7 @@ Item {
   function assign(row, option) {
     if (!engine) return
     say("Assigning " + row.cls + " to " + option.slot + "…", false)
-    engine.call("take_spec", { address: row.address, workspace: option.workspace, slot: option.slot }, function(reply) {
+    engine.call("take_spec", { address: row.address, workspace: option.workspace, slot: option.slot, place: true }, function(reply) {
       if (!reply.ok) {
         say(reply.error, true)
         return
@@ -180,6 +183,8 @@ Item {
       var text = "Assigned " + row.cls + " to " + reply.slot + " (workspace " + reply.workspace + "): its spec is " + reply.spec
       if (reply.replaced && reply.replaced !== reply.spec) text += " (was " + reply.replaced + ")"
       if (reply.displaced) text += "; " + classOf(reply.displaced) + " gave it up"
+      var placed = Assignment.placedText(reply, state ? state.desk : "")
+      if (placed !== "") text += "; " + placed
       say(text + ". Ctrl+S saves.", false)
       selectedKey = row.address
     })
@@ -300,6 +305,20 @@ Item {
       }
     }
 
+    // Slots not in layout, in a layout other desks share: a places them
+    // there too.
+    Text {
+      id: placeNote
+      width: parent.width
+      visible: text !== ""
+      textFormat: Text.PlainText
+      wrapMode: Text.WordWrap
+      text: root.placeNoteText
+      color: Commons.Color.accent
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.body
+    }
+
     // Why the editor cannot see the engine, or why the engine is off.
     Text {
       id: problem
@@ -353,6 +372,7 @@ Item {
       id: list
       width: parent.width
       height: parent.height - headerBox.height - titles.height - (problem.visible ? problem.height + parent.spacing : 0)
+        - (placeNote.visible ? placeNote.height + parent.spacing : 0)
         - footerText.height - parent.spacing * 3
       clip: true
       model: root.rows
@@ -368,6 +388,8 @@ Item {
         // empty (nothing says what fills it)
         readonly property bool missing: modelData.kind === "missing" || modelData.kind === "empty"
         readonly property bool empty: modelData.kind === "empty"
+        // a global slot no tree of the workspace places: dim, "not in layout"
+        readonly property bool unplaced: modelData.placed === false
         readonly property color ink: current ? root.selectedText : root.foreground
         width: ListView.view.width
         height: root.rowHeight
@@ -381,6 +403,7 @@ Item {
 
         Row {
           anchors.fill: parent
+          opacity: rowItem.unplaced && !rowItem.current ? 0.6 : 1
           Text {
             width: root.workspaceWidth
             visible: root.showWorkspace

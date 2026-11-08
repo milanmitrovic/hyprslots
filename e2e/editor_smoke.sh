@@ -28,7 +28,9 @@
 # pins and unpins a screen and makes a new layout. Last, the bar widget on a stand-in bar strip: its
 # label (`<desk> · ws <n>`), the unsaved dot, its menu (Save, Re-apply,
 # Record), left clicks toggling the panel, and the error state while the
-# hyprslots global is gone.
+# hyprslots global is gone. Then workspace 8 (scroll[main, right]) lists every
+# global slot, left "not in layout", and a puts a window into left, placing
+# it in the tree (scroll[left, main, right]), which Ctrl+S saves.
 # Screenshots of the nested compositor go to .e2e-tmp/editor-smoke-*.png.
 #
 # Screen: HEADLESS-2, 1920x1080, Omarchy block 0 (workspace N = workspace id N).
@@ -608,6 +610,98 @@ bar_widget() {
   fi
 }
 
+# The user's case on workspace 8: its tree is scroll[main, right] and only
+# main has a spec. The Assignment page lists every global slot: main Missing,
+# right empty, and the slots no tree places (left among them) dim, "not in
+# layout". a on a window there, l, puts it in left and left into the tree in
+# the global slot order: scroll[left, main, right]; Ctrl+S writes it.
+assignment_place() {
+  local watch="qs ipc --pid $SMOKE_QS_PID call smoke" layout
+  layout=$(api_state | jq -r .layout)
+  repl 'return hyprslots.api.call("add_slot", "{\"slot\": \"left\"}")' >/dev/null
+  repl 'return hyprslots.api.call("add_slot", "{\"slot\": \"right\"}")' >/dev/null
+  log "set_tree: $(repl 'return hyprslots.api.call("set_tree", "{\"workspace\": 8, \"screen\": 1, \"tree\": \"scroll[main, right]\"}")')"
+  log "set_spec: $(repl 'return hyprslots.api.call("set_spec", "{\"workspace\": 8, \"slot\": \"main\", \"spec\": \"[Research]\"}")')"
+  repl 'return hyprslots.api.call("workspace", "{\"workspace\": 8}")' >/dev/null
+  spawn_and_wait t-left
+  settle
+  local left
+  left=$(address_of t-left)
+  expect_eq "workspace 8's tree" "scroll[main, right]" "$(api_state | jq -r --arg l "$layout" '.layouts[$l].workspaces["8"]["1"].tree')"
+
+  expect_eq "panel opens" "ok" "$(smoke open)"
+  eventually 10 smoke_ready || fail "the panel never read state: $(smoke errors)"
+  local i
+  for ((i = 0; i < 3; i++)); do
+    [[ $(smoke tabs) == *"| Assignment" ]] && break
+    press_keys Tab
+  done
+  press_keys 8
+  local rows want_slots
+  rows=$(smoke rows)
+  log "workspace 8 rows: $rows"
+  if [[ $rows == "main|[Research]|Missing; right|—|—; "* ]]; then
+    pass "workspace 8 lists main Missing [Research], then right empty, in tree order"
+  else
+    fail "rows: $rows"
+  fi
+  if [[ $rows == *"; left|—|— not in layout; "* ]]; then
+    pass "left is listed, dim: not in layout"
+  else
+    fail "rows: $rows"
+  fi
+  want_slots=$(api_state | jq -r '.slots | length')
+  expect_eq "every global slot is a row" "$want_slots" "$(grep -o '|—|\|Missing' <<<"$rows" | wc -l | tr -d ' ')"
+  sleep 0.3
+  shot 24-assignment-not-in-layout
+
+  local n
+  for ((n = 0; n < 12; n++)); do
+    [[ $(smoke selection) == "none - t-left" ]] && break
+    press_keys Down
+  done
+  expect_eq "the t-left window selected" "none - t-left" "$(smoke selection)"
+  press_keys a
+  if [[ $(smoke message) == "Assign to workspace 8 slot (takes its spec): (m)ain, (r)ight, "*"(l)eft"* ]]; then
+    pass "a offers workspace 8's slots, the tree's first: $(smoke message)"
+  else
+    fail "a prompt: $(smoke message)"
+  fi
+  press_keys l
+  if eventually 5 state_is ".layouts[\"$layout\"].workspaces[\"8\"][\"1\"].tree" 'scroll[left, main, right]'; then
+    pass "a, l placed left in workspace 8's tree in the global slot order"
+  else
+    fail "workspace 8's tree: $(api_state | jq -c --arg l "$layout" '.layouts[$l].workspaces["8"]'): $(smoke message)"
+  fi
+  expect_eq "and put t-left there" '{"slot":"left","workspace":8}' "$(assignment_of "$left")"
+  eventually 5 smoke_idle || true
+  if [[ $(smoke message) == "Assigned t-left to left (workspace 8)"*"placed left in layout $layout, workspace 8 screen 1: scroll[left, main, right]"* ]]; then
+    pass "the message says where left went: $(smoke message)"
+  else
+    fail "message: $(smoke message)"
+  fi
+  rows=$(smoke rows)
+  if [[ $rows == "left|t-left|window; main|[Research]|Missing; right|—|—; "* ]]; then
+    pass "left is now in layout, in tree order"
+  else
+    fail "rows after a: $rows"
+  fi
+  sleep 0.3
+  shot 25-assignment-placed
+  expect_eq "Ctrl+S" "ok" "$(smoke press Ctrl+s)"
+  if eventually 5 saved; then
+    pass "Ctrl+S saved"
+  else
+    fail "still dirty after Ctrl+S: $(smoke message) $(smoke errors)"
+  fi
+  if grep -qF '[1] = "scroll[left, main, right]"' "$E2E_CONFIG_HOME/hyprslots/slots.lua"; then
+    pass "slots.lua holds workspace 8's tree with left"
+  else
+    fail "slots.lua: $(cat "$E2E_CONFIG_HOME/hyprslots/slots.lua")"
+  fi
+  expect_eq "Escape" "ok" "$(smoke press Escape)"
+}
+
 test_body() {
   for tool in qs grim wtype; do
     command -v "$tool" >/dev/null || harness_fail "the editor smoke needs $tool"
@@ -910,6 +1004,7 @@ test_body() {
   # The last failed call is the delete of dual the engine refused on purpose.
   expect_eq "no editor errors but the refused delete" " | $SMOKE_REFUSAL" "$(smoke errors)"
   bar_widget
+  assignment_place
 
   log "assign round trip takes $(time_ms repl "return hyprslots.api.call(\"assign\", \"{\\\"address\\\":\\\"$stray\\\",\\\"workspace\\\":3,\\\"slot\\\":\\\"side\\\"}\")") ms"
 
