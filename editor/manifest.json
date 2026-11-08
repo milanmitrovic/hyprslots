@@ -2,15 +2,23 @@
   "schemaVersion": 1,
   "id": "milan.hyprslots",
   "name": "Hyprslots",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": "milan",
   "description": "Editor for hyprslots: which window fills which slot, the layout trees, slots and arrangements",
   "kinds": [
     "panel",
-    "service"
+    "service",
+    "bar-widget"
   ],
   "entryPoints": {
     "panel": "Panel.qml",
-    "service": "Engine.qml"
+    "service": "Engine.qml",
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Hyprslots",
+    "description": "The active arrangement and desk; click for the editor, right-click to re-apply, record, save or reload",
+    "category": "Compositor",
+    "allowMultiple": false
   }
 }
