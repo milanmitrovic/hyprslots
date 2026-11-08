@@ -16,6 +16,12 @@
 --   hl.notifications    every hl.notification.create spec
 --   hl.window_rules     every hl.window_rule spec
 --
+-- Config: hl.config(t) merges t into hl.config_values (hl.config_calls keeps
+-- every call); hl.get_config("a.b") reads it back.
+--
+-- Scrolling: M.scrolling(hl) keeps Hyprland's scrolling layout's columns per
+-- workspace (see there).
+--
 -- Groups: M.group({ w1, w2 }) puts windows in an HL.Group-like group;
 -- dispatching group.toggle / window.move{out_of_group} changes membership the
 -- way Hyprland would, and HL.Group:add is recorded in hl.group_adds.
@@ -181,7 +187,7 @@ function M.new(opts)
     exit = dispatcher("exit"),
     event = dispatcher("event"),
     layout = dispatcher("layout"),
-    window = { move = dispatcher("window.move"), resize = dispatcher("window.resize") },
+    window = { move = dispatcher("window.move"), resize = dispatcher("window.resize"), swap = dispatcher("window.swap") },
     group = { toggle = dispatcher("group.toggle") },
     workspace = { move = dispatcher("workspace.move") },
   }
@@ -264,6 +270,32 @@ function M.new(opts)
   }
 
   hl.group_adds = {}
+
+  hl.config_values, hl.config_calls = {}, {}
+  local function merge(into, from)
+    for key, value in pairs(from) do
+      if type(value) == "table" then
+        into[key] = into[key] or {}
+        merge(into[key], value)
+      else
+        into[key] = value
+      end
+    end
+  end
+  function hl.config(values)
+    hl.config_calls[#hl.config_calls + 1] = values
+    merge(hl.config_values, values)
+  end
+  function hl.get_config(key)
+    local value = hl.config_values
+    for part in key:gmatch("[^%.]+") do
+      if type(value) ~= "table" then
+        return nil
+      end
+      value = value[part]
+    end
+    return value
+  end
 
   -- HL.WindowSelector "address:0x..." over hl.windows.
   function hl.get_window(selector)
@@ -369,6 +401,204 @@ function M.simulate(hl)
       local workspace = find_workspace(args.workspace)
       if workspace then
         workspace.monitor = hl.get_monitor(args.monitor)
+      end
+    end
+    return result
+  end
+
+  return hl
+end
+
+-- Make `hl` keep Hyprland's scrolling layout (0.56.2,
+-- src/layout/algorithm/tiled/scrolling) for the workspaces whose
+-- `tiled_layout` is "scrolling", for the scroll-branch specs. Opt-in, after
+-- M.simulate(hl); afterwards:
+--   hl.columns[id]          { address, ... } in column order (one window per
+--                           column), widths in hl.widths[address]
+--   window.layout           { name = "scrolling", column = { index (0-based),
+--                           width, windows }, index_in_column = 0 }, as
+--                           HL.Window's `layout` reads, on every get_windows
+--   hl.workspace_rule       a `layout` sets the workspace's tiled_layout
+--   hl.open(window)         a window opening: its column goes after the
+--                           focused column of its workspace, else at the end
+--   window.move             a window moved in goes last (focus is elsewhere)
+--   window.swap             { window, target }: the two trade places
+--   layout "colresize all W" / "colresize W"  on the focused window's
+--                           workspace / column; "fit_into_view" is recorded
+-- New columns are DEFAULT_WIDTH (0.49, Omarchy's side-by-side) wide.
+function M.scrolling(hl)
+  local DEFAULT_WIDTH = 0.49
+  hl.columns, hl.widths = {}, {}
+
+  local function workspace(id)
+    return hl.get_workspace(id)
+  end
+
+  local function scrolling(id)
+    local ws = workspace(id)
+    return ws and ws.tiled_layout == "scrolling"
+  end
+
+  local function remove(address)
+    for _, columns in pairs(hl.columns) do
+      for i, column in ipairs(columns) do
+        if column == address then
+          table.remove(columns, i)
+          return
+        end
+      end
+    end
+  end
+
+  local function find(address)
+    for _, window in ipairs(hl.windows) do
+      if window.address == address then
+        return window
+      end
+    end
+  end
+
+  -- Insert a tiled window's column on its workspace when that scrolls.
+  local function insert(window, after_focused)
+    local id = window.workspace and window.workspace.id
+    remove(window.address)
+    if not id or window.floating or not scrolling(id) then
+      return
+    end
+    hl.columns[id] = hl.columns[id] or {}
+    local columns = hl.columns[id]
+    local at = #columns + 1
+    local active = hl.active_window
+    if after_focused and active and active.workspace and active.workspace.id == id then
+      for i, address in ipairs(columns) do
+        if address == active.address then
+          at = i + 1
+        end
+      end
+    end
+    table.insert(columns, at, window.address)
+    hl.widths[window.address] = hl.widths[window.address] or DEFAULT_WIDTH
+  end
+
+  local function refresh()
+    for _, window in ipairs(hl.windows) do
+      window.layout = nil
+    end
+    for id, columns in pairs(hl.columns) do
+      if scrolling(id) then
+        for i, address in ipairs(columns) do
+          local window = find(address)
+          if window then
+            window.layout = {
+              name = "scrolling",
+              column = { index = i - 1, width = hl.widths[address], windows = { window } },
+              index_in_column = 0,
+            }
+          end
+        end
+      end
+    end
+  end
+
+  -- A window opening (added to hl.windows if it is not there yet).
+  function hl.open(window)
+    if not find(window.address) then
+      hl.windows[#hl.windows + 1] = window
+    end
+    insert(window, true)
+  end
+
+  -- Classes on workspace `id` in column order.
+  function hl.column_classes(id)
+    local out = {}
+    for _, address in ipairs(hl.columns[id] or {}) do
+      local window = find(address)
+      out[#out + 1] = window and window.class or address
+    end
+    return out
+  end
+
+  local get_windows, get_window = hl.get_windows, hl.get_window
+  function hl.get_windows(...)
+    refresh()
+    return get_windows(...)
+  end
+  function hl.get_window(...)
+    refresh()
+    return get_window(...)
+  end
+
+  -- Workspace rules apply when a workspace is created, too.
+  local add_workspace = hl.add_workspace
+  function hl.add_workspace(id, monitor_name)
+    local ws = add_workspace(id, monitor_name)
+    for _, spec in ipairs(hl.workspace_rules) do
+      if tonumber(spec.workspace) == id and spec.layout then
+        ws.tiled_layout = spec.layout
+      end
+    end
+    for _, window in ipairs(hl.windows) do
+      if window.workspace == ws then
+        insert(window, false)
+      end
+    end
+    return ws
+  end
+
+  local rule = hl.workspace_rule
+  function hl.workspace_rule(spec)
+    local result = rule(spec)
+    local id = tonumber(spec.workspace)
+    local ws = id and workspace(id)
+    if ws and spec.layout then
+      ws.tiled_layout = spec.layout
+      hl.columns[id] = nil
+      for _, window in ipairs(hl.windows) do
+        if window.workspace and window.workspace.id == id then
+          insert(window, false)
+        end
+      end
+    end
+    return result
+  end
+
+  local dispatch = hl.dispatch
+  function hl.dispatch(dispatcher)
+    local result = dispatch(dispatcher)
+    if type(dispatcher) ~= "table" then
+      return result
+    end
+    local args = dispatcher.args or {}
+    if dispatcher.dsp == "window.move" and args.workspace then
+      local window = hl.get_window(args.window)
+      if window then
+        insert(window, false)
+      end
+    elseif dispatcher.dsp == "window.swap" then
+      local a, b = args.window and args.window:match("^address:(.+)$"), args.target and args.target:match("^address:(.+)$")
+      for _, columns in pairs(hl.columns) do
+        for i, address in ipairs(columns) do
+          if address == a then
+            columns[i] = b
+          elseif address == b then
+            columns[i] = a
+          end
+        end
+      end
+    elseif dispatcher.dsp == "layout" then
+      local msg = args[1] or args
+      local active = hl.active_window
+      local id = active and active.workspace and active.workspace.id
+      local all, width = tostring(msg):match("^colresize (all) ([%d%.]+)$")
+      if not all then
+        width = tostring(msg):match("^colresize ([%d%.]+)$")
+      end
+      if width and id and scrolling(id) then
+        for _, address in ipairs(hl.columns[id] or {}) do
+          if all or address == active.address then
+            hl.widths[address] = tonumber(width)
+          end
+        end
       end
     end
     return result

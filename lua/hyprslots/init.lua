@@ -20,6 +20,7 @@ local layout = require("hyprslots.layout")
 local log = require("hyprslots.log")
 local resize = require("hyprslots.resize")
 local router = require("hyprslots.router")
+local scroll = require("hyprslots.scroll")
 local tree = require("hyprslots.tree")
 local window_rules = require("hyprslots.window_rules")
 
@@ -29,6 +30,8 @@ local LAYOUT = "slots"
 local BLOCKS = 10 -- Omarchy monitor blocks given lua:slots desk workspaces
 
 local engine = nil
+
+local workspace_rules -- defined below, used by Engine:reselect
 
 local Engine = {}
 Engine.__index = Engine
@@ -56,7 +59,8 @@ local function new_engine()
     data = nil, -- the editor-owned slots.lua data the running config came from
     dirty = false, -- data differs from slots.lua on disk
     since_save = {}, -- renames and removals since data was slots.lua's (api.lua's reset reads through them)
-    ruled = {}, -- workspace ids given lua:slots
+    ruled = {}, -- workspace id -> the layout hyprslots gave it ("lua:slots" or "scrolling")
+    scroll_seen = {}, -- workspace id -> set of windows whose columns scroll.lua has widened
     resized = {}, -- "<arrangement>/<desk>/<role>" -> keyboard-resized tree (resize.lua)
   }, Engine)
 end
@@ -92,6 +96,10 @@ function Engine:reselect()
         self.workspaces[id] = { desk = desk, role = role, monitor = monitor, branch = branch }
       end
     end
+  end
+
+  if self.started and self.cfg then
+    workspace_rules(self, true)
   end
 
   local now = self.active and self.active.name
@@ -219,10 +227,16 @@ local function load_config(self, dir)
   end
 end
 
--- lua:slots for desk N's workspace in every monitor block, for every desk
--- some arrangement has a tree for. Workspace rules apply when a workspace is
--- created, so they are set once, up front.
-local function workspace_rules(cfg, ruled)
+-- A layout for desk N's workspace in every monitor block, for every desk
+-- some arrangement has a tree for: "scrolling" where the active arrangement
+-- has a scroll branch (scroll.lua), lua:slots everywhere else. Workspace rules
+-- apply when a workspace is created, so they are set up front, and again
+-- when the arrangement or the trees change, for the workspaces whose layout
+-- changed. At load Omarchy's saved modes load afterwards and win; later
+-- (`runtime`), a workspace with a saved mode is left as it is, so Super+L's
+-- choice stands until Super+L brings slots back.
+workspace_rules = function(self, runtime)
+  local cfg, ruled = self.cfg, self.ruled
   local desks_with_trees = {}
   for _, name in ipairs(cfg.arrangement_names) do
     for desk in pairs(cfg.arrangements[name].desks) do
@@ -237,9 +251,14 @@ local function workspace_rules(cfg, ruled)
   for _, desk in ipairs(list) do
     for block = 0, BLOCKS - 1 do
       local id = block * 10 + desk
-      if not ruled[id] then
-        ruled[id] = true
-        adapter.workspace_layout(id, "lua:" .. LAYOUT)
+      local layout = scroll.layout_for(self, id)
+      if ruled[id] ~= layout then
+        ruled[id] = layout
+        if runtime and adapter.omarchy_mode_saved(id) then
+          self.log:info("workspace %d: kept its saved Omarchy mode (hyprslots would give it %s)", id, layout)
+        else
+          adapter.workspace_layout(id, layout)
+        end
       end
     end
   end
@@ -254,7 +273,8 @@ local function start(self, opts)
 
   load_config(self, opts.config_dir)
   if self.cfg then
-    workspace_rules(self.cfg, self.ruled)
+    self:reselect()
+    workspace_rules(self, false)
   end
 
   local function on_start()
@@ -295,6 +315,8 @@ local function start(self, opts)
 
   -- Accordions: group moves run deferred, after the events above.
   groups.attach(self)
+  -- Scroll branches: column order and width, deferred the same way.
+  scroll.attach(self)
   self.started = true
 end
 
@@ -331,7 +353,6 @@ function Engine:apply_config(cfg, data, dirty)
   if not self.dirty then
     self.since_save = {}
   end
-  workspace_rules(cfg, self.ruled)
   self:reselect()
   self:assign_all()
   window_rules.sync(self)

@@ -33,6 +33,10 @@ function M.activate(engine, desk)
     adapter.focus_desk(desk, monitor)
   end
   adapter.focus_monitor(origin)
+  -- Scroll branches back in slot order, even where the desk was showing.
+  if engine.rearrange then
+    engine.rearrange("event")
+  end
   return true
 end
 

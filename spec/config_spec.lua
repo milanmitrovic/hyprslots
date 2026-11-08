@@ -269,6 +269,27 @@ describe("config.validate", function()
     rejects(raw, "arrangements%.solo%.desks%[3%]%.big: an accordion holds slots only, found 'h%[' inside it")
   end)
 
+  it("accepts a scroll branch, checking its slots", function()
+    local raw = valid()
+    raw.arrangements.solo.desks[3].big = "scroll[left, main]"
+    assert(config.validate(raw))
+    raw.arrangements.solo.desks[3].big = "scroll[left, mian]"
+    rejects(raw, "desks%[3%]%.big: desk 3 has no slot 'mian'")
+  end)
+
+  it("takes the scroll columns' width, a fraction of the screen", function()
+    local raw = valid()
+    assert.is_nil(assert(config.validate(raw)).scroll)
+    raw.scroll = { width = 0.95 }
+    assert.are.same({ width = 0.95 }, assert(config.validate(raw)).scroll)
+    raw.scroll = { width = 1.5 }
+    rejects(raw, "scroll%.width: must be a fraction of the screen from 0%.1 to 1, got 1%.5")
+    raw.scroll = { widht = 0.9 }
+    rejects(raw, "scroll: unknown key 'widht'")
+    raw.scroll = 0.9
+    rejects(raw, "scroll: must be a table")
+  end)
+
   it("rejects a slot placed on two screens of one desk", function()
     local raw = valid()
     raw.arrangements.solo.screens.side = "HEADLESS-3"

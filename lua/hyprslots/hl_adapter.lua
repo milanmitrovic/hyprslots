@@ -183,6 +183,86 @@ function M.bind_expression(action, expression)
   return action
 end
 
+-- Scrolling (scroll branches, see scroll.lua). ------------------------------
+
+-- The tiled layout of workspace `id` ("scrolling", "lua:slots", ...), or nil
+-- when it does not exist.
+function M.workspace_tiled_layout(id)
+  local workspace = hl().get_workspace(id)
+  return workspace and workspace.tiled_layout
+end
+
+-- Omarchy's state directory (its paths module when it is loaded, else the
+-- XDG default).
+local function state_home()
+  local ok, paths = pcall(require, "default.hypr.paths")
+  if ok and type(paths) == "table" and type(paths.state_home) == "string" then
+    return paths.state_home
+  end
+  local base = os.getenv("XDG_STATE_HOME")
+  if not base or base == "" then
+    base = (os.getenv("HOME") or "") .. "/.local/state"
+  end
+  return base
+end
+
+-- Whether Omarchy has a saved mode for workspace `id`: the file its
+-- workspace-layout toggle (and the user's Super+L cycle) writes, which its
+-- workspace-layouts.lua loads after hyprslots on every config load.
+function M.omarchy_mode_saved(id)
+  local file = io.open(string.format("%s/omarchy/workspace-layouts/%s.lua", state_home(), tostring(id)), "r")
+  if file then
+    file:close()
+    return true
+  end
+  return false
+end
+
+-- The tiled windows on workspace `id` that Hyprland's scrolling layout has a
+-- column for: { address, stable_id, column = its 0-based index, row = the
+-- window's index in it, width = the column's width (a fraction of the
+-- screen) }, from HL.Window.layout.
+function M.scroll_windows(id)
+  local out = {}
+  for _, window in ipairs(hl().get_windows() or {}) do
+    local workspace = window.workspace
+    local layout = workspace and workspace.id == id and not window.floating and window.layout
+    local column = type(layout) == "table" and layout.name == "scrolling" and layout.column
+    if type(column) == "table" and type(column.index) == "number" then
+      out[#out + 1] = {
+        address = window.address,
+        stable_id = window.stable_id,
+        column = column.index,
+        row = layout.index_in_column or 0,
+        width = column.width,
+      }
+    end
+  end
+  return out
+end
+
+-- Swap windows in pairs ({ a, b } addresses), focus kept: Hyprland's
+-- window.swap keeps the focus but warps the cursor to the moved window, so
+-- warps are off meanwhile (with cursor:no_warps Hyprland still focuses the
+-- monitor under that point, so the focused monitor is put back too).
+function M.swap_windows(swaps)
+  local no_warps = hl().get_config("cursor.no_warps")
+  local monitor = M.active_monitor_name()
+  hl().config({ cursor = { no_warps = true } })
+  local ok, err = pcall(function()
+    for _, swap in ipairs(swaps) do
+      hl().dispatch(hl().dsp.window.swap({ window = "address:" .. swap.a, target = "address:" .. swap.b }))
+    end
+    if monitor and M.active_monitor_name() ~= monitor then
+      M.focus_monitor(monitor)
+    end
+  end)
+  hl().config({ cursor = { no_warps = no_warps == true or no_warps == 1 } })
+  if not ok then
+    error(err, 0)
+  end
+end
+
 -- Groups (accordions, see groups.lua). ------------------------------------
 
 -- The member addresses of an HL.Window's group, in group order, or nil.

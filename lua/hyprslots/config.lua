@@ -361,7 +361,34 @@ local function validate_descriptions(raw, fail)
   end
 end
 
-local KNOWN = { slots = true, arrangements = true, pinned = true, title_matching = true, descriptions = true }
+-- scroll = { width = <fraction of the screen> }: how wide scroll branches'
+-- columns are (scroll.lua; default 0.99, Omarchy's full-width scrolling).
+local function validate_scroll(raw, fail)
+  if raw == nil then
+    return nil
+  end
+  if type(raw) ~= "table" then
+    fail("scroll", "must be a table: { width = 0.99 }")
+    return nil
+  end
+  for key in pairs(raw) do
+    if key ~= "width" then
+      fail("scroll", "unknown key '" .. tostring(key) .. "'")
+    end
+  end
+  local width = raw.width
+  if width == nil then
+    return {}
+  end
+  if type(width) ~= "number" or width ~= width or width < 0.1 or width > 1 then
+    fail("scroll.width", "must be a fraction of the screen from 0.1 to 1, got " .. tostring(width))
+    return {}
+  end
+  return { width = width }
+end
+
+local KNOWN = { slots = true, arrangements = true, pinned = true, title_matching = true, descriptions = true,
+  scroll = true }
 
 -- Normalize a raw config table. Returns the config, or nil and every error
 -- found (one per line).
@@ -386,6 +413,7 @@ function M.validate(raw)
     arrangements = {},
     arrangement_names = {},
     pinned = validate_pinned(raw.pinned, fail),
+    scroll = validate_scroll(raw.scroll, fail),
   }
 
   if raw.arrangements ~= nil and type(raw.arrangements) ~= "table" then
