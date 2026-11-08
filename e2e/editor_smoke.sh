@@ -15,9 +15,12 @@
 # [ ] and the digits page by workspace. Then the Layout tab (one pane per
 # screen, titled with the monitor there) flips workspace 3's tree, takes a
 # typed ratio, applies it (api state and the windows' geometry must follow)
-# and saves it (slots.lua must hold it); ] and 3 switch its workspace, -
-# edits the layout's default trees (a workspace with none of its own then
-# shows them); its slot list (s) edits the global slots (a refused then a
+# and saves it (slots.lua must hold it); it opens on All workspaces (the
+# layout's shared trees, first in the strip, a dot on each workspace with its
+# own); ] and 3 switch its workspace, - edits the shared trees (a workspace
+# with none of its own then shows them); on such a workspace the first edit
+# asks: a applies it to all workspaces, o gives the workspace its own tree,
+# which u drops again; its slot list (s) edits the global slots (a refused then a
 # good rename, the trees and specs following; a new slot, put in the tree at
 # once and x taken out again; Return on a placed one; delete; describe); f
 # forks the shared layout for this desk. The Desk tab forks again,
@@ -268,6 +271,64 @@ layout_slots() {
   expect_eq "Escape goes back to the picture" "ok" "$(smoke press Escape)"
   expect_eq "the panel stays open" "yes" "$(smoke ready)"
   expect_eq "the picture's keys again" "1 main" "$(smoke selection)"
+}
+
+# On workspace 4, which uses the shared tree, the first edit asks whom it
+# is for: a (all workspaces) edits the shared tree, so w changes it for every
+# workspace without its own. On workspace 5, o (only workspace 5) makes w give
+# it its own tree (dotted in the strip); u, y drops it again.
+layout_scope() {
+  press_keys a
+  expect_eq "a first asks whom the edit is for" "Apply to (a)ll workspaces or (o)nly workspace 4? [Esc] cancel" "$(smoke message)"
+  press_keys a
+  expect_eq "then which slot to add" "Add slot to screen 1: (r)ight, (s)ide? [Esc] cancel   → right" "$(smoke message)"
+  press_keys r
+  expect_eq "right in the draft" "1: h[main, right] *" "$(smoke layout)"
+  if [[ $(smoke layoutHeader) == *"(uses the shared tree: editing it for all workspaces)"* ]]; then
+    pass "the header says the edit is the shared tree's: $(smoke layoutHeader)"
+  else
+    fail "header: $(smoke layoutHeader)"
+  fi
+  press_keys w
+  if eventually 5 state_is '.layouts.solo.default["1"].tree' 'h[main, right]'; then
+    pass "a, then w, applied the shared tree"
+  else
+    fail "solo's shared trees: $(api_state | jq -c '.layouts.solo.default'): $(smoke message)"
+  fi
+  expect_eq "workspace 4 still has no trees of its own" "[3]" "$(api_state | jq -c '.layouts.solo.own')"
+  expect_eq "workspace 6 shows the new shared tree" "h[main, right]" \
+    "$(api_state | jq -r '.layouts.solo.workspaces["6"]["1"].tree')"
+  eventually 5 smoke_idle || true
+  press_keys 5
+  expect_eq "workspace 5 shows the shared tree" "1: h[main, right]" "$(smoke layout)"
+  press_keys a
+  expect_eq "a asks again on another workspace" "Apply to (a)ll workspaces or (o)nly workspace 5? [Esc] cancel" "$(smoke message)"
+  press_keys o s
+  expect_eq "o, s: side after main in workspace 5's draft" "1: h[main, side, right] *" "$(smoke layout)"
+  press_keys w
+  if eventually 5 state_is '.layouts.solo.own | tostring' '[3,5]'; then
+    pass "o, then w, gave workspace 5 its own tree"
+  else
+    fail "own: $(api_state | jq -c '.layouts.solo.own'): $(smoke message)"
+  fi
+  expect_eq "its tree" "h[main, side, right]" "$(api_state | jq -r '.layouts.solo.workspaces["5"]["1"].tree')"
+  expect_eq "the shared tree is untouched" "h[main, right]" "$(api_state | jq -r '.layouts.solo.default["1"].tree')"
+  eventually 5 smoke_idle || true
+  expect_eq "the strip dots workspace 5" "All workspaces 1 2 3• 4 [5•] 6 7 8 9" "$(smoke layoutStrip)"
+  sleep 0.3
+  shot 8d-layout-own-tree
+  press_keys u
+  expect_eq "u asks first" "Drop workspace 5's own trees and use the shared tree? (y/n)" "$(smoke message)"
+  press_keys y
+  if eventually 5 state_is '.layouts.solo.own | tostring' '[3]'; then
+    pass "u, y dropped workspace 5's own tree"
+  else
+    fail "own: $(api_state | jq -c '.layouts.solo.own'): $(smoke message)"
+  fi
+  eventually 5 smoke_idle || true
+  expect_eq "it shows the shared tree again" "1: h[main, right]" "$(smoke layout)"
+  expect_eq "and says so" "Workspace 5 uses the shared tree of solo again. Ctrl+S saves." "$(smoke message)"
+  expect_eq "no dot on 5" "All workspaces 1 2 3• 4 [5] 6 7 8 9" "$(smoke layoutStrip)"
 }
 
 # The Layout tab's f: layout solo is shared with desk beamer, so an edit
@@ -836,7 +897,19 @@ test_body() {
   expect_eq "Tab" "ok" "$(smoke press Tab)"
   sleep 0.3
   shot 4-layout-tab
-  expect_eq "the Layout view opens on workspace 3's screen 1, main selected" "1 main" "$(smoke selection)"
+  # It opens on All workspaces, the shared trees (solo has none yet); a dot
+  # marks workspace 3, the one with trees of its own.
+  if [[ $(smoke layoutHeader) == "All workspaces (the shared tree)   [solo]"* ]]; then
+    pass "the Layout view opens on All workspaces: $(smoke layoutHeader)"
+  else
+    fail "header: $(smoke layoutHeader)"
+  fi
+  expect_eq "All workspaces first in the strip, workspace 3 dotted" "[All workspaces] 1 2 3• 4 5 6 7 8 9" "$(smoke layoutStrip)"
+  expect_eq "solo has no shared tree yet" "1: -" "$(smoke layout)"
+  expect_eq "3" "ok" "$(smoke press 3)"
+  expect_eq "3 edits workspace 3, which has its own tree" "Editing workspace 3 of solo." "$(smoke message)"
+  expect_eq "the strip follows" "All workspaces 1 2 [3•] 4 5 6 7 8 9" "$(smoke layoutStrip)"
+  expect_eq "on screen 1, main selected" "1 main" "$(smoke selection)"
   expect_eq "its draft is the tree in force" "1: h[main:2, v[right, side]]" "$(smoke layout)"
   local title
   title=$(smoke panes)
@@ -845,8 +918,9 @@ test_body() {
   else
     fail "pane titles: $title"
   fi
-  if [[ $(smoke help) == *'">-</font></b> others: trees for workspaces without their own'* && $(smoke help) == *'">f</font></b>ork'* ]]; then
-    pass "the Layout help row has - (others: what it is) and f"
+  if [[ $(smoke help) == *'">-</font></b> all workspaces (the shared tree)'* && $(smoke help) == *'">f</font></b>ork'* &&
+    $(smoke help) == *'">u</font></b>se the shared tree'* ]]; then
+    pass "the Layout help row has - (all workspaces), f, and u (workspace 3 has its own tree)"
   else
     fail "help row: $(smoke help)"
   fi
@@ -957,17 +1031,17 @@ test_body() {
   # ] and the digits switch the workspace (the arrows stay the picture's): workspace 4
   # has no tree yet, 3 jumps back.
   expect_eq "]" "ok" "$(smoke press ])"
-  expect_eq "] edits workspace 4" "Editing workspace 4 of solo." "$(smoke message)"
+  expect_eq "] edits workspace 4" "Editing workspace 4 of solo. (uses the shared tree)" "$(smoke message)"
   expect_eq "which has no tree here" "1: -" "$(smoke layout)"
   sleep 0.3
   shot 8b-layout-workspace-4
 
-  # - edits the layout's default trees: a puts main there, w applies it;
-  # workspace 4, with no trees of its own, then shows them.
+  # - edits the layout's shared trees (All workspaces): a puts main there,
+  # w applies it; workspace 4, with no trees of its own, then shows them.
   expect_eq "-" "ok" "$(smoke press -)"
-  expect_eq "- edits the default trees (others)" "Editing the others' trees of solo." "$(smoke message)"
+  expect_eq "- edits All workspaces" "Editing all workspaces (the shared tree) of solo." "$(smoke message)"
   expect_eq "which are none yet" "1: -" "$(smoke layout)"
-  if [[ $(smoke layoutHeader) == "Trees for workspaces without their own   [solo]"* ]]; then
+  if [[ $(smoke layoutHeader) == "All workspaces (the shared tree)   [solo]"* ]]; then
     pass "the header says so: $(smoke layoutHeader)"
   else
     fail "header: $(smoke layoutHeader)"
@@ -986,10 +1060,11 @@ test_body() {
   sleep 0.3
   shot 8c-layout-default-trees
   press_keys 4
-  expect_eq "4: workspace 4 shows the default trees, and says an edit gives it its own" \
-    "Editing workspace 4 of solo. (it shows the others' trees: an edit gives workspace 4 its own)" "$(smoke message)"
-  expect_eq "the default tree" "1: main" "$(smoke layout)"
+  expect_eq "4: workspace 4 says it uses the shared tree" \
+    "Editing workspace 4 of solo. (uses the shared tree)" "$(smoke message)"
+  expect_eq "the shared tree" "1: main" "$(smoke layout)"
   expect_eq "workspace 4 has no trees of its own" "[3]" "$(api_state | jq -c '.layouts.solo.own')"
+  layout_scope
   expect_eq "3" "ok" "$(smoke press 3)"
   expect_eq "3 jumps back to workspace 3" "Editing workspace 3 of solo." "$(smoke message)"
   expect_eq "its tree" "1: h[main:2, v[right, side:3]]" "$(smoke layout)"

@@ -4,9 +4,8 @@
 // §9): [ and ] step through the workspaces hyprslots manages (state
 // `workspace_count`, config `workspaces`: 1 to 10 by default, Omarchy's ten
 // per screen), the digits jump to one as Super+N does (0 is workspace 10,
-// no key when it manages fewer). The arrows stay the view's own; `-` is the
-// layout's default trees ("others": the trees of workspaces without their
-// own) in the Layout view. Pure, so node can test it
+// no key when it manages fewer). The arrows stay the view's own; `-` is
+// "All workspaces", the layout's shared (default) trees, in the Layout view. Pure, so node can test it
 // (editor/tests/workspaces.test.mjs).
 
 var COUNT = 10
@@ -33,27 +32,27 @@ function ofDigit(text, last) {
   return workspace <= (last || COUNT) ? workspace : null
 }
 
-// The managed workspaces for a header strip, then the layout's default
-// trees (`-`): { workspace (1..N or "default"), label (the key: 0 for 10,
-// "others" for the default trees), current, trees (trees of its own; the
-// default ones when there are any), shared (no trees of its own, showing the
-// default ones) }.
+// The header strip: "All workspaces" first (`-`: the layout's shared
+// trees, workspace "default"), then the managed workspaces: { workspace
+// (1..N or "default"), label (its key: 0 for 10), current, own (trees of
+// its own: an override of the shared ones), shared (none of its own: it
+// shows the shared ones) }.
 function strip(state, layout, current) {
   var entry = state && state.layouts ? state.layouts[layout] : null
   var own = entry && Array.isArray(entry.own) ? entry.own.map(Number) : []
-  var shows = entry && entry.workspaces ? entry.workspaces : {}
-  var out = []
+  var out = [{ workspace: "default", label: "All workspaces", current: current === "default", own: false, shared: false }]
   var last = count(state)
   for (var n = 1; n <= last; n++) {
     var mine = own.indexOf(n) >= 0
-    var branches = shows[String(n)]
-    out.push({ workspace: n, label: String(n % COUNT), current: n === current, trees: mine,
-      shared: !mine && !!branches && Object.keys(branches).length > 0 })
+    out.push({ workspace: n, label: String(n % COUNT), current: n === current, own: mine, shared: !!entry && !mine })
   }
-  var def = entry && entry.default ? entry.default : {}
-  out.push({ workspace: "default", label: "others", current: current === "default", trees: Object.keys(def).length > 0,
-    shared: false })
   return out
+}
+
+// A strip entry as it reads: its label, a dot after a workspace with trees
+// of its own.
+function stripText(entry) {
+  return entry.label + (entry.own ? "•" : "")
 }
 
 // The digit keys for the help row: "1–9 0" for ten workspaces, "1–9" for

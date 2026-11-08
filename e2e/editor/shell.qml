@@ -162,6 +162,11 @@ ShellRoot {
       return panel.layoutHeaderText()
     }
 
+    // The Layout tab's workspace strip, the current one in brackets.
+    function layoutStrip(): string {
+      return panel.layoutStripText()
+    }
+
     function press(key: string): string {
       return panel.press(key)
     }

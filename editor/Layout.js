@@ -774,16 +774,44 @@ function screenLabel(state, screen) {
   return "Screen " + screen + " · " + connector + (description ? " (" + description + ")" : "")
 }
 
-// What the header says of a workspace that shows the default trees (none
-// of its own): an edit gives it its own copy first.
-function defaultNote(state, layout, workspace) {
+// Whether a workspace has trees of its own in a layout (an override of the
+// shared ones); "default", the shared trees themselves, has none.
+function hasOwn(state, layout, workspace) {
   var entry = layoutEntry(state, layout)
-  if (!entry || workspace === "default") return ""
+  if (!entry || workspace === "default") return false
   var own = Array.isArray(entry.own) ? entry.own : []
-  if (own.indexOf(workspace) >= 0 || own.indexOf(String(workspace)) >= 0) return ""
-  var shows = (entry.workspaces || {})[String(workspace)]
-  if (!shows || Object.keys(shows).length === 0) return ""
-  return "(it shows the others' trees: an edit gives workspace " + workspace + " its own)"
+  return own.indexOf(workspace) >= 0 || own.indexOf(String(workspace)) >= 0
+}
+
+// What the header says of a workspace that uses the shared trees (none of
+// its own), and whom its edits are for once asked (`scope`: "all" edits
+// the shared trees, "only" gives it its own on apply).
+function defaultNote(state, layout, workspace, scope) {
+  if (!layoutEntry(state, layout) || workspace === "default" || hasOwn(state, layout, workspace)) return ""
+  if (scope === "all") return "(uses the shared tree: editing it for all workspaces)"
+  if (scope === "only") return "(uses the shared tree: w gives workspace " + workspace + " its own)"
+  return "(uses the shared tree)"
+}
+
+// Whether an edit on `workspace` asks first whom it is for: a workspace on
+// the shared trees, not asked yet (`scope` "").
+function needsScope(state, layout, workspace, scope) {
+  return workspace !== "default" && !scope && !!layoutEntry(state, layout) && !hasOwn(state, layout, workspace)
+}
+
+// The question its first edit asks, for Prompts.choice(label, options,
+// { inline: true }).
+function scopeQuestion(workspace) {
+  return {
+    label: "Apply to (a)ll workspaces or (o)nly workspace " + workspace + "?",
+    options: [{ key: "a", label: "all workspaces", value: "all" }, { key: "o", label: "only workspace " + workspace, value: "only" }],
+  }
+}
+
+// The workspace an edit goes to: the shared trees ("default") for all
+// workspaces, else the one shown.
+function editTarget(workspace, scope) {
+  return scope === "all" ? "default" : workspace
 }
 
 // Where the view opens: the focused workspace's number and screen, else the

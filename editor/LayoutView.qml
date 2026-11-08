@@ -19,11 +19,15 @@ import "Help.js" as Help
 // string. Edits go to a draft; `w` applies it (api set_trees), Ctrl+S (the
 // panel's) applies it and saves (api save), `d` puts a screen's tree back
 // to what slots.lua holds (api reset), `R` records the windows on screen
-// (api record, previewed). [ ] and the digits change the workspace
-// (Workspaces.js), `-` edits the layout's default trees (what every
-// workspace with none of its own shows; editing such a workspace gives it
-// its own copy first), `f` forks the layout (the active desk then uses the
-// copy: other desks sharing the layout see every edit to it).
+// (api record, previewed). It opens on "All workspaces" (`-`): the layout's
+// shared (default) trees, which every workspace with none of its own uses;
+// [ ] and the digits change the workspace (Workspaces.js; a dot marks one
+// with trees of its own). A workspace on the shared trees shows them, and
+// its first edit asks whether it is for all workspaces (the shared trees)
+// or only this one (w then gives it its own); `u` drops a workspace's own
+// trees, back to the shared ones (api drop_override). `f` forks the layout
+// (the active desk then uses the copy: other desks sharing the layout see
+// every edit to it).
 //
 // Beside the picture, the global slots (aerolayout's logical slots), their
 // names and descriptions: `s` moves the keys to that list and back (Esc
@@ -46,11 +50,15 @@ Item {
 
   readonly property var state: engine ? engine.state : null
 
-  // What is being edited: a workspace (1..10, or "default" for the default
-  // trees) of the active desk's layout, and the selected leaf in the pane of
-  // one screen (its key: "1", "2"...).
+  // What is being edited: a workspace (1..10, or "default" for the shared
+  // trees, "All workspaces") of the active desk's layout, and the selected
+  // leaf in the pane of one screen (its key: "1", "2"...).
   property string layout: ""
   property var workspace: 0
+  // Whom the edits of a workspace on the shared trees are for, once asked:
+  // "all" (the shared trees), "only" (this workspace: w gives it its own),
+  // "" not asked yet. A workspace switch asks again.
+  property string scope: ""
   property string screen: ""
   property string selectedKey: ""
   // The layout the view follows changes under it (a, f, x in the Desks &
@@ -96,7 +104,7 @@ Item {
   readonly property string helpText: {
     if (prompting) return Help.escape(Prompts.help(prompt))
     var workspaceKeys = { title: "Workspace", items: [{ key: "[ ]", label: "prev/next" }, { key: Workspaces.jumpKeys(Workspaces.count(state)), label: "jump" },
-      { key: "-", label: "others: trees for workspaces without their own" }] }
+      { key: "-", label: "all workspaces (the shared tree)" }] }
     if (slotFocus) {
       return Help.row([
         { title: "Slot list", items: [{ key: "↑/↓", label: "select" }, { key: "a", label: "new" },
@@ -114,7 +122,8 @@ Item {
         { key: "HJKL", label: "force move" }, { key: "/", label: "flip" }, { key: "t", label: toggleLabel },
         { key: "r", label: "ratios" }, { key: "o", label: "overflow" }] },
       { title: "Layout", items: [{ key: "w", label: "apply" }, { key: "Ctrl+S", label: "apply+save" },
-        { key: "d", label: "back to slots.lua" }, { key: "R", label: "record" }, { key: "f", label: "fork" }] },
+        { key: "d", label: "back to slots.lua" }, { key: "R", label: "record" }, { key: "f", label: "fork" }]
+          .concat(Layout.hasOwn(state, layout, workspace) ? [{ key: "u", label: "use the shared tree" }] : []) },
       [{ key: "s", label: "slot list" }],
       workspaceKeys,
       [{ key: "Tab", label: "switch view" }, { key: "q", label: "close" }],
@@ -141,10 +150,16 @@ Item {
     return currentPanes().filter(function(p) { return root.edited(p.key) }).map(function(p) { return p.key })
   }
 
-  // "workspace 3", or "the others' trees" (the layout's default trees: the
-  // workspaces without trees of their own show them).
+  // "workspace 3", or "all workspaces (the shared tree)" (the layout's
+  // default trees: the workspaces without trees of their own use them).
   function workspaceName(n) {
-    return n === "default" ? "the others' trees" : "workspace " + n
+    return n === "default" ? "all workspaces (the shared tree)" : "workspace " + n
+  }
+
+  // Where an edit goes: the shared trees ("default") once asked for all
+  // workspaces, else the workspace shown.
+  function target() {
+    return Layout.editTarget(workspace, scope)
   }
 
   // Back to the opening target: the focused workspace's number and screen.
@@ -156,10 +171,12 @@ Item {
     selectedKey = ""
     slotFocus = false
     selectedSlot = ""
+    scope = ""
     if (state) {
+      // All workspaces first: the shared trees most workspaces use.
       var t = Layout.initialTarget(state, focusedWorkspace)
       layout = state.layout || ""
-      workspace = t.workspace
+      workspace = "default"
       screen = String(t.screen)
     }
     sync()
@@ -336,6 +353,7 @@ Item {
     else if (Workspaces.ofDigit(text, Workspaces.count(state)) !== null) goWorkspace(Workspaces.ofDigit(text, Workspaces.count(state)))
     else if (text === "-") goWorkspace("default")
     else if (text === "f") startFork()
+    else if (text === "u" && !slotFocus) startDropOverride()
     else if (slotFocus) return handleSlotKey(key, text)
     else if (text === "s") focusSlots(true)
     else return handlePictureKey(key, text)
@@ -345,20 +363,69 @@ Item {
   function handlePictureKey(key, text) {
     var arrow = arrowOf(key)
     if (arrow !== "") select(arrow)
-    else if (moveKeys[text]) moveSelected(moveKeys[text], false)
-    else if (forceKeys[text]) moveSelected(forceKeys[text], true)
-    else if (text === "/") edit(function(n) { return { node: Layout.flip(n) } }, "Flipped every split.")
-    else if (text === "t") edit(function(n) { return Layout.toggleScroll(n) },
-      toggleLabel === "tiles" ? "Tiled again." : "Scrolling: full-width columns in this order (hl move them).")
-    else if (text === "o") toggleOverflow()
-    else if (text === "a") startAddSlot()
-    else if (text === "x") removeSelected()
-    else if (text === "r") startRatio()
+    else if (moveKeys[text]) scoped(function() { root.moveSelected(root.moveKeys[text], false) }, true)
+    else if (forceKeys[text]) scoped(function() { root.moveSelected(root.forceKeys[text], true) }, true)
+    else if (text === "/") scoped(function() { root.edit(function(n) { return { node: Layout.flip(n) } }, "Flipped every split.") }, true)
+    else if (text === "t") scoped(function() {
+      root.edit(function(n) { return Layout.toggleScroll(n) },
+        root.toggleLabel === "tiles" ? "Tiled again." : "Scrolling: full-width columns in this order (hl move them).")
+    }, true)
+    else if (text === "o") scoped(toggleOverflow, true)
+    else if (text === "a") scoped(startAddSlot, false)
+    else if (text === "x") scoped(removeSelected, true)
+    else if (text === "r") scoped(startRatio, true)
     else if (text === "w") apply(null)
-    else if (text === "d") startReset()
-    else if (text === "R") startRecord()
+    else if (text === "d") scoped(startReset, false)
+    else if (text === "R") scoped(startRecord, false)
     else return false
     return true
+  }
+
+  // An edit on a workspace that uses the shared trees asks first whom it is
+  // for: (a)ll workspaces edits the shared trees, (o)nly this one gives it
+  // its own on w. `action` runs once answered (straight away when there is
+  // nothing to ask, or it would refuse or do nothing: `needsNode` with no
+  // tree selected).
+  function scoped(action, needsNode) {
+    if (block !== "" || (needsNode && !activeNode) || !Layout.needsScope(state, layout, workspace, scope)) {
+      action()
+      return
+    }
+    var n = workspace
+    var q = Layout.scopeQuestion(n)
+    ask(Prompts.choice(q.label, q.options, { inline: true }), function(value) {
+      if (root.workspace !== n) return
+      root.scope = value
+      root.say(value === "all" ? "Editing the shared tree: every workspace without its own follows."
+        : "Editing workspace " + n + " only: w gives it its own trees.", false)
+      action()
+    })
+  }
+
+  // u: a workspace's own trees dropped, after y/n; it uses the shared ones
+  // again (api drop_override).
+  function startDropOverride() {
+    if (refuseEdit()) return
+    if (!Layout.hasOwn(state, layout, workspace)) {
+      say(workspace === "default" ? "u drops a workspace's own trees: pick one with [ ] or its digit."
+        : "Workspace " + workspace + " uses the shared tree already.", true)
+      return
+    }
+    var n = workspace
+    confirm("Drop workspace " + n + "'s own trees and use the shared tree?", function() {
+      root.engine.call("drop_override", { layout: root.layout, workspace: n }, function(reply) {
+        if (!reply.ok) {
+          root.say(reply.error, true)
+          return
+        }
+        if (root.workspace === n) {
+          root.scope = ""
+          root.drafts = ({})
+          root.sync()
+        }
+        root.say("Workspace " + n + " uses the shared tree of " + reply.layout + " again. Ctrl+S saves.", false)
+      })
+    })
   }
 
   // a: one of the global slots no pane of this workspace places yet, added after
@@ -478,7 +545,8 @@ Item {
 
   function placeSelectedSlot() {
     if (!needSlot()) return
-    placeSlot(slotRow.slot)
+    var name = slotRow.slot
+    scoped(function() { root.placeSlot(name) }, false)
   }
 
   // a: a new global slot, a name and then an optional description; then,
@@ -511,7 +579,7 @@ Item {
     ask(Prompts.confirm("Added slot '" + slot + "'. Put it in screen " + screen + "'s tree on " + workspaceName(workspace)
       + after + "?"),
       function(yes) {
-        if (yes) root.placeSlot(slot)
+        if (yes) root.scoped(function() { root.placeSlot(slot) }, false)
         else root.say("Added slot '" + slot + "'. Return puts it in a tree.", false)
       })
   }
@@ -680,6 +748,7 @@ Item {
     }
     var dropped = editedScreens()
     workspace = n
+    scope = ""
     drafts = ({})
     screen = ""
     selectedKey = ""
@@ -723,12 +792,12 @@ Item {
     }
     if (!engine) return
     say("Applying screen " + keys.join(", ") + "…", false)
-    engine.call("set_trees", { layout: layout, workspace: workspace, trees: trees }, function(reply) {
+    engine.call("set_trees", { layout: layout, workspace: target(), trees: trees }, function(reply) {
       if (!reply.ok) {
         root.say(reply.error, true)
         return
       }
-      if (reply.layout === root.layout && String(reply.workspace) === String(root.workspace)) {
+      if (reply.layout === root.layout && String(reply.workspace) === String(root.target())) {
         var next = Object.assign({}, root.drafts)
         for (var k in reply.trees) {
           var parsed = Layout.parse(reply.trees[k].tree)
@@ -755,9 +824,10 @@ Item {
   function startReset() {
     if (refuseEdit()) return
     var k = screen
-    var what = workspace === "default" ? "The others' trees" : "Workspace " + workspace
-    confirm("Put " + workspaceName(workspace) + " on screen " + k + " back to the tree slots.lua holds?", function() {
-      root.engine.call("reset", { layout: root.layout, workspace: root.workspace, screen: parseInt(k, 10) }, function(reply) {
+    var into = target()
+    var what = into === "default" ? "The shared tree" : "Workspace " + into
+    confirm("Put " + workspaceName(into) + " on screen " + k + " back to the tree slots.lua holds?", function() {
+      root.engine.call("reset", { layout: root.layout, workspace: into, screen: parseInt(k, 10) }, function(reply) {
         if (!reply.ok) {
           root.say(reply.error, true)
           return
@@ -766,10 +836,27 @@ Item {
         next[k] = { node: reply.tree ? Layout.parse(reply.tree).node : null, base: reply.tree || null, memory: null }
         root.drafts = next
         root.keepSelection()
-        root.say(what + " on screen " + k + " " + (workspace === "default" ? "are" : "is") + " back to "
+        root.say(what + " on screen " + k + " is back to "
           + (reply.tree || "no tree") + ".", false)
       })
     })
+  }
+
+  // The bar widget's Record: R on the focused workspace and screen (the
+  // view opens on All workspaces, which R does not record).
+  function recordFocused() {
+    if (state) {
+      var t = Layout.initialTarget(state, focusedWorkspace)
+      if (t.workspace !== workspace) {
+        workspace = t.workspace
+        scope = ""
+        drafts = ({})
+        selectedKey = ""
+      }
+      screen = String(t.screen)
+      sync()
+    }
+    scoped(startRecord, false)
   }
 
   function workspaceIdOf(n, k) {
@@ -805,7 +892,8 @@ Item {
         var r = String(reply.screen)
         var trees = {}
         trees[r] = reply.tree
-        root.engine.call("set_trees", { layout: reply.layout, workspace: reply.workspace, trees: trees }, function(set) {
+        root.engine.call("set_trees", { layout: reply.layout, workspace: root.scope === "all" ? "default" : reply.workspace,
+          trees: trees }, function(set) {
           if (!set.ok) {
             root.say(set.error, true)
             return
@@ -842,9 +930,17 @@ Item {
 
   // The header's text: what is edited, and the desks sharing it.
   function headerLine() {
-    var note = Layout.defaultNote(state, layout, workspace)
-    return (workspace === "default" ? "Trees for workspaces without their own" : "Workspace " + workspace) + "   [" + (layout || "no layout") + "]"
+    var note = Layout.defaultNote(state, layout, workspace, scope)
+    return (workspace === "default" ? "All workspaces (the shared tree)" : "Workspace " + workspace) + "   [" + (layout || "no layout") + "]"
       + (note ? "   " + note : "")
+  }
+
+  // The workspace strip as it reads, the current one in brackets:
+  // "[All workspaces] 1 2 3• ...": for the e2e smoke.
+  function stripText() {
+    return Workspaces.strip(state, layout, workspace).map(function(w) {
+      return w.current ? "[" + Workspaces.stripText(w) + "]" : Workspaces.stripText(w)
+    }).join(" ")
   }
 
   // --- drawing --------------------------------------------------------------
@@ -887,9 +983,10 @@ Item {
         font.pixelSize: Style.font.title
         font.bold: true
       }
-      // The managed workspaces by their keys ([ ] step, the digits jump) and
-      // "others", the default trees (-): the one edited reversed, the ones with trees of
-      // their own brighter, the ones showing the default trees dimmer.
+      // "All workspaces", the shared trees (-), then the managed workspaces
+      // by their keys ([ ] step, the digits jump): the one edited reversed,
+      // the ones with trees of their own brighter and dotted, the ones
+      // using the shared trees dimmer.
       Row {
         id: workspaceStrip
         anchors.left: headerText.right
@@ -908,12 +1005,12 @@ Item {
               id: workspaceKey
               anchors.centerIn: parent
               textFormat: Text.PlainText
-              text: parent.modelData.label
+              text: Workspaces.stripText(parent.modelData)
               color: parent.modelData.current ? root.selectedText : root.foreground
-              opacity: parent.modelData.current ? 1 : parent.modelData.trees ? 0.85 : parent.modelData.shared ? 0.6 : 0.3
+              opacity: parent.modelData.current || parent.modelData.own || parent.modelData.workspace === "default" ? 1 : 0.6
               font.family: root.fontFamily
               font.pixelSize: Style.font.body
-              font.bold: parent.modelData.current || parent.modelData.trees
+              font.bold: parent.modelData.current || parent.modelData.own || parent.modelData.workspace === "default"
               font.italic: parent.modelData.shared
             }
             MouseArea {
@@ -1040,7 +1137,8 @@ Item {
                   anchors.centerIn: parent
                   visible: pane.node === null
                   textFormat: Text.PlainText
-                  text: root.workspace === "default" ? "No default tree on this screen"
+                  text: root.workspace === "default" || !Layout.hasOwn(root.state, root.layout, root.workspace)
+                    ? "No shared tree on this screen"
                     : "No tree for workspace " + root.workspace + " here"
                   color: root.foreground
                   opacity: 0.5

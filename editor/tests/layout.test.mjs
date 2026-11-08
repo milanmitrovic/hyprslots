@@ -416,11 +416,42 @@ test("a pane is labelled with the active desk's monitor at its position", () => 
   assert.equal(L.screenLabel(null, 1), "Screen 1");
 });
 
-test("a workspace that shows the default trees says an edit gives it its own", () => {
-  assert.equal(L.defaultNote(fixture(), "dual", 5), "(it shows the others' trees: an edit gives workspace 5 its own)");
+test("a workspace on the shared trees says it uses them, and whom its edits are for once asked", () => {
+  assert.equal(L.defaultNote(fixture(), "dual", 5), "(uses the shared tree)");
+  assert.equal(L.defaultNote(fixture(), "dual", 7), "(uses the shared tree)", "the shared tree may be empty");
+  assert.equal(L.defaultNote(fixture(), "dual", 5, "all"), "(uses the shared tree: editing it for all workspaces)");
+  assert.equal(L.defaultNote(fixture(), "dual", 5, "only"), "(uses the shared tree: w gives workspace 5 its own)");
   assert.equal(L.defaultNote(fixture(), "dual", 3), "", "trees of its own");
-  assert.equal(L.defaultNote(fixture(), "dual", 7), "", "no trees at all");
   assert.equal(L.defaultNote(fixture(), "dual", "default"), "");
+});
+
+test("a workspace has trees of its own, or uses the shared ones", () => {
+  assert.equal(L.hasOwn(fixture(), "dual", 3), true);
+  assert.equal(L.hasOwn(fixture(), "dual", 5), false);
+  assert.equal(L.hasOwn(fixture(), "dual", "default"), false);
+  assert.equal(L.hasOwn(null, "dual", 3), false);
+});
+
+test("the first edit of a workspace on the shared trees asks whom it is for", () => {
+  assert.equal(L.needsScope(fixture(), "dual", 5, ""), true);
+  assert.equal(L.needsScope(fixture(), "dual", 5, "all"), false, "asked already");
+  assert.equal(L.needsScope(fixture(), "dual", 5, "only"), false);
+  assert.equal(L.needsScope(fixture(), "dual", 3, ""), false, "its own trees");
+  assert.equal(L.needsScope(fixture(), "dual", "default", ""), false, "All workspaces edits the shared trees");
+  const P = load("Prompts.js");
+  const scope = L.scopeQuestion(5);
+  const prompt = P.choice(scope.label, scope.options, { inline: true });
+  assert.equal(P.display(prompt), "Apply to (a)ll workspaces or (o)nly workspace 5? [Esc] cancel");
+  assert.deepEqual(plain(P.key(prompt, "", "a").result), { value: "all" });
+  assert.deepEqual(plain(P.key(prompt, "", "o").result), { value: "only" });
+  assert.equal(P.key(prompt, "", "x").result, null);
+});
+
+test("an edit goes to the shared trees for all workspaces, else to the workspace", () => {
+  assert.equal(L.editTarget(5, "all"), "default");
+  assert.equal(L.editTarget(5, "only"), 5);
+  assert.equal(L.editTarget(3, ""), 3);
+  assert.equal(L.editTarget("default", ""), "default");
 });
 
 test("the view opens at the focused workspace's number and screen", () => {

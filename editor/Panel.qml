@@ -87,7 +87,7 @@ Item {
   function startPendingRecord() {
     if (!root.pendingRecord || !root.opened || !root.engine || root.engine.state === null) return
     root.pendingRecord = false
-    if (!layoutView.prompting) layoutView.startRecord()
+    if (!layoutView.prompting) layoutView.recordFocused()
   }
 
   function close() {
@@ -211,6 +211,11 @@ Item {
 
   function layoutHeaderText() {
     return layoutView.headerLine()
+  }
+
+  // The Layout view's workspace strip, "[All workspaces] 1 2 3• ...".
+  function layoutStripText() {
+    return layoutView.stripText()
   }
 
   // A view's prompt as one line, the refusal after " | "; the view's
