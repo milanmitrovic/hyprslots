@@ -739,6 +739,82 @@ function M.set_trees(data, layout, n, trees)
   return out
 end
 
+-- The data with slot `slot` placed in layout `layout`'s trees for workspace
+-- n (the Assignment view's a on a slot no tree of the workspace places), on
+-- `screen`: into a scroll branch in the global slot order (before the first
+-- slot it sorts before, else after the last one), appended to a tiled tree's
+-- root split (a bare leaf becoming h[leaf, slot]), or as the whole tree of a
+-- screen with none. A workspace showing the default trees gets its own copy
+-- of them with the slot; the default ones stay. Returns the new data and the
+-- screen the slot went on (nil when the workspace's trees already place it,
+-- on any screen: nothing changes), or nil and why not.
+function M.place_slot(data, layout, n, slot, screen)
+  local entry, err = layout_entry(data, layout)
+  if not entry then
+    return nil, err
+  end
+  local ok, ws_err = check_workspace(n)
+  if not ok then
+    return nil, ws_err
+  end
+  local known, slot_err = existing_slot(data, slot)
+  if not known then
+    return nil, slot_err
+  end
+  screen = as_screen(screen)
+  local fits, screen_err = check_screen(layout, entry, screen)
+  if not fits then
+    return nil, screen_err
+  end
+  local own = type(entry.workspaces) == "table" and type(entry.workspaces[n]) == "table" and entry.workspaces[n] or nil
+  local shown = own or (type(entry.default) == "table" and entry.default) or {}
+  for _, text in pairs(shown) do
+    local node = tree.parse(text)
+    if node then
+      for _, name in ipairs(tree.slots(node)) do
+        if name == slot then
+          return M.copy(data), nil
+        end
+      end
+    end
+  end
+
+  local out = M.copy(data)
+  local trees = trees_of(out.layouts[layout], n)
+  local text = trees[screen]
+  local node = text and tree.parse(text)
+  if not node then
+    if text then
+      return nil, string.format("layout '%s' workspace %d screen %d's tree '%s' does not parse", layout, n, screen, text)
+    end
+    trees[screen] = slot
+    return out, screen
+  end
+  local leaf = { slot = slot, weight = 1 }
+  if node.scroll then
+    local order = {}
+    for i, name in ipairs(sorted_keys(global_slots(data))) do
+      order[name] = i
+    end
+    local at, last = nil, 0
+    for i, child in ipairs(node.children) do
+      if child.slot then
+        if not at and (order[child.slot] or math.huge) > order[slot] then
+          at = i
+        end
+        last = i
+      end
+    end
+    table.insert(node.children, at or last + 1, leaf)
+  elseif node.children then
+    node.children[#node.children + 1] = leaf
+  else
+    node = { split = "h", weight = 1, children = { node, leaf } }
+  end
+  trees[screen] = serialize.tree(node)
+  return out, screen
+end
+
 -- The data with a layout's tree for workspace n (or "default") on a screen
 -- put back to the one `saved` (the data as slots.lua holds it) gives it:
 -- the workspace's own tree there, else (it has none of its own there) the

@@ -1038,11 +1038,30 @@ function handlers.clear_spec(engine, args)
   return { workspace = workspace, slot = args.slot, spec = was, seq = engine.seq }
 end
 
--- take_spec { workspace, slot, address }: the Assignment view's a (aerolayout's):
+-- The screen (on the active desk) of the workspace a window is on, or nil.
+local function window_screen(engine, window)
+  local entry = engine.workspaces[window.workspace_id]
+  if entry then
+    return entry.screen
+  end
+  local ok, monitor = pcall(adapter.workspace_monitor, window.workspace_id)
+  for screen, name in ipairs(ok and engine.active and engine.active.monitors or {}) do
+    if name == monitor then
+      return screen
+    end
+  end
+  return nil
+end
+
+-- take_spec { workspace, slot, address, place?, layout?, screen? }: the
+-- Assignment view's a (aerolayout's):
 -- the window's spec (spec.from_window) becomes the workspace's spec for the slot,
 -- replacing the one it had, and the window takes the slot (over any other
 -- window the spec matches; the one that held it is routed again). The edit
--- is checked before anything moves.
+-- is checked before anything moves. With place, a slot the workspace's trees
+-- in the layout (default the active one) do not place is put into them first
+-- (edit.place_slot), on `screen`, else the screen of the window's workspace,
+-- else 1; reply `placed` { layout, screen, tree, used_by[] }.
 function handlers.take_spec(engine, args)
   local window = live_window(args.address)
   if not window then
@@ -1056,7 +1075,25 @@ function handlers.take_spec(engine, args)
   if not text then
     return fail("window " .. tostring(args.address) .. " has no class to make a spec of")
   end
-  local data, edit_err = edit.set_spec(engine.data, workspace, args.slot, text)
+  local data, edit_err = engine.data, nil
+  local placed
+  if args.place == true then
+    local name, layout_err = target_layout(engine, args)
+    if not name then
+      return fail(layout_err)
+    end
+    local screen = as_screen(args.screen) or window_screen(engine, window) or 1
+    if math.type(screen) ~= "integer" or screen < 1 or screen > engine.cfg.layouts[name].screens then
+      screen = 1
+    end
+    local on
+    data, on = edit.place_slot(data, name, workspace, args.slot, screen)
+    if not data then
+      return fail(on)
+    end
+    placed = on and { layout = name, screen = on }
+  end
+  data, edit_err = edit.set_spec(data, workspace, args.slot, text)
   if not data then
     return fail(edit_err)
   end
@@ -1068,6 +1105,18 @@ function handlers.take_spec(engine, args)
   if not cfg then
     return fail(load_err)
   end
+  if placed then
+    -- the placed tree replaces a keyboard-resized one of that branch
+    resize.clear(engine, placed.layout, workspace, placed.screen)
+    local users = array()
+    for _, desk_name in ipairs(cfg.desk_names) do
+      if cfg.desks[desk_name].layout == placed.layout then
+        users[#users + 1] = desk_name
+      end
+    end
+    placed = object({ layout = placed.layout, screen = placed.screen,
+      tree = serialize.tree(configured_tree(cfg, placed.layout, workspace, placed.screen)), used_by = users })
+  end
   local before = engine.data.specs and engine.data.specs[workspace]
   local replaced = type(before) == "table" and before[args.slot] or nil
   -- Into the slot first, so the re-solve under the new spec keeps it there;
@@ -1078,7 +1127,7 @@ function handlers.take_spec(engine, args)
   end
   engine:apply_config(cfg, data, true)
   return { workspace = workspace, slot = args.slot, spec = text, replaced = replaced, address = window.address,
-    displaced = displaced, seq = engine.seq }
+    displaced = displaced, placed = placed, seq = engine.seq }
 end
 
 -- Desks and layouts (the Desks & Layouts view) --------------------------------

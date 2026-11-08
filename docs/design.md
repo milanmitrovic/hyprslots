@@ -945,7 +945,7 @@ left-most; as an object key, `"1"`).
 | `describe_slot` | `slot`, `description` (`""` removes it) | `slot, description, seq` |
 | `set_spec` | `workspace`, `slot`, `spec` | `workspace, slot, spec` (normalized), `seq` |
 | `clear_spec` | `workspace`, `slot` | `workspace, slot, spec` (the one cleared), `seq` |
-| `take_spec` | `workspace`, `slot`, `address` | `workspace, slot, spec, replaced?, address, displaced?, seq`: the window takes the slot and its spec becomes the workspace's |
+| `take_spec` | `workspace`, `slot`, `address`, `place?`, `layout?`, `screen?` | `workspace, slot, spec, replaced?, address, displaced?, placed?` (`layout, screen, tree, used_by[]`), `seq`: the window takes the slot and its spec becomes the workspace's; with `place`, a slot the workspace's trees do not place is put into them first |
 | `add_desk` | `name`, `monitors[]` (selectors), `layout` | `desk, monitors, layout, active, seq` |
 | `rename_desk` | `desk`, `to` | `desk, to, active, seq` |
 | `delete_desk` | `desk` | `desk, active, seq`; the active one too (its monitors then get a new desk, §8) |
@@ -1026,6 +1026,21 @@ re-run over it) before anything moves; then the window is assigned as by
 ordinary one (the new spec names the window), and the edit is applied, so
 the re-solve keeps that window in the slot over any older one the spec also
 matches.
+
+With `place: true` (the Assignment view's `a` on a slot no tree of the
+workspace places), the slot is first put into the workspace's trees in the
+layout (`layout?`, default the active desk's), in the same checked edit
+(`edit.place_slot`): on `screen`, else the screen of the window's workspace
+on the active desk, else 1; into a scroll branch in the global slot order
+(before the first slot it sorts before, else after the last one: `left`
+into `scroll[main, right]` gives `scroll[left, main, right]`), appended as
+a new child of a tiled tree's root split (a bare leaf becoming `h[leaf,
+slot]`), or as the whole tree of a screen with none. A workspace showing
+the default trees gets its own copy of them with the slot, the default
+ones untouched. The placed branch's keyboard-resized override goes, as with
+`set_tree`. A slot the trees already place, on any screen, changes no tree
+(no `placed`). The edit applies to the layout wherever it is used
+(`placed.used_by`, the desks using it), and stays in memory until `save`.
 
 **Layout editing** (the Layout view). Every tree call edits a layout (by
 default the active desk's), so it changes every desk using that layout.

@@ -318,6 +318,67 @@ return { slots = data.slots, specs = specs, desks = data.desks, layouts = data.l
     end)
   end)
 
+  describe("take_spec with place (a on a slot the workspace's trees do not place)", function()
+    local PLACING = [=[
+return {
+  slots = { left = {}, main = {}, right = {}, top = {} },
+  specs = { [8] = { main = "t-main" } },
+  desks = {
+    dual = { monitors = { "HEADLESS-2", "HEADLESS-3" }, layout = "dual" },
+    other = { monitors = { "DP-9", "DP-8" }, layout = "dual" },
+  },
+  layouts = {
+    dual = { screens = 2, workspaces = { [8] = { [1] = "scroll[main, right]", [2] = "top" } } },
+  },
+}
+]=]
+
+    it("puts the slot into the workspace's tree in the active layout, in the global slot order", function()
+      setup(PLACING)
+      local editor = open(1, "kitty", 1, "deltaf | nvim")
+      local reply = ok("take_spec", { workspace = 8, slot = "left", address = editor.address, place = true })
+      assert.are.same({ layout = "dual", screen = 1, tree = "scroll[left, main, right]", used_by = { "dual", "other" } },
+        reply.placed)
+      local s = state()
+      assert.are.equal("scroll[left, main, right]", tree_of(s, "dual", 8, 1))
+      assert.are.equal("kitty/deltaf", s.specs["8"].left)
+      assert.are.same({ workspace = 8, slot = "left" }, s.assignments[editor.address])
+      assert.is_true(s.dirty)
+      ok("save")
+      assert.matches('%[1%] = "scroll%[left, main, right%]"', read(s.config.data_file))
+    end)
+
+    it("places it on the screen of the window's workspace, appended to a tiled tree", function()
+      setup(PLACING)
+      local editor = open(1, "kitty", 13, "deltaf | nvim")
+      local reply = ok("take_spec", { workspace = 8, slot = "left", address = editor.address, place = true })
+      assert.are.same({ layout = "dual", screen = 2, tree = "h[top, left]", used_by = { "dual", "other" } },
+        reply.placed)
+      assert.are.equal("h[top, left]", tree_of(state(), "dual", 8, 2))
+      assert.are.equal("scroll[main, right]", tree_of(state(), "dual", 8, 1))
+    end)
+
+    it("leaves the trees alone when they already place the slot, or without place", function()
+      setup(PLACING)
+      local editor = open(1, "kitty", 1, "deltaf | nvim")
+      local reply = ok("take_spec", { workspace = 8, slot = "right", address = editor.address, place = true })
+      assert.is_nil(reply.placed)
+      assert.are.equal("scroll[main, right]", tree_of(state(), "dual", 8, 1))
+      reply = ok("take_spec", { workspace = 8, slot = "left", address = editor.address })
+      assert.is_nil(reply.placed)
+      assert.are.equal("scroll[main, right]", tree_of(state(), "dual", 8, 1))
+    end)
+
+    it("changes no tree when the take is refused", function()
+      setup(PLACING)
+      local editor = open(1, "kitty", 1, "deltaf | nvim")
+      assert.matches("no slot 'zz'", call("take_spec", { workspace = 8, slot = "zz", address = editor.address,
+        place = true }).error)
+      assert.are.equal("scroll[main, right]", tree_of(state(), "dual", 8, 1))
+      assert.is_false(state().dirty)
+    end)
+  end)
+
   describe("add_desk", function()
     it("adds a desk for monitor selectors, using a layout for as many screens", function()
       local reply = ok("add_desk", { name = "office", monitors = { "DP-1", "DP-2" }, layout = "dual" })
