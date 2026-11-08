@@ -460,3 +460,35 @@ test("the order strip lists the leaves in order once the tree nests", () => {
   assert.equal(L.order(tree("h[main, v[right, *]]")), "1.main → 2.right → 3.overflow");
   assert.equal(L.order(tree("scroll[x, y]")), "1.x → 2.y, then windows with no slot");
 });
+
+// --- adding and removing slots (global slots) --------------------------------
+
+test("a adds a slot right after the selected leaf, in its container", () => {
+  assert.equal(edited("h[a, b:2, c]", (n) => L.addSlot(n, "b", "x")), "h[a, b:2, x, c]");
+  assert.equal(edited("h[a, v[b, c]]", (n) => L.addSlot(n, "b", "x")), "h[a, v[b, x, c]]");
+  assert.equal(edited("scroll[a, b]", (n) => L.addSlot(n, "a", "x")), "scroll[a, x, b]");
+  assert.equal(edited("h[a, *]", (n) => L.addSlot(n, "*", "x")), "h[a, *, x]");
+});
+
+test("a on a tree that is one leaf splits it side by side; on a screen with no tree the slot is the tree", () => {
+  assert.equal(edited("main", (n) => L.addSlot(n, "main", "x")), "h[main, x]");
+  assert.equal(L.format(L.addSlot(null, "", "x").node), "x");
+});
+
+test("a refuses a slot the tree already has", () => {
+  assert.match(refused("h[a, b]", (n) => L.addSlot(n, "a", "b")), /already/);
+});
+
+test("x takes the selected slot out of the tree, tidied; the last leaf leaves no tree", () => {
+  assert.equal(edited("h[a, v[b, c]:2]", (n) => L.removeSlot(n, "b")), "h[a, c:2]");
+  assert.equal(edited("scroll[a, b]", (n) => L.removeSlot(n, "a")), "scroll[b]");
+  assert.equal(L.removeSlot(tree("a"), "a").node, null);
+  assert.match(refused("h[a, *]", (n) => L.removeSlot(n, "*")), /overflow/);
+});
+
+test("the slots a adds are the global ones no pane of the desk places yet", () => {
+  const state = { slots: [{ name: "left" }, { name: "main" }, { name: "right" }, { name: "side" }] };
+  const drafts = { big: { node: tree("h[main, right]") }, side: { node: null }, top: { node: tree("left") } };
+  assert.deepEqual(plain(L.slotChoices(state, drafts)), ["side"]);
+  assert.deepEqual(plain(L.slotChoices(null, drafts)), []);
+});

@@ -61,7 +61,7 @@ Item {
 
   readonly property string helpText: {
     if (prompting) return Prompts.help(prompt)
-    return "arrows select   ·   Tree: hjkl move  HJKL force move  / flip  t " + toggleLabel
+    return "arrows select   ·   Tree: a add slot  x take out  hjkl move  HJKL force move  / flip  t " + toggleLabel
       + "  r ratios  o overflow   ·   Layout: w apply  Ctrl+S apply+save  d default  R record   ·   g desk  c arrangement"
       + "   ·   Tab switch view  q close"
   }
@@ -274,6 +274,8 @@ Item {
     else if (text === "t") edit(function(n) { return Layout.toggleScroll(n) },
       toggleLabel === "tiles" ? "Tiled again." : "Scrolling: full-width columns in this order (hl move them).")
     else if (text === "o") toggleOverflow()
+    else if (text === "a") startAddSlot()
+    else if (text === "x") removeSelected()
     else if (text === "r") startRatio()
     else if (text === "w") apply(null)
     else if (text === "d") startReset()
@@ -282,6 +284,44 @@ Item {
     else if (text === "c") startPick("arrangement")
     else return false
     return true
+  }
+
+  // a: one of the global slots no pane of this desk places yet, added after
+  // the selected leaf (or as the tree of a screen that has none).
+  function startAddSlot() {
+    if (refuseEdit() || role === "") return
+    var names = Layout.slotChoices(state, drafts)
+    if (names.length === 0) {
+      say("Every slot is placed on desk " + desk + " already; the Slots view adds more.", true)
+      return
+    }
+    var r = role
+    ask(Prompts.choice("Add slot to " + r, Prompts.options(names)), function(name) {
+      var result = Layout.addSlot(root.drafts[r] ? root.drafts[r].node : null, root.selectedKey, name)
+      if (result.error) {
+        root.say(result.error, true)
+        return
+      }
+      root.setDraft(r, result.node)
+      root.role = r
+      root.selectedKey = name
+      root.say("Added " + name + " to " + r + "." + root.draftNote(), false)
+    })
+  }
+
+  // x: the selected slot out of this screen's tree (it stays a slot; the
+  // Slots view deletes slots).
+  function removeSelected() {
+    if (!activeNode || refuseEdit()) return
+    var key = selectedKey
+    var result = Layout.removeSlot(activeNode, key)
+    if (result.error) {
+      say(result.error, true)
+      return
+    }
+    setDraft(role, result.node)
+    keepSelection()
+    say("Took " + key + " out of " + role + "." + draftNote(), false)
   }
 
   function toggleOverflow() {

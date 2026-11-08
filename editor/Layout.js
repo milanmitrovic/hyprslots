@@ -668,6 +668,44 @@ function crossMove(source, target, key, direction) {
   return { source: rest, target: rooted(into) }
 }
 
+// a: slot `slot` added right after the leaf `key` in its container (a
+// tree that is one leaf becomes h[leaf, slot]; no tree at all, `root` null,
+// becomes the slot alone). { node } or { error }.
+function addSlot(root, key, slot) {
+  var leaf = { kind: "slot", slot: slot, weight: 1 }
+  if (!root) return { node: leaf }
+  if (leaves(root).indexOf(slot) >= 0) return { error: "this tree places " + slot + " already" }
+  var out = copy(root)
+  var path = pathTo(out, key)
+  if (!path || path.length < 2) {
+    out.weight = 1
+    return { node: { kind: "h", weight: 1, children: [out, leaf] } }
+  }
+  var parent = path[path.length - 2].node
+  parent.children.splice(path[path.length - 1].index + 1, 0, leaf)
+  return { node: out }
+}
+
+// x: the slot `key` taken out of the tree, tidied ({ node: null } when it
+// was all of it). The overflow leaf is o's, not x's. { node } or { error }.
+function removeSlot(root, key) {
+  if (key === OVERFLOW) return { error: "the overflow leaf is no slot: o parks it" }
+  if (isLeaf(root)) return { node: null }
+  return { node: takeOut(root, key).node }
+}
+
+// The global slots (state.slots) no pane's draft of the desk places yet:
+// what `a` offers. `drafts` is role -> { node }.
+function slotChoices(state, drafts) {
+  var placed = {}
+  for (var role in drafts || {}) {
+    var d = drafts[role]
+    if (d && d.node) leaves(d.node).forEach(function(k) { placed[k] = true })
+  }
+  var list = state && Array.isArray(state.slots) ? state.slots : []
+  return list.map(function(s) { return s.name }).filter(function(name) { return !placed[name] })
+}
+
 // --- the view's model -------------------------------------------------------
 
 function sortedNames(object) {
