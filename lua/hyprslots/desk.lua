@@ -201,4 +201,16 @@ function M.default_trees(monitors, slot_names)
   return { [1] = text }
 end
 
+-- The name a new layout for `count` screens with these trees (data form)
+-- takes before a free one is found: what it arranges, never the desk's
+-- name (a desks table reading "laptop -> laptop" says nothing): "scroll"
+-- for one screen scrolling, else "<count>-screen".
+function M.layout_name_for(count, trees)
+  local first = trees and trees[1]
+  if count == 1 and type(first) == "string" and first:match("^scroll%[") then
+    return "scroll"
+  end
+  return count .. "-screen"
+end
+
 return M

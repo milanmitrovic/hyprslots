@@ -187,7 +187,11 @@ writes the new shape):
   when every monitor of the arrangement is connected at load, else in the
   roles' sort order (the order slots.lua wrote them in). Arrangements whose
   layouts come out the same share one, named after the first. Pinned roles
-  become each desk's pinned screens.
+  become each desk's pinned screens. The migration keeps the arrangement's
+  name for its layout (it knows nothing better to call it, and a name it
+  made up would hide where the trees came from), so a migrated
+  `laptop` desk uses layout `laptop`: rename the layout for what it
+  arranges in the editor's Layouts tab (`r`; desks follow).
 
 A `config.lua` written for an older shape passes `slots = data.slots` and
 nothing more, or `arrangements = data.arrangements`, which would lose the
@@ -641,12 +645,14 @@ where they are. The desk (`Engine:new_desk`):
   connector;
 - uses the most recently used layout for as many screens (the layouts the
   engine ran since it loaded, most recent first; after a Hyprland reload the
-  first such layout by name), else a new layout named like the desk, for
-  that many screens, with default trees: screen 1 shows `left`, `main` and
+  first such layout by name), else a new layout named for what it arranges,
+  not after the desk (`scroll` for one screen scrolling, else `<N>-screen`,
+  `-2`, `-3`... when taken: a desks table reading `laptop → laptop` says
+  nothing), for that many screens, with default trees: screen 1 shows `left`, `main` and
   `right` (those that are slots; else every slot, by name) side by side
   (`h[left, main, right]`), as a scroll branch (`scroll[left, main,
   right]`) when screen 1 is a laptop panel; the other screens show nothing.
-  The editor's Desks & Layouts view then applies another layout, forks one
+  The editor's Layouts view then applies another layout, forks one
   to customize, or renames the desk.
 
 It is an edit like the editor's (`api.new_desk`: `edit.add_layout`,

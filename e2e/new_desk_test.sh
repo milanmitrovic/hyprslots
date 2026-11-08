@@ -11,12 +11,12 @@
 #
 # The only configured desk is solo = { HEADLESS-2 }, layout solo (1 screen):
 # workspace 3 = h[left, main:2, right] -> 600 + 1200 + 600 px. With
-# HEADLESS-3 added, desk headless-2+headless-3 gets a new layout of that name
-# whose default trees put left, main and right in three equal columns
+# HEADLESS-3 added, desk headless-2+headless-3 gets a new layout named for
+# what it arranges, 2-screen (not after the desk), whose default trees put left, main and right in three equal columns
 # (800 px each) on screen 1 (HEADLESS-2), screen 2 empty. Swapping
 # HEADLESS-3 for HEADLESS-4 makes desk headless-2+headless-4, which reuses
 # that layout (the most recently used 2-screen one) rather than layout
-# a-wide (an empty 2-screen layout, first by name) or a new one.
+# 0-wide (an empty 2-screen layout, first by name) or a new one.
 
 test_setup() {
   cat >"$E2E_CONFIG_HOME/hypr/test-extra.lua" <<'LUA'
@@ -113,17 +113,17 @@ test_body() {
   output_create HEADLESS-3
   eventually 5 is_desk headless-2+headless-3 || fail "no new desk: desk is $(active_desk)"
 
-  # Then a desk is made for it, with a new layout of the same name.
-  local state name=headless-2+headless-3
+  # Then a desk is made for it, with a new layout named 2-screen.
+  local state name=headless-2+headless-3 layout=2-screen
   state=$(api state)
   expect_eq "new desk" "$name" "$(field .desk <<<"$state")"
   expect_eq "made by the engine" "true" "$(field ".desks[\"$name\"].auto" <<<"$state")"
   expect_eq "its monitors" '["HEADLESS-2","HEADLESS-3"]' "$(jq -c --arg n "$name" '.desks[$n].monitors' <<<"$state")"
   expect_eq "its screens" '["HEADLESS-2","HEADLESS-3"]' "$(jq -c .screens <<<"$state")"
-  expect_eq "new layout" "$name" "$(field .layout <<<"$state")"
-  expect_eq "desk's layout" "$name" "$(field ".desks[\"$name\"].layout" <<<"$state")"
-  expect_eq "layout screens" "2" "$(field ".layouts[\"$name\"].screens" <<<"$state")"
-  expect_eq "default tree, screen 1" "h[left, main, right]" "$(field ".layouts[\"$name\"].default[\"1\"].tree" <<<"$state")"
+  expect_eq "new layout" "$layout" "$(field .layout <<<"$state")"
+  expect_eq "desk's layout" "$layout" "$(field ".desks[\"$name\"].layout" <<<"$state")"
+  expect_eq "layout screens" "2" "$(field ".layouts[\"$layout\"].screens" <<<"$state")"
+  expect_eq "default tree, screen 1" "h[left, main, right]" "$(field ".layouts[\"$layout\"].default[\"1\"].tree" <<<"$state")"
   expect_eq "unsaved" "true" "$(field .dirty <<<"$state")"
 
   # And workspace 3 on HEADLESS-2 shows the three slots in equal columns.
@@ -139,7 +139,7 @@ test_body() {
   log "save -> $reply"
   expect_eq "save ok" "true" "$(field .ok <<<"$reply")"
   expect_eq "slots.lua holds the desk and layout" \
-    "monitors=HEADLESS-2,HEADLESS-3 layout=$name screens=2 default1=h[left, main, right] default2=nil" \
+    "monitors=HEADLESS-2,HEADLESS-3 layout=$layout screens=2 default1=h[left, main, right] default2=nil" \
     "$(saved_desk "$name")"
   expect_eq "slots.lua keeps desk solo" \
     "monitors=HEADLESS-2 layout=solo screens=1 default1=nil default2=nil" "$(saved_desk solo)"
@@ -148,7 +148,7 @@ test_body() {
   expect_eq "no longer auto" "" "$(field ".desks[\"$name\"].auto // empty" <<<"$state")"
 
   # Given another 2-screen layout, first by name but never used.
-  reply=$(api add_layout '{"name": "a-wide", "screens": 2}')
+  reply=$(api add_layout '{"name": "0-wide", "screens": 2}')
   log "add_layout -> $reply"
   expect_eq "add_layout ok" "true" "$(field .ok <<<"$reply")"
 
@@ -164,11 +164,11 @@ test_body() {
   expect_eq "second new desk" "$second" "$(field .desk <<<"$state")"
   expect_eq "made by the engine" "true" "$(field ".desks[\"$second\"].auto" <<<"$state")"
   expect_eq "its monitors" '["HEADLESS-2","HEADLESS-4"]' "$(jq -c --arg n "$second" '.desks[$n].monitors' <<<"$state")"
-  expect_eq "reused layout" "$name" "$(field .layout <<<"$state")"
+  expect_eq "reused layout" "$layout" "$(field .layout <<<"$state")"
   expect_eq "no layout made for it" "" "$(field ".layouts[\"$second\"] // empty" <<<"$state")"
-  expect_eq "layouts" "[\"a-wide\",\"$name\",\"solo\"]" "$(jq -c '.layouts | keys' <<<"$state")"
+  expect_eq "layouts" "[\"0-wide\",\"$layout\",\"solo\"]" "$(jq -c '.layouts | keys' <<<"$state")"
   expect_eq "the layout is used by both new desks" "[\"$name\",\"$second\"]" \
-    "$(jq -c --arg n "$name" '.layouts[$n].used_by' <<<"$state")"
+    "$(jq -c --arg n "$layout" '.layouts[$n].used_by' <<<"$state")"
   expect_eq "unsaved" "true" "$(field .dirty <<<"$state")"
 
   log "workspace 3 -> $(api workspace '{"workspace": 3}')"

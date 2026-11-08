@@ -174,6 +174,13 @@ describe("a new desk for unknown monitors", function()
       desk.default_trees({ monitor("eDP-1", { x = 3000 }), monitor("DP-1") }, slots), "screen 1 is the left one")
   end)
 
+  it("names a new layout for what it arranges, not for a desk: scroll, else <N>-screen", function()
+    assert.are.equal("scroll", desk.layout_name_for(1, { [1] = "scroll[left, main, right]" }))
+    assert.are.equal("1-screen", desk.layout_name_for(1, { [1] = "h[left, main, right]" }))
+    assert.are.equal("2-screen", desk.layout_name_for(2, { [1] = "scroll[left, main, right]" }))
+    assert.are.equal("3-screen", desk.layout_name_for(3, {}))
+  end)
+
   it("uses every slot when there is no left, main or right, and nothing when there are no slots", function()
     assert.are.same({ [1] = "h[a, b]" }, desk.default_trees({ monitor("DP-1") }, { "a", "b" }))
     assert.are.same({ [1] = "a" }, desk.default_trees({ monitor("DP-1") }, { "a" }))

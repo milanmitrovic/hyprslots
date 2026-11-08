@@ -187,7 +187,7 @@ end
 
 -- A desk for the connected monitors, when no desk is them (§8): named
 -- after them, using the most recently used layout for as many screens, or
--- a new default one. It is an edit like the editor's, in memory until
+-- a new default one named for what it arranges (desk.layout_name_for). It is an edit like the editor's, in memory until
 -- saved (the editor and the bar show unsaved edits); where config.lua does
 -- not take desks from slots.lua it lives in the running config only.
 function Engine:new_desk()
@@ -208,8 +208,8 @@ function Engine:new_desk()
   local layout = layout_for_new_desk(self, #monitors)
   local trees
   if not layout then
-    layout = free_name(name, self.cfg.layouts, data_layouts)
     trees = desk.default_trees(monitors, self.cfg.slot_names)
+    layout = free_name(desk.layout_name_for(#monitors, trees), self.cfg.layouts, data_layouts)
   end
 
   local made = self.data and api.new_desk(self, name, selectors, layout, #monitors, trees)
