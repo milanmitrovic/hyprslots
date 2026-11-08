@@ -10,7 +10,9 @@
 -- cell with no share to state: a pane of an accordion, which stacks its
 -- children so each gets the whole container. An accordion's cells are written
 -- `*` (or `1`) and setting them writes nothing; a `*` among tiled siblings is
--- refused. Any split whose kind is not `h` or `v` counts as an accordion.
+-- refused. Any split whose kind is not `h` or `v` counts as an accordion. A
+-- scroll branch (`scroll[...]`) is the same: its columns are each full width,
+-- so they are written `*` too.
 --
 -- hyprslots trees carry integer weights only (tree.lua), so a decimal ratio is
 -- turned into the smallest integer ratio meaning the same thing (1.5:1 ->
@@ -208,7 +210,14 @@ local function validate(node, list, path)
   if #list ~= count then
     syntax_error(string.format("expected %d value%s for %s, got %d", count, count == 1 and "" or "s", path, #list))
   end
-  if M.is_accordion(node) then
+  if node.scroll then
+    for _, term in ipairs(list) do
+      if term.weight ~= M.STAR and term.weight ~= 1 then
+        syntax_error("ratios don't apply to " .. path .. " — it's a scroll branch, and each of its columns "
+          .. "is full width. Write * for every column")
+      end
+    end
+  elseif M.is_accordion(node) then
     for _, term in ipairs(list) do
       if term.weight ~= M.STAR and term.weight ~= 1 then
         syntax_error("ratios don't apply to " .. path .. " — it's an accordion, and its panes each get the "

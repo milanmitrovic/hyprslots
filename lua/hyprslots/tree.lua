@@ -4,11 +4,15 @@
 -- carry an integer weight (default 1). Leaves are slot names. An accordion,
 -- `a[left, main, right]`, stacks its members in one Hyprland group: it holds
 -- slots only (no splits, no weights) and all of its members share its box. A
+-- scroll container, `scroll[left, main, right]`, is a whole screen's tree:
+-- its slots are full-width columns of Hyprland's scrolling layout, in that
+-- order (scroll.lua); it holds slots only and sits at the root only. A
 -- parsed node is
 --
 --   { slot = "main", weight = 2 }                               -- leaf
 --   { split = "h", weight = 1, children = { node, ... } }       -- split
 --   { accordion = true, weight = 1, children = { leaf, ... } }  -- accordion
+--   { scroll = true, weight = 1, children = { leaf, ... } }     -- scroll
 --   { overflow = true, weight = 1 }                             -- overflow leaf
 --
 -- The overflow leaf, written `*` (at most one per tree, never inside an
@@ -31,7 +35,7 @@ M.OVERFLOW = "*"
 local TREE_WEIGHT, OVERFLOW_WEIGHT = 3, 1
 
 -- Letters that open a container when a '[' follows them.
-local CONTAINER = { h = true, v = true, a = true }
+local CONTAINER = { h = true, v = true, a = true, scroll = true }
 
 local function parser(text)
   local p = { text = text, pos = 1 }
@@ -85,13 +89,14 @@ local function parser(text)
   end
 
   -- `[child, child:w, ...]`, after the container's letter.
+  -- `weightless` is the error a weight on a child is.
   function p.children(child, weightless)
     p.pos = p.pos + 1
     local children = {}
     repeat
       local node = child()
       if weightless and p.peek() == ":" then
-        p.fail("accordion members take no weight (the accordion shares one box)")
+        p.fail(weightless)
       end
       node.weight = p.weight()
       children[#children + 1] = node
@@ -104,22 +109,26 @@ local function parser(text)
     return children
   end
 
-  -- An accordion member: a slot, never a container.
-  function p.member()
-    if p.peek() == "*" then
-      p.fail("an accordion holds slots only, found '*' inside it")
-    end
-    local start = p.pos
-    local name = p.name()
-    if CONTAINER[name] and p.peek() == "[" then
-      p.pos = start
+  -- A member of a slots-only container (`what` names it in errors): a slot,
+  -- never a container or the overflow leaf.
+  local function member(what)
+    return function()
+      if p.peek() == "*" then
+        p.fail(what .. " holds slots only, found '*' inside it")
+      end
       p.skip()
-      p.fail("an accordion holds slots only, found '" .. name .. "[' inside it")
+      local start = p.pos
+      local name = p.name()
+      if CONTAINER[name] and p.peek() == "[" then
+        p.pos = start
+        p.fail(what .. " holds slots only, found '" .. name .. "[' inside it")
+      end
+      return { slot = name }
     end
-    return { slot = name }
   end
 
-  function p.node()
+  -- A node; `root` when it is the whole tree (where scroll[...] may be).
+  function p.node(root)
     if p.peek() == "*" then
       if p.overflow then
         p.fail("more than one overflow leaf '*'")
@@ -128,10 +137,21 @@ local function parser(text)
       p.pos = p.pos + 1
       return { overflow = true }
     end
+    p.skip()
+    local start = p.pos
     local name = p.name()
     if CONTAINER[name] and p.peek() == "[" then
       if name == "a" then
-        return { accordion = true, children = p.children(p.member, true) }
+        return { accordion = true,
+          children = p.children(member("an accordion"), "accordion members take no weight (the accordion shares one box)") }
+      end
+      if name == "scroll" then
+        if not root then
+          p.pos = start
+          p.fail("scroll[...] is a whole screen's tree, found it inside a split")
+        end
+        return { scroll = true,
+          children = p.children(member("scroll[...]"), "columns of scroll[...] take no weight (each is full width)") }
       end
       return { split = name, children = p.children(p.node) }
     end
@@ -209,6 +229,15 @@ function M.accordions(node)
   return collect_accordions(node, {})
 end
 
+-- The column slots of a scroll branch, in order, or nil when the tree is no
+-- scroll[...].
+function M.scroll(node)
+  if node and node.scroll then
+    return collect(node, {})
+  end
+  return nil
+end
+
 -- Parse tree text. Returns the root node, or nil and an error message.
 function M.parse(text)
   if type(text) ~= "string" then
@@ -217,7 +246,7 @@ function M.parse(text)
 
   local p = parser(text)
   local ok, result = pcall(function()
-    local root = p.node()
+    local root = p.node(true)
     if p.peek() == ":" then
       p.fail("the root of a tree takes no weight")
     end
@@ -267,7 +296,8 @@ local function prune(node, present)
   if #children == 0 then
     return nil
   end
-  return { split = node.split, accordion = node.accordion, weight = node.weight, children = children }
+  return { split = node.split, accordion = node.accordion, scroll = node.scroll, weight = node.weight,
+    children = children }
 end
 
 local function divide(node, x, y, w, h, out)
@@ -287,7 +317,10 @@ local function divide(node, x, y, w, h, out)
     total = total + child.weight
   end
 
-  local extent = node.split == "h" and w or h
+  -- A scroll branch on lua:slots (scroll.lua puts it on Hyprland's scrolling
+  -- layout) shows its columns side by side.
+  local across = node.split == "h" or node.scroll
+  local extent = across and w or h
   local offset = 0
   for i, child in ipairs(node.children) do
     local size
@@ -296,7 +329,7 @@ local function divide(node, x, y, w, h, out)
     else
       size = extent * child.weight // total
     end
-    if node.split == "h" then
+    if across then
       divide(child, x + offset, y, size, h, out)
     else
       divide(child, x, y + offset, w, size, out)
@@ -392,7 +425,8 @@ local function mirror(node, present)
   if #children == 0 then
     return nil
   end
-  return { split = node.split, accordion = node.accordion, weight = node.weight, children = children, source = node }
+  return { split = node.split, accordion = node.accordion, scroll = node.scroll, weight = node.weight,
+    children = children, source = node }
 end
 
 -- The tree the layout shows for `root` with these slots present: the

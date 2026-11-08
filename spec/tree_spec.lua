@@ -245,6 +245,64 @@ describe("accordion containers", function()
   end)
 end)
 
+describe("scroll containers", function()
+  local function rejects(text, pattern)
+    local node, err = tree.parse(text)
+    assert.is_nil(node)
+    assert.matches(pattern, err)
+  end
+
+  it("reads a scroll branch's slots in order", function()
+    local node = parse("scroll[left, main, right]")
+    assert.are.same({ "left", "main", "right" }, tree.slots(node))
+    assert.are.same({ "left", "main", "right" }, tree.scroll(node))
+  end)
+
+  it("takes a single slot", function()
+    assert.are.same({ "main" }, tree.scroll(parse("scroll[main]")))
+  end)
+
+  it("is no scroll branch when the tree is a split or a slot", function()
+    assert.is_nil(tree.scroll(parse("h[left, main]")))
+    assert.is_nil(tree.scroll(parse("main")))
+  end)
+
+  it("treats scroll as a slot name when no bracket follows", function()
+    assert.are.same({ "scroll", "b" }, tree.slots(parse("h[scroll, b]")))
+    assert.are.same({ "scroll", "b" }, tree.scroll(parse("scroll[scroll, b]")))
+  end)
+
+  it("rejects a scroll container below the root, saying it is the whole branch", function()
+    rejects("h[scroll[x, y], d]", "scroll%[...%] is a whole screen's tree, found it inside a split at position 3")
+  end)
+
+  it("rejects a split inside a scroll container", function()
+    rejects("scroll[x, v[y, z]]", "scroll%[...%] holds slots only, found 'v%[' inside it at position 11")
+  end)
+
+  it("rejects a weight inside a scroll container", function()
+    rejects("scroll[x:2, y]", "columns of scroll%[...%] take no weight")
+  end)
+
+  it("rejects the overflow leaf inside a scroll container", function()
+    rejects("scroll[x, *]", "scroll%[...%] holds slots only, found '%*' inside it")
+  end)
+
+  it("rejects a slot used twice", function()
+    rejects("scroll[x, y, x]", "'x' appears twice")
+  end)
+
+  it("lays its columns out side by side when lua:slots has to show it", function()
+    local boxes = tree.boxes(parse("scroll[x, y, z]"), area(0, 0, 2400, 1350))
+    assert.are.same({ x = area(0, 0, 800, 1350), y = area(800, 0, 800, 1350), z = area(1600, 0, 800, 1350) }, boxes)
+  end)
+
+  it("closes up around absent columns", function()
+    local boxes = tree.boxes(parse("scroll[x, y, z]"), area(0, 0, 2400, 1350), { x = true, z = true })
+    assert.are.same({ x = area(0, 0, 1200, 1350), z = area(1200, 0, 1200, 1350) }, boxes)
+  end)
+end)
+
 describe("the overflow leaf", function()
   local function rejects(text, pattern)
     local node, err = tree.parse(text)

@@ -35,6 +35,14 @@ describe("serialize.tree", function()
     end
   end)
 
+  it("writes a scroll branch as scroll[...], as tree.parse reads it", function()
+    for _, text in ipairs({ "scroll[left, main, right]", "scroll[main]" }) do
+      local node = assert(tree.parse(text))
+      assert.are.equal(text, serialize.tree(node))
+      assert.are.same(node, assert(tree.parse(serialize.tree(node))))
+    end
+  end)
+
   it("writes any other split kind the same way", function()
     local node = { split = "a", weight = 1, children = { { slot = "x", weight = 1 }, { slot = "y", weight = 1 } } }
     assert.are.equal("a[x, y]", serialize.tree(node))

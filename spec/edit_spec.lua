@@ -242,6 +242,12 @@ describe("edit.rename_leaf / edit.remove_leaf", function()
     assert.are.equal("v[b, c]", serialize.tree(edit.remove_leaf(node, "a")))
     assert.is_nil(edit.remove_leaf(assert(tree.parse("a")), "a"))
   end)
+
+  it("removing a column keeps a scroll branch, down to its last column", function()
+    local node = assert(tree.parse("scroll[a, b]"))
+    assert.are.equal("scroll[b]", serialize.tree(edit.remove_leaf(node, "a")))
+    assert.is_nil(edit.remove_leaf(assert(tree.parse("scroll[a]")), "a"))
+  end)
 end)
 
 describe("edit.add_arrangement", function()
