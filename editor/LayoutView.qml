@@ -54,7 +54,7 @@ Item {
   property string screen: ""
   property string selectedKey: ""
   // The layout the view follows changes under it (a, f, x in the Desks &
-  // Layouts tab, a hotplug): edited drafts are dropped, except after this
+  // Desk tab, a hotplug): edited drafts are dropped, except after this
   // view's own fork (the copy is the same trees).
   property bool _keepDrafts: false
 
@@ -72,7 +72,7 @@ Item {
   readonly property var sharedWith: state ? DesksLayouts.sharedWith(state, layout, state.desk) : []
 
   // A Prompts.js prompt and what to do with its answer, as in the
-  // Assignment and Layouts views.
+  // Assignment and Desk views.
   property var prompt: null
   property var _answer: null
   readonly property bool prompting: prompt !== null

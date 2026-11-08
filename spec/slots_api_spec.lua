@@ -1,4 +1,4 @@
--- Test seam S2: what the editor's Slots and Desks & Layouts views need from
+-- Test seam S2: what the editor's Slots and Desk view need from
 -- the api (docs/design.md §9): global slot edits (add, remove, rename across
 -- every tree and workspace, describe), per-workspace specs (set, clear, take a
 -- window's spec, the Assignment view's a), desk edits (add, rename, delete,
@@ -19,7 +19,7 @@ local function read(path)
   return text
 end
 
-describe("the Slots and Desks & Layouts views' api", function()
+describe("the Slots and Desk view' api", function()
   local hl, hyprslots
 
   local function open(id, class, workspace, title)

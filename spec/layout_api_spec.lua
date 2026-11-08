@@ -250,7 +250,7 @@ return { slots = data.slots, specs = data.specs, desks = data.desks, layouts = l
     end)
   end)
 
-  -- The Slots and Desks & Layouts views rename what the Layout view's calls
+  -- The Slots and Desk view rename what the Layout view's calls
   -- name: set_trees targets the renamed layout, and reset reads the tree
   -- slots.lua holds through the renames, copies and removals made since.
   describe("after slot and layout edits", function()
