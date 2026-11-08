@@ -9,11 +9,13 @@ import qs.Ui
 import "Prompts.js" as Prompts
 
 // The hyprslots editor panel (docs/design.md §9): aerolayout's `edit` TUI as
-// an Omarchy shell panel. Four tabs, cycled with Tab / Shift+Tab as in the
-// TUI: Assignment (which window fills which slot), Layout (one desk's
-// trees), Slots and Arrangements. Esc or q closes it (while a view's prompt
-// is open, every key is the prompt's). Ctrl+S saves in every tab; in the
-// Layout tab it applies the edited panes first.
+// an Omarchy shell panel. Three tabs, cycled with Tab / Shift+Tab as in the
+// TUI: Assignment (which window fills which slot), Layout (one desk's trees,
+// with the global slots listed beside them, made and placed there) and
+// Arrangements. Esc or q closes it (while a view's prompt is open, every key
+// is the prompt's; in the Layout tab's slot list Esc goes back to the
+// picture). Ctrl+S saves in every tab; in the Layout tab it applies the
+// edited panes first.
 //
 //   omarchy-shell shell toggle milan.hyprslots
 //   omarchy-shell shell call milan.hyprslots press a   (a key, for scripts and tests)
@@ -33,7 +35,7 @@ Item {
   // The service, or an engine of the panel's own when it runs without one.
   readonly property var engine: service ? service : (ownEngine.item ? ownEngine.item : null)
 
-  readonly property var tabs: ["Assignment", "Layout", "Slots", "Arrangements"]
+  readonly property var tabs: ["Assignment", "Layout", "Arrangements"]
   property int tab: 0
 
   property color background: Commons.Color.menu.background
@@ -69,8 +71,6 @@ Item {
     assignmentView.reset()
     layoutView.focusedWorkspace = assignmentView.focusedWorkspace
     layoutView.reset()
-    slotsView.focusedWorkspace = assignmentView.focusedWorkspace
-    slotsView.reset()
     arrangementsView.reset()
     if (payload.record === true) {
       root.tab = 1
@@ -108,8 +108,7 @@ Item {
   function handleKey(key, text, modifiers) {
     if (assignmentView.prompting && root.tab === 0) return assignmentView.handleKey(key, text, modifiers)
     if (layoutView.prompting && root.tab === 1) return layoutView.handleKey(key, text, modifiers)
-    if (slotsView.prompting && root.tab === 2) return slotsView.handleKey(key, text, modifiers)
-    if (arrangementsView.prompting && root.tab === 3) return arrangementsView.handleKey(key, text, modifiers)
+    if (arrangementsView.prompting && root.tab === 2) return arrangementsView.handleKey(key, text, modifiers)
     if (key === Qt.Key_S && (modifiers & Qt.ControlModifier)) {
       root.save()
       return true
@@ -122,21 +121,22 @@ Item {
       root.tab = (root.tab + 1) % root.tabs.length
       return true
     }
+    // Esc in the Layout tab's slot list goes back to its picture.
+    if (key === Qt.Key_Escape && root.tab === 1 && layoutView.slotFocus) return layoutView.handleKey(key, text, modifiers)
     if (key === Qt.Key_Escape || text === "q") {
       root.dismiss()
       return true
     }
     if (root.tab === 0) return assignmentView.handleKey(key, text, modifiers)
     if (root.tab === 1) return layoutView.handleKey(key, text, modifiers)
-    if (root.tab === 2) return slotsView.handleKey(key, text, modifiers)
-    if (root.tab === 3) return arrangementsView.handleKey(key, text, modifiers)
+    if (root.tab === 2) return arrangementsView.handleKey(key, text, modifiers)
     return false
   }
 
   // Ctrl+S, one save for every view: the engine's `save`, said in the current
   // view; the Layout view applies its edited panes first.
   function save() {
-    var view = [assignmentView, layoutView, slotsView, arrangementsView][root.tab]
+    var view = [assignmentView, layoutView, arrangementsView][root.tab]
     if (!root.engine) return
     var write = function() {
       root.engine.call("save", {}, function(reply) {
@@ -196,8 +196,7 @@ Item {
 
   function messageText() {
     if (root.tab === 1) return root.promptText(layoutView.prompt, layoutView.message)
-    if (root.tab === 2) return root.promptText(slotsView.prompt, slotsView.message)
-    if (root.tab === 3) return root.promptText(arrangementsView.prompt, arrangementsView.message)
+    if (root.tab === 2) return root.promptText(arrangementsView.prompt, arrangementsView.message)
     return root.promptText(assignmentView.prompt, assignmentView.message)
   }
 
@@ -325,21 +324,10 @@ Item {
             fontFamily: root.fontFamily
           }
 
-          SlotsView {
-            id: slotsView
-            anchors.fill: parent
-            visible: root.tab === 2
-            engine: root.engine
-            foreground: root.foreground
-            selectedBackground: root.selectedBackground
-            selectedText: root.selectedText
-            fontFamily: root.fontFamily
-          }
-
           ArrangementsView {
             id: arrangementsView
             anchors.fill: parent
-            visible: root.tab === 3
+            visible: root.tab === 2
             engine: root.engine
             foreground: root.foreground
             selectedBackground: root.selectedBackground
@@ -356,8 +344,7 @@ Item {
           wrapMode: Text.WordWrap
           text: root.tab === 0 ? assignmentView.helpText
             : root.tab === 1 ? layoutView.helpText
-            : root.tab === 2 ? slotsView.helpText
-            : root.tab === 3 ? arrangementsView.helpText
+            : root.tab === 2 ? arrangementsView.helpText
             : "Tab switch view   ·   q close"
           color: root.foreground
           opacity: 0.7

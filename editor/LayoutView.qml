@@ -6,6 +6,7 @@ import qs.Commons as Commons
 import "Desks.js" as Desks
 import "Layout.js" as Layout
 import "Prompts.js" as Prompts
+import "Slots.js" as Slots
 
 // One desk's trees, edited (aerolayout's LayoutView). A pane per screen role
 // of the arrangement, each a scale model of its screen: boxes proportional
@@ -15,8 +16,16 @@ import "Prompts.js" as Prompts
 // string. Edits go to a draft; `w` applies it (api set_trees), Ctrl+S (the
 // panel's) applies it and saves (api save), `d` puts a screen's tree back
 // to what slots.lua holds (api reset), `R` records the windows on screen
-// (api record, previewed). The model is Layout.js; the calls are in
-// docs/design.md §9.
+// (api record, previewed). [ ] and the digits change the desk (Desks.js).
+//
+// Beside the picture, the global slots (aerolayout's logical slots), their
+// names and descriptions: `s` moves the keys to that list and back (Esc
+// too), where a makes a slot (name, then an optional description; api
+// add_slot) and offers to put it in the tree at once, Return puts the
+// selected one in the tree after the selected leaf, r renames it everywhere
+// (rename_slot), e describes it (describe_slot), d deletes it after y/n
+// naming the trees and desks it goes from (remove_slot). The models are
+// Layout.js and Slots.js; the calls are in docs/design.md §9.
 Item {
   id: root
 
@@ -60,11 +69,25 @@ Item {
   readonly property var activeDraft: drafts[role] || null
   readonly property var activeNode: activeDraft ? activeDraft.node : null
 
+  // The slot list: where the keys go (s switches), its rows (name and
+  // description; Slots.js), the selected slot by name through re-reads.
+  property bool slotFocus: false
+  readonly property var slotRows: Slots.rows(state)
+  property string selectedSlot: ""
+  readonly property int slotIndex: indexOfSlot(selectedSlot)
+  readonly property var slotRow: slotIndex >= 0 && slotIndex < slotRows.length ? slotRows[slotIndex] : null
+  readonly property string slotsReadOnly: Slots.readOnlyReason(state)
+
   readonly property string helpText: {
     if (prompting) return Prompts.help(prompt)
+    var desks = "Desk: [ ] prev/next  1–9 0 jump"
+    if (slotFocus) {
+      return "Slot list: ↑/↓ select  a new  Return put in " + (role ? role + "'s" : "the") + " tree  r rename  e describe  d delete"
+        + "   ·   s/Esc back to the screens   ·   " + desks + "   ·   Ctrl+S save   ·   Tab switch view  q close"
+    }
     return "arrows select   ·   Tree: a add slot  x take out  hjkl move  HJKL force move  / flip  t " + toggleLabel
       + "  r ratios  o overflow   ·   Layout: w apply  Ctrl+S apply+save  d default  R record"
-      + "   ·   Desk: [ ] prev/next  1–9 0 jump   c arrangement   ·   Tab switch view  q close"
+      + "   ·   s slot list (new, rename, delete)   ·   " + desks + "  c arrangement   ·   Tab switch view  q close"
   }
 
   // t turns the whole tree into a scroll branch (full-width scrolling
@@ -94,6 +117,8 @@ Item {
     message = ""
     drafts = ({})
     selectedKey = ""
+    slotFocus = false
+    selectedSlot = ""
     if (state) {
       var t = Layout.initialTarget(state, focusedWorkspace)
       arrangement = t.arrangement || ""
@@ -267,6 +292,15 @@ Item {
 
   function handleKey(key, text, modifiers) {
     if (prompting) return handlePrompt(key, text, modifiers)
+    if (text === "[" || text === "]") goDesk(Desks.step(desk, text === "]" ? 1 : -1))
+    else if (Desks.ofDigit(text) !== null) goDesk(Desks.ofDigit(text))
+    else if (slotFocus) return handleSlotKey(key, text)
+    else if (text === "s") focusSlots(true)
+    else return handlePictureKey(key, text)
+    return true
+  }
+
+  function handlePictureKey(key, text) {
     var arrow = arrowOf(key)
     if (arrow !== "") select(arrow)
     else if (moveKeys[text]) moveSelected(moveKeys[text], false)
@@ -281,8 +315,6 @@ Item {
     else if (text === "w") apply(null)
     else if (text === "d") startReset()
     else if (text === "R") startRecord()
-    else if (text === "[" || text === "]") goDesk(Desks.step(desk, text === "]" ? 1 : -1))
-    else if (Desks.ofDigit(text) !== null) goDesk(Desks.ofDigit(text))
     else if (text === "c") startPick("arrangement")
     else return false
     return true
@@ -294,7 +326,7 @@ Item {
     if (refuseEdit() || role === "") return
     var names = Layout.slotChoices(state, drafts)
     if (names.length === 0) {
-      say("Every slot is placed on desk " + desk + " already; the Slots view adds more.", true)
+      say("Every slot is placed on desk " + desk + " already; s, then a, makes a new one.", true)
       return
     }
     var r = role
@@ -312,7 +344,7 @@ Item {
   }
 
   // x: the selected slot out of this screen's tree (it stays a slot; the
-  // Slots view deletes slots).
+  // slot list's d deletes slots).
   function removeSelected() {
     if (!activeNode || refuseEdit()) return
     var key = selectedKey
@@ -324,6 +356,189 @@ Item {
     setDraft(role, result.node)
     keepSelection()
     say("Took " + key + " out of " + role + "." + draftNote(), false)
+  }
+
+  // --- the slot list ---------------------------------------------------------
+
+  function handleSlotKey(key, text) {
+    if (key === Qt.Key_Up || text === "k") selectSlot(slotIndex - 1)
+    else if (key === Qt.Key_Down || text === "j") selectSlot(slotIndex + 1)
+    else if (text === "a") startNewSlot(null)
+    else if (key === Qt.Key_Return || key === Qt.Key_Enter) placeSelectedSlot()
+    else if (text === "r") startRenameSlot()
+    else if (text === "e") startDescribeSlot()
+    else if (text === "d") startDeleteSlot()
+    else if (text === "s" || key === Qt.Key_Escape) focusSlots(false)
+    else return false
+    return true
+  }
+
+  function focusSlots(on) {
+    slotFocus = on
+    if (on && selectedSlot === "" && slotRows.length) selectedSlot = slotRows[0].slot
+    message = ""
+  }
+
+  function indexOfSlot(name) {
+    for (var i = 0; i < slotRows.length; i++) if (slotRows[i].slot === name) return i
+    return slotRows.length > 0 ? 0 : -1
+  }
+
+  function selectSlot(index) {
+    if (slotRows.length === 0) return
+    var i = Math.max(0, Math.min(slotRows.length - 1, index))
+    selectedSlot = slotRows[i].slot
+    slotList.positionViewAtIndex(i, ListView.Contain)
+  }
+
+  function slotsEditable() {
+    if (slotsReadOnly === "") return true
+    say(slotsReadOnly, true)
+    return false
+  }
+
+  function needSlot() {
+    if (slotRow) return true
+    say("There are no slots yet; a makes one.", true)
+    return false
+  }
+
+  // Return (and a's offer): the slot into the selected screen's tree, after
+  // the selected leaf, as a draft; the keys go back to the picture with it
+  // selected, to move it where it belongs. A slot this desk places already
+  // is selected where it is.
+  function placeSlot(name) {
+    if (refuseEdit()) return
+    if (role === "") {
+      say("Arrangement '" + arrangement + "' has no screens to put " + name + " on.", true)
+      return
+    }
+    var where = Layout.placedIn(drafts, name)
+    if (where !== null) {
+      role = where
+      selectedKey = name
+      slotFocus = false
+      say(name + " is on " + where + " already: selected it there.", false)
+      return
+    }
+    var r = role
+    var after = activeNode && Layout.leaves(activeNode).indexOf(selectedKey) >= 0 ? selectedKey : ""
+    var result = Layout.addSlot(activeNode, selectedKey, name)
+    if (result.error) {
+      say(result.error, true)
+      return
+    }
+    setDraft(r, result.node)
+    selectedKey = name
+    slotFocus = false
+    say("Put " + name + " in " + r + "'s tree" + (after !== "" ? " after " + after : "")
+      + " — hjkl move it." + draftNote(), false)
+  }
+
+  function placeSelectedSlot() {
+    if (!needSlot()) return
+    placeSlot(slotRow.slot)
+  }
+
+  // a: a new global slot, a name and then an optional description; then,
+  // when this desk's trees may be edited, the offer to put it in the tree.
+  function startNewSlot(values) {
+    if (!slotsEditable()) return
+    values = values || { name: "", description: "", error: "" }
+    ask(Prompts.withError(Prompts.text("New slot name (every desk's trees may place it) [Enter] next  [Esc] cancel: ",
+      { value: values.name, required: true }), values.error), function(name) {
+      root.ask(Prompts.text("Description, optional [Enter] add  [Esc] cancel: ", { value: values.description }),
+        function(description) {
+          root.engine.call("add_slot", { slot: name.trim(), description: description }, function(reply) {
+            if (!reply.ok) {
+              root.startNewSlot({ name: name, description: description, error: reply.error })
+              return
+            }
+            root.selectedSlot = reply.slot
+            root.offerPlace(reply.slot)
+          })
+        })
+    })
+  }
+
+  function offerPlace(slot) {
+    if (block !== "" || role === "") {
+      say("Added slot '" + slot + "'.", false)
+      return
+    }
+    var after = activeNode && Layout.leaves(activeNode).indexOf(selectedKey) >= 0 ? " after " + selectedKey : ""
+    ask(Prompts.confirm("Added slot '" + slot + "'. Put it in " + role + "'s tree on desk " + desk + after + "?"),
+      function(yes) {
+        if (yes) root.placeSlot(slot)
+        else root.say("Added slot '" + slot + "'. Return puts it in a tree.", false)
+      })
+  }
+
+  // Every edited draft follows a slot edit the engine made to the trees in
+  // force (unedited ones take the engine's trees on the re-read).
+  function editDrafts(fn) {
+    var next = Object.assign({}, drafts)
+    for (var r in next) {
+      var d = next[r]
+      if (d && d.node && edited(r)) next[r] = { node: fn(d.node), base: d.base, memory: d.memory }
+    }
+    drafts = next
+  }
+
+  function startRenameSlot() {
+    if (!needSlot() || !slotsEditable()) return
+    var old = slotRow.slot
+    var label = "Rename '" + old + "' to (every tree and desk follows) [Enter] save  [Esc] cancel: "
+    var answer = function(to) {
+      to = to.trim()
+      if (to === old) return
+      root.engine.call("rename_slot", { slot: old, to: to }, function(reply) {
+        if (!reply.ok) {
+          root.ask(Prompts.withError(Prompts.text(label, { value: to, required: true }), reply.error), answer)
+          return
+        }
+        root.selectedSlot = reply.to
+        root.editDrafts(function(n) { return Layout.renameSlot(n, old, reply.to) })
+        if (root.selectedKey === old) root.selectedKey = reply.to
+        var specs = reply.specs || []
+        root.say("Renamed '" + old + "' to '" + reply.to + "'."
+          + (reply.trees > 0 ? " Rewrote " + reply.trees + (reply.trees === 1 ? " tree." : " trees.") : "")
+          + (specs.length ? " Moved the specs of desk" + (specs.length > 1 ? "s " : " ") + specs.join(", ") + "." : ""),
+          false)
+      })
+    }
+    ask(Prompts.text(label, { required: true }), answer)
+  }
+
+  function startDescribeSlot() {
+    if (!needSlot() || !slotsEditable()) return
+    var slot = slotRow.slot
+    ask(Prompts.text("Description for '" + slot + "' (empty removes it) [Enter] save  [Esc] cancel: ",
+      { value: slotRow.description }), function(text) {
+      root.engine.call("describe_slot", { slot: slot, description: text }, function(reply) {
+        if (!reply.ok) root.say(reply.error, true)
+        else root.say(text === "" ? "Cleared the description of '" + slot + "'." : "Described '" + slot + "'.", false)
+      })
+    })
+  }
+
+  function startDeleteSlot() {
+    if (!needSlot() || !slotsEditable()) return
+    var row = slotRow
+    confirm(Slots.deleteQuestion(row), function() {
+      root.engine.call("remove_slot", { slot: row.slot, force: Slots.inUse(row) }, function(reply) {
+        if (!reply.ok) {
+          root.say(reply.error, true)
+          return
+        }
+        root.editDrafts(function(n) {
+          var out = Layout.leaves(n).indexOf(row.slot) >= 0 ? Layout.removeSlot(n, row.slot).node : n
+          return out
+        })
+        root.keepSelection()
+        root.say("Deleted slot '" + row.slot + "'.", false)
+      })
+    })
   }
 
   function toggleOverflow() {
@@ -554,8 +769,9 @@ Item {
 
   // --- for scripts and the e2e smoke ----------------------------------------
 
+  // "<role> <leaf>", or "slots <name>" while the keys are the slot list's.
   function selectionText() {
-    return role + " " + selectedKey
+    return slotFocus ? "slots " + selectedSlot : role + " " + selectedKey
   }
 
   // The draft trees, "big: h[a, b]; side: c" (edited ones marked *).
@@ -675,187 +891,321 @@ Item {
       font.pixelSize: Style.font.body
     }
 
-    // The panes, side by side: a scale model of each screen.
+    // The panes, side by side (a scale model of each screen), and the slot
+    // list beside them.
     Row {
-      id: paneRow
+      id: body
       width: parent.width
       height: parent.height - headerBox.height - (problem.visible ? problem.height + parent.spacing : 0)
         - orderText.height - footerText.height - parent.spacing * 4
-      spacing: root.gap
+      spacing: root.gap * 2
 
-      Repeater {
-        model: root.paneList
-        delegate: Column {
-          id: pane
-          required property var modelData
-          required property int index
-          readonly property var draft: root.drafts[modelData.role] || null
-          readonly property var node: draft ? draft.node : null
-          readonly property bool active: modelData.role === root.role
-          readonly property bool changed: root.edited(modelData.role)
-          width: (paneRow.width - root.gap * (root.paneList.length - 1)) / Math.max(1, root.paneList.length)
-          height: paneRow.height
-          spacing: Style.spacing.sm
+      Row {
+        id: paneRow
+        width: body.width - slotPanel.width - body.spacing
+        height: body.height
+        spacing: root.gap
 
-          Text {
-            id: paneTitle
-            width: parent.width
-            textFormat: Text.PlainText
-            elide: Text.ElideRight
-            text: pane.modelData.role + (pane.modelData.screen ? "  (" + pane.modelData.screen + ")" : "")
-              + (pane.changed ? "   edited" : "") + (pane.modelData.resized && !pane.changed ? "   keyboard-resized" : "")
-            color: pane.active ? Commons.Color.accent : root.foreground
-            opacity: pane.active ? 1 : 0.7
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.subtitle
-            font.bold: pane.active
-          }
+        Repeater {
+          model: root.paneList
+          delegate: Column {
+            id: pane
+            required property var modelData
+            required property int index
+            readonly property var draft: root.drafts[modelData.role] || null
+            readonly property var node: draft ? draft.node : null
+            readonly property bool active: modelData.role === root.role
+            readonly property bool changed: root.edited(modelData.role)
+            width: (paneRow.width - root.gap * (root.paneList.length - 1)) / Math.max(1, root.paneList.length)
+            height: paneRow.height
+            spacing: Style.spacing.sm
 
-          // The picture, fitted to the screen's aspect.
-          Item {
-            id: frame
-            width: parent.width
-            height: parent.height - paneTitle.height - treeText.height - ratioText.height - parent.spacing * 3
-            readonly property real aspect: root.aspectOf(pane.modelData.screen)
-            readonly property int boxW: Math.floor(Math.min(width, height * aspect))
-            readonly property int boxH: Math.floor(Math.min(height, width / aspect))
+            Text {
+              id: paneTitle
+              width: parent.width
+              textFormat: Text.PlainText
+              elide: Text.ElideRight
+              text: pane.modelData.role + (pane.modelData.screen ? "  (" + pane.modelData.screen + ")" : "")
+                + (pane.changed ? "   edited" : "") + (pane.modelData.resized && !pane.changed ? "   keyboard-resized" : "")
+              color: pane.active ? Commons.Color.accent : root.foreground
+              opacity: pane.active ? 1 : 0.7
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.subtitle
+              font.bold: pane.active
+            }
 
-            Rectangle {
-              id: screenBox
-              x: Math.floor((frame.width - frame.boxW) / 2)
-              width: frame.boxW
-              height: frame.boxH
-              radius: Style.cornerRadius
-              color: "transparent"
-              border.width: pane.active ? 2 : 1
-              border.color: pane.active ? Commons.Color.accent : Commons.Util.alpha(root.foreground, 0.35)
+            // The picture, fitted to the screen's aspect.
+            Item {
+              id: frame
+              width: parent.width
+              height: parent.height - paneTitle.height - treeText.height - ratioText.height - parent.spacing * 3
+              readonly property real aspect: root.aspectOf(pane.modelData.screen)
+              readonly property int boxW: Math.floor(Math.min(width, height * aspect))
+              readonly property int boxH: Math.floor(Math.min(height, width / aspect))
 
-              Text {
-                anchors.centerIn: parent
-                visible: pane.node === null
-                textFormat: Text.PlainText
-                text: "No tree for desk " + root.desk + " here"
-                color: root.foreground
-                opacity: 0.5
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.body
-                font.italic: true
-              }
+              Rectangle {
+                id: screenBox
+                x: Math.floor((frame.width - frame.boxW) / 2)
+                width: frame.boxW
+                height: frame.boxH
+                radius: Style.cornerRadius
+                color: "transparent"
+                // the keys' side: the picture's frame steps back while the slot list has them
+                border.width: pane.active && !root.slotFocus ? 2 : 1
+                border.color: pane.active ? Commons.Util.alpha(Commons.Color.accent, root.slotFocus ? 0.5 : 1)
+                  : Commons.Util.alpha(root.foreground, 0.35)
 
-              Repeater {
-                model: pane.node ? Layout.rects(pane.node, { x: 0, y: 0, w: screenBox.width - 8, h: screenBox.height - 8 }, {
-                  pad: 5,
-                  title: Style.font.bodySmall + 6,
-                  selected: pane.active ? root.selectedKey : "",
-                  titles: Layout.titles(root.state, root.desk, pane.modelData.role),
-                }) : []
-                delegate: Rectangle {
-                  id: cell
-                  required property var modelData
-                  readonly property bool isLeaf: modelData.kind === "slot" || modelData.kind === "overflow"
-                  readonly property bool isFrame: !!modelData.column
-                  readonly property bool isContainer: !isLeaf
-                  readonly property bool picked: !!modelData.selected
-                  x: 4 + modelData.x + 2
-                  y: 4 + modelData.y + 2
-                  width: Math.max(0, modelData.w - 4)
-                  height: Math.max(0, modelData.h - 4)
-                  radius: Style.cornerRadius
-                  color: picked && isLeaf ? root.selectedBackground
-                    : isFrame ? Commons.Util.alpha(root.scrollColor, 0.08)
-                    : isLeaf ? Commons.Util.alpha(modelData.kind === "overflow" ? root.overflowColor : root.foreground, 0.06)
-                    : "transparent"
-                  border.width: picked ? 2 : 1
-                  border.color: picked ? Commons.Color.accent
-                    : isFrame ? Commons.Util.alpha(root.scrollColor, 0.8)
-                    : modelData.kind === "overflow" ? Commons.Util.alpha(root.overflowColor, 0.8)
-                    : isContainer ? Commons.Util.alpha(root.foreground, 0.3)
-                    : Commons.Util.alpha(root.foreground, 0.5)
+                Text {
+                  anchors.centerIn: parent
+                  visible: pane.node === null
+                  textFormat: Text.PlainText
+                  text: "No tree for desk " + root.desk + " here"
+                  color: root.foreground
+                  opacity: 0.5
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.body
+                  font.italic: true
+                }
 
-                  // a container's kind and ratio, top left
-                  Text {
-                    visible: cell.isContainer
-                    x: Style.spacing.sm
-                    y: 2
-                    width: parent.width - Style.spacing.sm * 2
-                    textFormat: Text.PlainText
-                    elide: Text.ElideRight
-                    text: cell.modelData.label
-                    color: root.foreground
-                    opacity: 0.75
-                    font.family: root.fontFamily
-                    font.pixelSize: Style.font.bodySmall
-                    font.italic: true
-                  }
+                Repeater {
+                  model: pane.node ? Layout.rects(pane.node, { x: 0, y: 0, w: screenBox.width - 8, h: screenBox.height - 8 }, {
+                    pad: 5,
+                    title: Style.font.bodySmall + 6,
+                    selected: pane.active ? root.selectedKey : "",
+                    titles: Layout.titles(root.state, root.desk, pane.modelData.role),
+                  }) : []
+                  delegate: Rectangle {
+                    id: cell
+                    required property var modelData
+                    readonly property bool isLeaf: modelData.kind === "slot" || modelData.kind === "overflow"
+                    readonly property bool isFrame: !!modelData.column
+                    readonly property bool isContainer: !isLeaf
+                    readonly property bool picked: !!modelData.selected
+                    x: 4 + modelData.x + 2
+                    y: 4 + modelData.y + 2
+                    width: Math.max(0, modelData.w - 4)
+                    height: Math.max(0, modelData.h - 4)
+                    radius: Style.cornerRadius
+                    color: picked && isLeaf ? root.selectedBackground
+                      : isFrame ? Commons.Util.alpha(root.scrollColor, 0.08)
+                      : isLeaf ? Commons.Util.alpha(modelData.kind === "overflow" ? root.overflowColor : root.foreground, 0.06)
+                      : "transparent"
+                    border.width: picked ? 2 : 1
+                    border.color: picked ? Commons.Color.accent
+                      : isFrame ? Commons.Util.alpha(root.scrollColor, 0.8)
+                      : modelData.kind === "overflow" ? Commons.Util.alpha(root.overflowColor, 0.8)
+                      : isContainer ? Commons.Util.alpha(root.foreground, 0.3)
+                      : Commons.Util.alpha(root.foreground, 0.5)
 
-                  Column {
-                    visible: cell.isLeaf
-                    anchors.centerIn: parent
-                    width: parent.width - Style.spacing.sm * 2
+                    // a container's kind and ratio, top left
                     Text {
-                      width: parent.width
-                      horizontalAlignment: Text.AlignHCenter
+                      visible: cell.isContainer
+                      x: Style.spacing.sm
+                      y: 2
+                      width: parent.width - Style.spacing.sm * 2
                       textFormat: Text.PlainText
                       elide: Text.ElideRight
                       text: cell.modelData.label
-                      color: cell.picked ? root.selectedText
-                        : cell.modelData.kind === "overflow" ? root.overflowColor : root.foreground
-                      font.family: root.fontFamily
-                      font.pixelSize: Style.font.body
-                      font.bold: true
-                    }
-                    Text {
-                      width: parent.width
-                      visible: !!cell.modelData.title
-                      horizontalAlignment: Text.AlignHCenter
-                      textFormat: Text.PlainText
-                      elide: Text.ElideRight
-                      text: cell.modelData.title || ""
                       color: root.foreground
-                      opacity: 0.55
+                      opacity: 0.75
                       font.family: root.fontFamily
                       font.pixelSize: Style.font.bodySmall
+                      font.italic: true
                     }
-                  }
 
-                  MouseArea {
-                    anchors.fill: parent
-                    enabled: !cell.isContainer
-                    onClicked: {
-                      root.role = pane.modelData.role
-                      root.selectedKey = cell.modelData.key
+                    Column {
+                      visible: cell.isLeaf
+                      anchors.centerIn: parent
+                      width: parent.width - Style.spacing.sm * 2
+                      Text {
+                        width: parent.width
+                        horizontalAlignment: Text.AlignHCenter
+                        textFormat: Text.PlainText
+                        elide: Text.ElideRight
+                        text: cell.modelData.label
+                        color: cell.picked ? root.selectedText
+                          : cell.modelData.kind === "overflow" ? root.overflowColor : root.foreground
+                        font.family: root.fontFamily
+                        font.pixelSize: Style.font.body
+                        font.bold: true
+                      }
+                      Text {
+                        width: parent.width
+                        visible: !!cell.modelData.title
+                        horizontalAlignment: Text.AlignHCenter
+                        textFormat: Text.PlainText
+                        elide: Text.ElideRight
+                        text: cell.modelData.title || ""
+                        color: root.foreground
+                        opacity: 0.55
+                        font.family: root.fontFamily
+                        font.pixelSize: Style.font.bodySmall
+                      }
+                    }
+
+                    MouseArea {
+                      anchors.fill: parent
+                      enabled: !cell.isContainer
+                      onClicked: {
+                        root.role = pane.modelData.role
+                        root.selectedKey = cell.modelData.key
+                      }
                     }
                   }
                 }
               }
             }
+
+            Text {
+              id: treeText
+              width: parent.width
+              textFormat: Text.PlainText
+              elide: Text.ElideRight
+              text: "tree   " + (pane.node ? Layout.format(pane.node) : "—")
+              color: root.foreground
+              font.family: "monospace"
+              font.pixelSize: Style.font.body
+            }
+            Text {
+              id: ratioText
+              width: parent.width
+              textFormat: Text.PlainText
+              elide: Text.ElideRight
+              text: "ratio  " + (pane.node && Layout.ratio(pane.node) !== "" ? Layout.ratio(pane.node) : "—")
+                + (!pane.node ? ""
+                  : pane.node.kind === "scroll" ? (Layout.leaves(pane.node).indexOf("*") < 0
+                    ? "   full-width scrolling columns; windows with no slot after them (o: a column of their own)"
+                    : "   full-width scrolling columns; windows with no slot in the * column")
+                  : Layout.leaves(pane.node).indexOf("*") < 0 ? "   overflow parked (a column at the right)" : "")
+              color: root.foreground
+              opacity: 0.75
+              font.family: "monospace"
+              font.pixelSize: Style.font.body
+            }
+          }
+        }
+      }
+
+      // The global slots, by name: the name and the description, nothing
+      // else. s moves the keys here (the border says so) and back.
+      Rectangle {
+        id: slotPanel
+        width: Math.max(Style.space(190), Math.floor(body.width * 0.22))
+        height: body.height
+        radius: Style.cornerRadius
+        color: root.slotFocus ? Commons.Util.alpha(Commons.Color.accent, 0.06) : "transparent"
+        border.width: root.slotFocus ? 2 : 1
+        border.color: root.slotFocus ? Commons.Color.accent : Commons.Util.alpha(root.foreground, 0.25)
+
+        Column {
+          anchors.fill: parent
+          anchors.margins: Style.spacing.md
+          spacing: Style.spacing.sm
+
+          Item {
+            id: slotTitle
+            width: parent.width
+            height: slotTitleText.implicitHeight
+            Text {
+              id: slotTitleText
+              anchors.left: parent.left
+              textFormat: Text.PlainText
+              text: "Slots"
+              color: root.slotFocus ? Commons.Color.accent : root.foreground
+              opacity: root.slotFocus ? 1 : 0.7
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.subtitle
+              font.bold: root.slotFocus
+            }
+            Text {
+              anchors.right: parent.right
+              anchors.verticalCenter: parent.verticalCenter
+              textFormat: Text.PlainText
+              text: root.slotFocus ? "s / Esc: back" : "s: edit"
+              color: root.foreground
+              opacity: 0.5
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+            }
           }
 
-          Text {
-            id: treeText
+          ListView {
+            id: slotList
             width: parent.width
-            textFormat: Text.PlainText
-            elide: Text.ElideRight
-            text: "tree   " + (pane.node ? Layout.format(pane.node) : "—")
-            color: root.foreground
-            font.family: "monospace"
-            font.pixelSize: Style.font.body
-          }
-          Text {
-            id: ratioText
-            width: parent.width
-            textFormat: Text.PlainText
-            elide: Text.ElideRight
-            text: "ratio  " + (pane.node && Layout.ratio(pane.node) !== "" ? Layout.ratio(pane.node) : "—")
-              + (!pane.node ? ""
-                : pane.node.kind === "scroll" ? (Layout.leaves(pane.node).indexOf("*") < 0
-                  ? "   full-width scrolling columns; windows with no slot after them (o: a column of their own)"
-                  : "   full-width scrolling columns; windows with no slot in the * column")
-                : Layout.leaves(pane.node).indexOf("*") < 0 ? "   overflow parked (a column at the right)" : "")
-            color: root.foreground
-            opacity: 0.75
-            font.family: "monospace"
-            font.pixelSize: Style.font.body
+            height: parent.height - slotTitle.height - parent.spacing
+            clip: true
+            spacing: Style.spacing.xs
+            model: root.slotRows
+            boundsBehavior: Flickable.StopAtBounds
+            currentIndex: root.slotIndex
+
+            delegate: Rectangle {
+              id: slotItem
+              required property var modelData
+              required property int index
+              readonly property bool current: index === root.slotIndex
+              readonly property bool lit: current && root.slotFocus
+              width: ListView.view.width
+              height: slotLines.implicitHeight + Style.spacing.sm * 2
+              radius: Style.cornerRadius
+              color: lit ? root.selectedBackground : "transparent"
+              border.width: current && !root.slotFocus ? 1 : 0
+              border.color: Commons.Util.alpha(root.foreground, 0.3)
+
+              Column {
+                id: slotLines
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.leftMargin: Style.spacing.md
+                anchors.rightMargin: Style.spacing.md
+                Text {
+                  width: parent.width
+                  textFormat: Text.PlainText
+                  elide: Text.ElideRight
+                  text: slotItem.modelData.slot
+                  color: slotItem.lit ? root.selectedText : Commons.Color.accent
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.body
+                  font.bold: true
+                }
+                Text {
+                  width: parent.width
+                  visible: slotItem.modelData.description !== ""
+                  textFormat: Text.PlainText
+                  wrapMode: Text.WordWrap
+                  maximumLineCount: 2
+                  elide: Text.ElideRight
+                  text: slotItem.modelData.description
+                  color: slotItem.lit ? root.selectedText : root.foreground
+                  opacity: 0.7
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.bodySmall
+                }
+              }
+
+              MouseArea {
+                anchors.fill: parent
+                onClicked: {
+                  root.selectedSlot = slotItem.modelData.slot
+                  root.focusSlots(true)
+                }
+              }
+            }
+
+            Text {
+              anchors.centerIn: parent
+              width: parent.width
+              visible: root.slotRows.length === 0
+              horizontalAlignment: Text.AlignHCenter
+              wrapMode: Text.WordWrap
+              textFormat: Text.PlainText
+              text: root.state ? "No slots yet — s, then a, makes one (left, main, right…)" : ""
+              color: root.foreground
+              opacity: 0.55
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+            }
           }
         }
       }

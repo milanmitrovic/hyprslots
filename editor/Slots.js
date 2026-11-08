@@ -1,11 +1,12 @@
 .pragma library
 
-// The Slots view's model (aerolayout's logical slots): the global slots,
-// defined once for every desk, each with its description, the trees that
-// place it and the desks that say which app fills it; read off one api
-// `state` reply (docs/design.md §9). Which app fills a slot on a desk is
-// set from the Assignment view. Pure, so node can test it
-// (editor/tests/slots.test.mjs).
+// The slot list's model (the Layout view's list beside the screens,
+// aerolayout's logical slots): the global slots, defined once for every
+// desk, each with its optional description; read off one api `state` reply
+// (docs/design.md §9). The list shows the name and description only; a row
+// also knows the trees that place the slot and the desks that fill it, which
+// a delete names. Which app fills a slot on a desk is set from the
+// Assignment view. Pure, so node can test it (editor/tests/slots.test.mjs).
 //
 // A row is { slot, description, places: ["dual/3/big", ...] (arrangement/
 //   desk/role of every tree that places it), specs: [{ desk, spec }, ...] }.
@@ -54,15 +55,6 @@ function rows(state) {
       specs: filled,
     }
   })
-}
-
-function placesText(row) {
-  return row.places.length ? row.places.join(", ") : "no tree"
-}
-
-function specsText(row) {
-  if (!row.specs.length) return "no desk"
-  return row.specs.map(function(s) { return s.desk + " " + s.spec }).join(", ")
 }
 
 // The y/n `d` asks: plain when nothing uses the slot, else every tree and

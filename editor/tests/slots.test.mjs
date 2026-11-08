@@ -1,6 +1,6 @@
-// The Slots view's model (Slots.js): the global slots, each with its
-// description, the trees that place it and the desks that say which app
-// fills it.
+// The slot list's model (Slots.js, the Layout view's list): the global
+// slots, each with its description, the trees that place it and the desks
+// that say which app fills it (which a delete names).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { load } from "./load.mjs";
@@ -41,15 +41,13 @@ test("a row per global slot, by name, with its description", () => {
 test("each row says which trees place the slot, as arrangement/desk/role", () => {
   const rows = plain(S.rows(fixture()));
   assert.deepEqual(rows[1].places, ["dual/3/big", "dual/4/big", "single/3/big"]);
-  assert.equal(S.placesText(rows[1]), "dual/3/big, dual/4/big, single/3/big");
-  assert.equal(S.placesText(rows[3]), "no tree");
+  assert.deepEqual(rows[3].places, []);
 });
 
 test("each row says which desks fill the slot, and with what", () => {
   const rows = plain(S.rows(fixture()));
   assert.deepEqual(rows[1].specs, [{ desk: 3, spec: "t-main" }, { desk: 4, spec: "thunderbird" }]);
-  assert.equal(S.specsText(rows[1]), "3 t-main, 4 thunderbird");
-  assert.equal(S.specsText(rows[3]), "no desk");
+  assert.deepEqual(rows[3].specs, []);
 });
 
 test("deleting a slot asks plainly when nothing uses it, else names every tree and desk it goes from", () => {
