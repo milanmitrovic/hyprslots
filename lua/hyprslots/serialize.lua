@@ -2,7 +2,7 @@
 --
 -- `dump(data)` is the text of a data-only Lua file: one `return { ... }`
 -- table literal under a header comment, two-space indentation, one entry per
--- line with a trailing comma. Key order is fixed (slots, arrangements,
+-- line with a trailing comma. Key order is fixed (slots, specs, arrangements,
 -- screens, desks first, then integer keys ascending, then string keys
 -- sorted), strings are written with %q, so the same data always gives the
 -- same bytes and load(dump(x)) == x.
@@ -44,7 +44,7 @@ M.HEADER = [[
 ]]
 
 -- Keys that come first, in this order, wherever they appear.
-local KEY_ORDER = { slots = 1, arrangements = 2, screens = 3, desks = 4 }
+local KEY_ORDER = { slots = 1, specs = 2, arrangements = 3, screens = 4, desks = 5 }
 
 local KEYWORDS = {}
 for word in ([[and break do else elseif end false for function goto if in

@@ -50,7 +50,8 @@ describe("serialize.tree", function()
 end)
 
 local DATA = {
-  slots = {
+  slots = { left = {}, main = { description = "the editor" }, right = {}, term = {}, ["web-1"] = {} },
+  specs = {
     [3] = { left = "t-left", main = "t-main", right = "t-right" },
     [1] = { ["web-1"] = "firefox", term = "kitty/deltaf" },
   },
@@ -101,6 +102,15 @@ describe("serialize.dump", function()
     local expected = [[
 return {
   slots = {
+    left = {},
+    main = {
+      description = "the editor",
+    },
+    right = {},
+    term = {},
+    ["web-1"] = {},
+  },
+  specs = {
     [1] = {
       term = "kitty/deltaf",
       ["web-1"] = "firefox",
@@ -146,7 +156,7 @@ return {
   end)
 
   it("quotes strings so any content survives", function()
-    local data = { slots = { [2] = { odd = 'a "quoted"\nline\\ ]] end' } } }
+    local data = { specs = { [2] = { odd = 'a "quoted"\nline\\ ]] end' } } }
     assert.are.same(data, load_text(serialize.dump(data)))
   end)
 
@@ -156,12 +166,12 @@ return {
   end)
 
   it("puts known keys first in a fixed order, then the rest sorted", function()
-    local text = serialize.dump({ zeta = 1, arrangements = {}, alpha = 2, slots = {} })
+    local text = serialize.dump({ zeta = 1, arrangements = {}, alpha = 2, specs = {}, slots = {} })
     local order = {}
     for key in text:gmatch("\n  ([%w_]+) = ") do
       order[#order + 1] = key
     end
-    assert.are.same({ "slots", "arrangements", "alpha", "zeta" }, order)
+    assert.are.same({ "slots", "specs", "arrangements", "alpha", "zeta" }, order)
   end)
 
   it("refuses what a data file cannot hold", function()
