@@ -191,7 +191,7 @@ writes the new shape):
   name for its layout (it knows nothing better to call it, and a name it
   made up would hide where the trees came from), so a migrated
   `laptop` desk uses layout `laptop`: rename the layout for what it
-  arranges in the editor's Layouts tab (`r`; desks follow).
+  arranges in the editor's Desk tab (`r`; desks follow).
 
 A `config.lua` written for an older shape passes `slots = data.slots` and
 nothing more, or `arrangements = data.arrangements`, which would lose the
@@ -652,7 +652,7 @@ where they are. The desk (`Engine:new_desk`):
   `right` (those that are slots; else every slot, by name) side by side
   (`h[left, main, right]`), as a scroll branch (`scroll[left, main,
   right]`) when screen 1 is a laptop panel; the other screens show nothing.
-  The editor's Layouts view then applies another layout, forks one
+  The editor's Desk view then applies another layout, forks one
   to customize, or renames the desk.
 
 It is an edit like the editor's (`api.new_desk`: `edit.add_layout`,
@@ -667,7 +667,7 @@ desk, on the layout they ran.
 ## 9. Editor
 
 An Omarchy shell plugin, `milan.hyprslots` (QML), with full aerolayout TUI
-parity (Assignment, Layout and Layouts views, the logical slots
+parity (Assignment, Layout and Desk views, the logical slots
 made and placed in the Layout view; record). It talks to
 the running engine only through Hyprland:
 
@@ -684,20 +684,20 @@ the running engine only through Hyprland:
 | File | Role |
 |---|---|
 | `Engine.qml` | the service: runs the api through `hyprctl repl` (one `Process` per command, in order, 3 s watchdog), reads `state` debounced (60 ms) on `custom>>hyprslots changed` and on window events (`openwindow`, `closewindow`, `movewindowv2`, `windowtitlev2`, monitor events, `configreloaded`) via `Quickshell.Hyprland`'s `rawEvent`, only while someone follows it (`active`: the panel is open; `watchers`: bar widgets, from `watch()` / `unwatch()`); keeps `error` (last state read) and `lastError` (last call); `busy` while a call runs or the re-read after it is pending |
-| `Panel.qml` | the panel: an `OverlayWindow` card (`qs.Ui`), themed through `qs.Commons` (`Color.menu.*`, `Style`) like Omarchy's own panels; tabs Assignment, Layout, Layouts (Tab / Shift+Tab) under a header naming the active desk and layout, Ctrl+S saves, Esc or q closes (Esc in the Layout tab's slot list goes back to its picture); `press(key)` feeds a key by name (`Ctrl+s` with the modifier) |
+| `Panel.qml` | the panel: an `OverlayWindow` card (`qs.Ui`), themed through `qs.Commons` (`Color.menu.*`, `Style`) like Omarchy's own panels; tabs Assignment, Layout, Desk (Tab / Shift+Tab) under a header naming the active desk and layout, Ctrl+S saves, Esc or q closes (Esc in the Layout tab's slot list goes back to its picture); `press(key)` feeds a key by name (`Ctrl+s` with the modifier) |
 | `BarWidget.qml` | the bar widget (below): glyph, desk and workspace; left click toggles the panel, right click a menu |
 | `Services.js` | where the service registers itself, for a bar widget whose bar hands it no `serviceFor` |
 | `AssignmentView.qml`, `LayoutView.qml`, `DesksLayoutsView.qml` | aerolayout's Assignment, Layout (with its logical slots as a list beside the screens) and monitors views (below) |
-| `Protocol.js`, `Assignment.js`, `Layout.js`, `Slots.js`, `DesksLayouts.js`, `Prompts.js`, `Workspaces.js`, `BarStatus.js`, `Help.js` | pure logic, tested under node (`editor/tests/`); `Slots.js` is the slot list's, `Workspaces.js` the workspace keys', `DesksLayouts.js` the Layouts view's and the panel header's, `Help.js` the help rows' |
+| `Protocol.js`, `Assignment.js`, `Layout.js`, `Slots.js`, `DesksLayouts.js`, `Prompts.js`, `Workspaces.js`, `BarStatus.js`, `Help.js` | pure logic, tested under node (`editor/tests/`); `Slots.js` is the slot list's, `Workspaces.js` the workspace keys', `DesksLayouts.js` the Desk view's and the panel header's, `Help.js` the help rows' |
 
 **Every view.** The panel's keys come first: Tab / Shift+Tab cycle the
-tabs (Assignment, Layout, Layouts), **Ctrl+S saves** (api
+tabs (Assignment, Layout, Desk), **Ctrl+S saves** (api
 `save`, in every tab; the Layout tab applies its edited panes first), Esc
 or q closes. The header, in every tab, names what the edits go to: `Desk:
 home · Layout: ultrawide (also used by: office)` (`Desk: none` with no
 active desk, `(new, unsaved)` after a desk the engine made for new
 monitors), then `● unsaved edits (Ctrl+S)` in the urgent colour while
-there are any. Every edit outside the Layouts view goes to the
+there are any. Every edit outside the Desk view goes to the
 active desk's layout, and so to every desk that shares it. The outcome of
 every call shows on the view's message line, a failure (`{ok:false,error}`,
 hyprctl failing, hyprslots not loaded, the engine off, a config error) in
@@ -851,7 +851,7 @@ A slot list config.lua builds in code says so and takes no edit. No
 reorder (aerolayout's J/K): slots claim windows by name, so their order is
 not the editor's to set.
 
-**Layouts view** (the third tab, `Layouts`; aerolayout MonitorsView,
+**Desk view** (the third tab, `Desk`; aerolayout MonitorsView,
 reshaped: aerolayout mapped monitors to arrangements; here desks and
 layouts are two lists and a desk points at a layout). A line says what the
 two are; then two sections, each under its column titles (Desk, Monitors,
@@ -1099,7 +1099,7 @@ longer there, and a layout renamed since finds the tree saved under its old
 name.
 
 **Slot, spec, desk and layout edits** (the Layout view's slot list, the
-Assignment and Layouts views). Each builds new data with `edit.lua`
+Assignment and Desk views). Each builds new data with `edit.lua`
 (pure), re-runs `config.lua` over it, and refuses the edit, changing
 nothing, when the result does not validate or does not show the edit (a
 field `config.lua` builds in code, or does not take from `slots.lua` at
@@ -1236,7 +1236,7 @@ with Omarchy's gaps (5/10, border 2).
 | Global slots | slots are global logical names (aerolayout's `logical_slots`), specs per desk; the per-desk shape migrated on load; the Slots view edits the list, the Assignment view's `a` sets a desk's spec, the Layout view's `a` / `x` place slots; `[Tag]` matching in any case | done 2026-11-08 |
 | Editor rework | the Slots tab folded into the Layout tab as a slot list (name and description only; make a slot and place it there); desks by `[` `]` and the digits in the Layout and Assignment views (the arrows stay the picture's); `u` clears the desk's spec with the window (`unassign` `clear_spec`), the slot left empty; a scroll branch's `*` column (`scroll[left, main, *, right]`) in the engine and the editor's `o`; the Super+L patch refreshes the dock | done 2026-11-08 |
 | Desks & layouts | workspaces 1-10 renamed from desks (api `workspace`, `hyprslots.workspace`, `bind_workspace_keys`); arrangements replaced by desks (monitor setups) and layouts (N-screen logical arrangements, shareable, default trees) keyed by screen number left to right; arrangements migrated on load; a desk made for unknown monitors; the editor's Desks & Layouts tab (apply, fork, new, rename, delete, pin), the header naming desk and layout, highlighted help keys, `u` on a Missing row, the bar's `<desk> · ws <n>` | done 2026-11-09 |
-| Editor polish | the Assignment view lists every global slot (`not in layout` dim, `a` placing one: `take_spec` `place`); config `workspaces` (how many hyprslots manages); `others` for the default trees; the third tab named Layouts, its desks reading `→ <layout>` under column titles; new layouts named for what they arrange (`scroll`, `<N>-screen`) | done 2026-11-09 |
+| Editor polish | the Assignment view lists every global slot (`not in layout` dim, `a` placing one: `take_spec` `place`); config `workspaces` (how many hyprslots manages); `others` for the default trees; the third tab named Desk, its desks reading `→ <layout>` under column titles; new layouts named for what they arrange (`scroll`, `<N>-screen`) | done 2026-11-09 |
 
 Slices 2 to 6 were built in parallel on top of slices 1 and 2 and
 integrated on `feature/engine`; the cross-slice behaviour (keyboard-resized
