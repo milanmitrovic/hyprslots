@@ -388,8 +388,7 @@ test_body() {
   shot 3-unassigned
 
   # The Layout tab edits desk 3's tree as a draft: / flips it, r takes a
-  # typed ratio, t refuses what an accordion cannot hold, w applies, Ctrl+S
-  # saves (s is no key of the view any more).
+  # typed ratio, w applies, Ctrl+S saves (s is no key of the view any more).
   expect_eq "Tab" "ok" "$(smoke press Tab)"
   sleep 0.3
   shot 4-layout-tab
@@ -397,9 +396,6 @@ test_body() {
   expect_eq "its draft is the tree in force" "main: h[main:2, v[right, side]]" "$(smoke layout)"
   expect_eq "/" "ok" "$(smoke press /)"
   expect_eq "/ flips every split, in the draft" "main: v[main:2, h[right, side]] *" "$(smoke layout)"
-  smoke press t >/dev/null
-  expect_eq "t on main refuses: its container holds a split" \
-    "an accordion holds slots only, found 'h[' inside it" "$(smoke message)"
   expect_eq "r" "ok" "$(smoke press r)"
   expect_eq "r prompts with the current ratio" \
     "Ratios for the whole tree (current 2:1[1:1]; empty clears all) [Enter] set  [Esc] cancel: ▏" "$(smoke message)"
@@ -457,14 +453,17 @@ test_body() {
   sleep 0.3
   shot 7-layout-saved
 
-  # An accordion in the draft (Down selects right, t stacks its container),
-  # then d, y puts the screen back to what slots.lua holds (api reset).
+  # A scroll branch in the draft (t makes the whole tree full-width
+  # scrolling columns in slot order, a filmstrip, l moves right a column
+  # on), then d, y puts the screen back to what slots.lua holds (api reset).
   smoke press Down >/dev/null
   expect_eq "Down selects right" "main right" "$(smoke selection)"
   smoke press t >/dev/null
-  expect_eq "t stacks right's container" "main: v[main:2, a[right, side]] *" "$(smoke layout)"
+  expect_eq "t makes the tree a scroll branch" "main: scroll[main, right, side] *" "$(smoke layout)"
+  smoke press l >/dev/null
+  expect_eq "l moves right a column on" "main: scroll[main, side, right] *" "$(smoke layout)"
   sleep 0.3
-  shot 8-layout-accordion
+  shot 8-layout-scroll
   smoke press d >/dev/null
   expect_eq "d asks first" "Put desk 3 on main back to the tree slots.lua holds? (y/n)" "$(smoke message)"
   smoke press y >/dev/null

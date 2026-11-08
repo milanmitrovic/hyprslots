@@ -12,8 +12,10 @@
 //   { kind: "slot", slot, weight }          a slot
 //   { kind: "overflow", weight }            the overflow leaf, written *
 //   { kind: "h" | "v", weight, children }   a split
-//   { kind: "a", weight, children, was? }   an accordion (slots only); `was`
-//                                           remembers the split it was made from
+//   { kind: "scroll", weight, children, was? }  a scroll branch: the whole
+//                                           tree, slots only, full-width
+//                                           scrolling columns in order; `was`
+//                                           remembers the tree t made it from
 // A leaf is named by its key: the slot's name, or "*" for the overflow leaf.
 // Every edit returns { node } (a new tree) or { error }; the tree given is
 // never changed.
@@ -23,7 +25,7 @@ var OVERFLOW = "*"
 // --- tree text (tree.lua) ---------------------------------------------------
 
 var NAME = /^[A-Za-z0-9_\-.]+/
-var CONTAINER = { h: true, v: true, a: true }
+var CONTAINER = { h: true, v: true, a: true, scroll: true }
 
 function TreeError(message) {
   this.treeError = message
@@ -67,13 +69,14 @@ function parse(text) {
     pos += digits.length
     return w
   }
+  // `weightless` is the error a weight on a child is.
   function children(child, weightless) {
     pos++
     var out = []
     var more
     do {
       var n = child()
-      if (weightless && peek() === ":") fail("accordion members take no weight (the accordion shares one box)")
+      if (weightless && peek() === ":") fail(weightless)
       n.weight = weight()
       out.push(n)
       more = peek() === ","
@@ -82,35 +85,53 @@ function parse(text) {
     expect("]")
     return out
   }
-  function member() {
-    if (peek() === "*") fail("an accordion holds slots only, found '*' inside it")
-    var start = pos
-    var n = name()
-    if (CONTAINER[n] && peek() === "[") {
-      pos = start
+  // A member of a slots-only container (`what` names it in errors).
+  function member(what) {
+    return function() {
+      if (peek() === "*") fail(what + " holds slots only, found '*' inside it")
       skip()
-      fail("an accordion holds slots only, found '" + n + "[' inside it")
+      var start = pos
+      var n = name()
+      if (CONTAINER[n] && peek() === "[") {
+        pos = start
+        fail(what + " holds slots only, found '" + n + "[' inside it")
+      }
+      return { kind: "slot", slot: n }
     }
-    return { kind: "slot", slot: n }
   }
-  function node() {
+  // `root` when the node is the whole tree (where scroll[...] may be).
+  function node(root) {
     if (peek() === "*") {
       if (overflow) fail("more than one overflow leaf '*'")
       overflow = true
       pos++
       return { kind: "overflow" }
     }
+    skip()
+    var start = pos
     var n = name()
     if (CONTAINER[n] && peek() === "[") {
-      if (n === "a") return { kind: "a", children: children(member, true) }
-      return { kind: n, children: children(node, false) }
+      if (n === "a") {
+        var slots = children(member("a[...]"), "a[...] is gone").map(function(c) { return c.slot })
+        pos = start
+        fail("a[...] (an accordion, a Hyprland group with tabs) is gone: write scroll[" + slots.join(", ")
+          + "] for full-width scrolling columns" + (root ? "" : " (as a screen's whole tree)"))
+      }
+      if (n === "scroll") {
+        if (!root) {
+          pos = start
+          fail("scroll[...] is a whole screen's tree, found it inside a split")
+        }
+        return { kind: "scroll", children: children(member("scroll[...]"), "columns of scroll[...] take no weight (each is full width)") }
+      }
+      return { kind: n, children: children(function() { return node(false) }, false) }
     }
     return { kind: "slot", slot: n }
   }
 
   var root
   try {
-    root = node()
+    root = node(true)
     if (peek() === ":") fail("the root of a tree takes no weight")
     if (pos < text.length) fail("unexpected '" + text.charAt(pos) + "'")
   } catch (e) {
@@ -155,12 +176,12 @@ function leaves(node, out) {
   return out
 }
 
-// A deep copy (the `was` memory of an accordion included).
+// A deep copy (the `was` memory of a scroll branch included).
 function copy(node) {
   var out = {}
   for (var key in node) out[key] = node[key]
   if (node.children) out.children = node.children.map(copy)
-  if (node.was) out.was = { kind: node.was.kind, weights: node.was.weights.slice() }
+  if (node.was) out.was = { text: node.was.text, columns: node.was.columns }
   return out
 }
 
@@ -290,13 +311,13 @@ function validate(node, list, path) {
     ratioFail("expected " + count + " value" + (count === 1 ? "" : "s") + " for " + path + ", got " + list.length)
   }
   for (var i = 0; i < list.length; i++) {
-    if (node.kind === "a") {
+    if (node.kind === "scroll") {
       if (list[i].weight !== STAR && list[i].weight !== 1) {
-        ratioFail("ratios don't apply to " + path + " — it's an accordion, and its panes each get the "
-          + "whole container. Write * for a collapsed pane and 1 for the expanded one")
+        ratioFail("ratios don't apply to " + path + " — it's a scroll branch, and each of its columns "
+          + "is full width. Write * for every column")
       }
     } else if (list[i].weight === STAR) {
-      ratioFail("* is an accordion pane with no share of its own, and " + path
+      ratioFail("* is a scroll column with no share of its own, and " + path
         + " is tiled — every cell here needs a number")
     }
   }
@@ -313,7 +334,7 @@ function validate(node, list, path) {
 
 function writeRatio(node, list) {
   if (isLeaf(node) || !list) return
-  var weights = node.kind === "a" ? null : integers(list.map(function(t) { return t.weight }))
+  var weights = node.kind === "scroll" ? null : integers(list.map(function(t) { return t.weight }))
   for (var i = 0; i < node.children.length; i++) {
     if (weights) node.children[i].weight = weights[i]
     writeRatio(node.children[i], list[i].nested)
@@ -338,7 +359,7 @@ function applyRatio(node, text) {
 // The ratio of a tree, e.g. "2[1:2]:1"; "" for a single window.
 function ratio(node) {
   if (isLeaf(node) || node.children.length === 0) return ""
-  var cells = node.kind === "a"
+  var cells = node.kind === "scroll"
     ? node.children.map(function() { return STAR })
     : integers(node.children.map(function(c) { return c.weight || 1 }))
   return node.children.map(function(child, i) {
@@ -374,8 +395,8 @@ function pathTo(node, key, path) {
   return null
 }
 
-// The axis a container lays its children along; an accordion's members sit
-// side by side, like the tabs of its Hyprland group.
+// The axis a container lays its children along; a scroll branch's columns
+// sit side by side.
 function axisOf(node) {
   return node.kind === "v" ? "v" : "h"
 }
@@ -407,9 +428,10 @@ function navigate(root, key, direction) {
 // --- tidying (prune_and_hoist, normalize_alternation) ------------------------
 
 // A container left with one child is replaced by it (which takes its
-// share); a child split of the same kind is merged in, its children's
-// shares scaled so nothing moves on screen. Empty containers go. Changes
-// `node` in place and returns its replacement, or null when nothing is left.
+// share), except a scroll branch, which may hold one column; a child split of
+// the same kind is merged in, its children's shares scaled so nothing moves
+// on screen. Empty containers go. Changes `node` in place and returns its
+// replacement, or null when nothing is left.
 function tidy(node) {
   if (isLeaf(node)) return node
   var kept = []
@@ -417,7 +439,7 @@ function tidy(node) {
     var child = tidy(node.children[i])
     if (child) kept.push(child)
   }
-  var mergeable = function(c) { return !isLeaf(c) && c.kind === node.kind && c.kind !== "a" }
+  var mergeable = function(c) { return !isLeaf(c) && c.kind === node.kind && c.kind !== "scroll" }
   var sumOf = function(list) { return list.reduce(function(s, c) { return s + c.weight }, 0) }
   // Shares stay integers: everything is scaled by the lcm of the merged
   // splits' totals, a merged child's share spread over its children.
@@ -447,7 +469,7 @@ function tidy(node) {
   }
   node.children = children
   if (children.length === 0) return null
-  if (children.length === 1) {
+  if (children.length === 1 && node.kind !== "scroll") {
     children[0].weight = node.weight
     return children[0]
   }
@@ -480,7 +502,9 @@ function move(root, key, direction) {
   return { node: out, changed: true }
 }
 
-var ACCORDION_SLOTS = "an accordion holds slots only (no splits inside a group); press t to make it tiles first"
+var SCROLL_SLOTS = "a scroll branch holds slots only (full-width columns in order); press t for tiles first"
+var SCROLL_OVERFLOW = "a scroll branch puts windows with no slot after its columns, so it has no overflow leaf; "
+  + "press t for tiles first"
 
 // H J K L (force_move_node). Along its container: pair the leaf with its
 // neighbour that way in a new container across it. Across its container:
@@ -494,10 +518,10 @@ function forceMove(root, key, direction) {
   var index = path[path.length - 1].index
   var parent = path[path.length - 2].node
   var after = STEP[direction] > 0
+  if (parent.kind === "scroll") return { error: SCROLL_SLOTS }
   if (axisOf(parent) === AXIS[direction]) {
     var other = index + STEP[direction]
     if (other < 0 || other >= parent.children.length) return { node: out, changed: false }
-    if (parent.kind === "a") return { error: ACCORDION_SLOTS }
     var neighbour = parent.children[other]
     var first = Math.min(index, other)
     var pair = {
@@ -532,32 +556,31 @@ function flip(root) {
   return out
 }
 
-// t: the leaf's container stacked as an accordion, or an accordion back to
-// the split it was (toggle_layout_mode). An accordion holds slots only, as
-// tree.lua says when it is not so. { node } or { error }.
-function toggleAccordion(root, key) {
-  var out = copy(root)
-  var path = pathTo(out, key)
-  if (!path) return { error: "no leaf '" + key + "' in this tree" }
-  if (path.length < 2) return { error: "this tree is one window; there is no container to stack" }
-  var target = path[path.length - 2].node
-  if (target.kind === "a") {
-    var was = target.was
-    target.kind = was ? was.kind : "h"
-    var keep = was && was.weights.length === target.children.length
-    target.children.forEach(function(child, i) { child.weight = keep ? was.weights[i] : 1 })
-    delete target.was
-    return { node: out }
+// t: the whole tree as a scroll branch, its slots in reading order as
+// full-width scrolling columns (the overflow leaf has no place in one:
+// windows with no slot go after the columns), or a scroll branch back to the
+// tree it was made from when its columns are as they were, else its columns
+// side by side. { node } or { error }.
+function toggleScroll(root) {
+  if (root.kind === "scroll") {
+    var columns = leaves(root).join(",")
+    if (root.was && root.was.columns === columns) {
+      var back = parse(root.was.text)
+      if (back.node) return { node: back.node }
+    }
+    var tiled = copy(root)
+    tiled.kind = "h"
+    delete tiled.was
+    if (tiled.children.length === 1) return { node: rooted(tiled) }
+    return { node: tiled }
   }
-  for (var i = 0; i < target.children.length; i++) {
-    var child = target.children[i]
-    if (child.kind === "overflow") return { error: "an accordion holds slots only, found '*' inside it" }
-    if (!isLeaf(child)) return { error: "an accordion holds slots only, found '" + child.kind + "[' inside it" }
-  }
-  target.was = { kind: target.kind, weights: target.children.map(function(c) { return c.weight }) }
-  target.kind = "a"
-  target.children.forEach(function(c) { c.weight = 1 })
-  return { node: out }
+  var slots = leaves(root).filter(function(key) { return key !== OVERFLOW })
+  if (slots.length === 0) return { error: "this tree has no slot to scroll" }
+  return { node: {
+    kind: "scroll", weight: 1,
+    children: slots.map(function(slot) { return { kind: "slot", slot: slot, weight: 1 } }),
+    was: { text: format(root), columns: slots.join(",") },
+  } }
 }
 
 // The leaf `key` taken out of the tree, tidied: { node } (null when it was
@@ -593,6 +616,7 @@ function withOverflow(root) {
 // else where the engine would put it. `memory` is what parking returned.
 // { node, parked, memory } or { error }.
 function toggleOverflow(root, memory) {
+  if (root.kind === "scroll") return { error: SCROLL_OVERFLOW }
   if (leaves(root).indexOf(OVERFLOW) >= 0) {
     if (isLeaf(root)) return { error: "the overflow leaf is the whole tree; there would be nothing left to edit" }
     var taken = takeOut(root, OVERFLOW)
@@ -608,10 +632,8 @@ function toggleOverflow(root, memory) {
     if (path && path.length >= 2) {
       var parent = path[path.length - 2].node
       var index = path[path.length - 1].index
-      if (parent.kind !== "a") {
-        parent.children.splice(memory.anchor.side === "after" ? index + 1 : index, 0, { kind: "overflow", weight: 1 })
-        return { node: out, parked: false, memory: null }
-      }
+      parent.children.splice(memory.anchor.side === "after" ? index + 1 : index, 0, { kind: "overflow", weight: 1 })
+      return { node: out, parked: false, memory: null }
     }
   }
   return { node: withOverflow(root), parked: false, memory: null }
@@ -629,6 +651,7 @@ function crossMove(source, target, key, direction) {
   if (key === OVERFLOW && target && leaves(target).indexOf(OVERFLOW) >= 0) {
     return { error: "that screen has an overflow leaf already" }
   }
+  if (key === OVERFLOW && target && target.kind === "scroll") return { error: SCROLL_OVERFLOW }
   var path = pathTo(source, key)
   var leaf = path[path.length - 1].node
   var moved = leaf.kind === "overflow" ? { kind: "overflow", weight: 1 } : { kind: "slot", slot: leaf.slot, weight: 1 }
@@ -636,7 +659,7 @@ function crossMove(source, target, key, direction) {
   if (!target) return { source: rest, target: moved }
   var into = copy(target)
   var atStart = STEP[direction] > 0
-  if (into.kind === "h") {
+  if (into.kind === "h" || into.kind === "scroll") {
     into.children.splice(atStart ? 0 : into.children.length, 0, moved)
   } else {
     into.weight = 1
@@ -720,24 +743,23 @@ function titles(state, desk, role) {
 }
 
 function containerLabel(node) {
-  if (node.kind === "a") return "accordion"
   return node.kind + " " + integers(node.children.map(function(c) { return c.weight })).join(":")
 }
 
 // The picture of a tree laid over `area`, as rectangles in drawing order:
-//   { kind: "slot" | "overflow" | "h" | "v" | "a" | "tab", key?, x, y, w, h,
-//     depth, label, title?, selected?, open? }
+//   { kind: "slot" | "overflow" | "h" | "v", key?, x, y, w, h, depth, label,
+//     title?, selected?, column? }
 // Boxes are proportional to the weights in whole pixels (tree.lua's
 // arithmetic: the remainder goes to the last child). A nested container is a
 // box titled with its kind and ratio, its children inset by `pad` (and
-// `title` more at the top). An accordion shows a `tab` row (`tab` high) and
-// the box of its open member: the selected one, else the first.
-// opts: { pad, title, tab, selected, titles }.
+// `title` more at the top). A scroll branch is a filmstrip: its columns side
+// by side in equal frames, numbered in order (`column`, from 1), each
+// standing for a full-width column of the screen.
+// opts: { pad, title, selected, titles }.
 function rects(root, area, opts) {
   opts = opts || {}
   var pad = opts.pad || 0
   var titleHeight = opts.title || 0
-  var tabHeight = opts.tab || 0
   var out = []
 
   function leaf(node, box, depth, cell) {
@@ -751,19 +773,16 @@ function rects(root, area, opts) {
   }
 
   function inside(node, box, depth) {
-    if (node.kind === "a") {
-      var keys = leaves(node)
-      var open = keys.indexOf(opts.selected) >= 0 ? opts.selected : keys[0]
-      var tab = Math.min(tabHeight, box.h)
+    if (node.kind === "scroll") {
       var offset = 0
-      keys.forEach(function(key, i) {
-        var w = i === keys.length - 1 ? box.w - offset : Math.floor(box.w / keys.length)
-        out.push({ kind: "tab", key: key, x: box.x + offset, y: box.y, w: w, h: tab, depth: depth, label: key,
-          selected: key === opts.selected, open: key === open })
+      node.children.forEach(function(child, i) {
+        var w = i === node.children.length - 1 ? box.w - offset : Math.floor(box.w / node.children.length)
+        leaf(child, { x: box.x + offset, y: box.y, w: w, h: box.h }, depth)
+        var frame = out[out.length - 1]
+        frame.column = i + 1
+        frame.label = (i + 1) + ". " + frame.label
         offset += w
       })
-      var member = node.children[keys.indexOf(open)]
-      leaf(member, { x: box.x, y: box.y + tab, w: box.w, h: box.h - tab }, depth)
       return
     }
     var total = node.children.reduce(function(s, c) { return s + c.weight }, 0)
@@ -796,30 +815,25 @@ function rects(root, area, opts) {
   return out
 }
 
-function hasTiles(node) {
-  if (isLeaf(node)) return false
-  if (node.kind !== "a") return true
-  return node.children.some(hasTiles)
-}
-
 // The ratio prompt for a tree (aerolayout's [r]): { text } or { error } when
 // there is nothing a ratio could divide.
 function ratioPrompt(root) {
   if (isLeaf(root)) return { error: "Nothing to divide — this layout is one window." }
   var current = ratio(root)
-  if (!hasTiles(root)) {
-    return { error: "Ratios don't apply to an accordion — its panes each get the whole container (" + current
-      + "), and this tree is accordion all the way down. Press t for tiles first." }
+  if (root.kind === "scroll") {
+    return { error: "Ratios don't apply to a scroll branch — each of its columns is full width (" + current
+      + "). Press t for tiles first." }
   }
-  var hints = ["current " + current]
-  if (current.indexOf(STAR) >= 0) hints.push("* = an accordion pane, leave it")
-  hints.push("empty clears all")
+  var hints = ["current " + current, "empty clears all"]
   return { text: "Ratios for the whole tree (" + hints.join("; ") + ") [Enter] set  [Esc] cancel: " }
 }
 
 // The leaves in the order the tree holds them, once it nests (a flat tree's
 // picture already is the order): "1.main → 2.right → 3.overflow".
 function order(root) {
+  if (root.kind === "scroll") {
+    return leaves(root).map(function(key, i) { return (i + 1) + "." + key }).join(" → ") + ", then windows with no slot"
+  }
   if (isLeaf(root) || !root.children.some(function(c) { return !isLeaf(c) })) return ""
   return leaves(root).map(function(key, i) {
     return (i + 1) + "." + (key === OVERFLOW ? "overflow" : key)

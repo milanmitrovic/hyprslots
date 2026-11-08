@@ -28,8 +28,8 @@ const refused = (text, fn) => {
 // --- tree text --------------------------------------------------------------
 
 test("tree text reads back as the engine writes it: weights of 1 left out", () => {
-  for (const text of ["main", "*", "h[a, b:2, c]", "v[top, h[a:3, b:5]:2]", "a[x, y, z]", "h[main:2, v[right, *]]",
-    "h[a, a[b, c]:2]", "h", "a"]) {
+  for (const text of ["main", "*", "h[a, b:2, c]", "v[top, h[a:3, b:5]:2]", "scroll[x, y, z]", "scroll[main]",
+    "h[main:2, v[right, *]]", "h", "a", "scroll"]) {
     assert.equal(L.format(tree(text)), text);
   }
   assert.equal(L.format(tree(" h[ a:1 ,b ] ")), "h[a, b]");
@@ -39,9 +39,12 @@ test("tree text the engine would refuse is refused, with its message", () => {
   const error = (text) => L.parse(text).error;
   assert.match(error("h[a, a]"), /slot 'a' appears twice/);
   assert.match(error("h[a, *, *]"), /more than one overflow leaf/);
-  assert.match(error("a[x, v[y, z]]"), /an accordion holds slots only, found 'v\[' inside it/);
-  assert.match(error("a[x, *]"), /an accordion holds slots only, found '\*' inside it/);
-  assert.match(error("a[x:2, y]"), /accordion members take no weight/);
+  assert.match(error("a[x, y]"),
+    /a\[\.\.\.\] \(an accordion, a Hyprland group with tabs\) is gone: write scroll\[x, y\] for full-width scrolling columns at position 1/);
+  assert.match(error("scroll[x, v[y, z]]"), /scroll\[\.\.\.\] holds slots only, found 'v\[' inside it/);
+  assert.match(error("scroll[x, *]"), /scroll\[\.\.\.\] holds slots only, found '\*' inside it/);
+  assert.match(error("scroll[x:2, y]"), /columns of scroll\[\.\.\.\] take no weight/);
+  assert.match(error("h[scroll[x, y], d]"), /scroll\[\.\.\.\] is a whole screen's tree, found it inside a split at position 3/);
   assert.match(error("h[a:0, b]"), /a weight must be a positive integer, got '0'/);
   assert.match(error("h[a, b]:2"), /the root of a tree takes no weight/);
   assert.match(error("h[a, b"), /expected '\]', found end of text/);
@@ -49,17 +52,18 @@ test("tree text the engine would refuse is refused, with its message", () => {
 });
 
 test("the leaves of a tree in reading order, the overflow leaf as *", () => {
-  assert.deepEqual(plain(L.leaves(tree("h[main:2, v[right, *], a[x, y]]"))), ["main", "right", "*", "x", "y"]);
+  assert.deepEqual(plain(L.leaves(tree("h[main:2, v[right, *], x]"))), ["main", "right", "*", "x"]);
+  assert.deepEqual(plain(L.leaves(tree("scroll[x, y]"))), ["x", "y"]);
 });
 
 // --- the ratio grammar (ratio.lua) -----------------------------------------
 
-test("the ratio of a tree: every split below the root, reduced, accordion panes as *", () => {
+test("the ratio of a tree: every split below the root, reduced, scroll columns as *", () => {
   assert.equal(L.ratio(tree("h[a, b, c]")), "1:1:1");
   assert.equal(L.ratio(tree("h[v[a, h[b, c]], d]")), "1[1:1[1:1]]:1");
   assert.equal(L.ratio(tree("h[v[a, b]:2, c]")), "2[1:1]:1");
   assert.equal(L.ratio(tree("h[a:2, b:4, c:2]")), "1:2:1");
-  assert.equal(L.ratio(tree("h[a[x, y, z]:2, c]")), "2[*:*:*]:1");
+  assert.equal(L.ratio(tree("scroll[x, y, z]")), "*:*:*");
   assert.equal(L.ratio(tree("main")), "");
 });
 
@@ -77,12 +81,12 @@ test("decimals become the smallest integer ratio, and common factors go", () => 
   assert.equal(edited("h[a, b, c]", (n) => L.applyRatio(n, "2:4:2")), "h[a, b:2, c]");
 });
 
-test("accordion panes take * or 1 and keep their place; numbers on them are refused", () => {
-  assert.equal(edited("h[a[x, y, z], c]", (n) => L.applyRatio(n, "2[*:1:*]:1")), "h[a[x, y, z]:2, c]");
-  assert.match(refused("a[x, y]", (n) => L.applyRatio(n, "2:1")),
-    /ratios don't apply to the outer container — it's an accordion/);
+test("scroll columns take * or 1 and change nothing; numbers on them are refused", () => {
+  assert.equal(edited("scroll[x, y, z]", (n) => L.applyRatio(n, "*:1:*")), "scroll[x, y, z]");
+  assert.match(refused("scroll[x, y]", (n) => L.applyRatio(n, "2:1")),
+    /ratios don't apply to the outer container — it's a scroll branch, and each of its columns is full width/);
   assert.match(refused("h[a, b]", (n) => L.applyRatio(n, "*:1")),
-    /\* is an accordion pane with no share of its own, and the outer container is tiled/);
+    /\* is a scroll column with no share of its own, and the outer container is tiled/);
 });
 
 test("a ratio that does not fit the tree says where, as the engine does", () => {
@@ -113,7 +117,7 @@ test("ratio syntax errors, as ratio.lua words them", () => {
 test("the ratio shown is one that can be typed back and changes nothing", () => {
   for (const [text, entry] of [["h[a, b, c]", null], ["h[a, b, c]", "1:2:1"], ["h[v[left, main], right]", "2[1:2]:1"],
     ["h[v[a, h[b, c]], d]", "2[1:3[1:2]]:1"], ["h[a, b, c]", "1:1.37:2.5"], ["v[top, h[a:3, b:5]:2]", null],
-    ["h[a[x, y]:2, *]", null]]) {
+    ["scroll[x, y]", null]]) {
     let node = tree(text);
     if (entry) node = L.applyRatio(node, entry).node;
     const shown = L.ratio(node);
@@ -146,10 +150,11 @@ test("arrows select the leaf that way, entering a container at its first leaf", 
   assert.equal(L.navigate(t, "d", "left"), "b");
   assert.equal(L.navigate(t, "a", "left"), null);
   assert.equal(L.navigate(t, "a", "up"), null);
-  // an accordion's members sit side by side, like its tabs
-  const acc = tree("h[x, a[p, q]]");
-  assert.equal(L.navigate(acc, "x", "right"), "p");
-  assert.equal(L.navigate(acc, "p", "right"), "q");
+  // a scroll branch's columns sit side by side, in order
+  const film = tree("scroll[p, q, r]");
+  assert.equal(L.navigate(film, "p", "right"), "q");
+  assert.equal(L.navigate(film, "r", "left"), "q");
+  assert.equal(L.navigate(film, "q", "down"), null);
   assert.equal(L.navigate(tree("main"), "main", "right"), null);
 });
 
@@ -157,7 +162,7 @@ test("h j k l swap a node with its neighbour along its container", () => {
   assert.equal(edited("h[a, b:2, c]", (n) => L.move(n, "b", "left")), "h[b:2, a, c]");
   assert.equal(edited("h[a, b:2, c]", (n) => L.move(n, "b", "right")), "h[a, c, b:2]");
   assert.equal(edited("v[a, b]", (n) => L.move(n, "a", "down")), "v[b, a]");
-  assert.equal(edited("a[x, y]", (n) => L.move(n, "x", "right")), "a[y, x]");
+  assert.equal(edited("scroll[x, y]", (n) => L.move(n, "x", "right")), "scroll[y, x]");
   assert.equal(edited("h[v[a, b], c]", (n) => L.move(n, "a", "right")), "h[v[a, b], c]", "across its container is no swap");
   assert.equal(L.move(tree("h[a, b]"), "a", "left").changed, false);
   assert.equal(L.move(tree("h[a, b]"), "a", "right").changed, true);
@@ -176,30 +181,42 @@ test("H J K L across the container move a node out of it, beside it", () => {
   assert.equal(edited("h[a, v[b, c]:2]", (n) => L.forceMove(n, "c", "right")), "h[a, b:2, c]");
   assert.equal(edited("h[a, b]", (n) => L.forceMove(n, "a", "down")), "v[b, a]");
   assert.equal(edited("h[a, b]", (n) => L.forceMove(n, "a", "up")), "v[a, b]");
-  assert.equal(edited("h[a[x, y], z]", (n) => L.forceMove(n, "x", "down")), "h[y, x, z]");
+
 });
 
-test("nothing pairs up inside an accordion: it holds slots only", () => {
-  assert.match(refused("h[a[x, y], z]", (n) => L.forceMove(n, "x", "right")), /an accordion holds slots only/);
+test("nothing pairs up or leaves a scroll branch: it holds slots only", () => {
+  assert.match(refused("scroll[x, y]", (n) => L.forceMove(n, "x", "right")), /a scroll branch holds slots only/);
+  assert.match(refused("scroll[x, y]", (n) => L.forceMove(n, "x", "down")), /a scroll branch holds slots only/);
 });
 
-test("/ flips every split of the tree", () => {
-  assert.equal(L.format(L.flip(tree("h[m, v[b, c:2], a[x, y]]"))), "v[m, h[b, c:2], a[x, y]]");
+test("/ flips every split of the tree, and leaves a scroll branch as it is", () => {
+  assert.equal(L.format(L.flip(tree("h[m, v[b, c:2]]"))), "v[m, h[b, c:2]]");
+  assert.equal(L.format(L.flip(tree("scroll[x, y]"))), "scroll[x, y]");
 });
 
-test("t stacks a leaf's container as an accordion and back, its shares kept", () => {
-  const stacked = L.toggleAccordion(tree("h[a, v[b:2, c]:3]"), "b");
-  assert.equal(L.format(stacked.node), "h[a, a[b, c]:3]");
-  assert.equal(L.format(L.toggleAccordion(stacked.node, "c").node), "h[a, v[b:2, c]:3]");
-  // one parsed as text has no split to go back to: side by side
-  assert.equal(edited("a[x, y]", (n) => L.toggleAccordion(n, "x")), "h[x, y]");
+test("t makes the whole tree a scroll branch of its slots in order, and back as it was", () => {
+  const scrolled = L.toggleScroll(tree("h[a, v[b:2, c]:3]"));
+  assert.equal(L.format(scrolled.node), "scroll[a, b, c]");
+  assert.equal(L.format(L.toggleScroll(scrolled.node).node), "h[a, v[b:2, c]:3]");
+  // the overflow leaf has no place in one (windows with no slot go after the
+  // columns), and comes back with the tree
+  const withOverflow = L.toggleScroll(tree("h[a, v[b, *]]"));
+  assert.equal(L.format(withOverflow.node), "scroll[a, b]");
+  assert.equal(L.format(L.toggleScroll(withOverflow.node).node), "h[a, v[b, *]]");
+  assert.equal(edited("main", (n) => L.toggleScroll(n)), "scroll[main]");
 });
 
-test("t refuses a container holding more than slots, with the engine's message", () => {
-  assert.match(refused("h[a, v[b, c]]", (n) => L.toggleAccordion(n, "a")),
-    /an accordion holds slots only, found 'v\[' inside it/);
-  assert.match(refused("h[a, *]", (n) => L.toggleAccordion(n, "a")), /an accordion holds slots only, found '\*' inside it/);
-  assert.match(refused("main", (n) => L.toggleAccordion(n, "main")), /one window/);
+test("t back from a scroll branch whose columns changed tiles them side by side in their order", () => {
+  const scrolled = L.toggleScroll(tree("h[a, v[b, c]]"));
+  const moved = L.move(scrolled.node, "a", "right");
+  assert.equal(L.format(moved.node), "scroll[b, a, c]");
+  assert.equal(L.format(L.toggleScroll(moved.node).node), "h[b, a, c]");
+  // one parsed as text has no tree to go back to: side by side
+  assert.equal(edited("scroll[x, y]", (n) => L.toggleScroll(n)), "h[x, y]");
+});
+
+test("t refuses a tree with no slot to scroll", () => {
+  assert.match(refused("*", (n) => L.toggleScroll(n)), /no slot to scroll/);
 });
 
 // --- the overflow leaf (aerolayout's [o]: hide and show the overflow slot) --
@@ -230,6 +247,11 @@ test("o refuses to park the overflow leaf when it is the whole tree", () => {
   assert.match(L.toggleOverflow(tree("*"), null).error, /whole tree/);
 });
 
+test("o refuses a scroll branch, which puts windows with no slot after its columns", () => {
+  assert.match(L.toggleOverflow(tree("scroll[x, y]"), null).error,
+    /a scroll branch puts windows with no slot after its columns/);
+});
+
 // --- moving a leaf to another screen of the desk ----------------------------
 
 test("a leaf moved off the edge of its screen joins the next screen's tree there", () => {
@@ -241,6 +263,17 @@ test("a leaf moved off the edge of its screen joins the next screen's tree there
   assert.equal(L.format(moved.target), "h[a, b, c]");
   moved = L.crossMove(tree("h[a, b]"), null, "a", "left");
   assert.equal(L.format(moved.target), "a");
+});
+
+test("a leaf moved onto a scroll branch becomes its column at the near edge, and one leaves its columns", () => {
+  let moved = L.crossMove(tree("h[a, b]"), tree("scroll[c, d]"), "b", "right");
+  assert.equal(L.format(moved.source), "a");
+  assert.equal(L.format(moved.target), "scroll[b, c, d]");
+  moved = L.crossMove(tree("scroll[c, d]"), tree("e"), "d", "right");
+  assert.equal(L.format(moved.source), "scroll[c]");
+  assert.equal(L.format(moved.target), "h[d, e]");
+  assert.match(L.crossMove(tree("h[a, *]"), tree("scroll[c]"), "*", "right").error,
+    /a scroll branch puts windows with no slot after its columns/);
 });
 
 test("a screen keeps at least one leaf, and one overflow leaf at most", () => {
@@ -259,12 +292,14 @@ const LUA = ["lua5.4", "lua5.5", "lua"].find((bin) => spawnSync(bin, ["-v"]).sta
 test("tree text and ratios read as tree.lua, serialize.lua and ratio.lua read them", { skip: !LUA && "no lua" }, () => {
   const cases = [
     ["h[a, b:2, c]", "1:1:1"], ["h[v[left, main], right]", "2[1:2]:1"], ["h[v[a, b], v[c, d]]", "3[1:3]:1[3:1]"],
-    ["h[a, b]", "1.5:1"], ["h[a, b, c]", "0.25:0.25:0.5"], ["h[a, b]", "1.37:1"], ["h[a[x, y, z], c]", "2[*:1:*]:1"],
-    ["a[x, y]", "2:1"], ["h[a, b]", "*:1"], ["h[v[a, h[b, c]], d]", "1[1:1[1:1:1]]:1"], ["h[a, *]", "1:1[1:1]"],
+    ["h[a, b]", "1.5:1"], ["h[a, b, c]", "0.25:0.25:0.5"], ["h[a, b]", "1.37:1"], ["scroll[x, y, z]", "*:1:*"],
+    ["scroll[x, y]", "2:1"], ["h[a, b]", "*:1"], ["h[v[a, h[b, c]], d]", "1[1:1[1:1:1]]:1"], ["h[a, *]", "1:1[1:1]"],
     ["main", "1:1"], ["h[a, b]", "1:"], ["h[a, b]", "[1:2]:1"], ["h[a, b]", "2[1:2"], ["h[a, b]", "x:1"],
     ["h[a, b]", "0:1"], ["h[a, b]", ""], ["h[a, b]", " 3  1 "], ["v[top, h[a:3, b:5]:2]", "1:1[1:1]"],
-    ["h[main:2, v[right, *]]", "1:2[3:1]"], ["h[a, a]", "1:1"], ["a[x, v[y]]", "1"], ["h[a:0, b]", "1"],
-    ["h[a, b]:2", "1"], ["h[a, b", "1"], ["", "1"], ["h[a, *, *]", "1"], ["a[x:2, y]", "1"], ["h[a, b]", "1:2]"],
+    ["h[main:2, v[right, *]]", "1:2[3:1]"], ["h[a, a]", "1:1"], ["scroll[x, v[y]]", "1"], ["h[a:0, b]", "1"],
+    ["h[a, b]:2", "1"], ["h[a, b", "1"], ["", "1"], ["h[a, *, *]", "1"], ["scroll[x:2, y]", "1"], ["h[a, b]", "1:2]"],
+    ["a[x, y]", "1"], ["h[a[x, y], d]", "1"], ["h[scroll[x], y]", "1"], ["scroll[x, *]", "1"], ["scroll[main]", "1"],
+    ["scroll[x, y]", "*[1]:*"],
   ];
   const here = dirname(fileURLToPath(import.meta.url));
   const root = join(here, "..", "..");
@@ -400,18 +435,14 @@ test("a nested container is drawn as a titled box, its children inside it", () =
   ]);
 });
 
-test("an accordion shows a tab per member, and the open one's box: the selected, else the first", () => {
-  const shown = (selected) => plain(L.rects(tree("h[a[x, y], z]"), { x: 0, y: 0, w: 200, h: 100 },
-    { pad: 0, title: 0, tab: 20, selected }));
-  assert.deepEqual(shown("z").map((r) => [r.kind, r.key || "", r.x, r.y, r.w, r.h, !!r.open]), [
-    ["a", "", 0, 0, 100, 100, false],
-    ["tab", "x", 0, 0, 50, 20, true],
-    ["tab", "y", 50, 0, 50, 20, false],
-    ["slot", "x", 0, 20, 100, 80, false],
-    ["slot", "z", 100, 0, 100, 100, false],
+test("a scroll branch is a filmstrip: its columns side by side in order, numbered, no tabs", () => {
+  const rects = plain(L.rects(tree("scroll[x, y, z]"), { x: 0, y: 0, w: 301, h: 100 }, { pad: 4, title: 10, selected: "y" }));
+  assert.deepEqual(rects.map((r) => [r.kind, r.key, r.x, r.y, r.w, r.h, r.label, r.column, !!r.selected]), [
+    ["slot", "x", 0, 0, 100, 100, "1. x", 1, false],
+    ["slot", "y", 100, 0, 100, 100, "2. y", 2, true],
+    ["slot", "z", 200, 0, 101, 100, "3. z", 3, false],
   ]);
-  assert.deepEqual(shown("y").filter((r) => r.kind === "slot").map((r) => r.key), ["y", "z"]);
-  assert.equal(shown("y").find((r) => r.key === "y" && r.kind === "slot").selected, true);
+  assert.equal(rects.some((r) => r.kind === "tab"), false);
 });
 
 test("the ratio prompt names the current ratio, and refuses a tree with nothing to divide", () => {
@@ -419,13 +450,13 @@ test("the ratio prompt names the current ratio, and refuses a tree with nothing 
     "Ratios for the whole tree (current 2:1[1:1]; empty clears all) [Enter] set  [Esc] cancel: ");
   assert.equal(L.ratioPrompt(tree("h[a, b]")).text,
     "Ratios for the whole tree (current 1:1; empty clears all) [Enter] set  [Esc] cancel: ");
-  assert.equal(L.ratioPrompt(tree("h[a, a[x, y]]")).text,
-    "Ratios for the whole tree (current 1:1[*:*]; * = an accordion pane, leave it; empty clears all) [Enter] set  [Esc] cancel: ");
   assert.match(L.ratioPrompt(tree("main")).error, /Nothing to divide/);
-  assert.match(L.ratioPrompt(tree("a[x, y]")).error, /accordion all the way down/);
+  assert.match(L.ratioPrompt(tree("scroll[x, y]")).error,
+    /Ratios don't apply to a scroll branch — each of its columns is full width \(\*:\*\)\. Press t for tiles first\./);
 });
 
 test("the order strip lists the leaves in order once the tree nests", () => {
   assert.equal(L.order(tree("h[a, b]")), "");
   assert.equal(L.order(tree("h[main, v[right, *]]")), "1.main → 2.right → 3.overflow");
+  assert.equal(L.order(tree("scroll[x, y]")), "1.x → 2.y, then windows with no slot");
 });

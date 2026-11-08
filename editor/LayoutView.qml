@@ -8,8 +8,9 @@ import "Prompts.js" as Prompts
 
 // One desk's trees, edited (aerolayout's LayoutView). A pane per screen role
 // of the arrangement, each a scale model of its screen: boxes proportional
-// to the weights, nested containers titled with their kind and ratio,
-// accordions as tabs over the open member, then the tree text and ratio
+// to the weights, nested containers titled with their kind and ratio, a
+// scroll branch as a filmstrip of its numbered full-width columns in order
+// (no tabs: Hyprland's scrolling layout, not a group), then the tree text and ratio
 // string. Edits go to a draft; `w` applies it (api set_trees), Ctrl+S (the
 // panel's) applies it and saves (api save), `d` puts a screen's tree back
 // to what slots.lua holds (api reset), `R` records the windows on screen
@@ -65,11 +66,9 @@ Item {
       + "   ·   Tab switch view  q close"
   }
 
-  readonly property string toggleLabel: {
-    if (!activeNode) return "accordion"
-    var path = Layout.pathTo(activeNode, selectedKey)
-    return path && path.length >= 2 && path[path.length - 2].node.kind === "a" ? "tiles" : "accordion"
-  }
+  // t turns the whole tree into a scroll branch (full-width scrolling
+  // columns in order) and back.
+  readonly property string toggleLabel: activeNode && activeNode.kind === "scroll" ? "tiles" : "scroll"
 
   function say(text, isError) {
     message = text
@@ -272,8 +271,8 @@ Item {
     else if (moveKeys[text]) moveSelected(moveKeys[text], false)
     else if (forceKeys[text]) moveSelected(forceKeys[text], true)
     else if (text === "/") edit(function(n) { return { node: Layout.flip(n) } }, "Flipped every split.")
-    else if (text === "t") edit(function(n) { return Layout.toggleAccordion(n, root.selectedKey) },
-      "Stacked as " + (toggleLabel === "tiles" ? "tiles" : "an accordion") + ".")
+    else if (text === "t") edit(function(n) { return Layout.toggleScroll(n) },
+      toggleLabel === "tiles" ? "Tiled again." : "Scrolling: full-width columns in this order (hl move them).")
     else if (text === "o") toggleOverflow()
     else if (text === "r") startRatio()
     else if (text === "w") apply(null)
@@ -521,7 +520,7 @@ Item {
   }
 
   readonly property int gap: Style.spacing.md
-  readonly property color accordionColor: Commons.Color.accent
+  readonly property color scrollColor: Commons.Color.accent
   readonly property color overflowColor: Commons.Color.urgent
 
   Column {
@@ -655,7 +654,6 @@ Item {
                 model: pane.node ? Layout.rects(pane.node, { x: 0, y: 0, w: screenBox.width - 8, h: screenBox.height - 8 }, {
                   pad: 5,
                   title: Style.font.bodySmall + 6,
-                  tab: Style.font.bodySmall + 10,
                   selected: pane.active ? root.selectedKey : "",
                   titles: Layout.titles(root.state, root.desk, pane.modelData.role),
                 }) : []
@@ -663,8 +661,8 @@ Item {
                   id: cell
                   required property var modelData
                   readonly property bool isLeaf: modelData.kind === "slot" || modelData.kind === "overflow"
-                  readonly property bool isTab: modelData.kind === "tab"
-                  readonly property bool isContainer: !isLeaf && !isTab
+                  readonly property bool isFrame: !!modelData.column
+                  readonly property bool isContainer: !isLeaf
                   readonly property bool picked: !!modelData.selected
                   x: 4 + modelData.x + 2
                   y: 4 + modelData.y + 2
@@ -672,12 +670,12 @@ Item {
                   height: Math.max(0, modelData.h - 4)
                   radius: Style.cornerRadius
                   color: picked && isLeaf ? root.selectedBackground
-                    : isTab ? Commons.Util.alpha(root.accordionColor, modelData.open ? 0.3 : 0.1)
+                    : isFrame ? Commons.Util.alpha(root.scrollColor, 0.08)
                     : isLeaf ? Commons.Util.alpha(modelData.kind === "overflow" ? root.overflowColor : root.foreground, 0.06)
                     : "transparent"
                   border.width: picked ? 2 : 1
                   border.color: picked ? Commons.Color.accent
-                    : modelData.kind === "a" || isTab ? root.accordionColor
+                    : isFrame ? Commons.Util.alpha(root.scrollColor, 0.8)
                     : modelData.kind === "overflow" ? Commons.Util.alpha(root.overflowColor, 0.8)
                     : isContainer ? Commons.Util.alpha(root.foreground, 0.3)
                     : Commons.Util.alpha(root.foreground, 0.5)
@@ -691,25 +689,11 @@ Item {
                     textFormat: Text.PlainText
                     elide: Text.ElideRight
                     text: cell.modelData.label
-                    color: cell.modelData.kind === "a" ? root.accordionColor : root.foreground
+                    color: root.foreground
                     opacity: 0.75
                     font.family: root.fontFamily
                     font.pixelSize: Style.font.bodySmall
                     font.italic: true
-                  }
-
-                  Text {
-                    visible: cell.isTab
-                    anchors.centerIn: parent
-                    width: parent.width - 4
-                    horizontalAlignment: Text.AlignHCenter
-                    textFormat: Text.PlainText
-                    elide: Text.ElideRight
-                    text: cell.modelData.label
-                    color: cell.picked ? Commons.Color.accent : root.foreground
-                    font.family: root.fontFamily
-                    font.pixelSize: Style.font.bodySmall
-                    font.bold: !!cell.modelData.open
                   }
 
                   Column {
@@ -771,7 +755,9 @@ Item {
             textFormat: Text.PlainText
             elide: Text.ElideRight
             text: "ratio  " + (pane.node && Layout.ratio(pane.node) !== "" ? Layout.ratio(pane.node) : "—")
-              + (pane.node && Layout.leaves(pane.node).indexOf("*") < 0 ? "   overflow parked (a column at the right)" : "")
+              + (!pane.node ? ""
+                : pane.node.kind === "scroll" ? "   full-width scrolling columns; windows with no slot after them"
+                : Layout.leaves(pane.node).indexOf("*") < 0 ? "   overflow parked (a column at the right)" : "")
             color: root.foreground
             opacity: 0.75
             font.family: "monospace"
