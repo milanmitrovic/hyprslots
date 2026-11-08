@@ -3,7 +3,8 @@
 -- A screen whose tree is `scroll[a, b, c]` gets its desk workspace on
 -- Hyprland's `scrolling` layout instead of lua:slots: the user's full-width
 -- scrolling, with hyprslots keeping the columns in slot order (windows with
--- no slot in the branch after them, in the order they are in) and making the
+-- no slot in the branch where it places the overflow leaf, `scroll[a, *, b]`,
+-- else after them, in the order they are in) and making the
 -- columns that arrive full width. All of it runs in a deferred pass (20 ms
 -- timer), never inside an event:
 --
@@ -59,24 +60,30 @@ function M.order(windows)
 end
 
 -- The swaps ({ a, b } addresses) that put `windows` ({ address, slot = the
--- slot of `slots` it holds, or nil }, in column order) in slot order, the
--- windows with no slot after them in the order they are in.
+-- slot of `slots` it holds, or nil }, in column order) in slot order. The
+-- windows with no slot keep the order they are in and go where `slots`
+-- has tree.OVERFLOW (a scroll branch's columns, tree.columns), else after
+-- the slotted ones.
 function M.plan(slots, windows)
   local rank = {}
   for i, slot in ipairs(slots) do
     rank[slot] = i
   end
-  local wanted, rest = {}, {}
-  for _, window in ipairs(windows) do
-    if window.slot and rank[window.slot] then
-      wanted[#wanted + 1] = window
-    else
-      rest[#rest + 1] = window
-    end
+  local rest_rank = rank[tree.OVERFLOW] or (#slots + 1)
+  local keyed = {}
+  for i, window in ipairs(windows) do
+    local slotted = window.slot and window.slot ~= tree.OVERFLOW and rank[window.slot]
+    keyed[i] = { window = window, rank = slotted or rest_rank, index = i }
   end
-  table.sort(wanted, function(a, b) return rank[a.slot] < rank[b.slot] end)
-  for _, window in ipairs(rest) do
-    wanted[#wanted + 1] = window
+  table.sort(keyed, function(a, b)
+    if a.rank ~= b.rank then
+      return a.rank < b.rank
+    end
+    return a.index < b.index
+  end)
+  local wanted = {}
+  for i, entry in ipairs(keyed) do
+    wanted[i] = entry.window
   end
 
   local current = {}
@@ -128,13 +135,16 @@ function M.managed(engine, id)
 end
 
 -- The windows a pass orders on workspace `id`, in column order, with the slot
--- each holds in the branch (nil for none). Windows Hyprland reports no
--- column for (a group, say) are left out.
+-- each holds in the branch (nil for none), and the branch's columns
+-- (tree.columns: its slots, tree.OVERFLOW where windows with no slot go).
+-- Windows Hyprland reports no column for (a group, say) are left out.
 local function columns(engine, id, desk)
-  local slots = tree.scroll(desk.branch)
+  local slots = tree.columns(desk.branch)
   local in_branch = {}
   for _, slot in ipairs(slots) do
-    in_branch[slot] = true
+    if slot ~= tree.OVERFLOW then
+      in_branch[slot] = true
+    end
   end
   local out = {}
   for _, window in ipairs(adapter.scroll_windows(id)) do
@@ -285,7 +295,7 @@ function M.describe(engine)
   table.sort(ids)
   for _, id in ipairs(ids) do
     local desk = engine.workspaces[id]
-    local windows, slots = columns(engine, id, desk)
+    local windows, order_of = columns(engine, id, desk)
     local order, members = {}, {}
     for i, window in ipairs(windows) do
       order[i] = window.address
@@ -294,9 +304,9 @@ function M.describe(engine)
       end
     end
     out[#out + 1] = {
-      workspace = id, desk = desk.desk, role = desk.role, slots = slots,
+      workspace = id, desk = desk.desk, role = desk.role, slots = tree.scroll(desk.branch),
       layout = adapter.workspace_tiled_layout(id), managed = M.managed(engine, id),
-      columns = order, members = members, in_order = #M.plan(slots, windows) == 0,
+      columns = order, members = members, in_order = #M.plan(order_of, windows) == 0,
     }
   end
   return out

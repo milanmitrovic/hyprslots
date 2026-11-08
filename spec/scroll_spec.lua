@@ -68,6 +68,29 @@ describe("scroll.plan", function()
   it("makes no swap for windows with no slot alone", function()
     assert.are.same({}, scroll.plan(SLOTS, columns({ { "x2" }, { "x1" } })))
   end)
+
+  it("puts windows with no slot where the branch places the overflow leaf, in the order they are in", function()
+    local current = { { "x1" }, { "w3", "right" }, { "w1", "left" }, { "x2" }, { "w2", "main" } }
+    local slots = { "left", "main", "*", "right" }
+    assert.are.same({ "w1", "w2", "x1", "x2", "w3" }, swapped(addresses(current), scroll.plan(slots, columns(current))))
+  end)
+
+  it("puts them first when the overflow leaf is the first column", function()
+    local current = { { "w1", "left" }, { "x1" }, { "w2", "main" } }
+    local slots = { "*", "left", "main" }
+    assert.are.same({ "x1", "w1", "w2" }, swapped(addresses(current), scroll.plan(slots, columns(current))))
+  end)
+
+  it("closes up around an empty overflow column", function()
+    local current = { { "w3", "right" }, { "w1", "left" } }
+    local slots = { "left", "*", "right" }
+    assert.are.same({ "w1", "w3" }, swapped(addresses(current), scroll.plan(slots, columns(current))))
+  end)
+
+  it("makes no swap when the overflow column is already where the branch places it", function()
+    local slots = { "left", "*", "right" }
+    assert.are.same({}, scroll.plan(slots, columns({ { "w1", "left" }, { "x1" }, { "x2" }, { "w3", "right" } })))
+  end)
 end)
 
 describe("scroll.order", function()
@@ -251,6 +274,23 @@ describe("a scroll branch", function()
     assert.are.same({ "t-left", "t-main", "foot" }, hl.column_classes(3))
   end)
 
+  it("puts windows with no slot where the branch places the overflow leaf", function()
+    setup()
+    open(1, "foot", 3)
+    open(2, "t-right", 3)
+    open(3, "t-main", 3)
+    open(4, "t-left", 3)
+    hl.run_timers()
+    assert.are.same({ "t-left", "t-main", "t-right", "foot" }, hl.column_classes(3))
+    local reply = call("set_tree", json.encode({ desk = 3, role = "lap", tree = "scroll[left, *, main, right]" }))
+    assert.is_true(reply.ok, reply.error)
+    hl.run_timers()
+    assert.are.same({ "t-left", "foot", "t-main", "t-right" }, hl.column_classes(3))
+    local described = call("state").scroll[1]
+    assert.are.same({ "left", "main", "right" }, described.slots)
+    assert.is_true(described.in_order)
+  end)
+
   it("swaps without the cursor warping, and puts the setting back", function()
     hl.config({ cursor = { no_warps = false } })
     setup()
@@ -428,6 +468,32 @@ describe("a scroll branch", function()
       local reply = call("record", '{"workspace": 3}')
       assert.are.equal("scroll[left, right]", reply.tree)
       assert.are.same({ "main" }, reply.missing)
+      assert.is_false(reply.applied)
+    end)
+
+    it("records the overflow column where the windows with no slot show, when the branch places one", function()
+      setup()
+      local left = open(1, "t-left", 3)
+      open(2, "t-main", 3)
+      local foot = open(3, "foot", 3)
+      assert.is_true(call("set_tree", json.encode({ desk = 3, role = "lap", tree = "scroll[left, main, *]" })).ok)
+      hl.run_timers()
+      hl.dispatch(hl.dsp.window.swap({ window = "address:" .. left.address, target = "address:" .. foot.address }))
+      local reply = call("record", '{"workspace": 3}')
+      assert.is_true(reply.ok, reply.error)
+      assert.are.equal("scroll[*, main, left]", reply.tree)
+      assert.are.same({}, reply.missing)
+    end)
+
+    it("says the overflow column is missing when no window with no slot shows", function()
+      setup()
+      open(1, "t-left", 3)
+      open(2, "t-main", 3)
+      assert.is_true(call("set_tree", json.encode({ desk = 3, role = "lap", tree = "scroll[left, *, main]" })).ok)
+      hl.run_timers()
+      local reply = call("record", '{"workspace": 3}')
+      assert.are.equal("scroll[left, main]", reply.tree)
+      assert.are.same({ "*" }, reply.missing)
       assert.is_false(reply.applied)
     end)
   end)

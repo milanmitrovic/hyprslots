@@ -427,32 +427,41 @@ local function apply_record(engine, args, reply)
   return reply
 end
 
--- A scroll branch records as its slots in the column order they show.
+-- A scroll branch records as its slots in the column order they show; one
+-- that places the overflow leaf records it where the first window with no
+-- slot in the branch shows.
 record_scroll = function(engine, args, id, desk, name, branch)
   local in_branch = {}
   for _, slot in ipairs(tree.scroll(branch)) do
     in_branch[slot] = true
   end
-  local present, seen = {}, {}
+  local wants_overflow = tree.has_overflow(branch)
+  local present, seen, slotted = {}, {}, 0
   for _, window in ipairs(scroll.order(adapter.scroll_windows(id))) do
     local assignment = engine.assignments[window.address]
-    if assignment and assignment.desk == desk.desk and in_branch[assignment.slot] and not seen[assignment.slot] then
-      seen[assignment.slot] = true
-      present[#present + 1] = assignment.slot
+    if assignment and assignment.desk == desk.desk and in_branch[assignment.slot] then
+      if not seen[assignment.slot] then
+        seen[assignment.slot] = true
+        present[#present + 1] = assignment.slot
+        slotted = slotted + 1
+      end
+    elseif wants_overflow and not seen[tree.OVERFLOW] then
+      seen[tree.OVERFLOW] = true
+      present[#present + 1] = tree.OVERFLOW
     end
   end
-  if #present == 0 then
+  if slotted == 0 then
     return fail("cannot record workspace " .. tostring(id) .. ": no windows to record")
   end
   local missing = array()
-  for _, slot in ipairs(tree.scroll(branch)) do
+  for _, slot in ipairs(tree.columns(branch)) do
     if not seen[slot] then
       missing[#missing + 1] = slot
     end
   end
   local node = { scroll = true, weight = 1, children = {} }
   for i, slot in ipairs(present) do
-    node.children[i] = { slot = slot, weight = 1 }
+    node.children[i] = slot == tree.OVERFLOW and { overflow = true, weight = 1 } or { slot = slot, weight = 1 }
   end
   return apply_record(engine, args, { arrangement = name, desk = desk.desk, role = desk.role, workspace = id,
     tree = serialize.tree(node), ratio = ratio.format(node), missing = missing, applied = false })
