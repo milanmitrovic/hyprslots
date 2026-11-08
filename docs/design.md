@@ -560,14 +560,15 @@ the running engine only through Hyprland:
 
 ### The plugin
 
-`editor/` is the plugin folder (manifest `kinds: ["panel", "service"]`):
+`editor/` is the plugin folder (manifest `kinds: ["panel", "service", "bar-widget"]`):
 
 | File | Role |
 |---|---|
-| `Engine.qml` | the service: runs the api through `hyprctl repl` (one `Process` per command, in order, 3 s watchdog), reads `state` debounced (60 ms) on `custom>>hyprslots changed` and on window events (`openwindow`, `closewindow`, `movewindowv2`, `windowtitlev2`, monitor events, `configreloaded`) via `Quickshell.Hyprland`'s `rawEvent`, only while the panel is open; keeps `error` (last state read) and `lastError` (last call); `busy` while a call runs or the re-read after it is pending |
+| `Engine.qml` | the service: runs the api through `hyprctl repl` (one `Process` per command, in order, 3 s watchdog), reads `state` debounced (60 ms) on `custom>>hyprslots changed` and on window events (`openwindow`, `closewindow`, `movewindowv2`, `windowtitlev2`, monitor events, `configreloaded`) via `Quickshell.Hyprland`'s `rawEvent`, only while someone follows it (`active`: the panel is open; `watchers`: bar widgets, from `watch()` / `unwatch()`); keeps `error` (last state read) and `lastError` (last call); `busy` while a call runs or the re-read after it is pending |
 | `Panel.qml` | the panel: an `OverlayWindow` card (`qs.Ui`), themed through `qs.Commons` (`Color.menu.*`, `Style`) like Omarchy's own panels; tabs Assignment, Layout, Slots, Arrangements (Tab / Shift+Tab), Ctrl+S saves, Esc or q closes; `press(key)` feeds a key by name (`Ctrl+s` with the modifier) |
+| `BarWidget.qml` | the bar widget (below): glyph, arrangement and desk; left click toggles the panel, right click a menu |
 | `AssignmentView.qml`, `LayoutView.qml`, `SlotsView.qml`, `ArrangementsView.qml` | aerolayout's Assignment, Layout, logical slots and monitors views (below) |
-| `Protocol.js`, `Assignment.js`, `Layout.js`, `Slots.js`, `Arrangements.js`, `Prompts.js` | pure logic, tested under node (`editor/tests/`) |
+| `Protocol.js`, `Assignment.js`, `Layout.js`, `Slots.js`, `Arrangements.js`, `Prompts.js`, `BarStatus.js` | pure logic, tested under node (`editor/tests/`) |
 
 **Every view.** The panel's keys come first: Tab / Shift+Tab cycle the
 tabs (Assignment, Layout, Slots, Arrangements), **Ctrl+S saves** (api
@@ -710,6 +711,38 @@ Every reply says what the monitors run afterwards: a new arrangement for
 screens another one already names runs only when its name sorts first
 (§8's tie rule), and the message says which one runs.
 
+**Bar widget** (`BarWidget.qml`, model `BarStatus.js`). A grid glyph and
+`<arrangement> · <desk>`: the active arrangement and the desk of the
+workspace its bar's monitor shows (`state.workspaces`; `–` on a workspace
+that is no desk, `none` when the monitors run no arrangement). It reads the
+plugin's service (`bar.shell.serviceFor("milan.hyprslots")`, asked again
+every 2 s while the service is not up yet) and calls its `watch()` so the
+service follows change events while the panel is closed: one poller for
+the panel and every widget instance. The desk follows workspace switches
+from Quickshell's Hyprland objects, with no state read.
+
+| State | Shows |
+|---|---|
+| normal | `󰕰 solo · 3` in the bar's foreground |
+| unsaved edits (`dirty`) | `󰕰 solo · 3 •`, the tooltip says "unsaved edits" |
+| error | the bar's urgent colour, the error first in the tooltip: the service missing, a state read failing (hyprctl, `hyprslots` not loaded: `󰕰 hyprslots` until a state was read, else the last one), `refused` (`󰕰 off`), `config_error` (the running config still shown) |
+
+Left click toggles the panel (`shell.toggle`). Right click opens a menu
+(Omarchy's `PopupCard`, laid out like the tray's menu; outside click
+closes it):
+
+| Entry | Does |
+|---|---|
+| Re-apply layout (desk N) | `desk {desk: N}` (the desk's Super+N: every screen of the arrangement shows it again, scroll branches back in slot order), then `arrange` (the scroll pass now, the focused scroll workspace's columns widened) |
+| Record desk N… | opens the panel with `{"record": true}`: the Layout tab on the focused desk, its `R` flow (preview, then y/n) |
+| Save | `save`; only with unsaved edits |
+| Reload config | `reload` (drops unsaved edits; how a fixed config error is picked up) |
+
+Re-apply and Record need the bar's screen on a desk of a running engine
+(a config error leaves the last good config running); with the engine
+off or unreachable only Reload is offered. Each call's outcome, or the
+engine's error, is a notification (`notify-send` through `bar.run`).
+
 **Install** (the user's machine; not done by the slices):
 
 ```sh
@@ -717,7 +750,13 @@ ln -s ~/.local/share/hyprslots/editor ~/.config/omarchy/plugins/milan.hyprslots
 omarchy-shell shell rescanPlugins
 omarchy plugin enable milan.hyprslots
 omarchy-shell shell toggle milan.hyprslots       # open / close
+omarchy bar put milan.hyprslots --after milan.layout   # the bar widget
 ```
+
+(`omarchy bar put` writes the widget into `~/.config/omarchy/shell.json`'s
+bar layout; `omarchy bar move` places it elsewhere. A widget whose plugin
+was added after the shell started needs `omarchy-shell shell rescanPlugins`
+first.)
 
 and a key in `~/.config/hypr/bindings.lua`:
 `o.bind("SUPER + CTRL + Y", "Hyprslots", { panel = "milan.hyprslots" })` (any free key;
@@ -1028,7 +1067,11 @@ Parked:
   delete, describe; Arrangements: create from the
   connected screen, Ctrl+S, rename, a refused pin, copy the default trees,
   rename a role, delete; then the Layout tab following the running
-  arrangement), and writes screenshots to `.e2e-tmp/editor-smoke-*.png`.
+  arrangement; the bar widget on a stand-in bar strip (a `PluginBarApi`
+  whose shell finds the service and toggles the panel): its label and the
+  unsaved dot, the menu's Save and Re-apply, left clicks opening and
+  closing the panel, Record opening the record preview, and the error
+  state while the `hyprslots` global is gone), and writes screenshots to `.e2e-tmp/editor-smoke-*.png`.
 
 ### Completion test
 
