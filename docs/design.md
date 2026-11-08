@@ -727,19 +727,18 @@ window, then each workspace that has a spec or a tree in the active
 layout; it opens on the focused workspace's. A workspace's table lists
 every global slot, always: first the ones the active layout's trees for it
 place, in tree order, screen by screen of the active desk, then every other
-global slot by name, dim and marked `not in layout`. Each is the window in
+global slot by name, looking exactly like the placed ones. Each is the window in
 it, a red `Missing` row with the spec it waits for when the workspace has a
 spec for the slot but no such window is open, or an empty row (`—` for app
 and title alike, placed or not) when nothing says what fills it; then the
 windows overflowing on the workspace and any other windows on it. So a
 workspace whose tree is `scroll[main, right]` with a spec for main only
-lists main Missing, right empty and left empty, not in layout. Columns: Ws
+lists main Missing, then right and left empty, alike. Columns: Ws
 (every-window page), Screen (`N <connector>`, when more than one), Slot
 (`main`, `main (by hand)`, `overflow (main)`, `unassigned`, `—`), App (a
 Missing row's spec, `—` for an empty slot), Title (`Missing`, `—` for an
-empty slot, `· not in layout` / `— not in layout` after either for a slot
-no tree places). When other desks share the active layout, a line under the
-header on a page with slots not in layout says that `a` into one places it
+empty slot, placed or not). When other desks share the active layout, a
+line under the header on a page with slots no tree places says that `a` into one places it
 there too. This is where each workspace's specs are set: there is no
 workspace × slot table.
 
@@ -748,7 +747,7 @@ workspace × slot table.
 | ↑/↓, k/j | select |
 | ←/→, h/l (p), [ / ] | previous / next page |
 | 1–9, 0 | workspace 1–9, 10's page (one with no spec or tree has none, and says so; 0 only when ten are managed) |
-| a | `Assign to workspace 3 slot (takes its spec): (m)ain, (r)ight, (1) more? [Esc] cancel`: every global slot, the workspace's own first; then `take_spec`: the window takes the slot and its spec (`spec.from_window`) becomes the workspace's for it, replacing the one it had; a slot not in layout is first put into the workspace's tree in the active layout (`take_spec` with `place`: a scroll branch in the global slot order, a tiled tree's root split as a new child, on the screen of the window's workspace, a workspace on the default trees getting its own copy), and the message names the tree it went into and the other desks using that layout |
+| a | `Assign to workspace 3 slot (takes its spec): (m)ain, (r)ight, (1) more? [Esc] cancel`: every global slot, the workspace's own first; then `take_spec`: the window takes the slot and its spec (`spec.from_window`) becomes the workspace's for it, replacing the one it had; a slot no tree places is first put into the workspace's tree in the active layout (`take_spec` with `place`: a scroll branch in the global slot order, a tiled tree's root split as a new child, on the screen of the window's workspace, a workspace on the default trees getting its own copy), and the message names the tree it went into and the other desks using that layout |
 | u | on a window in a slot: `Unassign kitty from main and clear workspace 3's spec for it (kitty/deltaf)? (the slot is left empty) (y/n)`, then `unassign` with `clear_spec`: the window leaves the slot and the workspace no longer says what fills it, so the row is empty, not Missing that window; on an overflowing window, or one in a slot the workspace has no spec for, `unassign` alone; on a red Missing row (a spec whose window is not open): `Clear workspace 3's spec for main (kitty/deltaf)? The slot is left empty (y/n)`, then `clear_spec` |
 
 As aerolayout's `a` did, `a` writes the window's spec into the slot, and
@@ -1236,7 +1235,7 @@ with Omarchy's gaps (5/10, border 2).
 | Global slots | slots are global logical names (aerolayout's `logical_slots`), specs per desk; the per-desk shape migrated on load; the Slots view edits the list, the Assignment view's `a` sets a desk's spec, the Layout view's `a` / `x` place slots; `[Tag]` matching in any case | done 2026-11-08 |
 | Editor rework | the Slots tab folded into the Layout tab as a slot list (name and description only; make a slot and place it there); desks by `[` `]` and the digits in the Layout and Assignment views (the arrows stay the picture's); `u` clears the desk's spec with the window (`unassign` `clear_spec`), the slot left empty; a scroll branch's `*` column (`scroll[left, main, *, right]`) in the engine and the editor's `o`; the Super+L patch refreshes the dock | done 2026-11-08 |
 | Desks & layouts | workspaces 1-10 renamed from desks (api `workspace`, `hyprslots.workspace`, `bind_workspace_keys`); arrangements replaced by desks (monitor setups) and layouts (N-screen logical arrangements, shareable, default trees) keyed by screen number left to right; arrangements migrated on load; a desk made for unknown monitors; the editor's Desks & Layouts tab (apply, fork, new, rename, delete, pin), the header naming desk and layout, highlighted help keys, `u` on a Missing row, the bar's `<desk> · ws <n>` | done 2026-11-09 |
-| Editor polish | the Assignment view lists every global slot (`not in layout` dim, `a` placing one: `take_spec` `place`); config `workspaces` (how many hyprslots manages); `others` for the default trees; the third tab named Desk, its desks reading `→ <layout>` under column titles; new layouts named for what they arrange (`scroll`, `<N>-screen`) | done 2026-11-09 |
+| Editor polish | the Assignment view lists every global slot (unplaced ones looking like the rest, `a` placing one: `take_spec` `place`); config `workspaces` (how many hyprslots manages); `others` for the default trees; the third tab named Desk, its desks reading `→ <layout>` under column titles; new layouts named for what they arrange (`scroll`, `<N>-screen`) | done 2026-11-09 |
 
 Slices 2 to 6 were built in parallel on top of slices 1 and 2 and
 integrated on `feature/engine`; the cross-slice behaviour (keyboard-resized
@@ -1301,7 +1300,7 @@ Parked:
   (the row empty, slots.lua without it after Ctrl+S), `u` on a Missing row
   clearing that workspace's spec, `c` doing nothing, `[` / digits paging;
   workspace 8 with `scroll[main, right]` listing every global slot, left
-  dim `not in layout`, and `a` on a window there into left making the tree
+  a plain empty row, and `a` on a window there into left making the tree
   `scroll[left, main, right]`, saved by Ctrl+S;
   the header (`Desk: solo · Layout: solo (also used by: beamer)`) and the
   help rows' highlighted keys in every tab; Layout: the panes titled by
