@@ -6,7 +6,10 @@ specs per workspace; slice 7, the cutover, done on the user's machine from
 that branch; the accordion replaced by the scroll branch (§6); then
 **desks and layouts** replaced arrangements (§3, §4, §8): a desk is a
 monitor setup, a layout a logical arrangement of screens that several desks
-can share, and workspaces 1 to 10 are called workspaces, not desks.
+can share, and workspaces 1 to 10 are called workspaces, not desks; then
+**shared trees**: a layout's default trees are the one tree per screen its
+workspaces share ("All workspaces" in the editor), a workspace's own trees
+an override for a real difference (§3, §9).
 Targets Hyprland 0.56.2 (Lua config) on Omarchy 4.5.
 
 ## 1. Purpose
@@ -56,10 +59,15 @@ desks, then arrangements; a desk was always the physical setup you sit at.)
 - **Screen N**: the N-th monitor of the active desk from the left (by x,
   then y, then connector name). Layouts address screens by number, so the
   same layout fits any desk with as many monitors.
-- **Layout**: a logical arrangement for exactly N screens: a tree per
-  screen for each workspace, plus optional **default trees** for the
-  workspaces that have none of their own (a workspace's own trees replace
-  the default ones whole). A desk with N monitors may use any N-screen
+- **Layout**: a logical arrangement for exactly N screens: **default
+  trees** (the **shared trees**, the editor's "All workspaces"), one per
+  screen, for every workspace with none of its own, plus a workspace's own
+  trees where it needs another arrangement (an **override**: a workspace's
+  own trees replace the shared ones whole). Empty slots close up, so one
+  shared tree serves workspaces that fill different slots of it; an
+  override is for a real difference (another order, share or shape), and
+  `fold_trees` drops the ones that are only the shared tree with slots
+  missing. A desk with N monitors may use any N-screen
   layout, and several desks may use the same one: an edit to it changes it
   for all of them (the editor says so, and can **fork** it).
 - **Tree**: per workspace per layout, one per screen. Inner nodes are `h`
@@ -747,7 +755,7 @@ workspace × slot table.
 | ↑/↓, k/j | select |
 | ←/→, h/l (p), [ / ] | previous / next page |
 | 1–9, 0 | workspace 1–9, 10's page (one with no spec or tree has none, and says so; 0 only when ten are managed) |
-| a | `Assign to workspace 3 slot (takes its spec): (m)ain, (r)ight, (1) more? [Esc] cancel`: every global slot, the workspace's own first; then `take_spec`: the window takes the slot and its spec (`spec.from_window`) becomes the workspace's for it, replacing the one it had; a slot no tree places is first put into the workspace's tree in the active layout (`take_spec` with `place`: a scroll branch in the global slot order, a tiled tree's root split as a new child, on the screen of the window's workspace, a workspace on the default trees getting its own copy), and the message names the tree it went into and the other desks using that layout |
+| a | `Assign to workspace 3 slot (takes its spec): (m)ain, (r)ight, (1) more? [Esc] cancel`: every global slot, the workspace's own first; then `take_spec`: the window takes the slot and its spec (`spec.from_window`) becomes the workspace's for it, replacing the one it had; a slot no tree places is first put into the workspace's tree in the active layout (`take_spec` with `place`: a scroll branch in the global slot order, a tiled tree's root split as a new child, on the screen of the window's workspace; into the workspace's own trees when it has them, else the layout's shared trees, so every workspace on them places it, never a copy), and the message names the tree it went into (`placed left in layout scroll's shared tree (all workspaces) screen 1: ...`) and the other desks using that layout |
 | u | on a window in a slot: `Unassign kitty from main and clear workspace 3's spec for it (kitty/deltaf)? (the slot is left empty) (y/n)`, then `unassign` with `clear_spec`: the window leaves the slot and the workspace no longer says what fills it, so the row is empty, not Missing that window; on an overflowing window, or one in a slot the workspace has no spec for, `unassign` alone; on a red Missing row (a spec whose window is not open): `Clear workspace 3's spec for main (kitty/deltaf)? The slot is left empty (y/n)`, then `clear_spec` |
 
 As aerolayout's `a` did, `a` writes the window's spec into the slot, and
@@ -778,14 +786,22 @@ panes the leaf order once the tree nests, or a scroll branch's column
 order (its `*`, when it has one, a frame of the filmstrip like any
 column). Edits go to a **draft**
 per pane (`edited` on the pane, `edited, not applied (w)` in the header).
-The header shows the workspace, the layout, and the managed workspaces
-(config `workspaces`, 1 to 10 by default) by their keys and `others`, the
-layout's default trees: the trees of every workspace without its own (the
-edited one reversed; the ones that show the default trees italic and
-dimmer; a click switches). Editing them, the header reads `Trees for
-workspaces without their own`. A workspace that shows the default trees
-says so (`it shows the others' trees: an edit gives workspace N its own`):
-its first edit gives it its own copy. Beside the panes, the **slot list**: the global slots by name,
+The header shows the workspace, the layout, and a strip: `All workspaces`
+first, the layout's shared (default) trees, then the managed workspaces
+(config `workspaces`, 1 to 10 by default) by their keys, a dot after each
+with trees of its own (`3•`: an override); the edited one reversed, the ones
+using the shared trees italic and dimmer; a click switches. The view opens
+on All workspaces, its header reading `All workspaces (the shared tree)`. A
+workspace without trees of its own shows the shared ones and says so (`(uses
+the shared tree)`); its first edit asks `Apply to (a)ll workspaces or (o)nly
+workspace N? [Esc] cancel`: `a` makes this and the following edits there the
+shared trees' (`w` applies them as `workspace: "default"`, and every
+workspace on them follows; the header then says `editing it for all
+workspaces`), `o` this workspace's own (`w` gives it its own trees, an
+override). The question comes again after a workspace switch. `u`, on a
+workspace with trees of its own (the help row then shows it), asks `Drop
+workspace N's own trees and use the shared tree? (y/n)` and calls
+`drop_override`. Beside the panes, the **slot list**: the global slots by name,
 each with its description and nothing else (below).
 
 | Key | Does |
@@ -802,10 +818,11 @@ each with its description and nothing else (below).
 | w | apply the edited panes (`set_trees`) |
 | Ctrl+S | apply the edited panes, then `save` (the panel's key) |
 | d | after y/n, put the pane's tree back to slots.lua (`reset`) |
-| R | `record` the pane's workspace, show the tree, its ratio and what it would drop (`missing`), apply after y/n (not on the default trees) |
+| R | `record` the pane's workspace, show the tree, its ratio and what it would drop (`missing`), apply after y/n (not on All workspaces; on a workspace using the shared trees, to whichever its first edit's question chose) |
+| u | on a workspace with trees of its own: after y/n, drop them (`drop_override`), so it uses the shared trees again |
 | [ / ] | previous / next workspace, round from the last managed one to 1 (the arrows stay the picture's) |
 | 1–9, 0 | workspace 1–9, 10 (as Super+N; 0 only when ten are managed); unapplied edits are dropped, and the message says which |
-| - | `others`: the layout's default trees (`workspace: "default"`), the trees of every workspace without its own (the help row: `- others: trees for workspaces without their own`) |
+| - | All workspaces: the layout's shared (default) trees (`workspace: "default"`), the trees of every workspace without its own (the help row: `- all workspaces (the shared tree)`) |
 | f | fork the layout: a name (the next free `<name>-N` suggested), then `fork_layout`: the active desk uses the copy, edited drafts carried over |
 | s | the keys go to the slot list (its border lights up; s or Esc back) |
 
@@ -816,8 +833,8 @@ corpus through the Lua modules), so a draft is checked and shown without a
 round trip; the engine validates again on apply. Deviations from
 aerolayout: edits are a draft applied with `w` (aerolayout saved on every
 keystroke); `d` resets one screen to slots.lua (aerolayout's `d` dropped a
-workspace's own tree for the default one; hyprslots' `-` edits the default
-trees and a workspace keeps its own until reset); [ ] and the digits change
+workspace's own tree for the default one; hyprslots' `u` does that, and `-`
+edits the shared trees); [ ] and the digits change
 the workspace (aerolayout's `g` picked a workspace or "all"); the layout is
 always the active desk's (aerolayout's arrangements were the Monitors
 tab's); the logical slots are made in this view's slot list, not
@@ -967,6 +984,8 @@ left-most; as an object key, `"1"`).
 | `set_ratio` | `layout?`, `workspace`, `screen`, `ratio` (grammar below) | same as `set_tree` |
 | `set_trees` | `layout?`, `workspace`, `trees` (screen -> tree) | `layout, workspace, trees` (screen -> `tree, ratio`), `seq` |
 | `reset` | `layout?`, `workspace`, `screen` | `layout, workspace, screen, tree?, ratio?, seq` |
+| `fold_trees` | `layout?` | `layout, folded[]` (workspaces whose own trees went), `kept[]` (`workspace, reason`), `seq`: drops every workspace's own trees the shared ones lay out the same |
+| `drop_override` | `layout?`, `workspace`, `screen?` | `layout, workspace, screen?, own` (whether it still has trees of its own), `seq`: the workspace (or that screen of it) back to the shared trees |
 | `record` | `workspace_id?` (default focused), `apply?` | `layout, workspace, screen, workspace_id, tree, ratio, missing[], applied, seq` |
 | `assign` | `address`, `workspace`, `slot` | `address, workspace, slot, displaced?, seq` |
 | `unassign` | `address`, `clear_spec?` | `address, workspace?, slot?, spec?` (the spec cleared), `seq` |
@@ -976,7 +995,7 @@ left-most; as an object key, `"1"`).
 | `describe_slot` | `slot`, `description` (`""` removes it) | `slot, description, seq` |
 | `set_spec` | `workspace`, `slot`, `spec` | `workspace, slot, spec` (normalized), `seq` |
 | `clear_spec` | `workspace`, `slot` | `workspace, slot, spec` (the one cleared), `seq` |
-| `take_spec` | `workspace`, `slot`, `address`, `place?`, `layout?`, `screen?` | `workspace, slot, spec, replaced?, address, displaced?, placed?` (`layout, screen, tree, used_by[]`), `seq`: the window takes the slot and its spec becomes the workspace's; with `place`, a slot the workspace's trees do not place is put into them first |
+| `take_spec` | `workspace`, `slot`, `address`, `place?`, `layout?`, `screen?` | `workspace, slot, spec, replaced?, address, displaced?, placed?` (`layout, screen, tree, used_by[], shared?`: true when it went into the shared trees), `seq`: the window takes the slot and its spec becomes the workspace's; with `place`, a slot the workspace's trees do not place is put into them first (its own trees, else the layout's shared ones) |
 | `add_desk` | `name`, `monitors[]` (selectors), `layout` | `desk, monitors, layout, active, seq` |
 | `rename_desk` | `desk`, `to` | `desk, to, active, seq` |
 | `delete_desk` | `desk` | `desk, active, seq`; the active one too (its monitors then get a new desk, §8) |
@@ -1067,10 +1086,12 @@ on the active desk, else 1; into a scroll branch in the global slot order
 (before the first slot it sorts before, else after the last one: `left`
 into `scroll[main, right]` gives `scroll[left, main, right]`), appended as
 a new child of a tiled tree's root split (a bare leaf becoming `h[leaf,
-slot]`), or as the whole tree of a screen with none. A workspace showing
-the default trees gets its own copy of them with the slot, the default
-ones untouched. The placed branch's keyboard-resized override goes, as with
-`set_tree`. A slot the trees already place, on any screen, changes no tree
+slot]`), or as the whole tree of a screen with none. A workspace with trees of
+its own gets the slot there; a workspace showing the shared (default)
+trees gets it in them (`placed.shared`), so every workspace on them places
+it (an empty slot closes up), and never a copy of its own. The placed
+branch's keyboard-resized override goes, as with `set_tree` (into the
+shared trees: that of every workspace on them, on that screen). A slot the trees already place, on any screen, changes no tree
 (no `placed`). The edit applies to the layout wherever it is used
 (`placed.used_by`, the desks using it), and stays in memory until `save`.
 
@@ -1080,8 +1101,18 @@ default the active desk's), so it changes every desk using that layout.
 nothing: a slot sits on one screen of a workspace, so moving it to another
 screen cannot be two `set_tree` calls. A tree set on a workspace that shows
 the layout's default trees first gives it its own copy of them (the other
-workspaces keep the default ones); `"default"` edits the default trees
-themselves. Each tree it sets replaces that branch's keyboard-resized
+workspaces keep the default ones): an override, which is what the Layout
+view's `o` asks for; `"default"` edits the default trees themselves (its
+`a`, and All workspaces). `drop_override` sends a workspace (or one screen
+of it) back to the shared trees, dropping its keyboard-resized trees
+there; `fold_trees` drops, in one edit, every workspace's own trees that
+are the shared ones with slots missing (`edit.redundant_with_default`, per
+screen: the same containers nested the same way, the same slots in the same
+order, the same overflow leaf, and the shares pruning those slots leaves,
+2:2 being 1:1; a screen with no tree of its own matches one with no shared
+tree, or one whose every slot it leaves out), keeping one whose workspace
+has a spec for a slot its own trees leave out and the shared ones place
+(that spec would start filling it), and says why it kept each. Each tree it sets replaces that branch's keyboard-resized
 override (kept when the edit fails). `reset` puts one branch back to the
 tree slots.lua holds on disk (read data-only, as saved, not as first
 loaded): the workspace's own tree there, else the saved default one, else
@@ -1235,7 +1266,8 @@ with Omarchy's gaps (5/10, border 2).
 | Global slots | slots are global logical names (aerolayout's `logical_slots`), specs per desk; the per-desk shape migrated on load; the Slots view edits the list, the Assignment view's `a` sets a desk's spec, the Layout view's `a` / `x` place slots; `[Tag]` matching in any case | done 2026-11-08 |
 | Editor rework | the Slots tab folded into the Layout tab as a slot list (name and description only; make a slot and place it there); desks by `[` `]` and the digits in the Layout and Assignment views (the arrows stay the picture's); `u` clears the desk's spec with the window (`unassign` `clear_spec`), the slot left empty; a scroll branch's `*` column (`scroll[left, main, *, right]`) in the engine and the editor's `o`; the Super+L patch refreshes the dock | done 2026-11-08 |
 | Desks & layouts | workspaces 1-10 renamed from desks (api `workspace`, `hyprslots.workspace`, `bind_workspace_keys`); arrangements replaced by desks (monitor setups) and layouts (N-screen logical arrangements, shareable, default trees) keyed by screen number left to right; arrangements migrated on load; a desk made for unknown monitors; the editor's Desks & Layouts tab (apply, fork, new, rename, delete, pin), the header naming desk and layout, highlighted help keys, `u` on a Missing row, the bar's `<desk> · ws <n>` | done 2026-11-09 |
-| Editor polish | the Assignment view lists every global slot (unplaced ones looking like the rest, `a` placing one: `take_spec` `place`); config `workspaces` (how many hyprslots manages); `others` for the default trees; the third tab named Desk, its desks reading `→ <layout>` under column titles; new layouts named for what they arrange (`scroll`, `<N>-screen`) | done 2026-11-09 |
+| Editor polish | the Assignment view lists every global slot (unplaced ones looking like the rest, `a` placing one: `take_spec` `place`); config `workspaces` (how many hyprslots manages); `-` for the default trees (All workspaces since, see Shared trees); the third tab named Desk, its desks reading `→ <layout>` under column titles; new layouts named for what they arrange (`scroll`, `<N>-screen`) | done 2026-11-09 |
+| Shared trees | one shared tree per layout and screen ("All workspaces", the default trees) instead of the cutover's per-workspace copies cut down to each workspace's slots (empty slots close up anyway): `edit.redundant_with_default`, api `fold_trees` and `drop_override`, `take_spec` `place` into the shared trees for a workspace without its own; the Layout view opening on All workspaces, first in the strip, overrides dotted, the first edit of a workspace on the shared tree asking all or only this one, `u` dropping an override; the user's layouts folded (only `wide` and `dual` workspace 3 keep their own) | done 2026-11-09 |
 
 Slices 2 to 6 were built in parallel on top of slices 1 and 2 and
 integrated on `feature/engine`; the cross-slice behaviour (keyboard-resized
@@ -1307,7 +1339,11 @@ Parked:
   monitor, flip, a refused then a good ratio, apply, Ctrl+S, t making a
   scroll branch and l moving a column, reset, Ctrl+S applying a draft, `]`
   and `3` switching the workspace, `-` setting the default trees (another
-  workspace then shows them), `f` forking the shared layout (the active
+  workspace then shows them), the view opening on All workspaces (first in
+  the strip, workspace 3 dotted), an edit on a workspace using the shared
+  tree asking `Apply to (a)ll workspaces or (o)nly workspace N?`, `a`
+  applying it to the shared tree and `o` giving workspace 5 its own (dotted
+  then), `u` dropping it again, `f` forking the shared layout (the active
   desk on the copy, the other desk on the original); its slot list (`s`,
   no Slots tab): a refused then a good rename, a new slot put in the tree
   at once (x takes it out), Return on a placed slot, delete, describe, Esc
