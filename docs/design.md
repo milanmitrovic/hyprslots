@@ -2,7 +2,7 @@
 
 Status: engine slices 1 to 6 and editor slices D1 to D3 (Assignment,
 Layout, Slots, Arrangements) done and integrated on `feature/editor` (§11);
-what remains is slice 7, the cutover. Targets Hyprland 0.56.2 (Lua config)
+slice 7, the cutover, done on the user's machine from that branch. Targets Hyprland 0.56.2 (Lua config)
 on Omarchy 4.5.
 
 ## 1. Purpose
@@ -159,7 +159,13 @@ the planner is on, sets `o.workspaces.enabled = false` and replaces
 hyprslots therefore refuses to start, with an `hl.notification`, while
 `o.workspaces.enabled == false`. Because the hyprmoncfg file loads last in
 `hyprland.lua` (after hyprslots), the check runs deferred on
-`hyprland.start` / `config.reloaded`, not at require time.
+`hyprland.start` / `config.reloaded`, not at require time. While refused,
+`hyprslots.desk(n)` (so Super+N) falls back to `o.workspaces.focus(n)`,
+whatever that is then, so the keys never go dead; the api's `desk` call
+still reports the refusal. At the cutover the planner was set Off in every
+hyprmoncfg profile (Odyssey, and a new Laptop profile for eDP-1 alone, so
+the undocked laptop matches a saved profile instead of a planner-on live
+layout).
 
 ## 6. Layout engine
 
@@ -330,11 +336,16 @@ before the cutover.
   applies and saves the mode the way Omarchy's toggle does.
 - The bar widget shows a grid glyph (nf-md-view_grid) and "Slots".
 
-To verify at cutover: whether a saved mode file for a desk workspace (from
-leaving slots for a non-default mode) or Omarchy's default-layout command
-(`omarchy-hyprland-workspace-layout-default`, which saves busy workspaces'
-current mode) wins over hyprslots' load-time rule, which depends on the
-order `hyprland.lua` loads them in.
+Verified at cutover: a saved mode file for a desk workspace wins over
+hyprslots' load-time rule. Omarchy loads the saved modes from
+`default.hypr.toggles`, after the user's requires (hyprslots included), and
+each calls `hl.workspace_rule` with its layout. So leaving slots for a mode
+keeps that mode across reloads until Super+L enters slots again (which
+removes the file), and Omarchy's default-layout command, which saves busy
+workspaces' current mode, takes those desks out of slots too. The cutover
+removed the saved modes of the desk workspaces (1, 3, 4, 5, 6, 9) and their
+full-width marks. A config reload re-applies the rule to existing
+workspaces.
 
 ## 7. Routing
 
@@ -619,7 +630,7 @@ screens another one already names runs only when its name sorts first
 **Install** (the user's machine; not done by the slices):
 
 ```sh
-ln -s ~/Projects/hyprslots/master/editor ~/.config/omarchy/plugins/milan.hyprslots
+ln -s ~/.local/share/hyprslots/editor ~/.config/omarchy/plugins/milan.hyprslots
 omarchy-shell shell rescanPlugins
 omarchy plugin enable milan.hyprslots
 omarchy-shell shell toggle milan.hyprslots       # open / close
@@ -822,7 +833,18 @@ Other top-level directories: `editor/` (QML plugin, §9), `spec/` (busted specs 
 `hyprslots = require("hyprslots")` and `hyprslots.setup()`; the `hyprslots`
 global is what `hyprctl repl` and the editor address. It is
 required from `hyprland.lua` right after `require("hypr.autostart")`; it
-cannot go after hyprmoncfg's `dofile`, which stays last.
+cannot go after hyprmoncfg's `dofile`, which stays last. On the user's
+machine the shim reads the code from `~/.local/share/hyprslots`, a symlink
+to the checkout in use (`ln -sfn ~/Projects/hyprslots/master
+~/.local/share/hyprslots` once the branch lands), and, being after
+Omarchy's and the user's bindings, also calls `bind_desk_keys()` and
+`bind_resize_keys()`; all of it inside `pcall`, with a notification on
+failure.
+
+**Gaps.** Hyprland hands a lua layout `ctx.area` already inside
+`gaps_out`, and `place` takes the border and `gaps_in` off each box edge
+that meets another box, as dwindle does; a group's groupbar is drawn inside
+its box. `e2e/gaps_test.sh` pins this with Omarchy's gaps (5/10, border 2).
 
 ## 11. Roadmap
 
@@ -837,7 +859,7 @@ cannot go after hyprmoncfg's `dofile`, which stays last.
 | Editor D1 | plugin skeleton (Engine service, panel, tabs) + Assignment view; api `assign` / `unassign`, `overflow` in `state` | done |
 | Editor D2 | Layout view; api `set_trees` / `reset` | done |
 | Editor D3 | Slots + Arrangements views; their api edits; slot descriptions | done |
-| 7 Cutover | install the engine and the editor plugin on the user's machine, retire the old setup | next (the only slice left) |
+| 7 Cutover | install the engine and the editor plugin on the user's machine, retire the old setup | done 2026-11-08 (from `feature/editor`; `~/.local/bin/hyprslots-rollback` undoes it) |
 
 Slices 2 to 6 were built in parallel on top of slices 1 and 2 and
 integrated on `feature/engine`; the cross-slice behaviour (keyboard-resized
