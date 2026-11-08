@@ -36,7 +36,7 @@ describe("serialize.tree", function()
   end)
 
   it("writes a scroll branch as scroll[...], as tree.parse reads it", function()
-    for _, text in ipairs({ "scroll[left, main, right]", "scroll[main]" }) do
+    for _, text in ipairs({ "scroll[left, main, right]", "scroll[main]", "scroll[left, *, right]" }) do
       local node = assert(tree.parse(text))
       assert.are.equal(text, serialize.tree(node))
       assert.are.same(node, assert(tree.parse(serialize.tree(node))))

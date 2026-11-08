@@ -85,10 +85,15 @@ function parse(text) {
     expect("]")
     return out
   }
-  // A member of a slots-only container (`what` names it in errors).
-  function member(what) {
+  // A member of a slots-only container (`what` names it in errors); the
+  // overflow leaf only where `overflow` says it may be (a scroll branch's
+  // column for windows with no slot).
+  function member(what, overflowOk) {
     return function() {
-      if (peek() === "*") fail(what + " holds slots only, found '*' inside it")
+      if (peek() === "*") {
+        if (overflowOk) return node(false)
+        fail(what + " holds slots only, found '*' inside it")
+      }
       skip()
       var start = pos
       var n = name()
@@ -122,7 +127,7 @@ function parse(text) {
           pos = start
           fail("scroll[...] is a whole screen's tree, found it inside a split")
         }
-        return { kind: "scroll", children: children(member("scroll[...]"), "columns of scroll[...] take no weight (each is full width)") }
+        return { kind: "scroll", children: children(member("scroll[...]", true), "columns of scroll[...] take no weight (each is full width)") }
       }
       return { kind: n, children: children(function() { return node(false) }, false) }
     }

@@ -202,6 +202,10 @@ describe("ratio on scroll branches", function()
     assert.are.equal("*:*:*", ratio.format(parse_tree("scroll[a, b, c]")))
   end)
 
+  it("formats its overflow column as * too", function()
+    assert.are.equal("*:*:*", ratio.format(parse_tree("scroll[a, *, c]")))
+  end)
+
   it("takes * and 1 cells and writes nothing", function()
     local node = parse_tree("scroll[a, b]")
     local applied = assert(ratio.apply(node, "*:1"))

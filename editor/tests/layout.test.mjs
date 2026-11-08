@@ -42,7 +42,8 @@ test("tree text the engine would refuse is refused, with its message", () => {
   assert.match(error("a[x, y]"),
     /a\[\.\.\.\] \(an accordion, a Hyprland group with tabs\) is gone: write scroll\[x, y\] for full-width scrolling columns at position 1/);
   assert.match(error("scroll[x, v[y, z]]"), /scroll\[\.\.\.\] holds slots only, found 'v\[' inside it/);
-  assert.match(error("scroll[x, *]"), /scroll\[\.\.\.\] holds slots only, found '\*' inside it/);
+  assert.match(error("scroll[x, *, *]"), /more than one overflow leaf '\*'/);
+  assert.match(error("a[x, *]"), /a\[\.\.\.\] holds slots only, found '\*' inside it/);
   assert.match(error("scroll[x:2, y]"), /columns of scroll\[\.\.\.\] take no weight/);
   assert.match(error("h[scroll[x, y], d]"), /scroll\[\.\.\.\] is a whole screen's tree, found it inside a split at position 3/);
   assert.match(error("h[a:0, b]"), /a weight must be a positive integer, got '0'/);
@@ -54,6 +55,7 @@ test("tree text the engine would refuse is refused, with its message", () => {
 test("the leaves of a tree in reading order, the overflow leaf as *", () => {
   assert.deepEqual(plain(L.leaves(tree("h[main:2, v[right, *], x]"))), ["main", "right", "*", "x"]);
   assert.deepEqual(plain(L.leaves(tree("scroll[x, y]"))), ["x", "y"]);
+  assert.deepEqual(plain(L.leaves(tree("scroll[x, *, y]"))), ["x", "*", "y"]);
 });
 
 // --- the ratio grammar (ratio.lua) -----------------------------------------
@@ -299,7 +301,8 @@ test("tree text and ratios read as tree.lua, serialize.lua and ratio.lua read th
     ["h[main:2, v[right, *]]", "1:2[3:1]"], ["h[a, a]", "1:1"], ["scroll[x, v[y]]", "1"], ["h[a:0, b]", "1"],
     ["h[a, b]:2", "1"], ["h[a, b", "1"], ["", "1"], ["h[a, *, *]", "1"], ["scroll[x:2, y]", "1"], ["h[a, b]", "1:2]"],
     ["a[x, y]", "1"], ["h[a[x, y], d]", "1"], ["h[scroll[x], y]", "1"], ["scroll[x, *]", "1"], ["scroll[main]", "1"],
-    ["scroll[x, y]", "*[1]:*"],
+    ["scroll[x, y]", "*[1]:*"], ["scroll[x, *, y]", "*:*:*"], ["scroll[*, x]", "1:1"], ["scroll[x, *, *]", "1"],
+    ["scroll[x, *:2]", "1"], ["scroll[x, *]", "2:1"],
   ];
   const here = dirname(fileURLToPath(import.meta.url));
   const root = join(here, "..", "..");

@@ -4,8 +4,8 @@
 -- carry an integer weight (default 1). Leaves are slot names. A scroll
 -- container, `scroll[left, main, right]`, is a whole screen's tree: its slots
 -- are full-width columns of Hyprland's scrolling layout, in that order
--- (scroll.lua); it holds slots only (no splits, no weights) and sits at the
--- root only. The accordion `a[...]` (a Hyprland group, with tabs) is gone and
+-- (scroll.lua); it holds slots and at most the overflow leaf (no splits, no
+-- weights) and sits at the root only. The accordion `a[...]` (a Hyprland group, with tabs) is gone and
 -- refused with a pointer to scroll[...]. A parsed node is
 --
 --   { slot = "main", weight = 2 }                               -- leaf
@@ -13,8 +13,9 @@
 --   { scroll = true, weight = 1, children = { leaf, ... } }     -- scroll
 --   { overflow = true, weight = 1 }                             -- overflow leaf
 --
--- The overflow leaf, written `*` (at most one per tree, never inside a
--- scroll container), is where windows with no slot in the tree go.
+-- The overflow leaf, written `*` (at most one per tree), is where windows with
+-- no slot in the tree go; in a scroll container it is the column they take
+-- (`scroll[left, main, *, right]`), and without one they go after the slots.
 --
 -- `boxes` divides an area by those weights in whole pixels: every child but the
 -- last gets floor(extent * weight / total), the last gets the remainder, so the
@@ -108,10 +109,14 @@ local function parser(text)
   end
 
   -- A member of a slots-only container (`what` names it in errors): a slot,
-  -- never a container or the overflow leaf.
-  local function member(what)
+  -- never a container; the overflow leaf only where `overflow` says it may be
+  -- (a scroll branch's column for windows with no slot).
+  local function member(what, overflow)
     return function()
       if p.peek() == "*" then
+        if overflow then
+          return p.node(false)
+        end
         p.fail(what .. " holds slots only, found '*' inside it")
       end
       p.skip()
@@ -156,7 +161,7 @@ local function parser(text)
           p.fail("scroll[...] is a whole screen's tree, found it inside a split")
         end
         return { scroll = true,
-          children = p.children(member("scroll[...]"), "columns of scroll[...] take no weight (each is full width)") }
+          children = p.children(member("scroll[...]", true), "columns of scroll[...] take no weight (each is full width)") }
       end
       return { split = name, children = p.children(p.node) }
     end
@@ -225,6 +230,20 @@ function M.scroll(node)
     return collect(node, {})
   end
   return nil
+end
+
+-- The columns of a scroll branch in order: its slot names, and M.OVERFLOW
+-- where it places the overflow leaf (the column windows with no slot in the
+-- branch go to; scroll.plan). Nil when the tree is no scroll[...].
+function M.columns(node)
+  if not (node and node.scroll) then
+    return nil
+  end
+  local out = {}
+  for i, child in ipairs(node.children) do
+    out[i] = child.slot or M.OVERFLOW
+  end
+  return out
 end
 
 -- Parse tree text. Returns the root node, or nil and an error message.
