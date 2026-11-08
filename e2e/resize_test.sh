@@ -19,7 +19,8 @@ return { slots = data.slots, specs = data.specs, arrangements = data.arrangement
 LUA
   cat >"$E2E_CONFIG_HOME/hyprslots/slots.lua" <<'LUA'
 return {
-  slots = {
+  slots = { a = {}, b = {} },
+  specs = {
     [3] = { a = "t-a", b = "t-b" },
   },
   arrangements = {

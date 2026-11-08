@@ -16,7 +16,8 @@ LUA
   mkdir -p "$E2E_CONFIG_HOME/hyprslots"
   cat >"$E2E_CONFIG_HOME/hyprslots/config.lua" <<'LUA'
 return {
-  slots = { [3] = { main = "foot/deltaf" } },
+  slots = { main = {} },
+  specs = { [3] = { main = "foot/deltaf" } },
   arrangements = {
     solo = { screens = { big = "HEADLESS-2" }, desks = { [3] = { big = "main" } } },
   },
