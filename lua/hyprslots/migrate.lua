@@ -18,6 +18,9 @@
 -- dropped). What it cannot read is carried over as it is, for config.validate
 -- to report. Pure; the table given is never changed.
 
+local desk = require("hyprslots.desk")
+local serialize = require("hyprslots.serialize")
+
 local M = {}
 
 local function copy(value)
@@ -130,6 +133,133 @@ function M.data(data)
   end
   out.specs = next(specs) ~= nil and specs or nil
   out.descriptions = nil
+  return out, true
+end
+
+-- Arrangements of before, read as desks and layouts.
+--
+-- Before, an arrangement was a monitor setup and its trees in one, with a
+-- name per screen (a role), and `pinned` listed roles for every arrangement:
+--
+--   arrangements = { docked = { screens = { laptop = "eDP-1", wide = "DP-1" },
+--                               desks = { [3] = { wide = "h[left, main]" } } } },
+--   pinned = { "laptop" },
+--
+-- Now a desk is the monitor setup and a layout the trees, by screen number
+-- (1 the left-most):
+--
+--   desks = { docked = { monitors = { "eDP-1", "DP-1" }, layout = "docked", pinned = { 1 } } },
+--   layouts = { docked = { screens = 2, workspaces = { [3] = { [2] = "h[left, main]" } } } },
+--
+-- Each arrangement becomes a desk of the same name (its selectors, in screen
+-- order) and a layout of its trees. Screen order is the monitors' left to
+-- right when `monitors` (the connected ones, { name, description, serial,
+-- x, y }) has every one of its screens; otherwise the roles' sort order,
+-- the order slots.lua writes them in. Arrangements whose layouts come out
+-- the same share one, named after the first of them. Top-level `pinned`
+-- roles become each desk's pinned screens.
+local function before(a, b)
+  return desk.order({ a, b })[1] == a and a ~= b
+end
+
+local function canonical(layout)
+  return serialize.dump(layout)
+end
+
+-- The roles of an arrangement -> the connected monitor each finds, when
+-- they are exactly the connected monitors; else nil.
+local function desk_match(roles, screens, monitors)
+  local selectors = {}
+  for i, role in ipairs(roles) do
+    selectors[i] = screens[role]
+  end
+  for _, selector in ipairs(selectors) do
+    if type(selector) ~= "string" then
+      return nil
+    end
+  end
+  local found = desk.match(selectors, desk.usable(monitors))
+  if not found then
+    return nil
+  end
+  local out = {}
+  for _, role in ipairs(roles) do
+    out[role] = found[screens[role]]
+  end
+  return out
+end
+
+-- The data with its arrangements read as desks and layouts (a copy), and
+-- whether it had to change. Data that already has desks or layouts is
+-- left as it is (an `arrangements` beside them is config.validate's to
+-- report).
+function M.desks(data, monitors)
+  local out = copy(data)
+  if type(out) ~= "table" or out.arrangements == nil or out.desks ~= nil or out.layouts ~= nil then
+    return out, false
+  end
+  if type(out.arrangements) ~= "table" then
+    return out, false
+  end
+  local arrangements = out.arrangements
+  local pinned_roles = {}
+  if type(out.pinned) == "table" then
+    for _, role in ipairs(out.pinned) do
+      pinned_roles[role] = true
+    end
+  end
+  local desks, layouts, by_text = {}, {}, {}
+  for _, name in ipairs(sorted(arrangements)) do
+    local entry = arrangements[name]
+    if type(entry) ~= "table" then
+      desks[name] = entry -- config.validate says what is wrong with it
+    else
+      local screens = type(entry.screens) == "table" and entry.screens or {}
+      local roles = {}
+      for _, role in ipairs(sorted(screens)) do
+        roles[#roles + 1] = role
+      end
+      local found = monitors and desk_match(roles, screens, monitors)
+      if found then
+        table.sort(roles, function(a, b)
+          return before(found[a], found[b])
+        end)
+      end
+      local index, selectors, pinned = {}, {}, {}
+      for i, role in ipairs(roles) do
+        index[role] = i
+        selectors[i] = screens[role]
+        if pinned_roles[role] then
+          pinned[#pinned + 1] = i
+        end
+      end
+      local workspaces = {}
+      for n, branches in pairs(type(entry.desks) == "table" and entry.desks or {}) do
+        if type(branches) == "table" then
+          local trees = {}
+          for role, text in pairs(branches) do
+            trees[index[role] or role] = text -- an unknown role stays, for validate to report
+          end
+          workspaces[n] = trees
+        else
+          workspaces[n] = branches
+        end
+      end
+      local layout = { screens = #roles, workspaces = next(workspaces) ~= nil and workspaces or nil }
+      local text = canonical(layout)
+      local shared = by_text[text]
+      if not shared then
+        shared = name
+        by_text[text] = name
+        layouts[name] = layout
+      end
+      desks[name] = { monitors = selectors, layout = shared, pinned = #pinned > 0 and pinned or nil }
+    end
+  end
+  out.desks = desks
+  out.layouts = layouts
+  out.arrangements = nil
+  out.pinned = nil
   return out, true
 end
 
