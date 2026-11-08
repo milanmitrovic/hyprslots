@@ -95,7 +95,7 @@ describe("hyprslots engine", function()
     it("selects the arrangement for the monitors already connected", function()
       setup()
       assert.are.equal("solo", state().arrangement)
-      assert.are.same({ desk = 3, role = "main", monitor = "HEADLESS-2" }, state().workspaces["3"])
+      assert.are.same({ desk = 3, role = "main", monitor = "HEADLESS-2", layout = "lua:slots" }, state().workspaces["3"])
     end)
 
     it("never raises, and reports a broken config with a notification", function()

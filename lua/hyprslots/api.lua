@@ -5,7 +5,7 @@
 --
 -- Every reply is a JSON string: { "ok": true, ... } or { "ok": false, "error": "..." }.
 -- Nothing here raises into Hyprland. Calls: state, desk, set_tree, set_ratio,
--- record, assign, unassign, save, reload; for the Slots view set_spec,
+-- record, assign, unassign, save, reload, arrange; for the Slots view set_spec,
 -- add_slot, remove_slot, rename_slot, describe_slot, take_spec; for the
 -- Arrangements view add_arrangement, rename_arrangement, delete_arrangement,
 -- set_screens, set_pinned, copy_trees (the contract is in docs/design.md
@@ -22,6 +22,7 @@ local ratio = require("hyprslots.ratio")
 local record = require("hyprslots.record")
 local resize = require("hyprslots.resize")
 local router = require("hyprslots.router")
+local scroll = require("hyprslots.scroll")
 local serialize = require("hyprslots.serialize")
 local spec = require("hyprslots.spec")
 local tree = require("hyprslots.tree")
@@ -205,6 +206,22 @@ local function groups_info(engine)
   return out
 end
 
+-- The scroll branches of the desk workspaces and their columns (scroll.lua).
+local function scroll_info(engine)
+  local out = array()
+  local ok, described = pcall(scroll.describe, engine)
+  if not ok then
+    engine.log:error("state: scroll: %s", tostring(described))
+    return out
+  end
+  for _, s in ipairs(described) do
+    out[#out + 1] = object({ workspace = s.workspace, desk = s.desk, role = s.role, slots = array(s.slots),
+      layout = s.layout, managed = s.managed, columns = array(s.columns), members = object(s.members),
+      in_order = s.in_order })
+  end
+  return out
+end
+
 local function windows_info(engine)
   local out = array()
   local ok, windows = pcall(adapter.windows)
@@ -249,7 +266,8 @@ function M.snapshot(engine)
     end
   end
   for id, desk in pairs(engine.workspaces) do
-    workspaces[tostring(id)] = object({ desk = desk.desk, role = desk.role, monitor = desk.monitor })
+    workspaces[tostring(id)] = object({ desk = desk.desk, role = desk.role, monitor = desk.monitor,
+      layout = scroll.layout_for(engine, id) })
   end
   for address, assignment in pairs(engine.assignments) do
     assignments[address] = object({ desk = assignment.desk, slot = assignment.slot,
@@ -288,6 +306,7 @@ function M.snapshot(engine)
     dirty = engine.dirty == true or next(engine.resized or {}) ~= nil,
     resized = resized_info(engine),
     groups = groups_info(engine),
+    scroll = scroll_info(engine),
     config = object({
       dir = dir,
       data_file = dir .. "/" .. DATA_FILE,
@@ -298,7 +317,7 @@ function M.snapshot(engine)
 end
 
 local handlers = {}
-
+local record_scroll -- defined below handlers.record
 function handlers.state(engine)
   return M.snapshot(engine)
 end
@@ -429,6 +448,59 @@ local function has_accordion(node)
   return false
 end
 
+-- Apply a recorded tree when asked, or when it places every slot of the
+-- current tree; fills in reply.applied. Returns the reply, or a failure.
+local function apply_record(engine, args, reply)
+  local apply = args.apply
+  if apply == nil then
+    apply = #reply.missing == 0
+  end
+  if apply then
+    local editable, edit_err = target_arrangement(engine, { arrangement = reply.arrangement })
+    if not editable then
+      return fail(edit_err)
+    end
+    local set, set_err = set_tree(engine, reply.arrangement, reply.desk, reply.role, reply.tree)
+    if not set then
+      return fail(set_err)
+    end
+    reply.applied = true
+  end
+  reply.seq = engine.seq
+  return reply
+end
+
+-- A scroll branch records as its slots in the column order they show.
+record_scroll = function(engine, args, id, desk, name, branch)
+  local in_branch = {}
+  for _, slot in ipairs(tree.scroll(branch)) do
+    in_branch[slot] = true
+  end
+  local present, seen = {}, {}
+  for _, window in ipairs(scroll.order(adapter.scroll_windows(id))) do
+    local assignment = engine.assignments[window.address]
+    if assignment and assignment.desk == desk.desk and in_branch[assignment.slot] and not seen[assignment.slot] then
+      seen[assignment.slot] = true
+      present[#present + 1] = assignment.slot
+    end
+  end
+  if #present == 0 then
+    return fail("cannot record workspace " .. tostring(id) .. ": no windows to record")
+  end
+  local missing = array()
+  for _, slot in ipairs(tree.scroll(branch)) do
+    if not seen[slot] then
+      missing[#missing + 1] = slot
+    end
+  end
+  local node = { scroll = true, weight = 1, children = {} }
+  for i, slot in ipairs(present) do
+    node.children[i] = { slot = slot, weight = 1 }
+  end
+  return apply_record(engine, args, { arrangement = name, desk = desk.desk, role = desk.role, workspace = id,
+    tree = serialize.tree(node), ratio = ratio.format(node), missing = missing, applied = false })
+end
+
 -- record { workspace?, apply? }: the tree the windows on a workspace (default:
 -- the focused one) show, for that desk and screen of the active arrangement.
 -- It is applied when it places every slot of the current tree, or when
@@ -441,6 +513,9 @@ function handlers.record(engine, args)
   end
   local name = engine.active.name
   local branch = M.effective_branch(engine, name, desk.desk, desk.role) or desk.branch
+  if tree.scroll(branch) then
+    return record_scroll(engine, args, id, desk, name, branch)
+  end
   if has_accordion(branch) then
     return fail("cannot record workspace " .. tostring(id) .. ": its tree holds an accordion, whose windows "
       .. "overlap (aerolayout cannot record one either); set its tree or ratio instead")
@@ -471,25 +546,8 @@ function handlers.record(engine, args)
       missing[#missing + 1] = leaf.slot
     end
   end
-  local apply = args.apply
-  if apply == nil then
-    apply = #missing == 0
-  end
-  local reply = { arrangement = name, desk = desk.desk, role = desk.role, workspace = id,
-    tree = serialize.tree(node), ratio = ratio.format(node), missing = missing, applied = false }
-  if apply then
-    local editable, edit_err = target_arrangement(engine, { arrangement = name })
-    if not editable then
-      return fail(edit_err)
-    end
-    local set, set_err = set_tree(engine, name, desk.desk, desk.role, reply.tree)
-    if not set then
-      return fail(set_err)
-    end
-    reply.applied = true
-  end
-  reply.seq = engine.seq
-  return reply
+  return apply_record(engine, args, { arrangement = name, desk = desk.desk, role = desk.role, workspace = id,
+    tree = serialize.tree(node), ratio = ratio.format(node), missing = missing, applied = false })
 end
 
 -- save {}: write the running data to slots.lua (atomically).
@@ -1087,6 +1145,13 @@ function handlers.copy_trees(engine, args)
     return fail(apply_err)
   end
   return { arrangement = name, from = from, seq = engine.seq }
+end
+
+-- arrange {}: run the scroll pass now (order and widen every scroll
+-- workspace hyprslots keeps), as Super+L does on bringing slots back.
+function handlers.arrange(engine)
+  local result = scroll.arrange(engine)
+  return { swaps = result.swaps, widened = array(result.widened) }
 end
 
 function handlers.desk(engine, args)
