@@ -211,7 +211,11 @@ Item {
   Loader {
     id: ownEngine
     active: !root.service
-    source: "Engine.qml"
+    sourceComponent: Component {
+      Engine {
+        panelOwned: true
+      }
+    }
   }
 
   OverlayWindow {

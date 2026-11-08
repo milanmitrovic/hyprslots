@@ -4,6 +4,7 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Hyprland
 import "Protocol.js" as Protocol
+import "Services.js" as Services
 
 // The editor's link to the running hyprslots engine (docs/design.md §9), as
 // the plugin's service. It talks to the engine only through Hyprland:
@@ -184,6 +185,14 @@ Item {
       if (root.following && event && Protocol.meansReread(String(event.name), String(event.data || ""))) root.refresh()
     }
   }
+
+  // Set by a panel that runs an engine of its own (no service): that one is
+  // the panel's, not for bar widgets.
+  property bool panelOwned: false
+
+  // For a bar widget its bar hands no service (Services.js).
+  Component.onCompleted: if (!panelOwned) Services.register(root)
+  Component.onDestruction: Services.unregister(root)
 
   onFollowingChanged: if (following) refresh()
   // Opening the panel reads again even while a widget kept the state fresh.

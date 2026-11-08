@@ -6,6 +6,7 @@ import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
 import "BarStatus.js" as BarStatus
+import "Services.js" as Services
 
 // The hyprslots bar widget (docs/design.md §9): a grid glyph and
 // `<arrangement> · <desk>` for the workspace its bar's monitor shows, a dot
@@ -23,16 +24,26 @@ BarWidget {
 
   readonly property string pluginId: "milan.hyprslots"
 
-  // The plugin's service, from the bar's scoped shell. Services can come up
-  // after the bar's widgets, so a missing one is asked for again.
+  // The plugin's service: from the bar's facade (Omarchy's own bar), else
+  // where the service registered itself (a replacement bar's facade has no
+  // serviceFor; Services.js). Services can come up after the bar's
+  // widgets, so a missing one is asked for again; a destroyed one (a
+  // plugin reload) reads as null.
   property var engine: null
   property var watched: null
 
   function lookUpEngine() {
     var shell = root.bar ? root.bar.shell : null
     var found = shell && typeof shell.serviceFor === "function" ? shell.serviceFor(root.pluginId) : null
+    if (!found) found = Services.engine()
     if (found === root.engine) return
-    if (root.watched) root.watched.unwatch()
+    if (root.watched) {
+      try {
+        root.watched.unwatch()
+      } catch (e) {
+        if (!(e instanceof TypeError)) throw e // destroyed with its plugin's reload
+      }
+    }
     root.engine = found
     root.watched = found
     if (found) found.watch()
@@ -42,10 +53,12 @@ BarWidget {
   Component.onCompleted: lookUpEngine()
   Component.onDestruction: if (root.watched) root.watched.unwatch()
 
+  // Also while one is found: after a plugin reload the service is a new
+  // object, and the old one going away notifies nothing here.
   Timer {
     interval: 2000
     repeat: true
-    running: root.engine === null
+    running: true
     onTriggered: root.lookUpEngine()
   }
 
