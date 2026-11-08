@@ -10,20 +10,25 @@ const plain = (value) => JSON.parse(JSON.stringify(value));
 
 function fixture() {
   return {
-    arrangement: "dual",
-    used_workspaces: [3, 4],
+    layout: "dual",
+    used_workspaces: [3, 4, 5],
     slots: [{ name: "left" }, { name: "main", description: "the editor" }, { name: "right" }, { name: "spare" }],
     specs: { 3: { main: "t-main", right: "t-right", left: "t-left" }, 4: { main: "thunderbird" } },
-    arrangements: {
+    layouts: {
       dual: {
-        roles: ["big", "side"],
+        screens: 2,
         active: true,
+        own: [3, 4],
+        default: {},
         workspaces: {
-          3: { big: { tree: "h[main:2, right]", slots: ["main", "right"] }, side: { tree: "left", slots: ["left"] } },
-          4: { big: { tree: "main", slots: ["main"] } },
+          3: { 1: { tree: "h[main:2, right]", slots: ["main", "right"] }, 2: { tree: "left", slots: ["left"] } },
+          4: { 1: { tree: "main", slots: ["main"] } },
         },
       },
-      single: { roles: ["big"], active: false, workspaces: { 3: { big: { tree: "h[left, main, right]", slots: ["left", "main", "right"] } } } },
+      // workspace 5 shows single's default trees, which are no tree of its own
+      single: { screens: 1, active: false, own: [3], default: { 1: { tree: "main", slots: ["main"] } },
+        workspaces: { 3: { 1: { tree: "h[left, main, right]", slots: ["left", "main", "right"] } },
+          5: { 1: { tree: "main", slots: ["main"] } } } },
     },
   };
 }
@@ -38,9 +43,9 @@ test("a row per global slot, by name, with its description", () => {
   ]);
 });
 
-test("each row says which trees place the slot, as arrangement/workspace/role", () => {
+test("each row says which trees place the slot, as layout/workspace/screen (or layout/default/screen)", () => {
   const rows = plain(S.rows(fixture()));
-  assert.deepEqual(rows[1].places, ["dual/3/big", "dual/4/big", "single/3/big"]);
+  assert.deepEqual(rows[1].places, ["dual/3/1", "dual/4/1", "single/default/1", "single/3/1"]);
   assert.deepEqual(rows[3].places, []);
 });
 
@@ -55,10 +60,10 @@ test("deleting a slot asks plainly when nothing uses it, else names every tree a
   assert.equal(S.deleteQuestion(rows[3]), "Delete slot 'spare'?");
   assert.equal(
     S.deleteQuestion(rows[2]),
-    "Delete slot 'right'? It goes from the trees dual/3/big, single/3/big and the specs of workspace 3.",
+    "Delete slot 'right'? It goes from the trees dual/3/1, single/3/1 and the specs of workspace 3.",
   );
   assert.equal(S.deleteQuestion(rows[1]),
-    "Delete slot 'main'? It goes from the trees dual/3/big, dual/4/big, single/3/big and the specs of workspaces 3, 4.");
+    "Delete slot 'main'? It goes from the trees dual/3/1, dual/4/1, single/default/1, single/3/1 and the specs of workspaces 3, 4.");
 });
 
 test("no state, no rows", () => {

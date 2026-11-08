@@ -132,9 +132,29 @@ ShellRoot {
       return panel.layoutText()
     }
 
-    // The panel's tabs, and the current one: "Assignment Layout Arrangements | Layout".
+    // The panel's tabs, and the current one: "Assignment Layout Desks & Layouts | Layout".
     function tabs(): string {
       return panel.tabs.join(" ") + " | " + panel.tabs[panel.tab]
+    }
+
+    // The header line every tab shows ("Desk: … · Layout: …").
+    function header(): string {
+      return panel.headerText()
+    }
+
+    // The current view's help row, as the StyledText it draws (each trigger
+    // key in <b><font color=accent>).
+    function help(): string {
+      return panel.helpText
+    }
+
+    // The Layout tab's pane titles, " | " between them, and its header line.
+    function panes(): string {
+      return panel.layoutPanesText()
+    }
+
+    function layoutHeader(): string {
+      return panel.layoutHeaderText()
     }
 
     function press(key: string): string {

@@ -7,12 +7,15 @@ import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
 import "Prompts.js" as Prompts
+import "DesksLayouts.js" as DesksLayouts
 
 // The hyprslots editor panel (docs/design.md §9): aerolayout's `edit` TUI as
 // an Omarchy shell panel. Three tabs, cycled with Tab / Shift+Tab as in the
-// TUI: Assignment (which window fills which slot), Layout (one workspace's trees,
-// with the global slots listed beside them, made and placed there) and
-// Arrangements. Esc or q closes it (while a view's prompt is open, every key
+// TUI: Assignment (which window fills which slot), Layout (one workspace's
+// trees in the active desk's layout, with the global slots listed beside
+// them, made and placed there) and Desks & Layouts (the monitor setups and
+// the logical layouts they use). A header on every tab names the active
+// desk and its layout. Esc or q closes it (while a view's prompt is open, every key
 // is the prompt's; in the Layout tab's slot list Esc goes back to the
 // picture). Ctrl+S saves in every tab; in the Layout tab it applies the
 // edited panes first.
@@ -35,7 +38,7 @@ Item {
   // The service, or an engine of the panel's own when it runs without one.
   readonly property var engine: service ? service : (ownEngine.item ? ownEngine.item : null)
 
-  readonly property var tabs: ["Assignment", "Layout", "Arrangements"]
+  readonly property var tabs: ["Assignment", "Layout", "Desks & Layouts"]
   property int tab: 0
 
   property color background: Commons.Color.menu.background
@@ -71,7 +74,7 @@ Item {
     assignmentView.reset()
     layoutView.focusedWorkspace = assignmentView.focusedWorkspace
     layoutView.reset()
-    arrangementsView.reset()
+    desksView.reset()
     if (payload.record === true) {
       root.tab = 1
       root.pendingRecord = true
@@ -108,7 +111,7 @@ Item {
   function handleKey(key, text, modifiers) {
     if (assignmentView.prompting && root.tab === 0) return assignmentView.handleKey(key, text, modifiers)
     if (layoutView.prompting && root.tab === 1) return layoutView.handleKey(key, text, modifiers)
-    if (arrangementsView.prompting && root.tab === 2) return arrangementsView.handleKey(key, text, modifiers)
+    if (desksView.prompting && root.tab === 2) return desksView.handleKey(key, text, modifiers)
     if (key === Qt.Key_S && (modifiers & Qt.ControlModifier)) {
       root.save()
       return true
@@ -129,14 +132,14 @@ Item {
     }
     if (root.tab === 0) return assignmentView.handleKey(key, text, modifiers)
     if (root.tab === 1) return layoutView.handleKey(key, text, modifiers)
-    if (root.tab === 2) return arrangementsView.handleKey(key, text, modifiers)
+    if (root.tab === 2) return desksView.handleKey(key, text, modifiers)
     return false
   }
 
   // Ctrl+S, one save for every view: the engine's `save`, said in the current
   // view; the Layout view applies its edited panes first.
   function save() {
-    var view = [assignmentView, layoutView, arrangementsView][root.tab]
+    var view = [assignmentView, layoutView, desksView][root.tab]
     if (!root.engine) return
     var write = function() {
       root.engine.call("save", {}, function(reply) {
@@ -173,18 +176,30 @@ Item {
     return root.handleKey(key, text, modifiers) ? "ok" : "ignored"
   }
 
-  // What the Assignment view has selected, "<status> <slot> <class>", and
+  // What the Assignment view has selected, "<status> <slot> <class>" (the
+  // Layout view: "<screen> <leaf>"; Desks & Layouts: "desk:solo"), and
   // the current view's message or prompt line: for scripts and the e2e smoke.
   function selectionText() {
     if (root.tab === 1) return layoutView.selectionText()
+    if (root.tab === 2) return desksView.selectedRow ? desksView.selectedRow.key : ""
     var row = assignmentView.selectedRow
     return row ? row.status + " " + (row.slot || "-") + " " + (row.cls || row.spec || "-") : ""
   }
 
-  // The Layout view's draft trees, "big: h[a, b]; side: c" (edited ones
-  // marked *): for the e2e smoke.
+  // The Layout view's draft trees, "1: h[a, b]; 2: c" (edited ones marked
+  // *): for the e2e smoke.
   function layoutText() {
     return layoutView.draftText()
+  }
+
+  // The Layout view's pane titles ("Screen 1 · HEADLESS-2 (...)" joined by
+  // " | ") and its header line: for the e2e smoke.
+  function layoutPanesText() {
+    return layoutView.paneTitles()
+  }
+
+  function layoutHeaderText() {
+    return layoutView.headerLine()
   }
 
   // A view's prompt as one line, the refusal after " | "; the view's
@@ -196,9 +211,21 @@ Item {
 
   function messageText() {
     if (root.tab === 1) return root.promptText(layoutView.prompt, layoutView.message)
-    if (root.tab === 2) return root.promptText(arrangementsView.prompt, arrangementsView.message)
+    if (root.tab === 2) return root.promptText(desksView.prompt, desksView.message)
     return root.promptText(assignmentView.prompt, assignmentView.message)
   }
+
+  // The header line every tab shows: "Desk: docked · Layout: docked (also
+  // used by: office)", and whether edits are unsaved.
+  function headerText() {
+    var s = root.engine ? root.engine.state : null
+    return DesksLayouts.header(s) + (s && s.dirty ? "   ● unsaved edits (Ctrl+S)" : "")
+  }
+
+  // The current view's controls strip, as StyledText (its keys highlighted).
+  readonly property string helpText: root.tab === 0 ? assignmentView.helpText
+    : root.tab === 1 ? layoutView.helpText
+    : desksView.helpText
 
   Connections {
     target: root.engine
@@ -263,37 +290,58 @@ Item {
         anchors.leftMargin: card.contentLeftInset
         spacing: Style.spacing.md
 
-        // The tab bar, as the TUI draws it: the current tab reversed.
-        Row {
+        // The tab bar, as the TUI draws it: the current tab reversed; the
+        // active desk and its layout at its right.
+        Item {
           id: tabBar
-          spacing: Style.spacing.sm
-          Repeater {
-            model: root.tabs
-            delegate: Rectangle {
-              required property string modelData
-              required property int index
-              readonly property bool current: index === root.tab
-              width: label.implicitWidth + Style.spacing.lg * 2
-              height: label.implicitHeight + Style.spacing.sm * 2
-              radius: Style.cornerRadius
-              color: current ? root.selectedBackground : "transparent"
-              Text {
-                id: label
-                anchors.centerIn: parent
-                textFormat: Text.PlainText
-                text: parent.modelData
-                color: parent.current ? root.selectedText : root.foreground
-                opacity: parent.current ? 1 : 0.6
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.subtitle
-                font.bold: parent.current
-              }
-              MouseArea {
-                anchors.fill: parent
-                cursorShape: Qt.PointingHandCursor
-                onClicked: root.tab = parent.index
+          width: parent.width
+          height: tabRow.height
+          Row {
+            id: tabRow
+            spacing: Style.spacing.sm
+            Repeater {
+              model: root.tabs
+              delegate: Rectangle {
+                required property string modelData
+                required property int index
+                readonly property bool current: index === root.tab
+                width: label.implicitWidth + Style.spacing.lg * 2
+                height: label.implicitHeight + Style.spacing.sm * 2
+                radius: Style.cornerRadius
+                color: current ? root.selectedBackground : "transparent"
+                Text {
+                  id: label
+                  anchors.centerIn: parent
+                  textFormat: Text.PlainText
+                  text: parent.modelData
+                  color: parent.current ? root.selectedText : root.foreground
+                  opacity: parent.current ? 1 : 0.6
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.subtitle
+                  font.bold: parent.current
+                }
+                MouseArea {
+                  anchors.fill: parent
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: root.tab = parent.index
+                }
               }
             }
+          }
+          Text {
+            id: deskHeader
+            anchors.left: tabRow.right
+            anchors.leftMargin: Style.spacing.lg * 2
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            horizontalAlignment: Text.AlignRight
+            elide: Text.ElideRight
+            textFormat: Text.PlainText
+            text: root.headerText()
+            color: root.engine && root.engine.state && root.engine.state.dirty ? Commons.Color.urgent : root.foreground
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.body
+            font.bold: true
           }
         }
 
@@ -324,8 +372,8 @@ Item {
             fontFamily: root.fontFamily
           }
 
-          ArrangementsView {
-            id: arrangementsView
+          DesksLayoutsView {
+            id: desksView
             anchors.fill: parent
             visible: root.tab === 2
             engine: root.engine
@@ -336,18 +384,15 @@ Item {
           }
         }
 
-        // The controls strip: what the keys of the current view do.
+        // The controls strip: what the keys of the current view do, each
+        // trigger key highlighted in the accent colour.
         Text {
           id: help
           width: parent.width
-          textFormat: Text.PlainText
+          textFormat: Text.StyledText
           wrapMode: Text.WordWrap
-          text: root.tab === 0 ? assignmentView.helpText
-            : root.tab === 1 ? layoutView.helpText
-            : root.tab === 2 ? arrangementsView.helpText
-            : "Tab switch view   ·   q close"
-          color: root.foreground
-          opacity: 0.7
+          text: root.helpText
+          color: Commons.Util.alpha(root.foreground, 0.75)
           font.family: root.fontFamily
           font.pixelSize: Style.font.bodySmall
         }

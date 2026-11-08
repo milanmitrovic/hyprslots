@@ -8,9 +8,10 @@
 // it, which a delete names. Which app fills a slot on a workspace is set from
 // the Assignment view. Pure, so node can test it (editor/tests/slots.test.mjs).
 //
-// A row is { slot, description, places: ["dual/3/big", ...] (arrangement/
-//   workspace/role of every tree that places it), specs: [{ workspace, spec },
-//   ...] }.
+// A row is { slot, description, places: ["dual/3/1", "dual/default/1", ...]
+//   (layout/workspace/screen of every tree that places it, as remove_slot
+//   names them; a workspace showing the default trees has none of its own),
+//   specs: [{ workspace, spec }, ...] }.
 
 function slotList(state) {
   return state && Array.isArray(state.slots) ? state.slots : []
@@ -22,27 +23,27 @@ function numeric(a, b) {
 
 function rows(state) {
   if (!state) return []
-  var arrangements = state.arrangements || {}
-  var names = Object.keys(arrangements).sort()
+  var layouts = state.layouts || {}
+  var names = Object.keys(layouts).sort()
   var specs = state.specs || {}
   var filling = Object.keys(specs).sort(numeric)
   return slotList(state).map(function(entry) {
     var slot = entry.name
     var places = []
-    for (var n = 0; n < names.length; n++) {
-      var a = arrangements[names[n]]
-      var trees = a.workspaces || {}
-      var numbers = Object.keys(trees).sort(numeric)
-      for (var d = 0; d < numbers.length; d++) {
-        var branches = trees[numbers[d]] || {}
-        var roles = Array.isArray(a.roles) ? a.roles : Object.keys(branches).sort()
-        for (var r = 0; r < roles.length; r++) {
-          var branch = branches[roles[r]]
-          if (branch && Array.isArray(branch.slots) && branch.slots.indexOf(slot) >= 0) {
-            places.push(names[n] + "/" + numbers[d] + "/" + roles[r])
-          }
+    var placed = function(name, workspace, branches, count) {
+      for (var screen = 1; screen <= count; screen++) {
+        var branch = (branches || {})[String(screen)]
+        if (branch && Array.isArray(branch.slots) && branch.slots.indexOf(slot) >= 0) {
+          places.push(name + "/" + workspace + "/" + screen)
         }
       }
+    }
+    for (var n = 0; n < names.length; n++) {
+      var l = layouts[names[n]]
+      var count = l.screens || 0
+      placed(names[n], "default", l.default, count)
+      var own = (Array.isArray(l.own) ? l.own : []).map(Number).sort(numeric)
+      for (var d = 0; d < own.length; d++) placed(names[n], own[d], (l.workspaces || {})[String(own[d])], count)
     }
     var filled = []
     for (var i = 0; i < filling.length; i++) {

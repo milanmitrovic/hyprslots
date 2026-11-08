@@ -7,38 +7,62 @@
 
 var GLYPH = "󰕰" // the grid milan.layout shows for slots
 
-// The workspace number (1 to 10) a Hyprland workspace id is in the active
-// arrangement, or null.
-function workspaceOf(state, id) {
+// The workspace entry (workspace 1 to 10, screen) of a Hyprland workspace id
+// on the active desk, or null.
+function entryOf(state, id) {
   var ws = state && state.workspaces ? state.workspaces[String(id)] : null
-  return ws && ws.workspace !== undefined && ws.workspace !== null ? ws.workspace : null
+  return ws && ws.workspace !== undefined && ws.workspace !== null ? ws : null
+}
+
+function workspaceOf(state, id) {
+  var ws = entryOf(state, id)
+  return ws ? ws.workspace : null
+}
+
+// Whether the active layout has a tree for that workspace on that screen.
+function hasTree(state, entry) {
+  var layout = state && state.layouts && state.layout ? state.layouts[state.layout] : null
+  var trees = layout && layout.workspaces ? layout.workspaces[String(entry.workspace)] : null
+  return !!(trees && trees[String(entry.screen)])
 }
 
 var HINT = "Click: editor · Right-click: menu"
 
-// Where the bar's screen is, in words: "solo, workspace 3".
-function where(arrangement, workspace, workspaceId) {
-  if (!arrangement) return "no arrangement for these monitors"
-  if (workspace !== null) return arrangement + ", workspace " + workspace
-  if (workspaceId === undefined || workspaceId === null || workspaceId < 0) return arrangement + ", no workspace"
-  return arrangement + ", workspace " + workspaceId + " has no tree"
+// Where the bar's screen is, in words: "desk laptop, workspace 3".
+function where(desk, entry, tree, workspaceId) {
+  if (!desk) return "no desk for these monitors"
+  if (entry) return "desk " + desk + ", workspace " + entry.workspace + (tree ? "" : " has no tree on this screen")
+  if (workspaceId === undefined || workspaceId === null || workspaceId < 0) return "desk " + desk + ", no workspace"
+  return "desk " + desk + ", workspace " + workspaceId + " has no tree"
+}
+
+// "Layout: solo (also used by: office)", or "" with no layout.
+function layoutLine(state) {
+  if (!state || !state.layout) return ""
+  var l = state.layouts ? state.layouts[state.layout] : null
+  var others = (l && Array.isArray(l.used_by) ? l.used_by : []).filter(function(d) { return d !== state.desk })
+  return "Layout: " + state.layout + (others.length ? " (also used by: " + others.join(", ") + ")" : "")
 }
 
 // input: { engine (whether the service is there), error (its last state
 // read's error, "" when fine), state (the last state that read fine, or
 // null), workspaceId (the bar's monitor's active Hyprland workspace id, -1 if
 // none) }. Returns { label, status: "normal" | "dirty" | "error", tooltip,
-// error, workspace (its number 1 to 10, or null), arrangement ("" when none),
-// dirty }.
+// error, workspace (its number 1 to 10, or null), desk ("" when none),
+// dirty }. The label is "<desk> · ws <n>", a dash for a workspace with no
+// tree on the bar's screen.
 function view(input) {
   var state = input.state
-  var workspace = workspaceOf(state, input.workspaceId)
-  var arrangement = state && state.arrangement ? String(state.arrangement) : ""
+  var entry = entryOf(state, input.workspaceId)
+  var workspace = entry ? entry.workspace : null
+  var tree = entry ? hasTree(state, entry) : false
+  var desk = state && state.desk ? String(state.desk) : ""
   var dirty = !!(state && state.dirty === true)
-  var label = GLYPH + " " + (arrangement || "none") + " · " + (workspace === null ? "–" : workspace) + (dirty ? " •" : "")
-  var here = where(arrangement, workspace, input.workspaceId) + (dirty ? " · unsaved edits" : "")
+  var label = GLYPH + " " + (desk || "none") + " · ws " + (tree ? workspace : "–") + (dirty ? " •" : "")
+  var line = layoutLine(state)
+  var here = where(desk, entry, tree, input.workspaceId) + (dirty ? " · unsaved edits" : "") + (line ? "\n" + line : "")
   var out = { label: label, status: dirty ? "dirty" : "normal", tooltip: "", error: "", workspace: workspace,
-    arrangement: arrangement, dirty: dirty }
+    desk: desk, dirty: dirty }
 
   if (!input.engine) {
     out.error = "the milan.hyprslots service is not running"
@@ -83,7 +107,7 @@ function menu(input) {
 
 // The api calls a menu entry makes, in order ([] for record, which opens
 // the panel's Layout tab on its record flow instead). Re-apply is the
-// workspace's Super+N (`workspace`: every screen of the arrangement shows it
+// workspace's Super+N (`workspace`: every screen of the desk shows it
 // again, scroll branches back in slot order) and then `arrange` (the scroll
 // pass now, the focused scroll workspace's columns widened).
 function calls(id, workspace) {
@@ -98,6 +122,9 @@ function outcome(id, workspace, reply) {
   if (!reply || !reply.ok) return reply && reply.error ? String(reply.error) : "the call failed"
   if (id === "arrange") return "Workspace " + workspace + " laid out again."
   if (id === "save") return "Saved " + reply.path + "."
-  if (id === "reload") return "Reloaded the config; these monitors run " + (reply.arrangement || "no arrangement") + "."
+  if (id === "reload") {
+    return reply.desk ? "Reloaded the config; desk " + reply.desk + " runs layout " + reply.layout + "."
+      : "Reloaded the config; these monitors have no desk."
+  }
   return "Done."
 }

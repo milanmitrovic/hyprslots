@@ -29,12 +29,21 @@ test("the digits jump to workspaces 1 to 9, and 0 to workspace 10, as Super+N do
   assert.equal(W.ofDigit("12"), null);
 });
 
-test("the strip marks the current workspace and the workspaces an arrangement has trees for", () => {
-  const state = { arrangements: { solo: { workspaces: { 3: { main: { tree: "a" } }, 10: { main: { tree: "b" } } } } } };
+test("the strip marks the current workspace, the ones with trees of their own and the ones showing the default trees", () => {
+  const state = { layouts: { solo: { screens: 1, own: [3, 10], default: { 1: { tree: "main" } },
+    workspaces: { 3: { 1: { tree: "a" } }, 5: { 1: { tree: "main" } }, 10: { 1: { tree: "b" } } } } } };
   const strip = plain(W.strip(state, "solo", 3));
-  assert.equal(strip.length, 10);
-  assert.deepEqual(strip[2], { workspace: 3, label: "3", current: true, trees: true });
-  assert.deepEqual(strip[0], { workspace: 1, label: "1", current: false, trees: false });
-  assert.deepEqual(strip[9], { workspace: 10, label: "0", current: false, trees: true });
+  assert.equal(strip.length, 11, "workspaces 1 to 10, then the default trees");
+  assert.deepEqual(strip[2], { workspace: 3, label: "3", current: true, trees: true, shared: false });
+  assert.deepEqual(strip[0], { workspace: 1, label: "1", current: false, trees: false, shared: false });
+  assert.deepEqual(strip[4], { workspace: 5, label: "5", current: false, trees: false, shared: true });
+  assert.deepEqual(strip[9], { workspace: 10, label: "0", current: false, trees: true, shared: false });
+  assert.deepEqual(strip[10], { workspace: "default", label: "def", current: false, trees: true, shared: false });
+  assert.equal(plain(W.strip(state, "solo", "default"))[10].current, true);
   assert.equal(plain(W.strip(null, "solo", 1)).filter((w) => w.trees).length, 0);
+});
+
+test("stepping from the default trees goes to workspace 1 or 10", () => {
+  assert.equal(W.step("default", 1), 1);
+  assert.equal(W.step("default", -1), 10);
 });

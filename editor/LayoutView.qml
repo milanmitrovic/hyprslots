@@ -7,9 +7,12 @@ import "Workspaces.js" as Workspaces
 import "Layout.js" as Layout
 import "Prompts.js" as Prompts
 import "Slots.js" as Slots
+import "DesksLayouts.js" as DesksLayouts
+import "Help.js" as Help
 
-// One workspace's trees, edited (aerolayout's LayoutView). A pane per screen
-// role of the arrangement, each a scale model of its screen: boxes proportional
+// One workspace's trees in the active desk's layout, edited (aerolayout's
+// LayoutView). A pane per screen 1..N of the layout, labelled with the
+// active desk's monitor at that position, each a scale model of it: boxes proportional
 // to the weights, nested containers titled with their kind and ratio, a
 // scroll branch as a filmstrip of its numbered full-width columns in order
 // (no tabs: Hyprland's scrolling layout, not a group), then the tree text and ratio
@@ -17,7 +20,10 @@ import "Slots.js" as Slots
 // panel's) applies it and saves (api save), `d` puts a screen's tree back
 // to what slots.lua holds (api reset), `R` records the windows on screen
 // (api record, previewed). [ ] and the digits change the workspace
-// (Workspaces.js).
+// (Workspaces.js), `-` edits the layout's default trees (what every
+// workspace with none of its own shows; editing such a workspace gives it
+// its own copy first), `f` forks the layout (the active desk then uses the
+// copy: other desks sharing the layout see every edit to it).
 //
 // Beside the picture, the global slots (aerolayout's logical slots), their
 // names and descriptions: `s` moves the keys to that list and back (Esc
@@ -40,34 +46,40 @@ Item {
 
   readonly property var state: engine ? engine.state : null
 
-  // What is being edited: an arrangement's workspace, and the selected leaf in
-  // the pane of one screen role.
-  property string arrangement: ""
-  property int workspace: 0
-  property string role: ""
+  // What is being edited: a workspace (1..10, or "default" for the default
+  // trees) of the active desk's layout, and the selected leaf in the pane of
+  // one screen (its key: "1", "2"...).
+  property string layout: ""
+  property var workspace: 0
+  property string screen: ""
   property string selectedKey: ""
+  // The layout the view follows changes under it (a, f, x in the Desks &
+  // Layouts tab, a hotplug): edited drafts are dropped, except after this
+  // view's own fork (the copy is the same trees).
+  property bool _keepDrafts: false
 
-  readonly property var paneList: Layout.panes(state, arrangement, workspace)
+  readonly property var paneList: Layout.panes(state, layout, workspace)
   // The same, computed now: a handler running on a state change can see the
   // binding above before it has caught up.
   function currentPanes() {
-    return Layout.panes(state, arrangement, workspace)
+    return Layout.panes(state, layout, workspace)
   }
-  // role -> { node (the draft, null when the screen has no tree), base (the
-  // tree text in force it started from), memory (a parked overflow leaf) }
+  // screen key -> { node (the draft, null when the screen has no tree), base
+  // (the tree text in force it started from), memory (a parked overflow leaf) }
   property var drafts: ({})
-  readonly property string block: Layout.editBlock(state, arrangement)
-  readonly property bool isActive: state !== null && state.arrangement === arrangement
+  readonly property string block: Layout.editBlock(state, layout)
+  // The other desks using this layout: every edit changes it for them too.
+  readonly property var sharedWith: state ? DesksLayouts.sharedWith(state, layout, state.desk) : []
 
-  // A Prompts.js prompt and what to do with its answer, as in the Slots and
-  // Arrangements views.
+  // A Prompts.js prompt and what to do with its answer, as in the
+  // Assignment and Desks & Layouts views.
   property var prompt: null
   property var _answer: null
   readonly property bool prompting: prompt !== null
   property string message: ""
   property bool messageIsError: false
 
-  readonly property var activeDraft: drafts[role] || null
+  readonly property var activeDraft: drafts[screen] || null
   readonly property var activeNode: activeDraft ? activeDraft.node : null
 
   // The slot list: where the keys go (s switches), its rows (name and
@@ -79,16 +91,34 @@ Item {
   readonly property var slotRow: slotIndex >= 0 && slotIndex < slotRows.length ? slotRows[slotIndex] : null
   readonly property string slotsReadOnly: Slots.readOnlyReason(state)
 
+  // The controls strip (StyledText: each trigger key highlighted, Help.js).
+  readonly property string accent: String(Commons.Color.accent)
   readonly property string helpText: {
-    if (prompting) return Prompts.help(prompt)
-    var workspaceKeys = "Workspace: [ ] prev/next  1–9 0 jump"
+    if (prompting) return Help.escape(Prompts.help(prompt))
+    var workspaceKeys = { title: "Workspace", items: [{ key: "[ ]", label: "prev/next" }, { key: "1–9 0", label: "jump" },
+      { key: "-", label: "default trees" }] }
     if (slotFocus) {
-      return "Slot list: ↑/↓ select  a new  Return put in " + (role ? role + "'s" : "the") + " tree  r rename  e describe  d delete"
-        + "   ·   s/Esc back to the screens   ·   " + workspaceKeys + "   ·   Ctrl+S save   ·   Tab switch view  q close"
+      return Help.row([
+        { title: "Slot list", items: [{ key: "↑/↓", label: "select" }, { key: "a", label: "new" },
+          { key: "Return", label: "put in " + (screen ? "screen " + screen + "'s" : "the") + " tree" },
+          { key: "r", label: "rename" }, { key: "e", label: "describe" }, { key: "d", label: "delete" }] },
+        [{ key: "s/Esc", label: "back to the screens" }],
+        workspaceKeys,
+        [{ key: "Ctrl+S", label: "save" }],
+        [{ key: "Tab", label: "switch view" }, { key: "q", label: "close" }],
+      ], accent)
     }
-    return "arrows select   ·   Tree: a add slot  x take out  hjkl move  HJKL force move  / flip  t " + toggleLabel
-      + "  r ratios  o overflow   ·   Layout: w apply  Ctrl+S apply+save  d default  R record"
-      + "   ·   s slot list (new, rename, delete)   ·   " + workspaceKeys + "  c arrangement   ·   Tab switch view  q close"
+    return Help.row([
+      [{ key: "←↑↓→", label: "select" }],
+      { title: "Tree", items: [{ key: "a", label: "add slot" }, { key: "x", label: "take out" }, { key: "hjkl", label: "move" },
+        { key: "HJKL", label: "force move" }, { key: "/", label: "flip" }, { key: "t", label: toggleLabel },
+        { key: "r", label: "ratios" }, { key: "o", label: "overflow" }] },
+      { title: "Layout", items: [{ key: "w", label: "apply" }, { key: "Ctrl+S", label: "apply+save" },
+        { key: "d", label: "back to slots.lua" }, { key: "R", label: "record" }, { key: "f", label: "fork" }] },
+      [{ key: "s", label: "slot list" }],
+      workspaceKeys,
+      [{ key: "Tab", label: "switch view" }, { key: "q", label: "close" }],
+    ], accent)
   }
 
   // t turns the whole tree into a scroll branch (full-width scrolling
@@ -100,15 +130,20 @@ Item {
     messageIsError = !!isError
   }
 
-  function edited(r) {
-    var d = drafts[r]
+  function edited(k) {
+    var d = drafts[k]
     if (!d) return false
     var text = d.node ? Layout.format(d.node) : null
     return text !== d.base
   }
 
-  function editedRoles() {
-    return currentPanes().filter(function(p) { return root.edited(p.role) }).map(function(p) { return p.role })
+  function editedScreens() {
+    return currentPanes().filter(function(p) { return root.edited(p.key) }).map(function(p) { return p.key })
+  }
+
+  // "workspace 3", or "the default trees".
+  function workspaceName(n) {
+    return n === "default" ? "the default trees" : "workspace " + n
   }
 
   // Back to the opening target: the focused workspace's number and screen.
@@ -122,9 +157,9 @@ Item {
     selectedSlot = ""
     if (state) {
       var t = Layout.initialTarget(state, focusedWorkspace)
-      arrangement = t.arrangement || ""
+      layout = state.layout || ""
       workspace = t.workspace
-      role = t.role || ""
+      screen = String(t.screen)
     }
     sync()
   }
@@ -141,30 +176,31 @@ Item {
 
   // Follow the trees in force: a pane whose draft is unedited takes the new
   // tree; an edited one keeps the edit. Keep the selection on a leaf. When
-  // the arrangement being edited is gone (renamed or deleted in the
-  // Arrangements view), move to the running one.
+  // the active desk's layout changes (another applied, a fork, a rename, a
+  // hotplug), follow it.
   function sync() {
-    var moved = Layout.retarget(state, { arrangement: arrangement, workspace: workspace, role: role })
-    if (moved) {
-      var was = arrangement
-      arrangement = moved.arrangement
-      workspace = moved.workspace
-      role = moved.role
-      drafts = ({})
-      selectedKey = ""
-      if (was !== "") say("Arrangement '" + was + "' is gone; editing workspace " + workspace + " of "
-        + (arrangement !== "" ? arrangement : "nothing") + ".", false)
+    var now = state && state.layout ? state.layout : ""
+    if (state && now !== layout) {
+      var was = layout
+      var dropped = _keepDrafts ? [] : editedScreens()
+      layout = now
+      if (!_keepDrafts) drafts = ({})
+      if (was !== "" && !_keepDrafts) {
+        say((now !== "" ? "The active desk uses layout '" + now + "' now; editing it." : "No desk is active: nothing to edit.")
+          + (dropped.length ? " Unapplied edits dropped (screen " + dropped.join(", ") + ")." : ""), dropped.length > 0)
+      }
+      _keepDrafts = false
     }
     var next = {}
     var list = currentPanes()
     for (var i = 0; i < list.length; i++) {
       var p = list[i]
-      var d = drafts[p.role]
-      if (d && edited(p.role)) {
-        next[p.role] = { node: d.node, base: p.tree, memory: d.memory }
+      var d = drafts[p.key]
+      if (d && edited(p.key)) {
+        next[p.key] = { node: d.node, base: p.tree, memory: d.memory }
       } else {
         var parsed = p.tree !== null ? Layout.parse(p.tree) : { node: null }
-        next[p.role] = { node: parsed.node || null, base: p.tree, memory: d && d.base === p.tree ? d.memory : null }
+        next[p.key] = { node: parsed.node || null, base: p.tree, memory: d && d.base === p.tree ? d.memory : null }
       }
     }
     drafts = next
@@ -173,16 +209,16 @@ Item {
 
   function keepSelection() {
     var list = currentPanes()
-    if (role === "" || !drafts[role]) role = list.length ? list[0].role : ""
-    var draft = drafts[role]
+    if (screen === "" || !drafts[screen]) screen = list.length ? list[0].key : ""
+    var draft = drafts[screen]
     var node = draft ? draft.node : null
     if (node && Layout.leaves(node).indexOf(selectedKey) >= 0) return
     if (!node) {
       // the selection is on a screen with no tree: move to one that has one
       for (var i = 0; i < list.length; i++) {
-        var d = drafts[list[i].role]
+        var d = drafts[list[i].key]
         if (d && d.node) {
-          role = list[i].role
+          screen = list[i].key
           node = d.node
           break
         }
@@ -191,15 +227,17 @@ Item {
     selectedKey = node ? Layout.leaves(node)[0] : ""
   }
 
-  function setDraft(r, node, memory) {
+  function setDraft(k, node, memory) {
     var next = Object.assign({}, drafts)
-    var old = drafts[r] || { base: null }
-    next[r] = { node: node, base: old.base, memory: memory === undefined ? old.memory : memory }
+    var old = drafts[k] || { base: null }
+    next[k] = { node: node, base: old.base, memory: memory === undefined ? old.memory : memory }
     drafts = next
   }
 
   function draftNote() {
     return " Not applied: w applies, Ctrl+S applies and saves."
+      + (sharedWith.length ? " Desk" + (sharedWith.length > 1 ? "s " : " ") + sharedWith.join(", ") + " share" + (sharedWith.length > 1 ? "" : "s")
+        + " this layout: f forks it first." : "")
   }
 
   // --- keys -----------------------------------------------------------------
@@ -215,9 +253,9 @@ Item {
   readonly property var moveKeys: ({ h: "left", l: "right", k: "up", j: "down" })
   readonly property var forceKeys: ({ H: "left", L: "right", K: "up", J: "down" })
 
-  function paneIndex(r) {
+  function paneIndex(k) {
     var list = currentPanes()
-    for (var i = 0; i < list.length; i++) if (list[i].role === r) return i
+    for (var i = 0; i < list.length; i++) if (list[i].key === k) return i
     return -1
   }
 
@@ -225,7 +263,7 @@ Item {
   function neighbourPane(direction) {
     if (direction !== "left" && direction !== "right") return null
     var list = currentPanes()
-    var i = paneIndex(role) + (direction === "right" ? 1 : -1)
+    var i = paneIndex(screen) + (direction === "right" ? 1 : -1)
     return i >= 0 && i < list.length ? list[i] : null
   }
 
@@ -237,9 +275,9 @@ Item {
       return
     }
     var other = neighbourPane(direction)
-    if (!other || !drafts[other.role] || !drafts[other.role].node) return
-    var keys = Layout.leaves(drafts[other.role].node)
-    role = other.role
+    if (!other || !drafts[other.key] || !drafts[other.key].node) return
+    var keys = Layout.leaves(drafts[other.key].node)
+    screen = other.key
     selectedKey = direction === "right" ? keys[0] : keys[keys.length - 1]
   }
 
@@ -257,26 +295,26 @@ Item {
       return
     }
     if (result.changed) {
-      setDraft(role, result.node)
+      setDraft(screen, result.node)
       say("Moved " + selectedKey + "." + draftNote(), false)
       return
     }
     // Nothing moved here: off this screen's edge is the next screen.
     var other = neighbourPane(direction)
     if (!other) return
-    var target = drafts[other.role] ? drafts[other.role].node : null
+    var target = drafts[other.key] ? drafts[other.key].node : null
     var crossed = Layout.crossMove(activeNode, target, selectedKey, direction)
     if (crossed.error) {
       say(crossed.error, true)
       return
     }
     var next = Object.assign({}, drafts)
-    next[role] = { node: crossed.source, base: drafts[role].base, memory: drafts[role].memory }
-    var old = drafts[other.role] || { base: null, memory: null }
-    next[other.role] = { node: crossed.target, base: old.base, memory: old.memory }
+    next[screen] = { node: crossed.source, base: drafts[screen].base, memory: drafts[screen].memory }
+    var old = drafts[other.key] || { base: null, memory: null }
+    next[other.key] = { node: crossed.target, base: old.base, memory: old.memory }
     drafts = next
-    role = other.role
-    say("Moved " + selectedKey + " to " + other.role + "." + draftNote(), false)
+    screen = other.key
+    say("Moved " + selectedKey + " to screen " + other.key + "." + draftNote(), false)
   }
 
   function edit(fn, what) {
@@ -286,7 +324,7 @@ Item {
       say(result.error, true)
       return
     }
-    setDraft(role, result.node, result.memory)
+    setDraft(screen, result.node, result.memory)
     say(what + draftNote(), false)
     keepSelection()
   }
@@ -295,6 +333,8 @@ Item {
     if (prompting) return handlePrompt(key, text, modifiers)
     if (text === "[" || text === "]") goWorkspace(Workspaces.step(workspace, text === "]" ? 1 : -1))
     else if (Workspaces.ofDigit(text) !== null) goWorkspace(Workspaces.ofDigit(text))
+    else if (text === "-") goWorkspace("default")
+    else if (text === "f") startFork()
     else if (slotFocus) return handleSlotKey(key, text)
     else if (text === "s") focusSlots(true)
     else return handlePictureKey(key, text)
@@ -316,7 +356,6 @@ Item {
     else if (text === "w") apply(null)
     else if (text === "d") startReset()
     else if (text === "R") startRecord()
-    else if (text === "c") startPick("arrangement")
     else return false
     return true
   }
@@ -324,23 +363,23 @@ Item {
   // a: one of the global slots no pane of this workspace places yet, added after
   // the selected leaf (or as the tree of a screen that has none).
   function startAddSlot() {
-    if (refuseEdit() || role === "") return
+    if (refuseEdit() || screen === "") return
     var names = Layout.slotChoices(state, drafts)
     if (names.length === 0) {
-      say("Every slot is placed on workspace " + workspace + " already; s, then a, makes a new one.", true)
+      say("Every slot is placed on " + workspaceName(workspace) + " already; s, then a, makes a new one.", true)
       return
     }
-    var r = role
-    ask(Prompts.choice("Add slot to " + r, Prompts.options(names)), function(name) {
-      var result = Layout.addSlot(root.drafts[r] ? root.drafts[r].node : null, root.selectedKey, name)
+    var k = screen
+    ask(Prompts.choice("Add slot to screen " + k, Prompts.options(names)), function(name) {
+      var result = Layout.addSlot(root.drafts[k] ? root.drafts[k].node : null, root.selectedKey, name)
       if (result.error) {
         root.say(result.error, true)
         return
       }
-      root.setDraft(r, result.node)
-      root.role = r
+      root.setDraft(k, result.node)
+      root.screen = k
       root.selectedKey = name
-      root.say("Added " + name + " to " + r + "." + root.draftNote(), false)
+      root.say("Added " + name + " to screen " + k + "." + root.draftNote(), false)
     })
   }
 
@@ -354,9 +393,9 @@ Item {
       say(result.error, true)
       return
     }
-    setDraft(role, result.node)
+    setDraft(screen, result.node)
     keepSelection()
-    say("Took " + key + " out of " + role + "." + draftNote(), false)
+    say("Took " + key + " out of screen " + screen + "." + draftNote(), false)
   }
 
   // --- the slot list ---------------------------------------------------------
@@ -410,19 +449,19 @@ Item {
   // is selected where it is.
   function placeSlot(name) {
     if (refuseEdit()) return
-    if (role === "") {
-      say("Arrangement '" + arrangement + "' has no screens to put " + name + " on.", true)
+    if (screen === "") {
+      say("Layout '" + layout + "' has no screens to put " + name + " on.", true)
       return
     }
     var where = Layout.placedIn(drafts, name)
     if (where !== null) {
-      role = where
+      screen = where
       selectedKey = name
       slotFocus = false
-      say(name + " is on " + where + " already: selected it there.", false)
+      say(name + " is on screen " + where + " already: selected it there.", false)
       return
     }
-    var r = role
+    var r = screen
     var after = activeNode && Layout.leaves(activeNode).indexOf(selectedKey) >= 0 ? selectedKey : ""
     var result = Layout.addSlot(activeNode, selectedKey, name)
     if (result.error) {
@@ -432,7 +471,7 @@ Item {
     setDraft(r, result.node)
     selectedKey = name
     slotFocus = false
-    say("Put " + name + " in " + r + "'s tree" + (after !== "" ? " after " + after : "")
+    say("Put " + name + " in screen " + r + "'s tree" + (after !== "" ? " after " + after : "")
       + " — hjkl move it." + draftNote(), false)
   }
 
@@ -463,12 +502,13 @@ Item {
   }
 
   function offerPlace(slot) {
-    if (block !== "" || role === "") {
+    if (block !== "" || screen === "") {
       say("Added slot '" + slot + "'.", false)
       return
     }
     var after = activeNode && Layout.leaves(activeNode).indexOf(selectedKey) >= 0 ? " after " + selectedKey : ""
-    ask(Prompts.confirm("Added slot '" + slot + "'. Put it in " + role + "'s tree on workspace " + workspace + after + "?"),
+    ask(Prompts.confirm("Added slot '" + slot + "'. Put it in screen " + screen + "'s tree on " + workspaceName(workspace)
+      + after + "?"),
       function(yes) {
         if (yes) root.placeSlot(slot)
         else root.say("Added slot '" + slot + "'. Return puts it in a tree.", false)
@@ -479,9 +519,9 @@ Item {
   // force (unedited ones take the engine's trees on the re-read).
   function editDrafts(fn) {
     var next = Object.assign({}, drafts)
-    for (var r in next) {
-      var d = next[r]
-      if (d && d.node && edited(r)) next[r] = { node: fn(d.node), base: d.base, memory: d.memory }
+    for (var k in next) {
+      var d = next[k]
+      if (d && d.node && edited(k)) next[k] = { node: fn(d.node), base: d.base, memory: d.memory }
     }
     drafts = next
   }
@@ -551,7 +591,7 @@ Item {
       return
     }
     var scrolling = result.node.kind === "scroll"
-    setDraft(role, result.node, result.memory)
+    setDraft(screen, result.node, result.memory)
     if (!result.parked) selectedKey = "*"
     keepSelection()
     say((result.parked
@@ -583,7 +623,7 @@ Item {
   function submitRatio(input) {
     var entry = input.trim()
     if (entry === "" || entry.toLowerCase() === "clear") {
-      setDraft(role, Layout.clearRatios(activeNode))
+      setDraft(screen, Layout.clearRatios(activeNode))
       say("Ratios cleared — equal shares everywhere." + draftNote(), false)
       return
     }
@@ -592,7 +632,7 @@ Item {
       ask(Prompts.withError(Prompts.text(Layout.ratioPrompt(activeNode).text, { value: input }), result.error), submitRatio)
       return
     }
-    setDraft(role, result.node)
+    setDraft(screen, result.node)
     say("Set ratios " + Layout.ratio(result.node) + "." + draftNote(), false)
   }
 
@@ -604,38 +644,48 @@ Item {
     })
   }
 
-  // c: the arrangement to edit, picked among them.
-  function startPick(what) {
-    if (!state) return
-    var names = Object.keys(state.arrangements || {}).sort()
-    if (names.length === 0) return
-    ask(Prompts.choice("Edit arrangement", Prompts.options(names)), function(name) {
-      root.pick(what, name)
-    })
+  // f: fork the layout (the active desk then uses the copy, so editing it
+  // leaves the other desks' alone); the edited drafts carry over to it.
+  function startFork() {
+    if (!state || layout === "") {
+      say("No desk is active: there is no layout to fork.", true)
+      return
+    }
+    var source = layout
+    var label = "Fork layout '" + source + "' as [Enter] fork  [Esc] cancel: "
+    var answer = function(to) {
+      to = to.trim()
+      root._keepDrafts = true
+      root.engine.call("fork_layout", { layout: source, to: to }, function(reply) {
+        if (!reply.ok) {
+          root._keepDrafts = false
+          root.ask(Prompts.withError(Prompts.text(label, { value: to, required: true }), reply.error), answer)
+          return
+        }
+        if (!reply.desk) root._keepDrafts = false
+        root.say(DesksLayouts.forkMessage(reply), false)
+      })
+    }
+    ask(Prompts.text(label, { value: DesksLayouts.forkName(state, source), required: true }), answer)
   }
 
-  // [ ] and the digits: another workspace of the same arrangement (the arrows
-  // stay the picture's).
+  // [ ] and the digits: another workspace of the same layout, `-` its default
+  // trees (the arrows stay the picture's).
   function goWorkspace(n) {
     if (!state || n === null) return
     if (n === workspace) {
-      say("Editing workspace " + workspace + " already.", false)
+      say("Editing " + workspaceName(workspace) + " already.", false)
       return
     }
-    pick("workspace", String(n))
-  }
-
-  function pick(what, name) {
-    var dropped = editedRoles()
-    if (what === "workspace") workspace = parseInt(name, 10)
-    else arrangement = name
+    var dropped = editedScreens()
+    workspace = n
     drafts = ({})
-    role = ""
+    screen = ""
     selectedKey = ""
     sync()
-    var where = "workspace " + workspace + " of " + arrangement
-    say("Editing " + where + "." + (dropped.length ? " Unapplied edits dropped (" + dropped.join(", ") + ")." : ""),
-      dropped.length > 0)
+    var note = Layout.defaultNote(state, layout, workspace)
+    say("Editing " + workspaceName(workspace) + " of " + (layout || "no layout") + "." + (note ? " " + note : "")
+      + (dropped.length ? " Unapplied edits dropped (screen " + dropped.join(", ") + ")." : ""), dropped.length > 0)
   }
 
   function handlePrompt(key, text, modifiers) {
@@ -655,41 +705,41 @@ Item {
   // worked (Ctrl+S's save, through applyThen).
   function apply(then) {
     if (refuseEdit()) return
-    var roles = editedRoles()
-    if (roles.length === 0) {
+    var keys = editedScreens()
+    if (keys.length === 0) {
       if (then) then()
       else say("Nothing to apply: the trees are what the engine runs.", false)
       return
     }
     var trees = {}
-    for (var i = 0; i < roles.length; i++) {
-      var d = drafts[roles[i]]
+    for (var i = 0; i < keys.length; i++) {
+      var d = drafts[keys[i]]
       if (!d.node) {
-        say(roles[i] + " has no tree left; the engine cannot drop a screen's tree.", true)
+        say("Screen " + keys[i] + " has no tree left; the engine cannot drop a screen's tree.", true)
         return
       }
-      trees[roles[i]] = Layout.format(d.node)
+      trees[keys[i]] = Layout.format(d.node)
     }
     if (!engine) return
-    say("Applying " + roles.join(", ") + "…", false)
-    var target = { arrangement: arrangement, workspace: workspace }
-    engine.call("set_trees", { arrangement: target.arrangement, workspace: target.workspace, trees: trees }, function(reply) {
+    say("Applying screen " + keys.join(", ") + "…", false)
+    engine.call("set_trees", { layout: layout, workspace: workspace, trees: trees }, function(reply) {
       if (!reply.ok) {
         root.say(reply.error, true)
         return
       }
-      if (reply.arrangement === root.arrangement && reply.workspace === root.workspace) {
+      if (reply.layout === root.layout && String(reply.workspace) === String(root.workspace)) {
         var next = Object.assign({}, root.drafts)
-        for (var r in reply.trees) {
-          var parsed = Layout.parse(reply.trees[r].tree)
-          next[r] = { node: parsed.node, base: reply.trees[r].tree, memory: next[r] ? next[r].memory : null }
+        for (var k in reply.trees) {
+          var parsed = Layout.parse(reply.trees[k].tree)
+          next[k] = { node: parsed.node, base: reply.trees[k].tree, memory: next[k] ? next[k].memory : null }
         }
         root.drafts = next
         root.keepSelection()
       }
       var parts = []
-      for (var r2 in reply.trees) parts.push(r2 + " " + reply.trees[r2].tree)
-      root.say("Applied workspace " + reply.workspace + ": " + parts.join(", ") + (then ? "" : ". Ctrl+S saves."), false)
+      for (var k2 in reply.trees) parts.push("screen " + k2 + " " + reply.trees[k2].tree)
+      root.say("Applied " + root.workspaceName(reply.workspace) + " of " + reply.layout + ": " + parts.join(", ")
+        + (then ? "" : ". Ctrl+S saves."), false)
       if (then) then()
     })
   }
@@ -697,31 +747,33 @@ Item {
   // Ctrl+S (the panel's): apply the edited panes first, then `then()`
   // saves. With nothing edited it saves straight away.
   function applyThen(then) {
-    if (editedRoles().length === 0) then()
+    if (editedScreens().length === 0) then()
     else apply(then)
   }
 
   function startReset() {
     if (refuseEdit()) return
-    var r = role
-    confirm("Put workspace " + workspace + " on " + r + " back to the tree slots.lua holds?", function() {
-      root.engine.call("reset", { arrangement: root.arrangement, workspace: root.workspace, role: r }, function(reply) {
+    var k = screen
+    var what = workspace === "default" ? "The default trees" : "Workspace " + workspace
+    confirm("Put " + workspaceName(workspace) + " on screen " + k + " back to the tree slots.lua holds?", function() {
+      root.engine.call("reset", { layout: root.layout, workspace: root.workspace, screen: parseInt(k, 10) }, function(reply) {
         if (!reply.ok) {
           root.say(reply.error, true)
           return
         }
         var next = Object.assign({}, root.drafts)
-        next[r] = { node: reply.tree ? Layout.parse(reply.tree).node : null, base: reply.tree || null, memory: null }
+        next[k] = { node: reply.tree ? Layout.parse(reply.tree).node : null, base: reply.tree || null, memory: null }
         root.drafts = next
         root.keepSelection()
-        root.say("Workspace " + reply.workspace + " on " + r + " is back to " + (reply.tree || "no tree") + ".", false)
+        root.say(what + " on screen " + k + " " + (workspace === "default" ? "are" : "is") + " back to "
+          + (reply.tree || "no tree") + ".", false)
       })
     })
   }
 
-  function workspaceIdOf(n, r) {
+  function workspaceIdOf(n, k) {
     var ws = state && state.workspaces ? state.workspaces : {}
-    for (var id in ws) if (ws[id].workspace === n && ws[id].role === r) return parseInt(id, 10)
+    for (var id in ws) if (ws[id].workspace === n && String(ws[id].screen) === k) return parseInt(id, 10)
     return -1
   }
 
@@ -729,17 +781,15 @@ Item {
   // it would drop, apply only when confirmed.
   function startRecord() {
     if (refuseEdit()) return
-    if (!isActive) {
-      say("Record measures the screens, which run '" + (state && state.arrangement ? state.arrangement : "nothing")
-        + "': press c and pick it.", true)
+    if (workspace === "default") {
+      say("R records a workspace's windows: pick one with [ ] or its digit.", true)
       return
     }
-    var id = workspaceIdOf(workspace, role)
+    var id = workspaceIdOf(workspace, screen)
     if (id < 0) {
-      say("Workspace " + workspace + " has no tree on " + role + ".", true)
+      say("Workspace " + workspace + " is not on screen " + screen + ".", true)
       return
     }
-    var r = role
     say("Recording workspace " + id + "…", false)
     engine.call("record", { workspace_id: id, apply: false }, function(reply) {
       if (!reply.ok) {
@@ -751,9 +801,10 @@ Item {
         + (missing.length ? "; missing " + missing.join(", ") + ": applying drops " + (missing.length === 1 ? "it" : "them")
           + " from the tree" : "") + ". Apply it?"
       root.confirm(text, function() {
+        var r = String(reply.screen)
         var trees = {}
         trees[r] = reply.tree
-        root.engine.call("set_trees", { arrangement: reply.arrangement, workspace: reply.workspace, trees: trees }, function(set) {
+        root.engine.call("set_trees", { layout: reply.layout, workspace: reply.workspace, trees: trees }, function(set) {
           if (!set.ok) {
             root.say(set.error, true)
             return
@@ -770,26 +821,38 @@ Item {
 
   // --- for scripts and the e2e smoke ----------------------------------------
 
-  // "<role> <leaf>", or "slots <name>" while the keys are the slot list's.
+  // "<screen> <leaf>", or "slots <name>" while the keys are the slot list's.
   function selectionText() {
-    return slotFocus ? "slots " + selectedSlot : role + " " + selectedKey
+    return slotFocus ? "slots " + selectedSlot : screen + " " + selectedKey
   }
 
-  // The draft trees, "big: h[a, b]; side: c" (edited ones marked *).
+  // The draft trees, "1: h[a, b]; 2: c" (edited ones marked *).
   function draftText() {
     return currentPanes().map(function(p) {
-      var d = root.drafts[p.role]
-      return p.role + ": " + (d && d.node ? Layout.format(d.node) : "-") + (root.edited(p.role) ? " *" : "")
+      var d = root.drafts[p.key]
+      return p.key + ": " + (d && d.node ? Layout.format(d.node) : "-") + (root.edited(p.key) ? " *" : "")
     }).join("; ")
+  }
+
+  // The panes' titles, "Screen 1 · HEADLESS-2 (...)" joined by " | ": for the e2e smoke.
+  function paneTitles() {
+    return currentPanes().map(function(p) { return Layout.screenLabel(root.state, p.screen) }).join(" | ")
+  }
+
+  // The header's text: what is edited, and the desks sharing it.
+  function headerLine() {
+    var note = Layout.defaultNote(state, layout, workspace)
+    return (workspace === "default" ? "Default trees" : "Workspace " + workspace) + "   [" + (layout || "no layout") + "]"
+      + (note ? "   " + note : "")
   }
 
   // --- drawing --------------------------------------------------------------
 
-  function aspectOf(screen) {
+  function aspectOf(connector) {
     var list = Hyprland.monitors ? Hyprland.monitors.values : []
     for (var i = 0; i < list.length; i++) {
       var m = list[i]
-      if (m && m.name === screen && m.width > 0 && m.height > 0) return m.width / m.height
+      if (m && m.name === connector && m.width > 0 && m.height > 0) return m.width / m.height
     }
     return 16 / 9
   }
@@ -817,15 +880,15 @@ Item {
         anchors.leftMargin: Style.spacing.lg
         anchors.verticalCenter: parent.verticalCenter
         textFormat: Text.PlainText
-        text: "Workspace " + root.workspace + "   [" + (root.arrangement || "no arrangement") + "]"
-          + (root.state && root.state.arrangement && !root.isActive ? "   these screens run '" + root.state.arrangement + "'" : "")
+        text: root.headerLine()
         color: root.foreground
         font.family: root.fontFamily
         font.pixelSize: Style.font.title
         font.bold: true
       }
-      // Workspaces 1 to 10 by their keys ([ ] step, the digits jump): the one
-      // edited reversed, the ones with trees in this arrangement brighter.
+      // Workspaces 1 to 10 by their keys ([ ] step, the digits jump) and the
+      // default trees (-): the one edited reversed, the ones with trees of
+      // their own brighter, the ones showing the default trees dimmer.
       Row {
         id: workspaceStrip
         anchors.left: headerText.right
@@ -833,7 +896,7 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         spacing: Style.spacing.xs
         Repeater {
-          model: Workspaces.strip(root.state, root.arrangement, root.workspace)
+          model: Workspaces.strip(root.state, root.layout, root.workspace)
           delegate: Rectangle {
             required property var modelData
             width: workspaceKey.implicitWidth + Style.spacing.sm * 2
@@ -846,10 +909,11 @@ Item {
               textFormat: Text.PlainText
               text: parent.modelData.label
               color: parent.modelData.current ? root.selectedText : root.foreground
-              opacity: parent.modelData.current ? 1 : parent.modelData.trees ? 0.85 : 0.35
+              opacity: parent.modelData.current ? 1 : parent.modelData.trees ? 0.85 : parent.modelData.shared ? 0.6 : 0.3
               font.family: root.fontFamily
               font.pixelSize: Style.font.body
               font.bold: parent.modelData.current || parent.modelData.trees
+              font.italic: parent.modelData.shared
             }
             MouseArea {
               anchors.fill: parent
@@ -863,7 +927,7 @@ Item {
         anchors.rightMargin: Style.spacing.lg
         anchors.verticalCenter: parent.verticalCenter
         textFormat: Text.PlainText
-        readonly property int pending: root.editedRoles().length
+        readonly property int pending: root.editedScreens().length
         text: (pending > 0 ? "edited, not applied (w)   " : "")
           + (root.state && root.state.dirty ? "● unsaved (Ctrl+S)" : "saved")
         color: root.state && root.state.dirty || pending > 0 ? Commons.Color.urgent : root.foreground
@@ -872,6 +936,20 @@ Item {
         font.pixelSize: Style.font.body
         font.bold: root.state && root.state.dirty
       }
+    }
+
+    // Other desks share this layout: an edit here changes it for them too.
+    Text {
+      id: sharedNote
+      width: parent.width
+      visible: root.sharedWith.length > 0
+      textFormat: Text.PlainText
+      wrapMode: Text.WordWrap
+      text: "Layout '" + root.layout + "' is also used by " + (root.sharedWith.length === 1 ? "desk " : "desks ")
+        + root.sharedWith.join(", ") + ": every edit here changes it there too (f forks it for this desk)."
+      color: Commons.Color.accent
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.body
     }
 
     // Why the trees cannot be edited, or the engine cannot be reached.
@@ -898,6 +976,7 @@ Item {
       id: body
       width: parent.width
       height: parent.height - headerBox.height - (problem.visible ? problem.height + parent.spacing : 0)
+        - (sharedNote.visible ? sharedNote.height + parent.spacing : 0)
         - orderText.height - footerText.height - parent.spacing * 4
       spacing: root.gap * 2
 
@@ -913,10 +992,10 @@ Item {
             id: pane
             required property var modelData
             required property int index
-            readonly property var draft: root.drafts[modelData.role] || null
+            readonly property var draft: root.drafts[modelData.key] || null
             readonly property var node: draft ? draft.node : null
-            readonly property bool active: modelData.role === root.role
-            readonly property bool changed: root.edited(modelData.role)
+            readonly property bool active: modelData.key === root.screen
+            readonly property bool changed: root.edited(modelData.key)
             width: (paneRow.width - root.gap * (root.paneList.length - 1)) / Math.max(1, root.paneList.length)
             height: paneRow.height
             spacing: Style.spacing.sm
@@ -926,7 +1005,7 @@ Item {
               width: parent.width
               textFormat: Text.PlainText
               elide: Text.ElideRight
-              text: pane.modelData.role + (pane.modelData.screen ? "  (" + pane.modelData.screen + ")" : "")
+              text: Layout.screenLabel(root.state, pane.modelData.screen)
                 + (pane.changed ? "   edited" : "") + (pane.modelData.resized && !pane.changed ? "   keyboard-resized" : "")
               color: pane.active ? Commons.Color.accent : root.foreground
               opacity: pane.active ? 1 : 0.7
@@ -940,7 +1019,7 @@ Item {
               id: frame
               width: parent.width
               height: parent.height - paneTitle.height - treeText.height - ratioText.height - parent.spacing * 3
-              readonly property real aspect: root.aspectOf(pane.modelData.screen)
+              readonly property real aspect: root.aspectOf(pane.modelData.connector)
               readonly property int boxW: Math.floor(Math.min(width, height * aspect))
               readonly property int boxH: Math.floor(Math.min(height, width / aspect))
 
@@ -960,7 +1039,8 @@ Item {
                   anchors.centerIn: parent
                   visible: pane.node === null
                   textFormat: Text.PlainText
-                  text: "No tree for workspace " + root.workspace + " here"
+                  text: root.workspace === "default" ? "No default tree on this screen"
+                    : "No tree for workspace " + root.workspace + " here"
                   color: root.foreground
                   opacity: 0.5
                   font.family: root.fontFamily
@@ -973,7 +1053,7 @@ Item {
                     pad: 5,
                     title: Style.font.bodySmall + 6,
                     selected: pane.active ? root.selectedKey : "",
-                    titles: Layout.titles(root.state, root.workspace, pane.modelData.role),
+                    titles: Layout.titles(root.state, root.workspace, pane.modelData.screen),
                   }) : []
                   delegate: Rectangle {
                     id: cell
@@ -1048,7 +1128,7 @@ Item {
                       anchors.fill: parent
                       enabled: !cell.isContainer
                       onClicked: {
-                        root.role = pane.modelData.role
+                        root.screen = pane.modelData.key
                         root.selectedKey = cell.modelData.key
                       }
                     }

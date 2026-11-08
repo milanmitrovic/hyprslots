@@ -3,7 +3,8 @@
 // Workspace keys, the same in the Layout and Assignment views (docs/design.md
 // §9): [ and ] step through workspaces 1 to 10 (Omarchy's ten workspaces per
 // screen), the digits jump to one as Super+N does (0 is workspace 10). The
-// arrows stay the view's own. Pure, so node can test it
+// arrows stay the view's own; `-` is the layout's default trees in the
+// Layout view. Pure, so node can test it
 // (editor/tests/workspaces.test.mjs).
 
 var COUNT = 10
@@ -21,16 +22,23 @@ function ofDigit(text) {
   return text === "0" ? COUNT : Number(text)
 }
 
-// Workspaces 1 to 10 for a header strip: { workspace, label (the key: 0 for
-// 10), current, trees (the arrangement has a tree for the workspace) }.
-function strip(state, arrangement, current) {
-  var entry = state && state.arrangements ? state.arrangements[arrangement] : null
-  var workspaces = entry && entry.workspaces ? entry.workspaces : {}
+// Workspaces 1 to 10 for a header strip, then the layout's default trees
+// (`-`): { workspace (1..10 or "default"), label (the key: 0 for 10, "def"),
+// current, trees (trees of its own; the default ones when there are any),
+// shared (no trees of its own, showing the default ones) }.
+function strip(state, layout, current) {
+  var entry = state && state.layouts ? state.layouts[layout] : null
+  var own = entry && Array.isArray(entry.own) ? entry.own.map(Number) : []
+  var shows = entry && entry.workspaces ? entry.workspaces : {}
   var out = []
   for (var n = 1; n <= COUNT; n++) {
-    var branches = workspaces[String(n)]
-    out.push({ workspace: n, label: String(n % COUNT), current: n === current,
-      trees: !!branches && Object.keys(branches).length > 0 })
+    var mine = own.indexOf(n) >= 0
+    var branches = shows[String(n)]
+    out.push({ workspace: n, label: String(n % COUNT), current: n === current, trees: mine,
+      shared: !mine && !!branches && Object.keys(branches).length > 0 })
   }
+  var def = entry && entry.default ? entry.default : {}
+  out.push({ workspace: "default", label: "def", current: current === "default", trees: Object.keys(def).length > 0,
+    shared: false })
   return out
 }

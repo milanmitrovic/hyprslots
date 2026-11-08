@@ -14,25 +14,30 @@ function window(address, cls, workspaceId, extra) {
   return { address, class: cls, title: cls + " title", workspace_id: workspaceId, floating: false, ...extra };
 }
 
-// dual: big = h[main:2, right:1], side = left; workspace 4 has one slot on big.
+// Layout dual (2 screens): screen 1 = h[main:2, right:1], screen 2 = left;
+// workspace 4 has one slot on screen 1.
 function fixture() {
   return {
     ok: true,
-    arrangement: "dual",
+    desk: "docked",
+    layout: "dual",
+    screens: ["HEADLESS-2", "HEADLESS-3"],
     used_workspaces: [3, 4],
     slots: [{ name: "left" }, { name: "mail" }, { name: "main" }, { name: "right" }],
     specs: { 3: { left: "t-left", main: "t-main", right: "t-right" }, 4: { mail: "thunderbird" } },
-    arrangements: {
+    layouts: {
       dual: {
-        roles: ["big", "side"],
+        screens: 2,
         active: true,
+        own: [3, 4],
         workspaces: {
-          3: { big: { tree: "h[main:2, right]", slots: ["main", "right"] }, side: { tree: "left", slots: ["left"] } },
-          4: { big: { tree: "mail", slots: ["mail"] } },
+          3: { 1: { tree: "h[main:2, right]", slots: ["main", "right"] }, 2: { tree: "left", slots: ["left"] } },
+          4: { 1: { tree: "mail", slots: ["mail"] } },
         },
       },
     },
-    workspaces: { 3: { workspace: 3, role: "big" }, 13: { workspace: 3, role: "side" }, 4: { workspace: 4, role: "big" } },
+    workspaces: { 3: { workspace: 3, screen: 1, monitor: "HEADLESS-2" }, 13: { workspace: 3, screen: 2, monitor: "HEADLESS-3" },
+      4: { workspace: 4, screen: 1, monitor: "HEADLESS-2" } },
     assignments: { "0xa": { workspace: 3, slot: "main" }, "0xe": { workspace: 3, slot: "right", manual: true } },
     overflow: { "0xb": { workspace: 3, slot: "main" } },
     unassigned: ["0xd"],
@@ -56,6 +61,17 @@ test("pages are every window, then each workspace", () => {
   ]);
 });
 
+test("pages skip workspaces the active layout places no slot on and no spec fills (another layout's trees count for the engine)", () => {
+  const state = fixture();
+  state.used_workspaces = [1, 3, 4, 7];
+  state.specs[7] = { main: "t-main" };
+  assert.deepEqual(plain(A.pages(state)).map((p) => p.workspace), [null, 3, 4, 7]);
+  assert.equal(A.pageOfWorkspace(state, 1), -1);
+  state.layout = null;
+  delete state.specs[4];
+  assert.deepEqual(plain(A.pages(state)).map((p) => p.workspace), [null, 3, 7], "no active layout: the workspaces with specs");
+});
+
 test("a workspace lists its slots in tree order, screen by screen, a missing window as a placeholder, then overflow and strays", () => {
   assert.deepEqual(summary(A.rows(fixture(), 3)), [
     ["slot", "main", "0xa"],
@@ -66,9 +82,13 @@ test("a workspace lists its slots in tree order, screen by screen, a missing win
   ]);
 });
 
-test("rows say which screen each slot or window is on", () => {
-  const roles = plain(A.rows(fixture(), 3)).map((r) => r.role);
-  assert.deepEqual(roles, ["big", "big", "side", "big", "side"]);
+test("rows say which screen each slot or window is on, by the monitor there", () => {
+  const state = fixture();
+  const rows = plain(A.rows(state, 3));
+  assert.deepEqual(rows.map((r) => r.screen), [1, 1, 2, 1, 2]);
+  assert.deepEqual(rows.map((r) => A.screenText(state, r)), ["1 HEADLESS-2", "1 HEADLESS-2", "2 HEADLESS-3", "1 HEADLESS-2",
+    "2 HEADLESS-3"]);
+  assert.equal(A.screenText(state, { screen: null }), "");
 });
 
 test("every window lists slotted ones by workspace and tree order, then overflow, then the rest by workspace id", () => {
@@ -87,7 +107,7 @@ test("the slot column reads like the TUI's", () => {
   assert.equal(A.slotText({ status: "none" }), "—");
 });
 
-test("a slot the workspace has a spec for but no tree of the active arrangement shows is still listed, after the shown ones", () => {
+test("a slot the workspace has a spec for but no tree of the active layout shows is still listed, after the shown ones", () => {
   const state = fixture();
   state.slots.push({ name: "spare" });
   state.specs[3].spare = "t-spare";
@@ -96,7 +116,7 @@ test("a slot the workspace has a spec for but no tree of the active arrangement 
 
 test("a slot a tree places but the workspace has no spec for is empty, not Missing: no spec, no Missing title", () => {
   const state = fixture();
-  state.arrangements.dual.workspaces[4].big = { tree: "h[mail, main]", slots: ["mail", "main"] };
+  state.layouts.dual.workspaces[4][1] = { tree: "h[mail, main]", slots: ["mail", "main"] };
   const rows = plain(A.rows(state, 4));
   assert.deepEqual(rows.map((r) => [r.kind, r.status, r.slot, r.spec]), [
     ["missing", "missing", "mail", "thunderbird"],
@@ -126,7 +146,7 @@ test("a first letter already taken falls back to the first free digit", () => {
   const state = fixture();
   state.slots = [{ name: "main" }, { name: "menu" }, { name: "mail" }];
   state.specs[3] = { main: "a", menu: "b", mail: "c" };
-  state.arrangements.dual.workspaces[3] = { big: { slots: ["main", "menu", "mail"] } };
+  state.layouts.dual.workspaces[3] = { 1: { slots: ["main", "menu", "mail"] } };
   assert.deepEqual(plain(A.slotOptions(state, 3, null)).map((o) => o.key), ["m", "1", "2"]);
 });
 
@@ -153,24 +173,6 @@ test("the prompt names the workspace and each option the way aerolayout's does",
   assert.deepEqual([picked.workspace, picked.slot], [3, "right"], "an option's value is the slot option itself");
 });
 
-test("c clears the spec of a Missing row: a slot whose window is not open", () => {
-  const state = fixture();
-  const rows = A.rows(state, 3);
-  assert.deepEqual(plain(A.clearTarget(state, 3, rows[2])), { workspace: 3, slot: "left", spec: "t-left" });
-  state.arrangements.dual.workspaces[4].big = { tree: "h[mail, main]", slots: ["mail", "main"] };
-  assert.equal(A.clearTarget(state, 4, A.rows(state, 4)[1]).error, "Workspace 4 has no spec for main.");
-});
-
-test("c on a window in a slot points at u, which takes it out with its spec", () => {
-  const state = fixture();
-  const rows = A.rows(state, 3);
-  assert.equal(A.clearTarget(state, 3, rows[0]).error,
-    "t-main is open in main: u takes it out and clears the spec with it (c clears a slot whose window is not open).");
-  assert.equal(A.clearTarget(state, 3, rows[3]).error,
-    "t-main is open in main: u takes it out and clears the spec with it (c clears a slot whose window is not open).");
-  assert.match(A.clearTarget(state, 3, rows[4]).error, /in no slot/);
-});
-
 test("u on a window in a slot takes it out and clears the workspace's spec for the slot", () => {
   const state = fixture();
   const rows = A.rows(state, 3);
@@ -190,10 +192,19 @@ test("u on an overflowing window, or one in a slot with no spec, only takes it o
     question: "Unassign t-right from right?" });
 });
 
-test("u refuses a row with no window in a slot", () => {
+test("u on a Missing row clears the workspace's spec for the slot: the slot is left empty", () => {
   const state = fixture();
   const rows = A.rows(state, 3);
-  assert.equal(A.unassignPlan(state, rows[2]).error, "No window in left to unassign.");
+  assert.deepEqual(plain(A.unassignPlan(state, rows[2])), { clear: { workspace: 3, slot: "left", spec: "t-left" },
+    question: "Clear workspace 3's spec for left (t-left)? The slot is left empty" });
+});
+
+test("u refuses an empty slot, a window in no slot and no selection", () => {
+  const state = fixture();
+  state.layouts.dual.workspaces[4][1] = { tree: "h[mail, main]", slots: ["mail", "main"] };
+  assert.equal(A.unassignPlan(state, A.rows(state, 4)[1]).error,
+    "Workspace 4 has no spec for main and no window in it: there is nothing to unassign.");
+  const rows = A.rows(state, 3);
   assert.equal(A.unassignPlan(state, rows[4]).error, "foot is in no slot.");
   assert.equal(A.unassignPlan(state, null).error, "Nothing selected.");
 });

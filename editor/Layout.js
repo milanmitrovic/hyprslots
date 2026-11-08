@@ -705,24 +705,24 @@ function removeSlot(root, key) {
 }
 
 // The global slots (state.slots) no pane's draft of the workspace places
-// yet: what `a` offers. `drafts` is role -> { node }.
+// yet: what `a` offers. `drafts` is screen key ("1") -> { node }.
 function slotChoices(state, drafts) {
   var placed = {}
-  for (var role in drafts || {}) {
-    var d = drafts[role]
+  for (var screen in drafts || {}) {
+    var d = drafts[screen]
     if (d && d.node) leaves(d.node).forEach(function(k) { placed[k] = true })
   }
   var list = state && Array.isArray(state.slots) ? state.slots : []
   return list.map(function(s) { return s.name }).filter(function(name) { return !placed[name] })
 }
 
-// The screen role whose draft places slot `slot` (drafts: role -> { node }),
+// The screen key whose draft places slot `slot` (drafts: "1" -> { node }),
 // or null: a slot sits on one screen of a workspace.
 function placedIn(drafts, slot) {
   if (slot === OVERFLOW) return null
-  for (var role in drafts || {}) {
-    var d = drafts[role]
-    if (d && d.node && leaves(d.node).indexOf(slot) >= 0) return role
+  for (var screen in drafts || {}) {
+    var d = drafts[screen]
+    if (d && d.node && leaves(d.node).indexOf(slot) >= 0) return screen
   }
   return null
 }
@@ -740,75 +740,84 @@ function renameSlot(root, from, to) {
 
 // --- the view's model -------------------------------------------------------
 
-function sortedNames(object) {
-  return Object.keys(object || {}).sort()
+function layoutEntry(state, layout) {
+  return state && state.layouts && layout ? state.layouts[layout] || null : null
 }
 
-// The trees of one workspace of an arrangement, one pane per screen role (the
-// arrangement's role order): { role, tree (text in force, or null when the
-// workspace has none on that screen), ratio, resized, screen (its selector) }.
-function panes(state, arrangement, workspace) {
-  var entry = state && state.arrangements ? state.arrangements[arrangement] : null
+// The trees of one workspace of a layout (or its default trees, workspace
+// "default"), one pane per screen 1..N: { screen, key (its drafts key, "1"),
+// tree (the text it shows, or null when there is none on that screen),
+// ratio, resized, connector (the active desk's monitor at that position,
+// "" when none) }. A workspace with no trees of its own shows the default
+// ones, as the state reports.
+function panes(state, layout, workspace) {
+  var entry = layoutEntry(state, layout)
   if (!entry) return []
-  var branches = (entry.workspaces || {})[String(workspace)] || {}
-  return (entry.roles || []).map(function(role) {
-    var branch = branches[role]
-    return { role: role, tree: branch ? branch.tree : null, ratio: branch ? branch.ratio || "" : "",
-      resized: !!(branch && branch.resized), screen: (entry.screens || {})[role] || "" }
-  })
+  var branches = workspace === "default" ? entry.default || {} : (entry.workspaces || {})[String(workspace)] || {}
+  var screens = state && Array.isArray(state.screens) ? state.screens : []
+  var out = []
+  for (var i = 1; i <= (entry.screens || 0); i++) {
+    var branch = branches[String(i)]
+    out.push({ screen: i, key: String(i), tree: branch ? branch.tree : null, ratio: branch ? branch.ratio || "" : "",
+      resized: !!(branch && branch.resized), connector: screens[i - 1] || "" })
+  }
+  return out
 }
 
-// Where the view opens: the active arrangement (else the first), at the
-// focused workspace's number and screen role (else the first workspace and
-// role).
+// A pane's title: the screen number and the active desk's monitor there.
+function screenLabel(state, screen) {
+  var connector = state && Array.isArray(state.screens) ? state.screens[screen - 1] : null
+  if (!connector) return "Screen " + screen
+  var list = state && Array.isArray(state.monitors) ? state.monitors : []
+  var description = ""
+  for (var i = 0; i < list.length; i++) if (list[i].name === connector) description = list[i].description || ""
+  return "Screen " + screen + " · " + connector + (description ? " (" + description + ")" : "")
+}
+
+// What the header says of a workspace that shows the default trees (none
+// of its own): an edit gives it its own copy first.
+function defaultNote(state, layout, workspace) {
+  var entry = layoutEntry(state, layout)
+  if (!entry || workspace === "default") return ""
+  var own = Array.isArray(entry.own) ? entry.own : []
+  if (own.indexOf(workspace) >= 0 || own.indexOf(String(workspace)) >= 0) return ""
+  var shows = (entry.workspaces || {})[String(workspace)]
+  if (!shows || Object.keys(shows).length === 0) return ""
+  return "(default trees: an edit gives workspace " + workspace + " its own)"
+}
+
+// Where the view opens: the focused workspace's number and screen, else the
+// first used workspace on screen 1.
 function initialTarget(state, workspaceId) {
-  var names = sortedNames(state && state.arrangements)
-  var arrangement = state && state.arrangement && state.arrangements[state.arrangement] ? state.arrangement : names[0]
-  var entry = arrangement ? state.arrangements[arrangement] : null
-  var used = state && Array.isArray(state.used_workspaces) ? state.used_workspaces : []
-  var roles = entry && entry.roles ? entry.roles : []
   var ws = state && state.workspaces ? state.workspaces[String(workspaceId)] : null
-  if (ws && arrangement === state.arrangement) return { arrangement: arrangement, workspace: ws.workspace, role: ws.role }
-  return { arrangement: arrangement || null, workspace: used.length ? used[0] : 1, role: roles.length ? roles[0] : null }
+  if (ws && ws.workspace) return { workspace: ws.workspace, screen: ws.screen || 1 }
+  var used = state && Array.isArray(state.used_workspaces) ? state.used_workspaces : []
+  return { workspace: used.length ? used[0] : 1, screen: 1 }
 }
 
-// Where the view goes when the arrangement it edits is no longer there (the
-// Arrangements view renamed or deleted it): the running arrangement (else
-// the first by name), at the same workspace when the state still has it
-// (else the first), on its first role. null while it is still there, or with
-// no state.
-function retarget(state, target) {
-  if (!state || !state.arrangements || state.arrangements[target.arrangement]) return null
-  var names = sortedNames(state.arrangements)
-  var arrangement = state.arrangement && state.arrangements[state.arrangement] ? state.arrangement : names[0] || ""
-  var used = Array.isArray(state.used_workspaces) ? state.used_workspaces : []
-  var workspace = used.indexOf(target.workspace) >= 0 || used.length === 0 ? target.workspace : used[0]
-  var roles = arrangement ? state.arrangements[arrangement].roles || [] : []
-  return { arrangement: arrangement, workspace: workspace, role: roles.length ? roles[0] : "" }
-}
-
-// Why the trees of an arrangement may not be edited, "" when they may.
-function editBlock(state, arrangement) {
+// Why the trees of a layout may not be edited, "" when they may.
+function editBlock(state, layout) {
   if (!state) return "no state from hyprslots yet"
   if (state.refused) return "hyprslots is off: " + state.refused
   if (!state.config || !state.config.editable) {
     return "config.lua loads no slots.lua, so there is nothing the editor may change"
   }
-  var entry = state.arrangements ? state.arrangements[arrangement] : null
-  if (!entry) return "no arrangement '" + arrangement + "'"
-  if (entry.read_only) return "arrangement '" + arrangement + "' is set by code in config.lua; edit it there"
+  if (!layout) return "no desk is active: these monitors have none yet"
+  var entry = layoutEntry(state, layout)
+  if (!entry) return "no layout '" + layout + "'"
+  if (entry.read_only) return "layout '" + layout + "' is set by code in config.lua; edit it there"
   return ""
 }
 
-// slot -> title of the window in it, for a workspace's screen role.
-function titles(state, workspace, role) {
+// slot -> title of the window in it, for a workspace's screen.
+function titles(state, workspace, screen) {
   var out = {}
   var windows = state && Array.isArray(state.windows) ? state.windows : []
   for (var i = 0; i < windows.length; i++) {
     var w = windows[i]
     if (w.workspace !== workspace || !w.slot) continue
     var ws = state.workspaces ? state.workspaces[String(w.workspace_id)] : null
-    if (role && ws && ws.role !== role) continue
+    if (screen && ws && ws.screen !== screen) continue
     if (out[w.slot] === undefined) out[w.slot] = w.title || ""
   }
   return out

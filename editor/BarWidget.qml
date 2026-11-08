@@ -9,7 +9,7 @@ import "BarStatus.js" as BarStatus
 import "Services.js" as Services
 
 // The hyprslots bar widget (docs/design.md §9): a grid glyph and
-// `<arrangement> · <n>` for the workspace its bar's monitor shows, a dot
+// `<desk> · ws <n>` (the active desk; the workspace its bar's monitor shows), a dot
 // while edits are unsaved, red with the error in the tooltip when the engine
 // has a config error, refused to run, is not loaded, or the plugin's service
 // is missing. The state is the service's (Engine.qml): the widget only asks

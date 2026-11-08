@@ -356,73 +356,84 @@ end`;
 
 // --- the view's model: which trees, drawn how --------------------------------
 
+// Desk "docked" (eDP-1 left, DP-2 right) uses layout "dual", which office
+// shares; dual has default trees (screen 1: main) and workspaces 3 and 4 of
+// its own; workspace 5 shows the default trees.
 function fixture() {
   return {
     ok: true,
-    arrangement: "dual",
+    desk: "docked",
+    layout: "dual",
     dirty: false,
     used_workspaces: [3, 4],
-    screens: { big: "HEADLESS-2", side: "HEADLESS-3" },
-    workspaces: { 3: { workspace: 3, role: "big" }, 13: { workspace: 3, role: "side" }, 4: { workspace: 4, role: "big" } },
-    arrangements: {
+    screens: ["eDP-1", "DP-2"],
+    monitors: [
+      { name: "DP-2", description: "Samsung G95NC", width: 5120, height: 1440 },
+      { name: "eDP-1", description: "BOE 0x0BCA", width: 1920, height: 1200 },
+    ],
+    workspaces: { 3: { workspace: 3, screen: 1 }, 13: { workspace: 3, screen: 2 }, 4: { workspace: 4, screen: 1 } },
+    desks: { docked: { monitors: ["eDP-1", "Samsung G95NC"], layout: "dual", active: true },
+      office: { monitors: ["eDP-1", "Dell"], layout: "dual", active: false } },
+    layouts: {
       dual: {
-        roles: ["big", "side"], screens: { big: "HEADLESS-2", side: "HEADLESS-3" }, active: true, read_only: false,
+        screens: 2, active: true, read_only: false, used_by: ["docked", "office"], own: [3, 4],
+        default: { 1: { tree: "main", ratio: "", slots: ["main"] } },
         workspaces: {
-          3: { big: { tree: "h[main:2, v[right, *]]", ratio: "2:1[1:1]", slots: ["main", "right"], resized: true },
-            side: { tree: "left", ratio: "", slots: ["left"] } },
-          4: { big: { tree: "mail", ratio: "", slots: ["mail"] } },
+          3: { 1: { tree: "h[main:2, v[right, *]]", ratio: "2:1[1:1]", slots: ["main", "right"], resized: true },
+            2: { tree: "left", ratio: "", slots: ["left"] } },
+          4: { 1: { tree: "mail", ratio: "", slots: ["mail"] } },
+          5: { 1: { tree: "main", ratio: "", slots: ["main"] } },
         },
       },
-      single: { roles: ["big"], screens: { big: "HEADLESS-2" }, active: false, read_only: true, workspaces: {} },
+      single: { screens: 1, active: false, read_only: true, used_by: [], own: [], default: {}, workspaces: {} },
     },
     windows: [
       { address: "0xa", class: "t-main", title: "editor", workspace_id: 3, workspace: 3, slot: "main" },
       { address: "0xb", class: "t-left", title: "notes", workspace_id: 13, workspace: 3, slot: "left" },
     ],
-    config: { editable: true, read_only: ["arrangements.single"] },
+    config: { editable: true, read_only: ["layouts.single"] },
   };
 }
 
-test("a workspace shows one pane per screen role of the arrangement, with its tree in force", () => {
+test("a workspace shows one pane per screen of the layout, with the tree it shows", () => {
   assert.deepEqual(plain(L.panes(fixture(), "dual", 3)), [
-    { role: "big", tree: "h[main:2, v[right, *]]", ratio: "2:1[1:1]", resized: true, screen: "HEADLESS-2" },
-    { role: "side", tree: "left", ratio: "", resized: false, screen: "HEADLESS-3" },
+    { screen: 1, key: "1", tree: "h[main:2, v[right, *]]", ratio: "2:1[1:1]", resized: true, connector: "eDP-1" },
+    { screen: 2, key: "2", tree: "left", ratio: "", resized: false, connector: "DP-2" },
   ]);
-  assert.deepEqual(plain(L.panes(fixture(), "dual", 4))[1], { role: "side", tree: null, ratio: "", resized: false,
-    screen: "HEADLESS-3" });
+  assert.deepEqual(plain(L.panes(fixture(), "dual", 4))[1], { screen: 2, key: "2", tree: null, ratio: "", resized: false,
+    connector: "DP-2" });
   assert.deepEqual(plain(L.panes(fixture(), "nope", 3)), []);
 });
 
-test("the view opens on the active arrangement, at the focused workspace's number and screen", () => {
-  assert.deepEqual(plain(L.initialTarget(fixture(), 13)), { arrangement: "dual", workspace: 3, role: "side" });
-  assert.deepEqual(plain(L.initialTarget(fixture(), 1)), { arrangement: "dual", workspace: 3, role: "big" });
-  const none = fixture();
-  delete none.arrangement;
-  assert.deepEqual(plain(L.initialTarget(none, 3)), { arrangement: "dual", workspace: 3, role: "big" });
+test("the default trees are a workspace of their own to the panes", () => {
+  assert.deepEqual(plain(L.panes(fixture(), "dual", "default")).map((p) => [p.screen, p.tree]), [[1, "main"], [2, null]]);
 });
 
-test("an arrangement renamed or deleted under the view moves it to the running one, same workspace", () => {
-  const here = { arrangement: "single", workspace: 4, role: "big" };
-  assert.equal(L.retarget(fixture(), here), null, "still there: stay");
-  const renamed = fixture();
-  renamed.arrangements.solo = renamed.arrangements.single;
-  delete renamed.arrangements.single;
-  assert.deepEqual(plain(L.retarget(renamed, here)), { arrangement: "dual", workspace: 4, role: "big" });
-  const gone = fixture();
-  delete gone.arrangements.dual;
-  delete gone.arrangement;
-  assert.deepEqual(plain(L.retarget(gone, { arrangement: "dual", workspace: 9, role: "side" })),
-    { arrangement: "single", workspace: 3, role: "big" }, "the first by name; a workspace the state lacks goes to the first");
-  const empty = fixture();
-  empty.arrangements = {};
-  delete empty.arrangement;
-  assert.deepEqual(plain(L.retarget(empty, here)), { arrangement: "", workspace: 4, role: "" });
-  assert.equal(L.retarget(null, here), null, "no state yet: stay");
+test("a pane is labelled with the active desk's monitor at its position", () => {
+  assert.equal(L.screenLabel(fixture(), 1), "Screen 1 · eDP-1 (BOE 0x0BCA)");
+  assert.equal(L.screenLabel(fixture(), 2), "Screen 2 · DP-2 (Samsung G95NC)");
+  assert.equal(L.screenLabel(fixture(), 3), "Screen 3");
+  assert.equal(L.screenLabel(null, 1), "Screen 1");
+});
+
+test("a workspace that shows the default trees says an edit gives it its own", () => {
+  assert.equal(L.defaultNote(fixture(), "dual", 5), "(default trees: an edit gives workspace 5 its own)");
+  assert.equal(L.defaultNote(fixture(), "dual", 3), "", "trees of its own");
+  assert.equal(L.defaultNote(fixture(), "dual", 7), "", "no trees at all");
+  assert.equal(L.defaultNote(fixture(), "dual", "default"), "");
+});
+
+test("the view opens at the focused workspace's number and screen", () => {
+  assert.deepEqual(plain(L.initialTarget(fixture(), 13)), { workspace: 3, screen: 2 });
+  assert.deepEqual(plain(L.initialTarget(fixture(), 1)), { workspace: 3, screen: 1 }, "an unknown id: the first used workspace");
+  const none = fixture();
+  none.used_workspaces = [];
+  assert.deepEqual(plain(L.initialTarget(none, 1)), { workspace: 1, screen: 1 });
 });
 
 test("what may not be edited says why", () => {
   assert.equal(L.editBlock(fixture(), "dual"), "");
-  assert.match(L.editBlock(fixture(), "single"), /set by code in config\.lua/);
+  assert.match(L.editBlock(fixture(), "single"), /layout 'single' is set by code in config\.lua/);
   const noData = fixture();
   noData.config.editable = false;
   assert.match(L.editBlock(noData, "dual"), /loads no slots\.lua/);
@@ -430,11 +441,12 @@ test("what may not be edited says why", () => {
   off.refused = "hyprmoncfg's workspace planner is on";
   assert.match(L.editBlock(off, "dual"), /hyprslots is off: hyprmoncfg/);
   assert.match(L.editBlock(null, "dual"), /no state/);
+  assert.match(L.editBlock(fixture(), ""), /no desk is active/);
 });
 
 test("the slot -> window title map for a pane: what sits in each slot on that screen", () => {
-  assert.deepEqual(plain(L.titles(fixture(), 3, "big")), { main: "editor" });
-  assert.deepEqual(plain(L.titles(fixture(), 3, "side")), { left: "notes" });
+  assert.deepEqual(plain(L.titles(fixture(), 3, 1)), { main: "editor" });
+  assert.deepEqual(plain(L.titles(fixture(), 3, 2)), { left: "notes" });
 });
 
 test("boxes are proportional to the weights, the remainder to the last child", () => {
@@ -518,15 +530,15 @@ test("x takes the selected slot out of the tree, tidied; the last leaf leaves no
 
 test("the slots a adds are the global ones no pane of the workspace places yet", () => {
   const state = { slots: [{ name: "left" }, { name: "main" }, { name: "right" }, { name: "side" }] };
-  const drafts = { big: { node: tree("h[main, right]") }, side: { node: null }, top: { node: tree("left") } };
+  const drafts = { 1: { node: tree("h[main, right]") }, 2: { node: null }, 3: { node: tree("left") } };
   assert.deepEqual(plain(L.slotChoices(state, drafts)), ["side"]);
   assert.deepEqual(plain(L.slotChoices(null, drafts)), []);
 });
 
 test("the screen whose draft places a slot, null when no screen of the workspace does", () => {
-  const drafts = { big: { node: tree("h[main, right]") }, side: { node: null }, top: { node: tree("left") } };
-  assert.equal(L.placedIn(drafts, "right"), "big");
-  assert.equal(L.placedIn(drafts, "left"), "top");
+  const drafts = { 1: { node: tree("h[main, right]") }, 2: { node: null }, 3: { node: tree("left") } };
+  assert.equal(L.placedIn(drafts, "right"), "1");
+  assert.equal(L.placedIn(drafts, "left"), "3");
   assert.equal(L.placedIn(drafts, "notes"), null);
   assert.equal(L.placedIn(drafts, "*"), null);
 });

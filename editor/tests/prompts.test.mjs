@@ -89,9 +89,9 @@ test("keys get letters by first letter, then the first free digit", () => {
   assert.deepEqual(plain(P.keys(["main", "menu", "right", "Mail"])), ["m", "1", "r", "2"]);
 });
 
-test("the Layout view's workspace and arrangement picks read as one-key prompts", () => {
-  assert.equal(P.display(P.choice("Edit arrangement", P.options(["dual", "single", "solo"]))),
-    "Edit arrangement: (d)ual, (s)ingle, (1) solo? [Esc] cancel   → dual");
+test("layout and workspace picks read as one-key prompts", () => {
+  assert.equal(P.display(P.choice("Layout for desk 'solo'", P.options(["dual", "single", "solo"]))),
+    "Layout for desk 'solo': (d)ual, (s)ingle, (1) solo? [Esc] cancel   → dual");
   const workspaces = P.options(["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]);
   assert.deepEqual(plain(workspaces.map((o) => o.key)), ["1", "2", "3", "4", "5", "6", "7", "8", "9", ""]);
   assert.equal(P.display(P.choice("Edit workspace", workspaces.slice(2, 3))), "Edit workspace: (3)? [Esc] cancel   → 3");

@@ -5,6 +5,7 @@ import qs.Commons as Commons
 import "Assignment.js" as Assignment
 import "Workspaces.js" as Workspaces
 import "Prompts.js" as Prompts
+import "Help.js" as Help
 
 // Which live window fills which slot (aerolayout's AssignmentView). A table
 // of the windows on a workspace with the screen, slot, app and title of each,
@@ -17,8 +18,8 @@ import "Prompts.js" as Prompts
 // per slot, as the TUI prompts) and makes the window's spec the workspace's
 // for that slot, as aerolayout's `a` did; `u` takes a window out of its slot
 // and clears the workspace's spec for it (the slot is left empty, not
-// Missing); `c` clears the spec of a slot whose window is not open (a
-// Missing row). Spec edits stay in memory until Ctrl+S (the header says
+// Missing), and on a Missing row (a spec whose window is not open) clears
+// that spec. Spec edits stay in memory until Ctrl+S (the header says
 // "unsaved edits"). The model is Assignment.js; the calls are the api's
 // take_spec, clear_spec and unassign (docs/design.md §9).
 Item {
@@ -55,9 +56,9 @@ Item {
     var seen = {}
     var count = 0
     for (var i = 0; i < rows.length; i++) {
-      var role = rows[i].role || ""
-      if (!seen[role]) {
-        seen[role] = true
+      var screen = String(rows[i].screen || "")
+      if (!seen[screen]) {
+        seen[screen] = true
         count++
       }
     }
@@ -65,10 +66,16 @@ Item {
   }
   readonly property bool showWorkspace: currentPage.workspace === null
 
-  readonly property string helpText: prompting ? Prompts.help(prompt)
-    : "↑/↓ select   ·   Workspace: ←/→ [ ] prev/next  1–9 0 jump   ·   a assign + take spec  u unassign + clear spec  c clear a Missing spec"
-      + "   ·   Ctrl+S save"
-      + "   ·   Tab switch view  q close"
+  // The controls strip (StyledText: each trigger key highlighted, Help.js).
+  readonly property string accent: String(Commons.Color.accent)
+  readonly property string helpText: prompting ? Help.escape(Prompts.help(prompt)) : Help.row([
+    [{ key: "↑/↓", label: "select" }],
+    { title: "Workspace", items: [{ key: "←/→ [ ]", label: "prev/next" }, { key: "1–9 0", label: "jump" }] },
+    [{ key: "a", label: "assign + take spec" },
+      { key: "u", label: selectedRow && selectedRow.kind === "missing" ? "unassign: clear the Missing spec" : "unassign + clear spec" }],
+    [{ key: "Ctrl+S", label: "save" }],
+    [{ key: "Tab", label: "switch view" }, { key: "q", label: "close" }],
+  ], accent)
 
   function keyOf(row) {
     if (!row) return ""
@@ -178,25 +185,6 @@ Item {
     })
   }
 
-  function startClear() {
-    var target = Assignment.clearTarget(state, currentPage.workspace, selectedRow)
-    if (target.error) {
-      say(target.error, true)
-      return
-    }
-    ask(Prompts.confirm("Clear workspace " + target.workspace + "'s spec for " + target.slot + " (" + target.spec + ")?"),
-      function(yes) {
-        if (!yes) {
-          root.message = ""
-          return
-        }
-        root.engine.call("clear_spec", { workspace: target.workspace, slot: target.slot }, function(reply) {
-          if (!reply.ok) root.say(reply.error, true)
-          else root.say("Workspace " + reply.workspace + " no longer says what fills " + reply.slot + ". Ctrl+S saves.", false)
-        })
-      })
-  }
-
   function classOf(address) {
     var windows = state && state.windows ? state.windows : []
     for (var i = 0; i < windows.length; i++) if (windows[i].address === address) return windows[i].class
@@ -204,7 +192,8 @@ Item {
   }
 
   // u: the window out of its slot, and (Assignment.unassignPlan) the
-  // workspace's spec for the slot with it, so the slot is left empty.
+  // workspace's spec for the slot with it, so the slot is left empty; on a
+  // Missing row, only the spec.
   function startUnassign() {
     var row = selectedRow
     var plan = Assignment.unassignPlan(state, row)
@@ -213,8 +202,18 @@ Item {
       return
     }
     ask(Prompts.confirm(plan.question), function(yes) {
-      if (yes) root.unassign(row, plan)
-      else root.message = ""
+      if (!yes) root.message = ""
+      else if (plan.clear) root.clearSpec(plan.clear)
+      else root.unassign(row, plan)
+    })
+  }
+
+  function clearSpec(target) {
+    if (!engine) return
+    engine.call("clear_spec", { workspace: target.workspace, slot: target.slot }, function(reply) {
+      if (!reply.ok) root.say(reply.error, true)
+      else root.say("Cleared workspace " + reply.workspace + "'s spec for " + reply.slot + " (" + reply.spec
+        + "): the slot is empty. Ctrl+S saves.", false)
     })
   }
 
@@ -251,7 +250,6 @@ Item {
     else if (Workspaces.ofDigit(text) !== null) goWorkspace(Workspaces.ofDigit(text))
     else if (text === "a") startAssign()
     else if (text === "u") startUnassign()
-    else if (text === "c") startClear()
     else return false
     return true
   }
@@ -283,11 +281,7 @@ Item {
         anchors.leftMargin: Style.spacing.lg
         anchors.verticalCenter: parent.verticalCenter
         textFormat: Text.PlainText
-        text: {
-          var s = root.state
-          var arrangement = s && s.arrangement ? s.arrangement : "no arrangement"
-          return root.currentPage.label + "   [" + arrangement + "]" + (s && s.dirty ? "   unsaved edits" : "")
-        }
+        text: root.currentPage.label + (root.state && root.state.dirty ? "   unsaved edits" : "")
         color: root.foreground
         font.family: root.fontFamily
         font.pixelSize: Style.font.title
@@ -406,7 +400,7 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             leftPadding: Style.spacing.md
             textFormat: Text.PlainText
-            text: rowItem.modelData.role || ""
+            text: Assignment.screenText(root.state, rowItem.modelData)
             color: rowItem.ink
             opacity: 0.7
             font.family: root.fontFamily
