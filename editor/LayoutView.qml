@@ -3,6 +3,7 @@ import QtQuick
 import Quickshell.Hyprland
 import qs.Commons
 import qs.Commons as Commons
+import "Desks.js" as Desks
 import "Layout.js" as Layout
 import "Prompts.js" as Prompts
 
@@ -62,8 +63,8 @@ Item {
   readonly property string helpText: {
     if (prompting) return Prompts.help(prompt)
     return "arrows select   ·   Tree: a add slot  x take out  hjkl move  HJKL force move  / flip  t " + toggleLabel
-      + "  r ratios  o overflow   ·   Layout: w apply  Ctrl+S apply+save  d default  R record   ·   g desk  c arrangement"
-      + "   ·   Tab switch view  q close"
+      + "  r ratios  o overflow   ·   Layout: w apply  Ctrl+S apply+save  d default  R record"
+      + "   ·   Desk: [ ] prev/next  1–9 0 jump   c arrangement   ·   Tab switch view  q close"
   }
 
   // t turns the whole tree into a scroll branch (full-width scrolling
@@ -280,7 +281,8 @@ Item {
     else if (text === "w") apply(null)
     else if (text === "d") startReset()
     else if (text === "R") startRecord()
-    else if (text === "g") startPick("desk")
+    else if (text === "[" || text === "]") goDesk(Desks.step(desk, text === "]" ? 1 : -1))
+    else if (Desks.ofDigit(text) !== null) goDesk(Desks.ofDigit(text))
     else if (text === "c") startPick("arrangement")
     else return false
     return true
@@ -386,13 +388,25 @@ Item {
     })
   }
 
+  // c: the arrangement to edit, picked among them.
   function startPick(what) {
     if (!state) return
-    var names = what === "desk" ? (state.desks || []).map(String) : Object.keys(state.arrangements || {}).sort()
+    var names = Object.keys(state.arrangements || {}).sort()
     if (names.length === 0) return
-    ask(Prompts.choice(what === "desk" ? "Edit desk" : "Edit arrangement", Prompts.options(names)), function(name) {
+    ask(Prompts.choice("Edit arrangement", Prompts.options(names)), function(name) {
       root.pick(what, name)
     })
+  }
+
+  // [ ] and the digits: another desk of the same arrangement (the arrows
+  // stay the picture's).
+  function goDesk(n) {
+    if (!state || n === null) return
+    if (n === desk) {
+      say("Editing desk " + desk + " already.", false)
+      return
+    }
+    pick("desk", String(n))
   }
 
   function pick(what, name) {
@@ -592,6 +606,40 @@ Item {
         font.family: root.fontFamily
         font.pixelSize: Style.font.title
         font.bold: true
+      }
+      // Desks 1 to 10 by their keys ([ ] step, the digits jump): the one
+      // edited reversed, the ones with trees in this arrangement brighter.
+      Row {
+        id: deskStrip
+        anchors.left: headerText.right
+        anchors.leftMargin: Style.spacing.lg * 2
+        anchors.verticalCenter: parent.verticalCenter
+        spacing: Style.spacing.xs
+        Repeater {
+          model: Desks.strip(root.state, root.arrangement, root.desk)
+          delegate: Rectangle {
+            required property var modelData
+            width: deskKey.implicitWidth + Style.spacing.sm * 2
+            height: deskKey.implicitHeight + Style.spacing.xs * 2
+            radius: Style.cornerRadius
+            color: modelData.current ? root.selectedBackground : "transparent"
+            Text {
+              id: deskKey
+              anchors.centerIn: parent
+              textFormat: Text.PlainText
+              text: parent.modelData.label
+              color: parent.modelData.current ? root.selectedText : root.foreground
+              opacity: parent.modelData.current ? 1 : parent.modelData.trees ? 0.85 : 0.35
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.body
+              font.bold: parent.modelData.current || parent.modelData.trees
+            }
+            MouseArea {
+              anchors.fill: parent
+              onClicked: root.goDesk(parent.modelData.desk)
+            }
+          }
+        }
       }
       Text {
         anchors.right: parent.right

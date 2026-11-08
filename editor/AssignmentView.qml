@@ -3,13 +3,15 @@ import QtQuick
 import qs.Commons
 import qs.Commons as Commons
 import "Assignment.js" as Assignment
+import "Desks.js" as Desks
 import "Prompts.js" as Prompts
 
 // Which live window fills which slot (aerolayout's AssignmentView). A table
 // of the windows on a desk with the screen, slot, app and title of each,
 // plus a "Missing" row for every slot whose window is not running, then the
-// windows overflowing on the desk and any others on its workspaces. ←/→ page
-// through every window and each desk; ↑/↓ select. `a` puts the selected
+// windows overflowing on the desk and any others on its workspaces. ←/→ (or
+// [ ]) page through every window and each desk, the digits jump to a desk's
+// page (0 is desk 10); ↑/↓ select. `a` puts the selected
 // window into one of the global slots on the desk (one key per slot, as the
 // TUI prompts) and makes the window's spec the desk's for that slot, as
 // aerolayout's `a` did; `c` clears the desk's spec for the selected slot;
@@ -61,7 +63,8 @@ Item {
   readonly property bool showDesk: currentPage.desk === null
 
   readonly property string helpText: prompting ? Prompts.help(prompt)
-    : "↑/↓ select  ←/→ prev/next desk   ·   a assign + take spec  c clear spec  u unassign   ·   Ctrl+S save"
+    : "↑/↓ select   ·   Desk: ←/→ [ ] prev/next  1–9 0 jump   ·   a assign + take spec  c clear spec  u unassign"
+      + "   ·   Ctrl+S save"
       + "   ·   Tab switch view  q close"
 
   function keyOf(row) {
@@ -86,6 +89,19 @@ Item {
     page = ((page + delta) % n + n) % n
     selectedKey = ""
     select(0)
+  }
+
+  // A digit: desk n's page, when it has one (desks with specs or trees).
+  function goDesk(n) {
+    var i = Assignment.pageOfDesk(state, n)
+    if (i < 0) {
+      say("Desk " + n + " has no slots: no tree places one and it has no spec.", true)
+      return
+    }
+    page = i
+    selectedKey = ""
+    select(0)
+    message = ""
   }
 
   function say(text, isError) {
@@ -121,7 +137,7 @@ Item {
     var focusedDesk = Assignment.deskOfWorkspace(state, focusedWorkspace)
     var desk = Assignment.assignDesk(state, currentPage.desk, row, focusedDesk)
     if (desk === null) {
-      say(row.cls + " is on no desk: page to a desk (←/→) to assign it there.", true)
+      say(row.cls + " is on no desk: page to a desk (←/→, or its digit) to assign it there.", true)
       return
     }
     var options = Assignment.slotOptions(state, currentPage.desk, row, focusedDesk)
@@ -224,8 +240,9 @@ Item {
     if (prompting) return handlePrompt(key, text, modifiers)
     if (key === Qt.Key_Up || text === "k") select(selected - 1)
     else if (key === Qt.Key_Down || text === "j") select(selected + 1)
-    else if (key === Qt.Key_Left || text === "h" || text === "p") turnPage(-1)
-    else if (key === Qt.Key_Right || text === "l") turnPage(1)
+    else if (key === Qt.Key_Left || text === "h" || text === "p" || text === "[") turnPage(-1)
+    else if (key === Qt.Key_Right || text === "l" || text === "]") turnPage(1)
+    else if (Desks.ofDigit(text) !== null) goDesk(Desks.ofDigit(text))
     else if (text === "a") startAssign()
     else if (text === "u") startUnassign()
     else if (text === "c") startClear()
