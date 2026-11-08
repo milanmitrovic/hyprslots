@@ -1,13 +1,13 @@
 # hyprslots design
 
-Status: engine slices 1 to 6 and editor slices D1 to D3 (Assignment,
-Layout, Arrangements; the global slots made and placed in the Layout tab)
-done and integrated on `feature/editor` (§11), slots made global logical
-names with specs per desk;
-slice 7, the cutover, done on the user's machine from that branch; the
-accordion (a Hyprland group, with tabs) replaced by the scroll branch (§6)
-after the cutover showed what aerolayout's laptop accordion is on
-Hyprland. Targets Hyprland 0.56.2 (Lua config) on Omarchy 4.5.
+Status: engine slices 1 to 6 and editor slices D1 to D3 done and
+integrated on `feature/editor` (§11), slots made global logical names with
+specs per workspace; slice 7, the cutover, done on the user's machine from
+that branch; the accordion replaced by the scroll branch (§6); then
+**desks and layouts** replaced arrangements (§3, §4, §8): a desk is a
+monitor setup, a layout a logical arrangement of screens that several desks
+can share, and workspaces 1 to 10 are called workspaces, not desks.
+Targets Hyprland 0.56.2 (Lua config) on Omarchy 4.5.
 
 ## 1. Purpose
 
@@ -15,13 +15,15 @@ hyprslots gives Hyprland deterministic, named window layouts that span every
 connected screen. A layout is a tree of exact integer-weighted splits whose
 leaves are **slots**; each slot names the window that belongs there (a
 **spec** such as `kitty/deltaf`). Opening an app routes it into its slot;
-switching desks switches every screen at once; plugging or unplugging a
-monitor re-selects the **arrangement** that matches the screens now present.
+switching workspaces switches every screen at once; plugging or unplugging
+a monitor selects the **desk** (the monitor setup) now present and the
+**layout** it uses.
 
 It is a port of the macOS tool aerolayout (private repo
 `milanmitrovic/aerolayout`), which does the same on AeroSpace. The Hyprland
 port drops aerolayout's external planner process entirely: everything runs as
-Lua inside Hyprland's own config VM.
+Lua inside Hyprland's own config VM. (aerolayout's own history: modes, then
+desks, then arrangements; a desk was always the physical setup you sit at.)
 
 ### Non-goals
 
@@ -43,33 +45,45 @@ Lua inside Hyprland's own config VM.
 
 ## 3. Vocabulary
 
-- **Screen role**: a name an arrangement gives one monitor (`big`, `side`,
-  `laptop`).
-- **Arrangement**: a named set of screen roles plus one tree per desk. Exactly
-  one arrangement is active at a time, chosen by which monitors are connected.
-- **Desk N**: workspace N in each monitor's Omarchy block (§5). One desk spans
-  all non-pinned screens.
-- **Tree**: per desk per arrangement, a root with one branch per screen role.
-  Inner nodes are `h` or `v` splits with exact integer weights
-  (`h[main:2, right:1]`); leaves are slots or the overflow leaf. A whole
-  branch may instead be a scroll branch.
+- **Workspace N** (1 to 10): workspace N in each monitor's Omarchy block
+  (§5). One workspace spans all non-pinned screens; Super+N switches it on
+  all of them.
+- **Desk**: a monitor setup, the set of monitors you have when you sit at
+  one place (`laptop`, `docked`, `office`): each monitor named by its
+  description, serial or connector. Exactly one desk is active at a time,
+  the one whose monitors are the connected ones. A desk says which
+  **layout** it uses and which of its screens are **pinned**.
+- **Screen N**: the N-th monitor of the active desk from the left (by x,
+  then y, then connector name). Layouts address screens by number, so the
+  same layout fits any desk with as many monitors.
+- **Layout**: a logical arrangement for exactly N screens: a tree per
+  screen for each workspace, plus optional **default trees** for the
+  workspaces that have none of their own (a workspace's own trees replace
+  the default ones whole). A desk with N monitors may use any N-screen
+  layout, and several desks may use the same one: an edit to it changes it
+  for all of them (the editor says so, and can **fork** it).
+- **Tree**: per workspace per layout, one per screen. Inner nodes are `h`
+  or `v` splits with exact integer weights (`h[main:2, right:1]`); leaves
+  are slots or the overflow leaf. A whole branch may instead be a scroll
+  branch.
 - **Slot**: a named leaf, a **global logical name** (`left`, `main`,
   `right`) defined once with an optional description, aerolayout's logical
-  slots. Every desk's trees may place any slot; trees belong to the
-  **arrangement** (where `main` sits and how big it is depends on which
-  screens exist).
-- **Spec**: the window matcher that fills a slot **on one desk** (desk 3's
-  `main` is `kitty/deltaf`, desk 9's `main` is `kitty/tako`): `class`,
-  `class/title-pattern`, `[Tag]` and `[Tag]/Profile` (grammar in §7a). A
-  slot a desk has no spec for takes a window only by hand.
+  slots. Every workspace's trees may place any slot; trees belong to the
+  **layout** (where `main` sits and how big it is depends on the screens).
+- **Spec**: the window matcher that fills a slot **on one workspace**
+  (workspace 3's `main` is `kitty/deltaf`, workspace 9's `main` is
+  `kitty/tako`): `class`, `class/title-pattern`, `[Tag]` and
+  `[Tag]/Profile` (grammar in §7a). A slot a workspace has no spec for takes
+  a window only by hand.
 - **Scroll branch**: a screen's whole tree written `scroll[a, b, c]`: its
   slots are full-width columns of Hyprland's own scrolling layout, in that
   order (aerolayout's accordion: full-screen windows side by side, scrolled
   through). Slots only, and at most the overflow leaf as the column windows
   with no slot take (`scroll[a, b, *, c]`).
-- **Overflow leaf**: where windows matched to the desk but to no free slot go.
-- **Pinned screen**: a screen excluded from desk switching; it keeps showing
-  whatever desk it is on.
+- **Overflow leaf**: where windows matched to the workspace but to no free
+  slot go.
+- **Pinned screen**: a screen of a desk excluded from workspace switching;
+  it keeps showing whatever workspace it is on.
 
 ## 4. Configuration
 
@@ -90,9 +104,9 @@ Sketch:
 local data = load_data("slots.lua")   -- sandbox helper
 return {
   slots = data.slots,                 -- slot name -> { description? }
-  specs = data.specs,                 -- desk -> slot name -> spec
-  arrangements = data.arrangements,   -- name -> { screens = {...}, desks = {...} }
-  pinned = { "laptop" },              -- screen roles excluded from desk switching
+  specs = data.specs,                 -- workspace -> slot name -> spec
+  desks = data.desks,                 -- name -> { monitors, layout, pinned? }
+  layouts = data.layouts,             -- name -> { screens, default?, workspaces? }
   title_matching = { ... },           -- per-class title extraction (§7a)
 }
 ```
@@ -104,43 +118,72 @@ return {
   specs = {
     [3] = { left = "t-left", main = "t-main", right = "t-right" },
   },
-  arrangements = {
+  desks = {
+    dual = { monitors = { "HEADLESS-2", "HEADLESS-3" }, layout = "dual" },
+    single = { monitors = { "HEADLESS-2" }, layout = "single" },
+    office = { monitors = { "Dell Inc. DELL U2720Q 1ABC" }, layout = "single", pinned = { 1 } },
+  },
+  layouts = {
     dual = {
-      screens = { big = "HEADLESS-2", side = "HEADLESS-3" },
-      desks = {
-        [3] = { side = "left", big = "h[main:2, right:1]" },
+      screens = 2,
+      workspaces = {
+        [3] = { [1] = "h[main:2, right:1]", [2] = "left" },
       },
     },
     single = {
-      screens = { big = "HEADLESS-2" },
-      desks = {
-        [3] = { big = "h[left, main, right]" },
-      },
+      screens = 1,
+      default = { [1] = "h[left, main, right]" },
     },
   },
 }
 ```
 
-Each `screens` value is a monitor description, serial, or connector name,
-tried in that order of precedence against each connected monitor.
+A desk's `monitors` are each a monitor description, serial, or connector
+name, tried in that order of precedence against each connected monitor; the
+order they are listed in does not matter (screens are numbered by
+position, §3). Its `layout` must be one for as many screens as it has
+monitors; `pinned` lists screen numbers. A layout's `screens` is its screen
+count; `workspaces[n][i]` is workspace n's tree on screen i, and
+`default[i]` screen i's tree for every workspace with no entry of its own
+(an entry replaces the default trees whole, so `workspaces = { [5] = {} }`
+leaves workspace 5 empty). Desk and layout names hold no `/`.
 
 A tree or a spec may only name a slot defined under `slots`; anything else
 is a config error with its path (`specs[3].mian: no slot 'mian' (define it
-under slots)`). A slot's `description` is the editor's note (aerolayout's
-logical slot description); the engine does not use it.
+under slots)`, `layouts.dual.workspaces[3][1]: ...`). A slot placed on two
+screens of one workspace is an error. A slot's `description` is the
+editor's note (aerolayout's logical slot description); the engine does not
+use it.
 
-**The per-desk shape of before** (`slots = { [3] = { main = "kitty/deltaf"
-} }`, `descriptions = { [3] = { main = "..." } }`) is still read
-(`migrate.lua`, pure), both in a data file `load_data` hands config.lua and
-in the table config.lua returns: every slot name some desk had becomes a
-global slot, each desk's entries move under `specs` unchanged, and a slot's
-descriptions move onto it (every different one, in desk order, joined with
-"; "; one for a slot no desk has is dropped). The editor works on the new
-shape and `save` writes it. A `config.lua` written for the old shape passes
-`slots = data.slots` and nothing more, which would lose the specs, so it is
-refused at load with what to add (`specs = data.specs`).
+**Shapes of before** are still read (`migrate.lua`, pure), both in a data
+file `load_data` hands config.lua and in the table config.lua returns; the
+engine runs the result as an unsaved edit (`dirty`, the editor's Ctrl+S
+writes the new shape):
 
-## 5. Desks on top of Omarchy's per-monitor workspaces
+- The per-workspace slots (`slots = { [3] = { main = "kitty/deltaf" } }`,
+  `descriptions = { [3] = { main = "..." } }`): every slot name some
+  workspace had becomes a global slot, each workspace's entries move under
+  `specs` unchanged, and a slot's descriptions move onto it (every different
+  one, in workspace order, joined with "; "; one for a slot no workspace has
+  is dropped).
+- The arrangements (`arrangements = { docked = { screens = { laptop =
+  "eDP-1", wide = "..." }, desks = { [3] = { wide = "h[...]" } } } }`, and
+  `pinned = { "laptop" }`, a list of screen roles): each arrangement becomes
+  a desk of the same name (its selectors) and a layout of its trees, by
+  screen number. The screens are put in order of the monitors' positions
+  when every monitor of the arrangement is connected at load, else in the
+  roles' sort order (the order slots.lua wrote them in). Arrangements whose
+  layouts come out the same share one, named after the first. Pinned roles
+  become each desk's pinned screens.
+
+A `config.lua` written for an older shape passes `slots = data.slots` and
+nothing more, or `arrangements = data.arrangements`, which would lose the
+specs or the desks and layouts; it is refused at load with what to add
+(`specs = data.specs`; `desks = data.desks, layouts = data.layouts`). An
+`arrangements` beside desks and layouts, or a top-level `pinned`, is a
+config error.
+
+## 5. Workspaces on top of Omarchy's per-monitor workspaces
 
 Omarchy (`/usr/share/omarchy/default/hypr/monitor-workspaces.lua`) gives each
 physical monitor its own block of ten workspaces: block 0 is 1–10, block 1 is
@@ -152,40 +195,43 @@ physical monitor its own block of ten workspaces: block 0 is 1–10, block 1 is
 - `o.workspaces.focus(slot, monitor_name)` — returns an action (a function for
   `hl.dispatch` / `hl.bind`) that focuses slot N on that monitor.
 
-hyprslots does not renumber workspaces; desk N on a screen is exactly
+hyprslots does not renumber workspaces; workspace N on a screen is exactly
 `o.workspaces.workspace_id(monitor, N)`.
 
-**Desk switch** (the Super+N path). Public entry points:
+**Workspace switch** (the Super+N path). Public entry points:
 
-- `hyprslots.desk(n)` — returns an action, bound to `SUPER + N` in place of
-  Omarchy's `o.workspaces.focus(n)`.
-- `hyprslots.api.call("desk", '{"desk": n}')` — the same operation through the
-  api (used by the editor and by the e2e tests).
+- `hyprslots.workspace(n)` — returns an action, bound to `SUPER + N` in place
+  of Omarchy's `o.workspaces.focus(n)` (`hyprslots.desk(n)` is a deprecated
+  alias).
+- `hyprslots.api.call("workspace", '{"workspace": n}')` — the same operation
+  through the api (used by the editor and by the e2e tests).
 
 Both run the same function: remember the focused monitor (the origin), run
 `o.workspaces.focus(n, name)` for every connected, non-pinned screen, then
 refocus the origin monitor.
 
-The screens are the active arrangement's roles minus the `pinned` ones, in
-role order with the origin last, so the origin's view changes last; the
-origin is refocused even when it is pinned and so did not switch. With no
-active arrangement only the origin switches, as Omarchy's Super+N does.
+The screens are the active desk's screens minus its `pinned` ones, left to
+right with the origin last, so the origin's view changes last; the origin is
+refocused even when it is pinned and so did not switch. With no active desk
+only the origin switches, as Omarchy's Super+N does.
 
-`setup()` leaves Omarchy's Super+1..0 alone. `hyprslots.bind_desk_keys()`
-rebinds `SUPER + code:10..19` to `hyprslots.desk(1..10)` through `o.rebind`
-(so the keybindings menu keeps a description); the cutover calls it from the
-user's config.
+`setup()` leaves Omarchy's Super+1..0 alone. `hyprslots.bind_workspace_keys()`
+rebinds `SUPER + code:10..19` to `hyprslots.workspace(1..10)` through
+`o.rebind` (so the keybindings menu keeps a description, "Switch to workspace
+N on every screen"); the user's shim calls it (`bind_desk_keys` is a
+deprecated alias).
 
 **hyprmoncfg.** hyprmoncfg keeps owning monitor modes and positions, but its
 workspace planner must be Off. Its generated `hyprmoncfg-monitors.lua`, when
 the planner is on, sets `o.workspaces.enabled = false` and replaces
-`o.workspaces.focus` with global-number focus, which breaks the desk model.
+`o.workspaces.focus` with global-number focus, which breaks the workspace
+model.
 hyprslots therefore refuses to start, with an `hl.notification`, while
 `o.workspaces.enabled == false`. Because the hyprmoncfg file loads last in
 `hyprland.lua` (after hyprslots), the check runs deferred on
 `hyprland.start` / `config.reloaded`, not at require time. While refused,
-`hyprslots.desk(n)` (so Super+N) falls back to `o.workspaces.focus(n)`,
-whatever that is then, so the keys never go dead; the api's `desk` call
+`hyprslots.workspace(n)` (so Super+N) falls back to `o.workspaces.focus(n)`,
+whatever that is then, so the keys never go dead; the api's `workspace` call
 still reports the refusal. At the cutover the planner was set Off in every
 hyprmoncfg profile (Odyssey, and a new Laptop profile for eDP-1 alone, so
 the undocked laptop matches a saved profile instead of a planner-on live
@@ -233,8 +279,8 @@ use.
 
 ### Placement
 
-`recalculate(ctx)` is pure arithmetic: look up the active arrangement and the
-workspace's desk and screen role, take the tree in force for that branch
+`recalculate(ctx)` is pure arithmetic: look up the active desk's layout and
+the workspace's number and screen, take the tree in force for that branch
 (the configured one, or a keyboard-resized override, see below), divide
 `ctx.area` by integer weights (remainder pixels go to the last child, so
 sizes are exact and deterministic), and `place` each target whose window is
@@ -248,13 +294,14 @@ in the overflow leaf. A tree without `*` gets one appended as
 Slots with no window close up: the tree is pruned to the slots present and
 the survivors keep their configured ratio (three slots at 1:2:1 with two
 windows present tile 1:2), as aerolayout does; an empty overflow leaf closes
-up the same way. A workspace that is no desk of the active arrangement, or
-a desk workspace where no target has a slot, tiles its targets in equal
+up the same way. A workspace the active desk's layout has no tree for, or
+a workspace where no target has a slot, tiles its targets in equal
 columns.
 
 Workspace rules apply when a workspace is created, so `setup()` gives
-`lua:slots` to desk N's workspace in every Omarchy block (N, 10+N, ... 90+N)
-for each desk that has a tree, rather than tracking which blocks are
+`lua:slots` to workspace N in every Omarchy block (N, 10+N, ... 90+N)
+for each workspace some layout has a tree for (every workspace, when a
+layout has default trees), rather than tracking which blocks are
 connected.
 
 Rejected alternative: driving dwindle with dispatched splits. Dwindle's
@@ -264,10 +311,10 @@ has neither problem.
 
 ### Scroll branches
 
-A screen whose tree is `scroll[a, b, c]` gets its desk workspace on
+A screen whose tree is `scroll[a, b, c]` gets its hyprslots workspace on
 Hyprland's own `scrolling` layout instead of `lua:slots` (`scroll.lua`):
 the user's full-width scrolling (Super+L's full-width stop, which the
-user's laptop desks were on before the cutover), with hyprslots keeping
+user's laptop workspaces were on before the cutover), with hyprslots keeping
 the columns in slot order, the windows with no slot in the branch where
 the branch places the overflow leaf (`scroll[left, main, *, right]`: after
 main, before right), else after the slotted columns, in the order they are
@@ -278,7 +325,7 @@ Everything a scroll branch needs is a deferred pass (20 ms timer), never
 work inside an event:
 
 - **Order**, after a window opens or moves to a workspace, a workspace is
-  shown (a desk switch included, even to the desk already showing), a
+  shown (a workspace switch included, even to the workspace already showing), a
   re-route (hotplug, edits, reload) and Hyprland's start or config reload:
   `scroll.plan` (pure) lists the swaps that put the columns in order and
   Hyprland's `window.swap { window, target }` makes them. A swap keeps the
@@ -294,7 +341,7 @@ work inside an event:
   focused column stays in view. A hidden workspace's new columns widen when
   it is shown. A focus change runs the widen step alone, so a column the
   user moved (`swapcol`) or resized stays put until the next arrival or
-  desk switch. A window floated and tiled again by hand comes back in a new
+  workspace switch. A window floated and tiled again by hand comes back in a new
   column at Hyprland's default width (the user's own full-width mode does
   the same); Super+L entering slots (api `arrange`) widens every column.
 
@@ -303,11 +350,11 @@ Omarchy has no saved mode for it (`$XDG_STATE_HOME/omarchy/workspace-layouts/<id
 any Super+L stop saves one, and hyprslots then leaves the workspace's
 columns alone until Super+L brings slots back, which removes it.
 
-**Layout rules.** At load, desk N's workspace in every Omarchy block gets
-`scrolling` where the arrangement selected then has a scroll branch and
+**Layout rules.** At load, workspace N in every Omarchy block gets
+`scrolling` where the desk's layout selected then has a scroll branch and
 `lua:slots` everywhere else; Omarchy's saved modes load afterwards and
-win. When the arrangement or a tree changes later (hotplug, an edit, the
-start check), each desk workspace whose layout should change gets the new
+win. When the desk, its layout or a tree changes later (hotplug, an edit, the
+start check), each hyprslots workspace whose layout should change gets the new
 rule unless it has a saved mode, so Super+L's choice stands. `lua:slots`,
 should it ever lay out a scroll branch, shows its columns side by side.
 
@@ -316,7 +363,7 @@ verified in the nested harness): `scrolling.column_width` is one global
 option and the scrolling workspace rule only takes `direction`, so full
 width per workspace is `colresize` (the window rule `scrolling_width` sets a
 window's width wherever it is inserted, on every workspace, so it cannot
-make one desk full width). A new window's column goes right after the
+make one workspace full width). A new window's column goes right after the
 focused column when the focused window is on that workspace, else last; a
 window moved in goes last. `HL.Window.layout` reports a scrolling window's
 `column = { index (0-based), width, windows }` and `index_in_column`,
@@ -326,7 +373,7 @@ windows' places (their targets) on any workspace, focus kept.
 
 Rejected alternative: the accordion as a Hyprland group (slice 4). A group
 draws a tabbed groupbar and is not what aerolayout's accordion is on the
-laptop; the cutover ported the laptop desks as accordions and every one
+laptop; the cutover ported the laptop workspaces as accordions and every one
 showed tabs.
 
 ### Keyboard resize
@@ -367,9 +414,9 @@ Hyprland sends a layout message to the focused workspace's algorithm only,
 so resize always acts on the focused window (`hl.dsp.layout("…")` from a
 bind or `hyprctl dispatch`); Hyprland recalculates afterwards. A string
 reply (why nothing changed) surfaces as the dispatch's error. A nudged
-tree overrides the branch per arrangement, desk and screen role, in memory
-(`engine.resized["<arrangement>/<desk>/<role>"]`): it survives hotplug back
-to the same arrangement but not a config reload. `resize.effective_branch`
+tree overrides the branch per layout, workspace and screen, in memory
+(`engine.resized["<layout>/<workspace>/<screen>"]`): it survives hotplug
+back to a desk using the same layout but not a config reload. `resize.effective_branch`
 is the one lookup for the tree in force; the layout and the api (§9) both
 use it. The api's `save` writes overrides to `slots.lua` and clears them,
 its `reload` drops them, and `set_tree` / `set_ratio` / `record` replace
@@ -391,26 +438,26 @@ it; the cutover's `bindings.lua` does, after Omarchy's bindings.
 and `~/.config/omarchy/plugins/milan.layout/Layout.qml`. They are not applied
 before the cutover.
 
-- The cycle acts on the focused workspace only. On a hyprslots desk
+- The cycle acts on the focused workspace only. On a hyprslots
   workspace (one in `hyprslots.api.call("state").workspaces`) it gains a
   slots stop between floating and tiling:
   slots → tiling → side-by-side → full-width → floating → slots
   (`back` reverses). Elsewhere it is unchanged. The slots stop is the layout
-  hyprslots gives the desk (`state.workspaces[id].layout`): `lua:slots`, or
+  hyprslots gives the workspace (`state.workspaces[id].layout`): `lua:slots`, or
   `scrolling` for a scroll branch, whose columns hyprslots keeps full width
   and in slot order (§6); its full-width stop is the user's own, which
   hyprslots leaves alone.
 - Omarchy's mode files know nothing of slots, so "slots" is read from the
   workspace's `tiledLayout` unless the mode file says floating (floating
-  keeps the tiled layout underneath): `lua:slots`, or, on a scroll desk,
+  keeps the tiled layout underneath): `lua:slots`, or, on a scroll workspace,
   `scrolling` with no mode file of its own.
 - Entering slots from floating first applies `dwindle` through
-  `o.workspace_mode` to tile the windows again, then sets the desk's layout
+  `o.workspace_mode` to tile the windows again, then sets the workspace's layout
   as a workspace rule, removes the workspace's mode file (and its
   full-width mark), so the rule hyprslots sets at load brings slots back
-  after a reload, and on a scroll desk calls api `arrange`, which orders
+  after a reload, and on a scroll workspace calls api `arrange`, which orders
   and widens its columns at once. Leaving slots applies the mode and saves
-  it, even Omarchy's default, so the desk stays out of slots across reloads
+  it, even Omarchy's default, so the workspace stays out of slots across reloads
   until Super+L enters slots again.
 - The bar widget shows a grid glyph (nf-md-view_grid) and "Slots"
   (`workspace-layout-current` says `slots` for both kinds).
@@ -419,23 +466,23 @@ before the cutover.
   caches each workspace's floating mode and otherwise stayed up after
   leaving floating.
 
-Verified at cutover: a saved mode file for a desk workspace wins over
+Verified at cutover: a saved mode file for a hyprslots workspace wins over
 hyprslots' load-time rule. Omarchy loads the saved modes from
 `default.hypr.toggles`, after the user's requires (hyprslots included), and
 each calls `hl.workspace_rule` with its layout. So leaving slots for a mode
 keeps that mode across reloads until Super+L enters slots again (which
 removes the file), and Omarchy's default-layout command, which saves busy
-workspaces' current mode, takes those desks out of slots too. The cutover
-removed the saved modes of the desk workspaces (1, 3, 4, 5, 6, 9) and their
+workspaces' current mode, takes those workspaces out of slots too. The cutover
+removed the saved modes of the hyprslots workspaces (1, 3, 4, 5, 6, 9) and their
 full-width marks. A config reload re-applies the rule to existing
-workspaces. The scroll fix (§11) put the laptop desks (1 to 9) back in
+workspaces. The scroll fix (§11) put the laptop workspaces (1 to 9) back in
 slots the same way, now on the scrolling layout, so Super+L's full-width
 stop and hyprslots' slots stop look alike there: slots also orders.
 
 ## 7. Routing
 
 - `window.open` and `window.title` events: match the window against the specs
-  of the active desk set, assign it to a slot (assignment is sticky), and
+  of the workspaces, assign it to a slot (assignment is sticky), and
   move it to the slot's workspace when it opened elsewhere. Moves happen in
   the event callback, never in `recalculate`. `window.close` frees the slot:
   Hyprland 0.56.2 passes `window.destroy` a window whose address is already
@@ -446,9 +493,9 @@ stop and hyprslots' slots stop look alike there: slots also orders.
   window's class, whatever its title says now. An assignment made by hand
   (the editor's `assign`, §9) is kept while the slot exists.
 - **Overflow.** A window that matches a spec while every slot it matches is
-  taken goes to the desk workspace of the first of those slots (precedence
+  taken goes to the hyprslots workspace of the first of those slots (precedence
   below), where the layout stacks it in that branch's overflow leaf (§6).
-  It follows that desk on hotplug and edits, and the oldest such window
+  It follows that workspace on hotplug and edits, and the oldest such window
   takes a matching slot as soon as one is freed. Overflowing windows count
   as having no slot, so a late title can still win them a title slot. A
   window that matches no spec at all stays where it opened.
@@ -462,14 +509,15 @@ stop and hyprslots' slots stop look alike there: slots also orders.
 - Class-only specs additionally generate `hl.window_rule`s so the window maps
   directly on the right workspace without a visible jump (§7b).
 - **Precedence.** A window takes the first free slot whose spec matches it,
-  trying the desks that have specs in ascending order and, within a desk,
+  trying the workspaces that have specs in ascending order and, within a
+  workspace,
   slots by name. So when
-  two desks list the same spec, the lower desk wins until its slot is taken,
+  two workspaces list the same spec, the lower workspace wins until its slot is taken,
   then the next one (aerolayout: "first workspace in config order").
 - Hyprland creates a workspace that does not exist yet on the **focused**
   monitor, and cannot create one elsewhere without showing it. So the router
   moves the window first and then, when the target workspace is on another
-  monitor than its screen role's, moves the (hidden) workspace there with
+  monitor than its screen's, moves the (hidden) workspace there with
   `hl.dsp.workspace.move`. Neither screen's view nor focus changes.
 
 ### 7a. Spec grammar and title matching
@@ -510,15 +558,15 @@ For every class some class-only spec names, hyprslots registers one rule,
 `hyprslots-<class>`, matching `^(<class>)$` (regex-escaped) with
 `workspace = "<id> silent"`: the workspace of the first free slot, in the
 precedence order above, that could take a window of that class, or, when
-every such slot is taken, of the first of them (the desk whose overflow
+every such slot is taken, of the first of them (the workspace whose overflow
 leaf the router sends an extra window to). The rule is **disabled** when
 that candidate is a title or tag spec (only the title can decide, so the
-router does) or when its slot is on no screen of the active arrangement.
+router does) or when its slot is on no screen of the active desk.
 
 Hyprland cannot remove a window rule at runtime; registering one under an
 existing `name` replaces it, and `{ name = ..., enabled = false }` turns it
 off (Omarchy's workspace-modes does the same). So rules are re-registered,
-only when their target changed, after every arrangement selection, every
+only when their target changed, after every desk selection, every
 slot taken and every slot freed, and after every api edit or reload (which
 can move a slot to another screen). A Hyprland config reload starts from
 scratch on both sides.
@@ -528,41 +576,79 @@ without it; when a rule opened the window on its workspace already, the
 router still moves that workspace to its screen when Hyprland created it on
 the focused one.
 
-## 8. Arrangement selection and hotplug
+## 8. Desk selection and hotplug
 
-Each arrangement declares `screens = { role = "<description|serial|connector>" }`.
-On load and on `monitor.added` / `monitor.removed`, hyprslots picks the
-arrangement whose screen set equals the connected monitor set (exact match:
-every role matched by a distinct monitor and no monitor left over). The
-recomputation is deferred with a oneshot timer, as Omarchy does for
-`monitor.removed`, because Hyprland reports removal from inside the monitor's
-teardown. Afterwards each desk's windows are re-placed under the new trees.
+Each desk lists its `monitors`, each a description, serial or connector
+(`desk.lua`). On load and on `monitor.added` / `monitor.removed`, hyprslots
+picks the desk whose monitors are exactly the connected ones (every selector
+matched by a distinct monitor, no monitor left over; Hyprland's `FALLBACK`
+placeholder output does not count; ties go to the first name), and with it
+the layout it uses. Screen N is the N-th connected monitor from the left
+(x, then y, then connector name), so the same layout drives any desk of as
+many monitors, and a monitor moved in hyprmoncfg changes which screen it
+is. The recomputation is deferred with a oneshot timer, as Omarchy does for
+`monitor.removed`, because Hyprland reports removal from inside the
+monitor's teardown. Afterwards each workspace's windows are re-placed under
+the new trees.
 
 Order (module `hotplug`): the event itself does nothing; a oneshot hop
-re-selects the arrangement, and a second hop, created inside the first,
+re-selects the desk, and a second hop, created inside the first,
 re-routes every assigned window (assignments are kept by window address) to
-its slot's workspace under the new arrangement, the same way the router
+its slot's workspace under the new layout, the same way the router
 places a new window. Omarchy reconciles on `monitor.added` inside the event
 and on `monitor.removed` from a oneshot timer created in the same event, which
 merges an unplugged screen's workspaces into the block of the screen they
 landed on (13 becomes 4). The second hop is created after that timer has come
 due, so it always sees the workspaces as Omarchy left them. When the
 re-route is done it asks for the scroll pass (§6), so scroll columns are
-put in order on the workspaces the windows now sit on. Keyboard-resized trees are
-kept per arrangement, so returning to an arrangement brings its nudges
-back. Hotplug never
-changes a connected screen's view, so pinned screens are never refocused; a
-pinned role that disappears only changes the selection. One exception: a
-**non-pinned screen that is plugged (back) in shows the active desk**, the
-one last switched to with `hyprslots.desk(n)` / `api.call("desk")`, after
-the re-route, and focus returns to the screen that had it. Before the first
-desk switch a new screen keeps whatever Omarchy shows on it.
+put in order on the workspaces the windows now sit on. Keyboard-resized
+trees are kept per layout, so returning to a desk using that layout brings
+its nudges back. Hotplug never changes a connected screen's view, so pinned
+screens are never refocused; a pinned screen that disappears only changes
+the selection. One exception: a **non-pinned screen that is plugged (back)
+in shows the active workspace**, the one last switched to with
+`hyprslots.workspace(n)` / `api.call("workspace")`, after the re-route, and
+focus returns to the screen that had it. Before the first workspace switch a
+new screen keeps whatever Omarchy shows on it.
+
+**A new desk.** Monitors no desk knows get a desk of their own once the set
+has held for a second (hotplug passes through sets on its way: undocking
+goes from laptop + monitor through the monitor alone, or the other way, as
+hyprmoncfg applies a profile). Until then no desk is active and windows stay
+where they are. The desk (`Engine:new_desk`):
+
+- is named after its monitors left to right, joined with `+`: `laptop` for
+  a laptop panel (connector `eDP*`, `LVDS*`, `DSI*`), else the last word of
+  the monitor's description that is not its serial, lowercased (the model:
+  "Samsung Electric Company Odyssey G95NC HNTW700044" is `g95nc`), else its
+  connector lowercased (`headless-2`): `laptop+g95nc`; `-2`, `-3`... when
+  the name is taken;
+- selects each monitor by its description, else its serial, else its
+  connector;
+- uses the most recently used layout for as many screens (the layouts the
+  engine ran since it loaded, most recent first; after a Hyprland reload the
+  first such layout by name), else a new layout named like the desk, for
+  that many screens, with default trees: screen 1 shows `left`, `main` and
+  `right` (those that are slots; else every slot, by name) side by side
+  (`h[left, main, right]`), as a scroll branch (`scroll[left, main,
+  right]`) when screen 1 is a laptop panel; the other screens show nothing.
+  The editor's Desks & Layouts view then applies another layout, forks one
+  to customize, or renames the desk.
+
+It is an edit like the editor's (`api.new_desk`: `edit.add_layout`,
+`edit.add_desk`, config.lua re-run), in memory until saved: `dirty`, the
+bar's unsaved dot, `state.desks[name].auto` until `save`. A reload without
+saving forgets it, and the monitors get one again. Where config.lua builds
+the desks or layouts in code (or loads no slots.lua) it is added to the
+running config only, for this Lua state. Deleting the active desk in the
+editor makes its monitors unknown again, so a second later they get a new
+desk, on the layout they ran.
 
 ## 9. Editor
 
 An Omarchy shell plugin, `milan.hyprslots` (QML), with full aerolayout TUI
-parity (Assignment, Layout and Arrangements views, the logical slots made
-and placed in the Layout view; record). It talks to
+parity (Assignment, Layout and Desks & Layouts views, the logical slots
+made and placed in the Layout view; record). It talks to
 the running engine only through Hyprland:
 
 - read: `hyprctl repl 'return hyprslots.api.state()'` (JSON string),
@@ -578,20 +664,33 @@ the running engine only through Hyprland:
 | File | Role |
 |---|---|
 | `Engine.qml` | the service: runs the api through `hyprctl repl` (one `Process` per command, in order, 3 s watchdog), reads `state` debounced (60 ms) on `custom>>hyprslots changed` and on window events (`openwindow`, `closewindow`, `movewindowv2`, `windowtitlev2`, monitor events, `configreloaded`) via `Quickshell.Hyprland`'s `rawEvent`, only while someone follows it (`active`: the panel is open; `watchers`: bar widgets, from `watch()` / `unwatch()`); keeps `error` (last state read) and `lastError` (last call); `busy` while a call runs or the re-read after it is pending |
-| `Panel.qml` | the panel: an `OverlayWindow` card (`qs.Ui`), themed through `qs.Commons` (`Color.menu.*`, `Style`) like Omarchy's own panels; tabs Assignment, Layout, Arrangements (Tab / Shift+Tab), Ctrl+S saves, Esc or q closes (Esc in the Layout tab's slot list goes back to its picture); `press(key)` feeds a key by name (`Ctrl+s` with the modifier) |
-| `BarWidget.qml` | the bar widget (below): glyph, arrangement and desk; left click toggles the panel, right click a menu |
+| `Panel.qml` | the panel: an `OverlayWindow` card (`qs.Ui`), themed through `qs.Commons` (`Color.menu.*`, `Style`) like Omarchy's own panels; tabs Assignment, Layout, Desks & Layouts (Tab / Shift+Tab) under a header naming the active desk and layout, Ctrl+S saves, Esc or q closes (Esc in the Layout tab's slot list goes back to its picture); `press(key)` feeds a key by name (`Ctrl+s` with the modifier) |
+| `BarWidget.qml` | the bar widget (below): glyph, desk and workspace; left click toggles the panel, right click a menu |
 | `Services.js` | where the service registers itself, for a bar widget whose bar hands it no `serviceFor` |
-| `AssignmentView.qml`, `LayoutView.qml`, `ArrangementsView.qml` | aerolayout's Assignment, Layout (with its logical slots as a list beside the screens) and monitors views (below) |
-| `Protocol.js`, `Assignment.js`, `Layout.js`, `Slots.js`, `Arrangements.js`, `Prompts.js`, `Desks.js`, `BarStatus.js` | pure logic, tested under node (`editor/tests/`); `Slots.js` is the slot list's, `Desks.js` the desk keys' |
+| `AssignmentView.qml`, `LayoutView.qml`, `DesksLayoutsView.qml` | aerolayout's Assignment, Layout (with its logical slots as a list beside the screens) and monitors views (below) |
+| `Protocol.js`, `Assignment.js`, `Layout.js`, `Slots.js`, `DesksLayouts.js`, `Prompts.js`, `Workspaces.js`, `BarStatus.js`, `Help.js` | pure logic, tested under node (`editor/tests/`); `Slots.js` is the slot list's, `Workspaces.js` the workspace keys', `DesksLayouts.js` the Desks & Layouts view's and the panel header's, `Help.js` the help rows' |
 
 **Every view.** The panel's keys come first: Tab / Shift+Tab cycle the
-tabs (Assignment, Layout, Arrangements), **Ctrl+S saves** (api
+tabs (Assignment, Layout, Desks & Layouts), **Ctrl+S saves** (api
 `save`, in every tab; the Layout tab applies its edited panes first), Esc
-or q closes. The outcome of every call shows on the view's message line, a
-failure (`{ok:false,error}`, hyprctl failing, hyprslots not loaded, the
-engine off, a config error) in the urgent colour. Edits go to the engine as
-they are made and stay in memory until saved; a header says so ("unsaved
-edits", `● unsaved (Ctrl+S)` in the Layout view).
+or q closes. The header, in every tab, names what the edits go to: `Desk:
+home · Layout: ultrawide (also used by: office)` (`Desk: none` with no
+active desk, `(new, unsaved)` after a desk the engine made for new
+monitors), then `● unsaved edits (Ctrl+S)` in the urgent colour while
+there are any. Every edit outside the Desks & Layouts view goes to the
+active desk's layout, and so to every desk that shares it. The outcome of
+every call shows on the view's message line, a failure (`{ok:false,error}`,
+hyprctl failing, hyprslots not loaded, the engine off, a config error) in
+the urgent colour. Edits go to the engine as they are made and stay in
+memory until saved.
+
+**Help rows** (`Help.js`, one helper for every view and the slot list):
+each action shows its trigger key highlighted in the theme's accent colour,
+bold, inside its label where the label has that letter (**a**dd,
+**f**ork, **u**nassign, **R**ecord), else before it (**x** delete); keys of
+more than one character go before their label (**Ctrl+S** save, **[ ]**
+prev/next, **Tab** switch view). Labels are escaped (Qt StyledText). A
+prompt's own help line stays plain.
 
 **Prompts** (`Prompts.js`, one implementation for every view): a line of
 text typed in place (←/→ Home End move, Backspace Delete, Ctrl+U clears,
@@ -604,41 +703,44 @@ by the ratio grammar) the prompt opens again with the answer kept and the
 refusal under it.
 
 **Assignment view** (aerolayout `views.py` AssignmentView). Pages: every
-window, then each desk; it opens on the focused workspace's desk. A desk's
-table lists its slots in tree order, screen role by screen role of the
-active arrangement (then slots no tree shows): the window in each, a red
-`Missing` row with the spec it waits for when the desk has a spec for the
-slot but no such window is open, or a dim, empty row (`—`, no spec) when
-nothing says what fills it; then the windows overflowing on the desk and
-any other windows on its workspaces. A desk's slots are the ones its trees
-place and the ones it has a spec for. Columns: Desk (every-window page),
-Screen (when more than one), Slot (`main`, `main (by hand)`, `overflow
-(main)`, `unassigned`, `—`), App (a Missing row's spec), Title (`Missing`,
-`—` for an empty slot). This is where each desk's specs are set: there is
-no desk × slot table.
+window, then each workspace that has a spec or a tree in the active
+layout; it opens on the focused workspace's. A workspace's table lists its
+slots in tree order, screen by screen of the active desk (then slots no
+tree shows): the window in each, a red `Missing` row with the spec it waits
+for when the workspace has a spec for the slot but no such window is open,
+or a dim, empty row (`—`, no spec) when nothing says what fills it; then
+the windows overflowing on the workspace and any other windows on it. A
+workspace's slots are the ones its trees place and the ones it has a spec
+for. Columns: Ws (every-window page), Screen (`N <connector>`, when more
+than one), Slot (`main`, `main (by hand)`, `overflow (main)`,
+`unassigned`, `—`), App (a Missing row's spec), Title (`Missing`, `—` for
+an empty slot). This is where each workspace's specs are set: there is no
+workspace × slot table.
 
 | Key | Does |
 |---|---|
 | ↑/↓, k/j | select |
 | ←/→, h/l (p), [ / ] | previous / next page |
-| 1–9, 0 | desk 1–9, 10's page (a desk with no spec or tree has none, and says so) |
-| a | `Assign to desk 3 slot (takes its spec): (m)ain, (r)ight, (1) more? [Esc] cancel`: every global slot, the desk's own first; then `take_spec`: the window takes the slot and its spec (`spec.from_window`) becomes the desk's for it, replacing the one it had |
-| u | on a window in a slot: `Unassign kitty from main and clear desk 3's spec for it (kitty/deltaf)? (the slot is left empty) (y/n)`, then `unassign` with `clear_spec`: the window leaves the slot and the desk no longer says what fills it, so the row is empty, not Missing that window; on an overflowing window, or one in a slot the desk has no spec for, `unassign` alone |
-| c | on a Missing row (a spec whose window is not open): `Clear desk 3's spec for main (kitty/deltaf)? (y/n)`, then `clear_spec`; on a window in a slot it points at `u` |
+| 1–9, 0 | workspace 1–9, 10's page (one with no spec or tree has none, and says so) |
+| a | `Assign to workspace 3 slot (takes its spec): (m)ain, (r)ight, (1) more? [Esc] cancel`: every global slot, the workspace's own first; then `take_spec`: the window takes the slot and its spec (`spec.from_window`) becomes the workspace's for it, replacing the one it had |
+| u | on a window in a slot: `Unassign kitty from main and clear workspace 3's spec for it (kitty/deltaf)? (the slot is left empty) (y/n)`, then `unassign` with `clear_spec`: the window leaves the slot and the workspace no longer says what fills it, so the row is empty, not Missing that window; on an overflowing window, or one in a slot the workspace has no spec for, `unassign` alone; on a red Missing row (a spec whose window is not open): `Clear workspace 3's spec for main (kitty/deltaf)? The slot is left empty (y/n)`, then `clear_spec` |
 
 As aerolayout's `a` did, `a` writes the window's spec into the slot, and
 `u` takes it out again (in memory until Ctrl+S, the header saying "unsaved
-edits"). On the
-every-window page it acts on the window's desk, else the focused
-workspace's. aerolayout's `n` (name a workspace) has no counterpart: desks
-have no names.
+edits"), for a window that is open or one that is only Missing. On the
+every-window page it acts on the window's workspace, else the focused
+workspace's. aerolayout's `n` (name a workspace) has no counterpart:
+workspaces have no names.
 
 **Layout view** (aerolayout `views.py` LayoutView, `tree_visualizer.py`).
-One desk of one arrangement at a time; it opens on the active arrangement
-at the focused workspace's desk and screen, and moves to the running
-arrangement (same desk) when the one it edits is renamed or deleted in the
-Arrangements view. A pane per screen role, side by side, each a scale model
-of its monitor (its aspect from Hyprland, else 16:9): leaves are boxes
+One workspace of the active desk's layout at a time; it opens on the
+focused workspace and screen, and follows the active layout when it
+changes (another desk, a fork, an apply, a rename; unapplied drafts are
+dropped, and the message says so). When other desks use the layout too, a
+line under the header warns that every edit here changes it there too (`f`
+forks it for this desk). A pane per screen, side by side, titled `Screen 1
+· HEADLESS-2 (<description>)`, the active desk's monitor at that position,
+each a scale model of its monitor (its aspect from Hyprland, else 16:9): leaves are boxes
 proportional to their weights (tree.lua's integer arithmetic) with the slot
 name, `×n` for a share other than 1, and the title of the window in the
 slot; a nested split is a box titled with its kind and ratio (`h 1:3`); a
@@ -651,9 +753,11 @@ panes the leaf order once the tree nests, or a scroll branch's column
 order (its `*`, when it has one, a frame of the filmstrip like any
 column). Edits go to a **draft**
 per pane (`edited` on the pane, `edited, not applied (w)` in the header).
-The header shows the desk and the desks 1 to 10 by their keys (the edited
-one reversed, the ones with trees in this arrangement brighter; a click
-switches). Beside the panes, the **slot list**: the global slots by name,
+The header shows the workspace, the layout, and the workspaces 1 to 10 by
+their keys and `def` (the edited one reversed; the ones that show the
+default trees italic and dimmer; a click switches). A workspace that shows
+the default trees says so (`default trees: an edit gives workspace N its
+own`): its first edit gives it its own copy. Beside the panes, the **slot list**: the global slots by name,
 each with its description and nothing else (below).
 
 | Key | Does |
@@ -661,7 +765,7 @@ each with its description and nothing else (below).
 | ←↑↓→ | select the leaf that way; off a pane's left/right edge, the next screen's |
 | h j k l | swap the leaf with its neighbour in its container; off the edge, move it to the next screen's tree |
 | H J K L | along its container: pair it with its neighbour in a new container across; across: move it out beside its container |
-| a | add a global slot no pane of the desk places yet, after the selected leaf (or as the tree of a screen that has none) |
+| a | add a global slot no pane of the workspace places yet, after the selected leaf (or as the tree of a screen that has none) |
 | x | take the selected slot out of the tree (it stays a slot) |
 | / | flip every split of the tree |
 | t | make the whole tree a scroll branch of its leaves in reading order (the overflow leaf as the column windows with no slot take), or back to the tree it was made from while its columns are as they were, else its columns side by side |
@@ -670,23 +774,25 @@ each with its description and nothing else (below).
 | w | apply the edited panes (`set_trees`) |
 | Ctrl+S | apply the edited panes, then `save` (the panel's key) |
 | d | after y/n, put the pane's tree back to slots.lua (`reset`) |
-| R | `record` the pane's workspace (active arrangement only), show the tree, its ratio and what it would drop (`missing`), apply after y/n |
-| [ / ] | previous / next desk, round from 10 to 1 (the arrows stay the picture's) |
-| 1–9, 0 | desk 1–9, 10 (as Super+N); unapplied edits are dropped, and the message says which |
-| c | pick the arrangement to edit |
+| R | `record` the pane's workspace, show the tree, its ratio and what it would drop (`missing`), apply after y/n (not on the default trees) |
+| [ / ] | previous / next workspace, round from 10 to 1 (the arrows stay the picture's) |
+| 1–9, 0 | workspace 1–9, 10 (as Super+N); unapplied edits are dropped, and the message says which |
+| - | the layout's default trees (`workspace: "default"`), for every workspace with none of its own |
+| f | fork the layout: a name (the next free `<name>-N` suggested), then `fork_layout`: the active desk uses the copy, edited drafts carried over |
 | s | the keys go to the slot list (its border lights up; s or Esc back) |
 
-A read-only arrangement, a config without slots.lua, or the engine being
+A layout set in config.lua's code, a config without slots.lua, or the engine being
 off shows `Read only: <why>` and refuses the editing keys. Layout.js
 mirrors tree.lua's text and ratio.lua's grammar (a node test runs the same
 corpus through the Lua modules), so a draft is checked and shown without a
 round trip; the engine validates again on apply. Deviations from
 aerolayout: edits are a draft applied with `w` (aerolayout saved on every
 keystroke); `d` resets one screen to slots.lua (aerolayout's `d` dropped a
-workspace's own tree for the arrangement default, which hyprslots does not
-have); [ ] and the digits change the desk and `c` the arrangement
-(aerolayout's `g` picked a workspace or "all", and arrangements were the
-Monitors tab's); the logical slots are made in this view's slot list, not
+workspace's own tree for the default one; hyprslots' `-` edits the default
+trees and a workspace keeps its own until reset); [ ] and the digits change
+the workspace (aerolayout's `g` picked a workspace or "all"); the layout is
+always the active desk's (aerolayout's arrangements were the Monitors
+tab's); the logical slots are made in this view's slot list, not
 a tab of their own; `R` always
 previews and asks; a parked overflow leaf is remembered only while the
 panel is open (aerolayout kept it hidden in the saved tree); a scroll
@@ -695,57 +801,60 @@ H J K L refuse: a scroll branch holds slots and `*` only), and a leaf
 moved onto a screen whose tree is one becomes its column at the near edge.
 
 **The slot list** (in the Layout view; aerolayout `views.py` LogicalView,
-which was a tab of its own). The global slots, one list for every desk, by
+which was a tab of its own). The global slots, one list for every workspace, by
 name (the order windows claim them in): each slot's name and its optional
-description, nothing more. Which app fills a slot on a desk is the
+description, nothing more. Which app fills a slot on a workspace is the
 Assignment view's `a`; which trees place it is the picture's. `s` gives it
 the keys (the help line says so), and back:
 
 | Key | Does |
 |---|---|
 | ↑/↓, k/j | select |
-| a | new slot: a name, then an optional description (`add_slot`); then `Added slot 'notes'. Put it in main's tree on desk 3 after main? (y/n)`: y puts it in the draft after the selected leaf and gives the keys back to the picture with it selected, to move it where it belongs |
-| Return | put the selected slot in the selected screen's tree after the selected leaf (a draft, as `a` in the picture), keys back to the picture; a slot the desk places already is selected where it is |
-| r | rename it everywhere: every tree of every desk and arrangement, every desk's spec, keyboard-resized trees and assignments, as aerolayout's rename_slot_everywhere (`rename_slot`); edited drafts follow |
+| a | new slot: a name, then an optional description (`add_slot`); then `Added slot 'notes'. Put it in screen 1's tree on workspace 3 after main? (y/n)`: y puts it in the draft after the selected leaf and gives the keys back to the picture with it selected, to move it where it belongs |
+| Return | put the selected slot in the selected screen's tree after the selected leaf (a draft, as `a` in the picture), keys back to the picture; a slot the workspace places already is selected where it is |
+| r | rename it everywhere: every tree of every layout, every workspace's spec, keyboard-resized trees and assignments, as aerolayout's rename_slot_everywhere (`rename_slot`); edited drafts follow |
 | e | describe it (`describe_slot`; empty removes the description) |
-| d | delete it, after y/n naming every tree and desk it goes from (`remove_slot`, with `force` when something uses it); edited drafts lose it too |
-| [ ] 1–9 0 | the desk, as in the picture |
+| d | delete it, after y/n naming every tree (`layout/N/screen`, `layout/default/screen`) and workspace it goes from (`remove_slot`, with `force` when something uses it); edited drafts lose it too |
+| [ ] 1–9 0 | the workspace, as in the picture |
 | s, Esc | back to the picture |
 
 A slot list config.lua builds in code says so and takes no edit. No
 reorder (aerolayout's J/K): slots claim windows by name, so their order is
 not the editor's to set.
 
-**Arrangements view** (aerolayout MonitorsView). A header names the
-connected monitors and what they run; the arrangements are listed by name
-with their screen count, `● in use here` on the running one, dim when
-these monitors could not run it, `(set in config.lua)` when read-only;
-below, the highlighted one's screens (role, selector, the monitor it finds,
-pinned) and the connected monitors with their description and serial.
-hyprslots picks the arrangement itself (the one whose screens are exactly
-the connected monitors, §8), so aerolayout's "map these monitors to this
-arrangement" becomes "point this arrangement's screens at these monitors".
+**Desks & Layouts view** (aerolayout MonitorsView, reshaped: aerolayout
+mapped monitors to arrangements; here desks and layouts are two lists and a
+desk points at a layout). A line says what the two are; then two sections:
 
-| Key | Does |
-|---|---|
-| ↑/↓ | select |
-| a | use on these monitors: a monitor for each role, when the counts agree (`set_screens`) |
-| n | new: a name, then a role for each connected monitor (suggested from what the running arrangement calls it, else `laptop` for eDP, else `screenN`), each selected by its description, else its serial, else its connector, then its trees: the default (the slots each desk has a spec for side by side on the first role), none, or another arrangement's (roles of the same name map; others are asked) (`add_arrangement`) |
-| r | rename (`rename_arrangement`) |
-| x | delete, after y/n naming its desks; the running one too, after which these monitors run nothing (`delete_arrangement`) |
-| e | edit a screen: role name, then selector (↑/↓ step through the monitors' descriptions, serials and connectors); a renamed role keeps its trees (`set_screens`) |
-| + / - | add a screen / remove one, its trees with it (`set_screens`) |
-| p | pin or unpin a role; pinned is one list for every arrangement (`set_pinned`) |
-| c | copy trees from the default or another arrangement, after y/n (`copy_trees`) |
+- **Desks** (monitor setups): each stored desk by name, its monitors (`●`
+  connected, `○` not; a connected one by connector and description), the
+  layout it uses, its pinned screens; the active desk tinted in the accent
+  colour and marked `● active`; `(new, unsaved)` on one the engine made.
+- **Layouts** (logical arrangements for N screens): each by name, its screen
+  count, the desks using it (`unused` when none); the active layout marked
+  the same way.
 
-Every reply says what the monitors run afterwards: a new arrangement for
-screens another one already names runs only when its name sorts first
-(§8's tie rule), and the message says which one runs.
+One selection runs through both sections (↑/↓, k/j); it opens on the active
+desk. hyprslots picks the desk itself (§8): this view says which layout a
+desk uses and edits the stored mappings, never the monitors themselves.
+
+| Key | On a desk | On a layout |
+|---|---|---|
+| a | pick a layout with as many screens as the desk has monitors, then `apply_layout {desk, layout}` | apply it to the active desk (`apply_layout {layout}`; refused on the message line when the screen counts differ) |
+| f | fork the desk's layout | fork this layout: a name (the next free `<name>-N` suggested), then `fork_layout {layout, to}`: the active desk uses the copy when its monitor count fits (the reply says) |
+| n | new layout: a name, a screen count (the active desk's suggested), then (d)efault trees or (e)mpty (`add_layout`) | the same |
+| r | rename (`rename_desk`) | rename (`rename_layout`; its desks follow) |
+| x | delete after y/n (`delete_desk`); the active one with a warning that its monitors then get a new desk | delete: when desks use it, pick a layout of as many screens to move them to (`delete_layout {layout, remap}`), else y/n (`delete_layout`); the engine's refusal shows on the message line |
+| p | pick a screen (1 to N, the monitor at that position on the active desk, else its selector) to pin or unpin (`set_pinned`) | refused: select a desk |
+
+An entry config.lua builds in code (`read_only`) refuses every edit with
+`set in config.lua`.
 
 **Bar widget** (`BarWidget.qml`, model `BarStatus.js`). A grid glyph and
-`<arrangement> · <desk>`: the active arrangement and the desk of the
-workspace its bar's monitor shows (`state.workspaces`; `–` on a workspace
-that is no desk, `none` when the monitors run no arrangement). It reads the
+`<desk> · ws <n>`: the active desk and the workspace its bar's monitor
+shows (`state.workspaces`; `ws –` on a workspace with no tree on that
+screen, `none` when no desk is active); the tooltip names the layout
+(`Layout: ultrawide`, and `also used by: office` when shared). It reads the
 plugin's service and calls its `watch()` so the service follows change
 events while the panel is closed: one poller for the panel and every widget
 instance. Omarchy's built-in bar hands a widget `serviceFor`; a replacement
@@ -754,13 +863,13 @@ toggle / summon / hide, so the service also registers itself in
 `Services.js`, a `.pragma library` script (one instance per QML engine,
 shared by the plugin's files), where the widget finds it. The widget looks
 again every 2 s: the service may come up after the bar, and a plugin reload
-replaces it. The desk follows workspace switches
+replaces it. The workspace follows workspace switches
 from Quickshell's Hyprland objects, with no state read.
 
 | State | Shows |
 |---|---|
-| normal | `󰕰 solo · 3` in the bar's foreground |
-| unsaved edits (`dirty`) | `󰕰 solo · 3 •`, the tooltip says "unsaved edits" |
+| normal | `󰕰 solo · ws 3` in the bar's foreground |
+| unsaved edits (`dirty`) | `󰕰 solo · ws 3 •`, the tooltip says "unsaved edits" |
 | error | the bar's urgent colour, the error first in the tooltip: the service missing, a state read failing (hyprctl, `hyprslots` not loaded: `󰕰 hyprslots` until a state was read, else the last one), `refused` (`󰕰 off`), `config_error` (the running config still shown) |
 
 Left click toggles the panel (`shell.toggle`). Right click opens a menu
@@ -769,12 +878,12 @@ closes it):
 
 | Entry | Does |
 |---|---|
-| Re-apply layout (desk N) | `desk {desk: N}` (the desk's Super+N: every screen of the arrangement shows it again, scroll branches back in slot order), then `arrange` (the scroll pass now, the focused scroll workspace's columns widened) |
-| Record desk N… | opens the panel with `{"record": true}`: the Layout tab on the focused desk, its `R` flow (preview, then y/n) |
+| Re-apply layout (workspace N) | `workspace {workspace: N}` (its Super+N: every screen of the desk shows it again, scroll branches back in slot order), then `arrange` (the scroll pass now, the focused scroll workspace's columns widened) |
+| Record workspace N… | opens the panel with `{"record": true}`: the Layout tab on the focused workspace, its `R` flow (preview, then y/n) |
 | Save | `save`; only with unsaved edits |
 | Reload config | `reload` (drops unsaved edits; how a fixed config error is picked up) |
 
-Re-apply and Record need the bar's screen on a desk of a running engine
+Re-apply and Record need the bar's screen on a hyprslots workspace of a running engine
 (a config error leaves the last good config running); with the engine
 off or unreachable only Reload is offered. Each call's outcome, or the
 engine's error, is a notification (`notify-send` through `bar.run`).
@@ -810,89 +919,107 @@ picks it up.
 `{"ok": true, ...}` or `{"ok": false, "error": "..."}`. Every change bumps
 `seq` and emits `hl.dsp.event("hyprslots changed <seq>")` (socket2:
 `custom>>hyprslots changed <seq>`): api edits, save, reload, window open /
-close, a keyboard nudge or reset, and an arrangement change on hotplug. `seq` restarts at 0 when
-Hyprland reloads its config (Lua state is discarded), so the editor treats
-any event as "re-read state", not as an ordering.
+close, a keyboard nudge or reset, and a desk change on hotplug. `seq`
+restarts at 0 when Hyprland reloads its config (Lua state is discarded), so
+the editor treats any event as "re-read state", not as an ordering.
+
+`layout?` defaults to the active desk's layout and `desk?` to the active
+desk; `workspace` is a number 1 to 10, or `"default"` (a layout's default
+trees) where the tree calls say so; `screen` is a screen number (1 the
+left-most; as an object key, `"1"`).
 
 | Call | Arguments | Reply (besides `ok`) |
 |---|---|---|
 | `state` | — | see below |
-| `desk` | `desk` | `desk` |
-| `set_tree` | `arrangement?` (default active), `desk`, `role`, `tree` | `arrangement, desk, role, tree, ratio, seq` |
-| `set_ratio` | `arrangement?`, `desk`, `role`, `ratio` (grammar below) | same as `set_tree` |
-| `set_trees` | `arrangement?`, `desk`, `trees` (role -> tree) | `arrangement, desk, trees` (role -> `tree, ratio`), `seq` |
-| `reset` | `arrangement?`, `desk`, `role` | `arrangement, desk, role, tree?, ratio?, seq` |
-| `record` | `workspace?` (default focused), `apply?` | `arrangement, desk, role, workspace, tree, ratio, missing[], applied, seq` |
-| `assign` | `address`, `desk`, `slot` | `address, desk, slot, displaced?, seq` |
-| `unassign` | `address`, `clear_spec?` | `address, desk?, slot?, spec?` (the spec cleared), `seq` |
+| `workspace` | `workspace` | `workspace` (the Super+N switch) |
+| `set_tree` | `layout?`, `workspace` (or `"default"`), `screen`, `tree` | `layout, workspace, screen, tree, ratio, seq`; on a workspace that shows the default trees, its own copy of them first |
+| `set_ratio` | `layout?`, `workspace`, `screen`, `ratio` (grammar below) | same as `set_tree` |
+| `set_trees` | `layout?`, `workspace`, `trees` (screen -> tree) | `layout, workspace, trees` (screen -> `tree, ratio`), `seq` |
+| `reset` | `layout?`, `workspace`, `screen` | `layout, workspace, screen, tree?, ratio?, seq` |
+| `record` | `workspace_id?` (default focused), `apply?` | `layout, workspace, screen, workspace_id, tree, ratio, missing[], applied, seq` |
+| `assign` | `address`, `workspace`, `slot` | `address, workspace, slot, displaced?, seq` |
+| `unassign` | `address`, `clear_spec?` | `address, workspace?, slot?, spec?` (the spec cleared), `seq` |
 | `add_slot` | `slot`, `description?` | `slot, description?, seq` |
-| `remove_slot` | `slot`, `force?` | `slot, trees[]` (`arrangement/desk/role`), `specs[]` (desks), `seq`; refused, saying where, while trees place it or desks fill it, unless `force` |
-| `rename_slot` | `slot`, `to` | `slot, to, trees` (how many were rewritten), `specs[]` (desks whose spec moved), `seq` |
+| `remove_slot` | `slot`, `force?` | `slot, trees[]` (`layout/workspace/screen`, workspace `default` for the default trees), `specs[]` (workspaces), `seq`; refused, saying where, while trees place it or workspaces fill it, unless `force` |
+| `rename_slot` | `slot`, `to` | `slot, to, trees` (how many were rewritten), `specs[]` (workspaces whose spec moved), `seq` |
 | `describe_slot` | `slot`, `description` (`""` removes it) | `slot, description, seq` |
-| `set_spec` | `desk`, `slot`, `spec` | `desk, slot, spec` (normalized), `seq` |
-| `clear_spec` | `desk`, `slot` | `desk, slot, spec` (the one cleared), `seq` |
-| `take_spec` | `desk`, `slot`, `address` | `desk, slot, spec, replaced?, address, displaced?, seq`: the window takes the slot and its spec becomes the desk's |
-| `add_arrangement` | `name`, `screens` (role -> selector), `from?` + `roles?` or `default?` | `arrangement, screens, active, seq` |
-| `rename_arrangement` | `arrangement`, `to` | `arrangement, to, active, seq` |
-| `delete_arrangement` | `arrangement` | `arrangement, active, seq` |
-| `set_screens` | `arrangement?`, `screens`, `renames?` (old role -> new) | `arrangement, screens, active, seq` |
-| `set_pinned` | `pinned[]` | `pinned, seq` |
-| `copy_trees` | `arrangement?`, `from` + `roles?` or `default: true` | `arrangement, from, seq` |
+| `set_spec` | `workspace`, `slot`, `spec` | `workspace, slot, spec` (normalized), `seq` |
+| `clear_spec` | `workspace`, `slot` | `workspace, slot, spec` (the one cleared), `seq` |
+| `take_spec` | `workspace`, `slot`, `address` | `workspace, slot, spec, replaced?, address, displaced?, seq`: the window takes the slot and its spec becomes the workspace's |
+| `add_desk` | `name`, `monitors[]` (selectors), `layout` | `desk, monitors, layout, active, seq` |
+| `rename_desk` | `desk`, `to` | `desk, to, active, seq` |
+| `delete_desk` | `desk` | `desk, active, seq`; the active one too (its monitors then get a new desk, §8) |
+| `apply_layout` | `desk?`, `layout` (one for as many screens as the desk has monitors) | `desk, layout, active, seq` |
+| `set_pinned` | `desk?`, `pinned[]` (screen numbers) | `desk, pinned, seq` |
+| `add_layout` | `name`, `screens`, `default?` (true: the default trees of §8) | `layout, screens, seq` |
+| `fork_layout` | `layout?`, `to`, `desk?` | `layout, to, desk` (the desk now using the copy, when its monitor count fits), `active` (layout), `seq`: a copy, keyboard-resized trees included |
+| `rename_layout` | `layout`, `to` | `layout, to, active, seq`; the desks using it follow |
+| `delete_layout` | `layout`, `remap?` | `layout, remap, desks[]` (those remapped), `active, seq`; refused while desks use it, unless `remap` names a layout for as many screens |
 | `save` | — | `path, seq` |
-| `reload` | — | `arrangement, seq` |
+| `reload` | — | `desk, layout, seq` |
 | `arrange` | — | `swaps, widened[]` (workspace ids): the scroll pass now, every column of the focused scroll workspace widened (Super+L entering slots) |
 
-`state`: `seq`, `dirty` (unsaved edits, keyboard-resized trees included),
-`arrangement` (active name), `screens` (role -> connector), `workspaces`
-(id -> desk, role, monitor, `layout`: `lua:slots` or `scrolling`, what
-hyprslots gives it), `assignments` (address -> desk, slot,
-`manual` when made by `assign`),
-`overflow` (address -> desk, slot: a window that matches that slot's spec
-while every slot it matches is taken, laid out in that desk's overflow leaf), `unassigned[]` (addresses taken out of their slot by `unassign`),
-`arrangements` (name -> `screens`, `roles[]`, `desks` ("3" -> role ->
-`{tree, ratio, slots[], resized?}`), `active`, `read_only`), `monitors[]`
-(`name, description, serial, focused`: what a screen selector can name),
-`resized`
-(`"<arrangement>/<desk>/<role>"` -> `arrangement, desk, role, tree, ratio`
-for every unsaved keyboard-resized tree), `scroll[]` (one per scroll branch
-on a desk workspace: `workspace, desk, role, slots[], layout` (its tiled
-layout), `managed` (scrolling, no saved Omarchy mode), `columns[]` (window
-addresses in column order), `members` (slot -> address), `in_order`),
-`slots[]` (the global slots by name: `name, description?`), `specs` ("3" ->
-slot -> spec text), `desks[]` (desks with specs or trees),
-`pinned[]`, `windows[]` (`address, class, title, workspace, floating,
-box{x,y,w,h}, desk?, slot?, overflow?{desk, slot}, unassigned?`), `config` (`dir, data_file, editable,
-read_only[]`), `refused`, `config_error`, `log_seq`.
+`state`: `seq`, `dirty` (unsaved edits, keyboard-resized trees, a new desk
+and slots.lua in a shape of before included), `desk` and `layout` (the
+active ones' names), `screens[]` (the active desk's connectors, left to
+right), `workspaces` (id -> `workspace, screen, monitor, layout`:
+`lua:slots` or `scrolling`, the Hyprland layout hyprslots gives it),
+`assignments` (address -> `workspace, slot`, `manual` when made by
+`assign`), `overflow` (address -> `workspace, slot`: a window that matches
+that slot's spec while every slot it matches is taken, laid out in that
+workspace's overflow leaf), `unassigned[]` (addresses taken out of their
+slot by `unassign`), `desks` (name -> `monitors[]` (selectors),
+`connected[]` (one per selector), `layout`, `pinned[]`, `active`,
+`screens[]` (the active one's connectors), `auto` (made for new monitors,
+unsaved), `read_only`), `layouts` (name -> `screens` (count), `default`
+("1" -> `{tree, ratio, slots[], resized?}`), `workspaces` ("3" -> "1" ->
+the same: the trees each workspace shows, its own or the default ones),
+`own[]` (the workspaces with trees of their own), `used_by[]` (desks),
+`active`, `read_only`), `monitors[]` (`name, description, serial, focused,
+x, y, width, height, internal, selector`: what a desk can select them by),
+`resized` (`"<layout>/<workspace>/<screen>"` -> `layout, workspace, screen,
+tree, ratio` for every unsaved keyboard-resized tree), `scroll[]` (one per
+scroll branch on a hyprslots workspace: `workspace_id, workspace, screen,
+slots[], layout` (its tiled layout), `managed` (scrolling, no saved Omarchy
+mode), `columns[]` (window addresses in column order), `members` (slot ->
+address), `in_order`), `slots[]` (the global slots by name: `name,
+description?`), `specs` ("3" -> slot -> spec text), `used_workspaces[]`
+(workspaces with specs or trees), `pinned[]` (the active desk's),
+`windows[]` (`address, class, title, workspace_id, floating, box{x,y,w,h},
+workspace?, slot?, overflow?{workspace, slot}, unassigned?`), `config`
+(`dir, data_file, editable, read_only[]` (`"desks.work"`, `"layouts.x"`,
+`"specs.4"`, `"slots"`), `migrated`), `refused`, `config_error`,
+`log_seq`.
 
 **Assignment by hand** (the Assignment view). `assign` puts an open
-window into a slot of a desk whatever the slot's spec says, and moves it to
+window into a slot of a workspace whatever the slot's spec says, and moves it to
 the slot's workspace. The window holding that slot is routed again as if it
-had just opened (another free slot it matches, else its desk's overflow) and
+had just opened (another free slot it matches, else its workspace's overflow) and
 is named as `displaced`; the slot the window left goes to the oldest window
 overflowing on it. A hand-made assignment is sticky like any other, and
 re-solves keep it while the slot exists, even though the spec does not
 match. `unassign` takes a window out of its slot: it stays where it is (on a
-desk workspace, in the overflow leaf), its slot goes to the oldest window
+hyprslots workspace, in the overflow leaf), its slot goes to the oldest window
 overflowing on it, and it takes no slot, by routing, late title, layout or
 re-solve, until it is assigned again or closes. Both live in memory only
 (neither touches `slots.lua`), survive `reload` and hotplug, and are lost on
 a Hyprland config reload like every assignment. Both refuse a window that is
-not open; `assign` refuses a slot that is not defined (any desk 1 to 10 may
+not open; `assign` refuses a slot that is not defined (any workspace 1 to 10 may
 take any global slot, spec or none).
 
 **Unassigning with the spec** (the Assignment view's `u`). `unassign` with
-`clear_spec: true` also drops the desk's spec for the slot the window held
+`clear_spec: true` also drops the workspace's spec for the slot the window held
 (the reply's `spec`), so the slot is left empty rather than waiting for the
 window just taken out. The spec goes first, as `clear_spec` (checked by
 re-running config.lua, refused with nothing moved when config.lua owns the
-desk's specs), so no other window it matched takes the slot; then the
+workspace's specs), so no other window it matched takes the slot; then the
 window is unassigned as above. A window that only overflows, or holds a
-slot its desk has no spec for, is just unassigned. The cleared spec stays
+slot its workspace has no spec for, is just unassigned. The cleared spec stays
 in memory until `save`, like any spec edit.
 
 **Taking a spec** (the Assignment view's `a`). `take_spec` makes the
 window's spec (`spec.from_window`: `class`, `class/identifier` for a class
-with title rules, `[Tag]` or `[Tag]/Profile` for a browser) the desk's spec
+with title rules, `[Tag]` or `[Tag]/Profile` for a browser) the workspace's spec
 for the slot and puts the window there. The edit is checked (config.lua
 re-run over it) before anything moves; then the window is assigned as by
 `assign` (the holder displaced and routed again), the assignment is made an
@@ -900,46 +1027,52 @@ ordinary one (the new spec names the window), and the edit is applied, so
 the re-solve keeps that window in the slot over any older one the spec also
 matches.
 
-**Layout editing** (the Layout view). `set_trees` sets several of a
-desk's trees in one edit, all or nothing: a slot sits on one screen of a
-desk, so moving it to another screen cannot be two `set_tree` calls. Each
-tree it sets replaces that branch's keyboard-resized override (kept when
-the edit fails). `reset` puts one branch back to the tree slots.lua holds
-on disk (read data-only, as saved, not as first loaded; no tree when the
-file has none), dropping an unsaved edit and a keyboard-resized override
-of it; other branches keep their edits, and the engine is clean again once
-its data is the file's. The saved tree is read through the slot and
-arrangement edits made since (below): the engine keeps the `rename_slot`,
-`remove_slot`, `rename_arrangement`, `delete_arrangement` and `set_screens`
-calls until its data is the file's again (save, reload, a reset back to
-the file) and replays them over the saved data with `edit.lua`, so after
-renaming slot `a` to `x` a reset gives back `h[x:2, b]`, not a tree naming
-a slot the desk no longer has, and an arrangement or role renamed since
-finds the tree saved under its old name.
+**Layout editing** (the Layout view). Every tree call edits a layout (by
+default the active desk's), so it changes every desk using that layout.
+`set_trees` sets several of a workspace's trees in one edit, all or
+nothing: a slot sits on one screen of a workspace, so moving it to another
+screen cannot be two `set_tree` calls. A tree set on a workspace that shows
+the layout's default trees first gives it its own copy of them (the other
+workspaces keep the default ones); `"default"` edits the default trees
+themselves. Each tree it sets replaces that branch's keyboard-resized
+override (kept when the edit fails). `reset` puts one branch back to the
+tree slots.lua holds on disk (read data-only, as saved, not as first
+loaded): the workspace's own tree there, else the saved default one, else
+none, and a workspace whose trees are then the saved default ones, with none
+of its own on disk, shows the default ones again; it drops an unsaved edit
+and a keyboard-resized override of it; other branches keep their edits, and
+the engine is clean again once its data is the file's. The saved tree is
+read through the slot and layout edits made since (below): the engine keeps
+the `rename_slot`, `remove_slot`, `rename_layout` and `delete_layout` calls
+until its data is the file's again (save, reload, a reset back to the file)
+and replays them over the saved data with `edit.lua`, so after renaming slot
+`a` to `x` a reset gives back `h[x:2, b]`, not a tree naming a slot no
+longer there, and a layout renamed since finds the tree saved under its old
+name.
 
-**Slot, spec and arrangement edits** (the Layout view's slot list, the
-Assignment and Arrangements views). Each builds new data with `edit.lua` (pure), re-runs
-`config.lua` over it, and refuses the edit, changing nothing, when the
-result does not validate or does not show the edit (a field `config.lua`
-builds in code, or does not take from `slots.lua` at all: `set_pinned`
-under a `config.lua` that never reads `pinned`). Otherwise it is applied
-like `set_tree` (re-assign, re-route, window rules, relayout, change event)
-and stays in memory until `save`. `rename_slot` rewrites the slot's name in
-every tree of every desk in every arrangement, in every desk's specs, in
-the keyboard-resized overrides, and in the assignments (a hand-made one
-stays hand-made); `remove_slot` takes the slot out of those trees (a
-container left with one child is replaced by it, a branch left empty goes)
-and drops every desk's spec for it. `clear_spec` drops one desk's spec; the
-slot and the trees stay. `rename_arrangement` / `delete_arrangement` /
-`set_screens` move or drop the overrides they touch, and `copy_trees` drops
-the target's. `set_screens` replaces the whole role -> selector map; a role
-in `renames` keeps its trees, a role it drops loses them. `copy_trees` maps
-each target role to `roles[role]` (default: the source role of the same
-name) and replaces every tree of the target; `default` lays each desk's
-slots it has a spec for side by side, by name, on the target's first role.
-`active` in a reply is the arrangement running afterwards (the new one runs
-only when it is the first by name to match the monitors). Arrangement names
-hold no `/`.
+**Slot, spec, desk and layout edits** (the Layout view's slot list, the
+Assignment and Desks & Layouts views). Each builds new data with `edit.lua`
+(pure), re-runs `config.lua` over it, and refuses the edit, changing
+nothing, when the result does not validate or does not show the edit (a
+field `config.lua` builds in code, or does not take from `slots.lua` at
+all). Otherwise it is applied like `set_tree` (re-select, re-assign,
+re-route, window rules, relayout, change event) and stays in memory until
+`save`. `rename_slot` rewrites the slot's name in every tree of every
+layout (default trees too), in every workspace's specs, in the
+keyboard-resized overrides, and in the assignments (a hand-made one stays
+hand-made); `remove_slot` takes the slot out of those trees (a container
+left with one child is replaced by it, a branch left empty goes) and drops
+every workspace's spec for it. `clear_spec` drops one workspace's spec; the
+slot and the trees stay. `apply_layout` points a desk at another layout for
+as many screens; `fork_layout` copies one (its keyboard-resized trees too)
+under a new name and points the desk at the copy, so its edits no longer
+reach the desks that shared the original; `add_layout` makes an empty one,
+or one with the default trees of §8; `rename_layout` takes the desks using
+it along and moves its overrides; `delete_layout` refuses while desks use
+it unless `remap` names one for them, and drops its overrides.
+`rename_desk` and `delete_desk` change only the desk (the layout stays,
+used or not); `set_pinned` is one desk's. `active` in a reply is the desk
+(or layout) running afterwards.
 
 **The tree in force** for a branch is `api.effective_branch`, which is
 `resize.effective_branch`: a keyboard-resized override (§6) if there is
@@ -950,7 +1083,7 @@ Edits never write files: they re-run `config.lua` over the edited
 `slots.lua` data in memory and take effect only when the result validates.
 The new config is then applied like a hotplug: re-select, re-assign,
 re-route every assigned window to its slot's workspace (a slot moved to
-another screen role takes its open window along), scroll pass, relayout.
+another screen takes its open window along), scroll pass, relayout.
 An edit to a branch replaces that branch's keyboard-resized override.
 `save` writes `slots.lua` through `serialize` (temp file + rename), then
 runs the saved data as the config and clears the overrides it wrote;
@@ -960,7 +1093,7 @@ dropping unsaved edits and every override.
 **Read-only fields.** A config field is the editor's only when `config.lua`
 passes the data file's own table through (identity check, at the top level
 and one level down). Anything built in code is listed in
-`config.read_only` (`"pinned"`, `"arrangements.work"`, `"specs.4"`, and
+`config.read_only` (`"desks.work"`, `"layouts.office"`, `"specs.4"`, and
 `"slots"`, the global slots being one field) and refused by the edit
 calls.
 
@@ -984,7 +1117,7 @@ overflow leaf, is returned with `missing` and not applied unless
 `apply: true`.
 
 **Relayout.** After an edit the engine sends a zero `hl.dsp.window.resize`
-to one tiled window per desk workspace: a lua layout recalculates on any
+to one tiled window per hyprslots workspace: a lua layout recalculates on any
 resize request.
 
 ## 10. Modules
@@ -998,9 +1131,9 @@ Under `lua/hyprslots/`:
 | pure | `ratio` | ratio grammar for the editor's `set_ratio` and `state` |
 | pure | `record` | rebuild a tree from live window frames |
 | pure | `config` | load and validate `config.lua` / `slots.lua` (sandboxed) |
-| pure | `migrate` | slots.lua's per-desk shape of before, read as global slots and per-desk specs |
-| pure | `edit` | edits to the `slots.lua` data (trees, slots, specs, arrangements); which fields code owns |
-| pure | `arrangement` | pick the arrangement matching the monitor set |
+| pure | `migrate` | slots.lua's shapes of before (per-workspace slots; arrangements), read as global slots, desks and layouts |
+| pure | `edit` | edits to the `slots.lua` data (trees, slots, specs, desks, layouts); which fields code owns |
+| pure | `desk` | pick the desk matching the monitor set, number its screens left to right; name and default trees of a new desk |
 | pure | `assign` | windows → slots |
 | pure | `serialize` | write `slots.lua` and tree text deterministically |
 | pure | `dkjson` | vendored JSON |
@@ -1008,8 +1141,8 @@ Under `lua/hyprslots/`:
 | adapter | `hl_adapter` | the only module that touches `hl` |
 | adapter | `layout` | `hl.layout.register("slots", …)` |
 | adapter | `router` | window events → assignment and moves |
-| adapter | `desks` | desk switching on top of `o.workspaces` |
-| adapter | `hotplug` | monitor events → arrangement selection, then re-route |
+| adapter | `workspaces` | workspace switching on top of `o.workspaces` |
+| adapter | `hotplug` | monitor events → desk selection, then re-route |
 | adapter | `scroll` | scroll branches on Hyprland's scrolling layout (pure `plan` / `order`, deferred pass, `describe`) |
 | adapter | `resize` | keyboard resize via `layout_msg`; the tree in force |
 | adapter | `api` | `state()` / `call(name, json)` for the editor |
@@ -1027,7 +1160,7 @@ cannot go after hyprmoncfg's `dofile`, which stays last. On the user's
 machine the shim reads the code from `~/.local/share/hyprslots`, a symlink
 to the checkout in use (`ln -sfn ~/Projects/hyprslots/master
 ~/.local/share/hyprslots` once the branch lands), and, being after
-Omarchy's and the user's bindings, also calls `bind_desk_keys()` and
+Omarchy's and the user's bindings, also calls `bind_workspace_keys()` and
 `bind_resize_keys()`; all of it inside `pcall`, with a notification on
 failure.
 
@@ -1054,6 +1187,7 @@ with Omarchy's gaps (5/10, border 2).
 | Scroll | scroll branches on Hyprland's scrolling layout replace accordions; the laptop desks become `scroll[...]`; Super+L's slots stop covers them | done 2026-11-08 |
 | Global slots | slots are global logical names (aerolayout's `logical_slots`), specs per desk; the per-desk shape migrated on load; the Slots view edits the list, the Assignment view's `a` sets a desk's spec, the Layout view's `a` / `x` place slots; `[Tag]` matching in any case | done 2026-11-08 |
 | Editor rework | the Slots tab folded into the Layout tab as a slot list (name and description only; make a slot and place it there); desks by `[` `]` and the digits in the Layout and Assignment views (the arrows stay the picture's); `u` clears the desk's spec with the window (`unassign` `clear_spec`), the slot left empty; a scroll branch's `*` column (`scroll[left, main, *, right]`) in the engine and the editor's `o`; the Super+L patch refreshes the dock | done 2026-11-08 |
+| Desks & layouts | workspaces 1-10 renamed from desks (api `workspace`, `hyprslots.workspace`, `bind_workspace_keys`); arrangements replaced by desks (monitor setups) and layouts (N-screen logical arrangements, shareable, default trees) keyed by screen number left to right; arrangements migrated on load; a desk made for unknown monitors; the editor's Desks & Layouts tab (apply, fork, new, rename, delete, pin), the header naming desk and layout, highlighted help keys, `u` on a Missing row, the bar's `<desk> · ws <n>` | done 2026-11-09 |
 
 Slices 2 to 6 were built in parallel on top of slices 1 and 2 and
 integrated on `feature/engine`; the cross-slice behaviour (keyboard-resized
@@ -1082,7 +1216,12 @@ Parked:
 - the Layout view's parked overflow leaf lives only while the panel is open
   (aerolayout kept it in the saved tree);
 - slot reorder (aerolayout's J/K): slots claim windows by name;
-- dropping the per-desk shape's migration once no slots.lua holds it.
+- dropping the shapes of before's migration once no slots.lua holds them;
+- editing a desk's monitor selectors (desks are made from the monitors
+  connected; the editor renames, deletes and repoints them);
+- remembering the most recently used layout across a Hyprland reload (a new
+  desk then takes the first layout by name of as many screens);
+- forking a layout that config.lua builds in code (fork copies slots.lua's).
 
 ## 12. Test seams
 
@@ -1110,16 +1249,23 @@ Parked:
   with an ignored F13) and with `press()`, asserts through api `state`, the
   windows' geometry and the saved `slots.lua` (Assignment: assign by real
   keys, which takes the window's spec, `u` taking it out with that spec
-  (the row empty, slots.lua without it after Ctrl+S), `c` on a Missing row,
-  `[` / digits paging; Layout: flip, a refused then a good ratio, apply,
-  Ctrl+S, t making a scroll branch and l moving a column, reset, Ctrl+S
-  applying a draft, `]` and `3` switching the desk; its slot list (`s`, no
-  Slots tab): a refused then a good rename, a new slot put in the tree at
-  once (x takes it out), Return on a placed slot, delete, describe, Esc
-  back; Arrangements: create from the
-  connected screen, Ctrl+S, rename, a refused pin, copy the default trees,
-  rename a role, delete; then the Layout tab following the running
-  arrangement; the bar widget on a stand-in bar strip (a `PluginBarApi`
+  (the row empty, slots.lua without it after Ctrl+S), `u` on a Missing row
+  clearing that workspace's spec, `c` doing nothing, `[` / digits paging;
+  the header (`Desk: solo · Layout: solo (also used by: beamer)`) and the
+  help rows' highlighted keys in every tab; Layout: the panes titled by
+  monitor, flip, a refused then a good ratio, apply, Ctrl+S, t making a
+  scroll branch and l moving a column, reset, Ctrl+S applying a draft, `]`
+  and `3` switching the workspace, `-` setting the default trees (another
+  workspace then shows them), `f` forking the shared layout (the active
+  desk on the copy, the other desk on the original); its slot list (`s`,
+  no Slots tab): a refused then a good rename, a new slot put in the tree
+  at once (x takes it out), Return on a placed slot, delete, describe, Esc
+  back; Desks & Layouts: fork, apply on a layout row and on a desk row, a
+  refused screen-count mismatch, rename a desk and a layout, Ctrl+S
+  (slots.lua holds the forks, the renames and the new pointers), delete a
+  layout with remap, a refused delete of a used one, delete a desk, pin and
+  unpin, a refused screen count of 0; then the Layout tab following the
+  active layout; the bar widget on a stand-in bar strip (a `PluginBarApi`
   whose shell is a replacement bar's facade: it toggles the panel, has no
   `serviceFor`): its label and the
   unsaved dot, the menu's Save and Re-apply, left clicks opening and
@@ -1128,18 +1274,28 @@ Parked:
 
 ### Completion test
 
-`e2e/desk_across_screens_test.sh`: outputs `big` (HEADLESS-2, 2400x1350 at
-0,0, Omarchy block 0) and `side` (HEADLESS-3, 1920x1080 at 2400,0, block 1),
-matched by connector; arrangements `dual` and `single` as in §4; slots
-`left`, `main`, `right` matched to classes `t-left`, `t-main`, `t-right`.
+`e2e/workspace_across_screens_test.sh`: outputs HEADLESS-2 (2400x1350 at
+0,0, Omarchy block 0) and HEADLESS-3 (1920x1080 at 2400,0, block 1), matched
+by connector; desks `dual` (both) and `single` (HEADLESS-2) on layouts
+`dual` and `single` as in §4; slots `left`, `main`, `right` matched to
+classes `t-left`, `t-main`, `t-right`.
 
-1. The three windows open on workspace 1 in shuffled order; desk 3 is
-   activated with `hyprslots.api.call("desk", '{"desk":3}')`.
-2. Both outputs show their desk-3 workspace (3 on big, 13 on side);
-   `t-left` fills `side`; `t-main` and `t-right` split `big` horizontally
-   2:1 (1600 + 800 px, ±1 px).
-3. `side` is removed (`hyprctl output remove HEADLESS-3`): arrangement
-   `single` applies and all three tile 1:1:1 (800 px each) on workspace 3.
+1. The three windows open on workspace 1 in shuffled order; workspace 3 is
+   activated with `hyprslots.api.call("workspace", '{"workspace":3}')`.
+2. Both outputs show their workspace 3 (3 on screen 1, 13 on screen 2);
+   `t-left` fills screen 2; `t-main` and `t-right` split screen 1
+   horizontally 2:1 (1600 + 800 px, ±1 px).
+3. HEADLESS-3 is removed (`hyprctl output remove HEADLESS-3`): desk
+   `single` and its layout apply and all three tile 1:1:1 (800 px each) on
+   workspace 3.
+
+Desks and layouts besides: `e2e/shared_layout_test.sh` (two desks of one
+monitor each on one layout: an edit made on one shows on the other after
+the monitors swap, and the set the swap passes through gets no desk) and
+`e2e/new_desk_test.sh` (a monitor set no desk knows gets a desk and a
+default layout, saved to slots.lua by `save`; the next unknown set of as
+many monitors reuses that layout, the most recently used, not the first by
+name).
 
 ### e2e host
 
