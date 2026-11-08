@@ -148,13 +148,19 @@ local function columns(engine, id, desk)
 end
 
 -- One pass over every managed scroll workspace. opts.order = false widens
--- only (a focus change). Returns { swaps = n, widened = { ids } }.
+-- only (a focus change); opts.widen_all widens every column of the focused
+-- one, ones widened before included (the api's arrange: Super+L bringing
+-- slots back, after which every column is a new one). Returns
+-- { swaps = n, widened = { ids } }.
 function M.arrange(engine, opts)
   local result = { swaps = 0, widened = {} }
   if engine.refused or not engine.cfg then
     return result
   end
   local reorder = not (opts and opts.order == false)
+  if opts and opts.widen_all then
+    engine.scroll_seen = {}
+  end
   engine.scroll_seen = engine.scroll_seen or {}
   local active = adapter.active_window()
   local width = M.width(engine)

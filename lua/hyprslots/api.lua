@@ -1111,10 +1111,11 @@ function handlers.copy_trees(engine, args)
   return { arrangement = name, from = from, seq = engine.seq }
 end
 
--- arrange {}: run the scroll pass now (order and widen every scroll
--- workspace hyprslots keeps), as Super+L does on bringing slots back.
+-- arrange {}: run the scroll pass now (order every scroll workspace
+-- hyprslots keeps, and widen every column of the focused one), as Super+L
+-- does on bringing slots back.
 function handlers.arrange(engine)
-  local result = scroll.arrange(engine)
+  local result = scroll.arrange(engine, { widen_all = true })
   return { swaps = result.swaps, widened = array(result.widened) }
 end
 
