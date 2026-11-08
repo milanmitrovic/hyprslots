@@ -20,7 +20,7 @@
 # shows them); its slot list (s) edits the global slots (a refused then a
 # good rename, the trees and specs following; a new slot, put in the tree at
 # once and x taken out again; Return on a placed one; delete; describe); f
-# forks the shared layout for this desk. The Desks & Layouts tab forks again,
+# forks the shared layout for this desk. The Layouts tab forks again,
 # applies a layout to the active desk and one to a desk row, refuses one of
 # another screen count, renames a desk and a layout, and a save must write all
 # of it to slots.lua; then it deletes a used layout moving its desk to
@@ -177,7 +177,7 @@ slot_names() { api_state | jq -r '[.slots[].name] | join(" ")'; }
 # Layout spare's default trees follow the rename too.
 layout_slots() {
   local watch="qs ipc --pid $SMOKE_QS_PID call smoke"
-  expect_eq "three tabs, no Slots tab" "Assignment Layout Desks & Layouts | Layout" "$(smoke tabs)"
+  expect_eq "three tabs, no Slots tab" "Assignment Layout Layouts | Layout" "$(smoke tabs)"
   expect_eq "the global slots" "main right side" "$(slot_names)"
   expect_eq "s moves the keys to the slot list" "ok" "$(smoke press s)"
   expect_eq "by name, the first selected" "slots main" "$(smoke selection)"
@@ -293,13 +293,13 @@ layout_fork() {
   shot 13-layout-forked
 }
 
-# The Desks & Layouts tab, saved at the end: f forks the desk's layout again,
+# The Layouts tab, saved at the end: f forks the desk's layout again,
 # a applies a layout to the active desk (on a layout row) and to a desk (on
 # its row, picked), a refuses a layout of another screen count, r renames a
 # desk and a layout.
 desks_layouts() {
   local watch="qs ipc --pid $SMOKE_QS_PID call smoke"
-  expect_eq "Tab to Desks & Layouts" "ok" "$(smoke press Tab)"
+  expect_eq "Tab to Layouts" "ok" "$(smoke press Tab)"
   expect_eq "it opens on the active desk" "desk:solo" "$(smoke selection)"
   local help
   help=$(smoke help)
@@ -411,7 +411,7 @@ save_and_check() {
   done
 }
 
-# More of the Desks & Layouts tab, unsaved: x on layout solo (desk projector
+# More of the Layouts tab, unsaved: x on layout solo (desk projector
 # uses it) moves projector to solo-3 first; x on dual (desk away uses it, no
 # other 2-screen layout) is refused by the engine; x deletes desk away; p
 # pins screen 1 of desk solo and unpins it again; n makes the layout wide.

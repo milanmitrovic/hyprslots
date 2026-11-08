@@ -1,4 +1,4 @@
-// The Desks & Layouts view's model (DesksLayouts.js): every stored desk (a
+// The Layouts view's model (DesksLayouts.js): every stored desk (a
 // monitor setup) and every layout (a logical arrangement for N screens),
 // which desk is active and which layout it uses, and what each key does on
 // which row.

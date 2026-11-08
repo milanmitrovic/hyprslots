@@ -72,7 +72,7 @@ Item {
   readonly property var sharedWith: state ? DesksLayouts.sharedWith(state, layout, state.desk) : []
 
   // A Prompts.js prompt and what to do with its answer, as in the
-  // Assignment and Desks & Layouts views.
+  // Assignment and Layouts views.
   property var prompt: null
   property var _answer: null
   readonly property bool prompting: prompt !== null

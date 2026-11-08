@@ -8,7 +8,7 @@
 -- record, assign, unassign, save, reload, arrange; for the slot list (the
 -- Layout tab's global slots) add_slot, remove_slot, rename_slot, describe_slot; for the
 -- Assignment view (each workspace's specs) take_spec, set_spec, clear_spec; for
--- the Desks & Layouts view add_desk, rename_desk, delete_desk, apply_layout,
+-- the Layouts view add_desk, rename_desk, delete_desk, apply_layout,
 -- set_pinned, add_layout, fork_layout, rename_layout, delete_layout (the
 -- contract is in docs/design.md §9). Every change bumps `seq` and emits hl.dsp.event("hyprslots changed
 -- <seq>").
@@ -1133,7 +1133,7 @@ function handlers.take_spec(engine, args)
     displaced = displaced, placed = placed, seq = engine.seq }
 end
 
--- Desks and layouts (the Desks & Layouts view) --------------------------------
+-- Desks and layouts (the Layouts view) --------------------------------
 
 local function section_editable(engine, section, name, what)
   if not engine.data then

@@ -1,6 +1,6 @@
 .pragma library
 
-// The Desks & Layouts view's model (docs/design.md §9), read off one api
+// The Layouts view's model (docs/design.md §9), read off one api
 // `state` reply. A desk is a monitor setup: the monitors it is made of, the
 // layout it uses and its pinned screens; the desk whose monitors are exactly
 // the connected ones is active. A layout is a logical arrangement for N

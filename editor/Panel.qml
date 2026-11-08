@@ -14,7 +14,7 @@ import "Assignment.js" as Assignment
 // an Omarchy shell panel. Three tabs, cycled with Tab / Shift+Tab as in the
 // TUI: Assignment (which window fills which slot), Layout (one workspace's
 // trees in the active desk's layout, with the global slots listed beside
-// them, made and placed there) and Desks & Layouts (the monitor setups and
+// them, made and placed there) and Layouts (the monitor setups and
 // the logical layouts they use). A header on every tab names the active
 // desk and its layout. Esc or q closes it (while a view's prompt is open, every key
 // is the prompt's; in the Layout tab's slot list Esc goes back to the
@@ -39,7 +39,7 @@ Item {
   // The service, or an engine of the panel's own when it runs without one.
   readonly property var engine: service ? service : (ownEngine.item ? ownEngine.item : null)
 
-  readonly property var tabs: ["Assignment", "Layout", "Desks & Layouts"]
+  readonly property var tabs: ["Assignment", "Layout", "Layouts"]
   property int tab: 0
 
   property color background: Commons.Color.menu.background
@@ -178,7 +178,7 @@ Item {
   }
 
   // What the Assignment view has selected, "<status> <slot> <class>" (the
-  // Layout view: "<screen> <leaf>"; Desks & Layouts: "desk:solo"), and
+  // Layout view: "<screen> <leaf>"; Layouts: "desk:solo"), and
   // the current view's message or prompt line: for scripts and the e2e smoke.
   function selectionText() {
     if (root.tab === 1) return layoutView.selectionText()
