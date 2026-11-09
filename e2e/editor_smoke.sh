@@ -52,6 +52,12 @@ test_setup() {
   cat >"$E2E_CONFIG_HOME/hypr/test-extra.lua" <<'LUA'
 hl.monitor({ output = "HEADLESS-2", mode = "1920x1080@60", position = "0x0", scale = 1 })
 LUA
+  # SMOKE_THEME's own Hyprland look goes into the nested Hyprland as Omarchy
+  # sources it: its corner rounding is the shell's Style.cornerRadius, which
+  # the panel's corners follow (solitude rounds them, most themes do not).
+  if [[ -n ${SMOKE_THEME:-} && -f $SMOKE_THEME/hyprland.lua ]]; then
+    printf 'dofile("%s/hyprland.lua")\n' "$SMOKE_THEME" >>"$E2E_CONFIG_HOME/hypr/test-extra.lua"
+  fi
   seed_workspace_blocks HEADLESS-2
 
   mkdir -p "$E2E_CONFIG_HOME/hyprslots"

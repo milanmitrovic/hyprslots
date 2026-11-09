@@ -48,7 +48,7 @@ Item {
     anchors.right: parent.right
     anchors.bottom: parent.bottom
     height: Math.max(root.height, content.implicitHeight + root.padY * 2)
-    radius: Math.max(Style.cornerRadius, Style.spacing.sm)
+    radius: Style.cornerRadius
     clip: true
     opacity: root.shown ? 1 : 0
     visible: opacity > 0

@@ -53,14 +53,13 @@ Item {
   property string fontFamily: Style.font.menuFamily
   property int contentMargin: Style.spacing.panelPadding
   // The chrome, all from the theme: the card is a recessed desk, the page
-  // (and the current tab, one shape with it) the menu surface on it; the
-  // other tabs and the controls strip sit back on the desk.
-  readonly property int hairline: Math.max(1, Style.spacing.hairline)
+  // (and the current tab, one shape with it) the menu surface on it, with
+  // no outline; the other tabs, a dimmer surface, and the controls strip
+  // sit back on the desk. Corners are the theme's (Style.cornerRadius,
+  // Hyprland's rounding): square when it is 0.
   readonly property color deskColor: root.recess(root.background, 1)
-  readonly property color tabRecessed: root.recess(root.background, 0.55)
-  readonly property color tabRecessedBorder: Commons.Util.alpha(root.foreground, 0.07)
-  readonly property color frameBorder: Commons.Util.alpha(root.foreground, 0.16)
-  readonly property int tabRadius: Math.max(Style.cornerRadius, Style.spacing.sm)
+  readonly property color tabRecessed: root.recess(root.background, 0.5)
+  readonly property int tabRadius: Style.cornerRadius
   readonly property int tabHeight: Style.font.subtitle + Style.spacing.md * 2 + Style.spacing.xs * 2
   readonly property int tabInset: Style.spacing.lg
   readonly property int pagePadding: Style.spacing.xxl
@@ -393,10 +392,10 @@ Item {
         anchors.leftMargin: card.contentLeftInset
         spacing: 0
 
-        // The tab bar: folder tabs over the page. The current tab is the
-        // page's own surface and opens into it (the page's top edge stops
-        // under it); the others sit back on the recessed desk, dimmer and
-        // apart. The active desk and its layout at the right, quietly.
+        // The tab bar: folder tabs over the page, no outlines. The current
+        // tab is the page's own surface flowing into it; the others sit
+        // back on the recessed desk, a dimmer surface, a little lower. The
+        // active desk and its layout at the right, quietly.
         Item {
           id: tabBar
           z: 1 // over the page's top edge, which the current tab opens
@@ -420,31 +419,19 @@ Item {
                   id: tabFace
                   y: tabItem.current ? 0 : Style.spacing.xs
                   width: parent.width
-                  // the current one reaches over the page's top edge
-                  height: parent.height - y + (tabItem.current ? root.hairline : 0)
+                  // down to the page's top edge: the current one is one
+                  // surface with the page
+                  height: parent.height - y
                   topLeftRadius: root.tabRadius
                   topRightRadius: root.tabRadius
                   bottomLeftRadius: 0
                   bottomRightRadius: 0
                   color: tabItem.current ? root.background : root.tabRecessed
-                  border.color: tabItem.current ? root.frameBorder : root.tabRecessedBorder
-                  border.width: root.hairline
-                }
-                // The current tab's bottom: the page's surface, so the two
-                // are one shape.
-                Rectangle {
-                  visible: tabItem.current
-                  x: root.hairline
-                  y: parent.height
-                  width: parent.width - root.hairline * 2
-                  height: root.hairline
-                  color: root.background
                 }
                 Text {
                   id: label
                   anchors.horizontalCenter: parent.horizontalCenter
                   anchors.verticalCenter: tabFace.verticalCenter
-                  anchors.verticalCenterOffset: tabItem.current ? 0 : -root.hairline
                   textFormat: Text.PlainText
                   text: tabItem.modelData
                   color: tabItem.current ? root.foreground : Commons.Color.muted
@@ -497,9 +484,7 @@ Item {
           width: parent.width
           height: parent.height - tabBar.height - helpArea.height
           color: root.background
-          border.color: root.frameBorder
-          border.width: root.hairline
-          radius: root.tabRadius
+          radius: Style.cornerRadius
 
           Item {
             id: body

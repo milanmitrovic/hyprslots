@@ -749,9 +749,11 @@ the running engine only through Hyprland:
 **Every view.** The panel's keys come first: Tab / Shift+Tab cycle the
 tabs (Assignment, Layout, Desk), **Ctrl+S saves** (api
 `save`, in every tab; the Layout tab applies its edited panes first), Esc
-or q closes. The tabs are folder tabs: the current one is the page's own
-surface and opens into it (the page's edge stops under it); the others sit
-back on the card's recessed surface, dimmer and apart. Beside them, in
+or q closes. The tabs are folder tabs with no outline: the current one is
+the page's own surface flowing into it; the others are a dimmer surface on
+the card's recessed one. Their top corners, the card's, the page's and
+the message band's are the theme's radius (`Style.cornerRadius`, which
+follows Hyprland's `decoration:rounding`): square when it is 0. Beside them, in
 every tab and quietly (muted, small), what the edits go to: `Desk:
 home · Layout: ultrawide (also used by: office)` (`Desk: none` with no
 active desk, `(new, unsaved)` after a desk the engine made for new
