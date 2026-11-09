@@ -84,8 +84,7 @@ describe("generated window rules", function()
         local reply = engine.call(hyprslots, name, require("hyprslots.dkjson").encode(args))
         assert.is_true(reply.ok, reply.error)
       end
-      call("set_tree", { layout = "dual", workspace = 3, screen = 1, tree = "main" })
-      call("set_tree", { layout = "dual", workspace = 3, screen = 2, tree = "h[left, right]" })
+      call("set_trees", { layout = "dual", workspace = 3, trees = { ["1"] = "main", ["2"] = "h[left, right]" } })
       assert.are.equal("13 silent", rule("hyprslots-t-right").workspace)
     end)
 

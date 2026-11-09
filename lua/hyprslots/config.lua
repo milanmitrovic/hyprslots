@@ -494,8 +494,11 @@ function M.validate(raw, monitors)
   if type(raw) ~= "table" then
     return nil, "the config must be a table, got " .. type(raw)
   end
-  local migrated
-  raw, migrated = migrate.data(raw, monitors) -- the shapes of before, read as today's
+  local migrated, _
+  -- The shapes of before read as today's; every tree holding every slot.
+  -- Only a shape of before counts as migrated here: a table config.lua builds
+  -- in code is normalized each time it is loaded (saving cannot change it).
+  raw, _, migrated = migrate.data(raw, monitors)
 
   local errors, fail = collector()
 

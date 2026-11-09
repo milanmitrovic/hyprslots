@@ -47,10 +47,8 @@ describe("re-routing after an edit", function()
 
   after_each(engine.cleanup)
 
-  it("moves a window whose slot set_tree put on the other screen", function()
-    call("set_tree", { layout = "dual", workspace = 3, screen = 1, tree = "main" })
-    assert.are.equal(3, workspace_of("t-right"), "a slot on no screen stays where it is")
-    call("set_tree", { layout = "dual", workspace = 3, screen = 2, tree = "h[left, right]" })
+  it("moves a window whose slot set_trees put on the other screen", function()
+    call("set_trees", { layout = "dual", workspace = 3, trees = { ["1"] = "main", ["2"] = "h[left, right]" } })
     assert.are.equal(13, workspace_of("t-right"))
     assert.are.equal(13, workspace_of("t-left"))
     assert.are.equal(3, workspace_of("t-main"))

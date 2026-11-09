@@ -418,7 +418,8 @@ describe("config.validate", function()
     local cfg = assert(config.validate(raw))
     local layout = cfg.layouts.solo
     assert.are.same({ "left", "main" }, require("hyprslots.tree").slots(config.trees_for(layout, 3)[1]))
-    assert.are.same({ "main" }, require("hyprslots.tree").slots(config.trees_for(layout, 5)[1]))
+    assert.are.same({ "main", "left" }, require("hyprslots.tree").slots(config.trees_for(layout, 5)[1]),
+      "every tree holds every slot")
     raw.layouts.solo.default = nil
     assert.is_nil(config.trees_for(assert(config.validate(raw)).layouts.solo, 5))
   end)
@@ -438,10 +439,12 @@ describe("config.validate", function()
     rejects(raw, "layouts%.solo%.workspaces%[3%]%[1%]: expected ']'")
   end)
 
-  it("rejects a tree naming a slot that is not defined under slots", function()
+  it("drops a slot that is not defined under slots from a tree, which holds every slot that is", function()
     local raw = valid()
     raw.layouts.solo.workspaces[3][1] = "h[left, mian]"
-    rejects(raw, "workspaces%[3%]%[1%]: no slot 'mian' %(define it under slots%)")
+    local cfg = assert(config.validate(raw))
+    assert.are.same({ "left", "main" }, require("hyprslots.tree").slots(cfg.layouts.solo.workspaces[3][1]))
+    assert.is_false(cfg.migrated, "a table config.lua builds is not a shape of before")
   end)
 
   it("accepts an overflow leaf", function()
@@ -461,8 +464,10 @@ describe("config.validate", function()
     local raw = valid()
     raw.layouts.solo.workspaces[3][1] = "scroll[left, main]"
     assert(config.validate(raw))
-    raw.layouts.solo.workspaces[3][1] = "scroll[left, mian]"
-    rejects(raw, "workspaces%[3%]%[1%]: no slot 'mian'")
+    raw.layouts.solo.workspaces[3][1] = "scroll:0.5[left, mian]"
+    local node = assert(config.validate(raw)).layouts.solo.workspaces[3][1]
+    assert.are.same({ "left", "main" }, require("hyprslots.tree").scroll(node))
+    assert.are.equal(0.5, node.width)
   end)
 
   it("takes the scroll columns' width, a fraction of the screen", function()

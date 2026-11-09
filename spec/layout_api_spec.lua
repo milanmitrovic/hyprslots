@@ -266,8 +266,8 @@ return {
   layouts = {
     dual = { screens = 2, default = { [1] = "h[a, b, c]" }, workspaces = {
       [3] = { [1] = "h[a, b:2, c]" },
-      [4] = { [1] = "h[b, c]" },
-      [5] = { [1] = "a" },
+      [4] = { [1] = "h[a, b, c]" },
+      [5] = { [1] = "h[a:2, b:2, c:2]" },
     } },
     single = { screens = 1, workspaces = { [3] = { [1] = "h[a, b, c]" } } },
   },
@@ -292,7 +292,7 @@ return {
 
       assert.is_true(call("save").ok)
       local saved = read(dir .. "/slots.lua")
-      assert.is_nil(saved:find('"h[b, c]"', 1, true), "slots.lua no longer has workspace 4's copy")
+      assert.is_nil(saved:find('"h[a:2, b:2, c:2]"', 1, true), "slots.lua no longer has workspace 5's copy")
       assert.matches('[1] = "h[a, b:2, c]"', saved, 1, true)
     end)
 
@@ -306,6 +306,26 @@ return {
       assert.is_false(call("state").dirty)
       assert.are.same({}, events())
       assert.matches("no layout 'nope'", call("fold_trees", { layout = "nope" }).error)
+    end)
+  end)
+
+  describe("a keyboard-resized tree", function()
+    it("keeps a keyboard-resized tree holding every slot when a slot is added or removed", function()
+      setup({ ["config.lua"] = CONFIG, ["slots.lua"] = FOLDING })
+      local windows = {}
+      for i, class in ipairs({ "t-a", "t-b" }) do
+        windows[i] = hl_stub.window(i, class, { workspace = 3 })
+        hl.emit("window.open", windows[i])
+      end
+      hl.windows = windows
+      hl.active_window = windows[1]
+      assert.is_true(hl.layouts.slots.layout_msg(hl_stub.layout_ctx(AREA, windows), "nudge r 0.1"))
+      local nudged = branch("dual", 1).tree
+      assert.is_true(call("add_slot", { slot = "d" }).ok)
+      assert.are.equal(nudged:sub(1, -2) .. ", d]", branch("dual", 1).tree, "the nudge kept, the new slot in it")
+      assert.is_true(branch("dual", 1).resized)
+      assert.is_true(call("remove_slot", { slot = "d" }).ok)
+      assert.are.equal(nudged, branch("dual", 1).tree)
     end)
   end)
 

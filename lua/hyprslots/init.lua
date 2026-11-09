@@ -473,9 +473,16 @@ end
 -- the slots.lua data it came from; `dirty` whether that differs from the
 -- file.
 function Engine:apply_config(cfg, data, dirty)
+  -- The data as config.lua was handed it: read as today's shape, every tree
+  -- holding every slot (migrate.data), which is what save writes.
+  local file = data and cfg.data_files and cfg.data_files["slots.lua"]
+  if file then
+    data = file.data
+  end
   self.cfg = cfg
   self.config_error = nil
   self.data = data
+  resize.conform(self)
   self.dirty = dirty and true or false
   if not self.dirty then
     self.since_save = {}

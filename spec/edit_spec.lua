@@ -107,8 +107,14 @@ describe("edit.set_tree", function()
   end)
 
   it("adds a workspace the layout had no tree for", function()
-    local after = assert(edit.set_tree(data(), "solo", 5, 1, "x"))
-    assert.are.equal("x", after.layouts.solo.workspaces[5][1])
+    local after = assert(edit.set_tree(data(), "solo", 5, 1, "c"))
+    assert.are.equal("c", after.layouts.solo.workspaces[5][1])
+  end)
+
+  it("refuses a tree naming a slot that is not global", function()
+    local after, err = edit.set_tree(data(), "solo", 3, 1, "h[a, zzz]")
+    assert.is_nil(after)
+    assert.matches("no slot 'zzz'", err)
   end)
 
   it("gives a workspace that showed the default trees a copy of them, the others keeping the default", function()
@@ -161,82 +167,6 @@ describe("edit.set_trees", function()
   it("refuses no trees, and stops at the first refusal", function()
     assert.matches("no trees", select(2, edit.set_trees(two(), "dual", 3, {})))
     assert.matches("got 3", select(2, edit.set_trees(two(), "dual", 3, { [1] = "a", [3] = "b" })))
-  end)
-end)
-
-describe("edit.place_slot", function()
-  local function scrolled(text)
-    return {
-      slots = { left = {}, main = {}, right = {}, mail = {} },
-      layouts = { laptop = { screens = 1, workspaces = { [8] = { [1] = text } } } },
-    }
-  end
-
-  it("inserts the slot into a scroll branch in the global slot order", function()
-    local after, screen = edit.place_slot(scrolled("scroll[main, right]"), "laptop", 8, "left", 1)
-    assert.are.equal("scroll[left, main, right]", after.layouts.laptop.workspaces[8][1])
-    assert.are.equal(1, screen)
-    after = assert(edit.place_slot(scrolled("scroll[left, right]"), "laptop", 8, "main", 1))
-    assert.are.equal("scroll[left, main, right]", after.layouts.laptop.workspaces[8][1])
-    after = assert(edit.place_slot(scrolled("scroll[left, *]"), "laptop", 8, "right", 1))
-    assert.are.equal("scroll[left, right, *]", after.layouts.laptop.workspaces[8][1], "after the last slot before it")
-  end)
-
-  it("appends the slot as a new child of a tiled tree's root split", function()
-    local after = assert(edit.place_slot(scrolled("h[main:2, v[left, *]]"), "laptop", 8, "right", 1))
-    assert.are.equal("h[main:2, v[left, *], right]", after.layouts.laptop.workspaces[8][1])
-    after = assert(edit.place_slot(scrolled("main"), "laptop", 8, "right", 1))
-    assert.are.equal("h[main, right]", after.layouts.laptop.workspaces[8][1], "a bare slot becomes a split")
-  end)
-
-  it("puts the slot on the screen given, a screen with no tree taking it bare", function()
-    local after = assert(edit.place_slot(two(), "dual", 3, "mail", 2))
-    assert.are.same({ [1] = "h[a:2, v[b, *]]", [2] = "h[c, mail]" }, after.layouts.dual.workspaces[3])
-    local data = two()
-    data.layouts.dual.workspaces[3][2] = nil
-    after = assert(edit.place_slot(data, "dual", 3, "mail", 2))
-    assert.are.equal("mail", after.layouts.dual.workspaces[3][2])
-  end)
-
-  it("puts the slot into the shared trees for a workspace with none of its own, making no copy", function()
-    local before = two()
-    local after, screen, into = edit.place_slot(before, "dual", 5, "a", 1)
-    assert.are.same({ [1] = "h[mail, b, a]" }, after.layouts.dual.default)
-    assert.is_nil(after.layouts.dual.workspaces[5], "no copy of its own")
-    assert.are.same({ [1] = "h[a:2, v[b, *]]", [2] = "c" }, after.layouts.dual.workspaces[3], "an override is untouched")
-    assert.are.equal(1, screen)
-    assert.are.equal("default", into)
-    assert.are.same({ [1] = "h[mail, b]" }, before.layouts.dual.default, "the original is untouched")
-  end)
-
-  it("puts the slot into a workspace's own trees when it has them", function()
-    local _, _, into = edit.place_slot(two(), "dual", 3, "mail", 2)
-    assert.are.equal(3, into)
-  end)
-
-  it("starts the shared trees of a layout that has none, on the screen given", function()
-    local data = two()
-    data.layouts.dual.default = nil
-    local after = assert(edit.place_slot(data, "dual", 7, "a", 2))
-    assert.are.same({ [2] = "a" }, after.layouts.dual.default)
-    assert.is_nil(after.layouts.dual.workspaces[7])
-  end)
-
-  it("changes nothing when the workspace's trees already place the slot, on any screen", function()
-    local after, screen = edit.place_slot(two(), "dual", 3, "c", 1)
-    assert.are.same(two(), after)
-    assert.is_nil(screen)
-    after, screen = edit.place_slot(two(), "dual", 5, "b", 1)
-    assert.are.same(two(), after, "placed by the default trees it shows")
-    assert.is_nil(screen)
-  end)
-
-  it("refuses an unknown slot, layout, workspace or screen", function()
-    assert.matches("no slot 'zz'", select(2, edit.place_slot(two(), "dual", 3, "zz", 1)))
-    assert.matches("no layout 'nope'", select(2, edit.place_slot(two(), "nope", 3, "a", 1)))
-    assert.matches("workspace", select(2, edit.place_slot(two(), "dual", 11, "a", 1)))
-    assert.matches("workspace", select(2, edit.place_slot(two(), "dual", "default", "a", 1)))
-    assert.matches("has screens 1 to 2, got 3", select(2, edit.place_slot(two(), "dual", 5, "a", 3)))
   end)
 end)
 

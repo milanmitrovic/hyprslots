@@ -16,6 +16,7 @@
 
 local adapter = require("hyprslots.hl_adapter")
 local config = require("hyprslots.config")
+local edit = require("hyprslots.edit")
 local tree = require("hyprslots.tree")
 
 local M = {}
@@ -67,6 +68,41 @@ function M.overrides(engine)
   end
   table.sort(out, function(a, b) return a.key < b.key end)
   return out
+end
+
+-- Every tree holds every slot, a keyboard-resized one too: after the config
+-- changed (a slot added or removed, say), each override loses the slots its
+-- configured branch no longer has and gets the ones it now has at its end
+-- (tree.append), its nudges kept. An override whose branch is gone goes.
+function M.conform(engine)
+  local layouts = engine.cfg and engine.cfg.layouts or {}
+  for _, o in ipairs(M.overrides(engine)) do
+    local trees = config.trees_for(layouts[o.layout], o.workspace)
+    local configured = trees and trees[o.screen]
+    local node = configured and o.tree or nil
+    if node then
+      local want, have = {}, {}
+      for _, slot in ipairs(tree.slots(configured)) do
+        want[slot] = true
+      end
+      for _, slot in ipairs(tree.slots(o.tree)) do
+        have[slot] = true
+        if not want[slot] then
+          node = node and edit.remove_leaf(node, slot)
+        end
+      end
+      local missing = {}
+      for _, slot in ipairs(tree.slots(configured)) do
+        if not have[slot] then
+          missing[#missing + 1] = slot
+        end
+      end
+      if node and #missing > 0 then
+        node = tree.append(node, missing)
+      end
+    end
+    overrides(engine)[o.key] = node
+  end
 end
 
 -- Drop one override, or every override (no arguments past engine).

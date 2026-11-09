@@ -315,12 +315,12 @@ return { slots = data.slots, specs = data.specs, desks = data.desks, layouts = l
       assert.are.equal("hyprslots changed " .. reply.seq, events()[#events()])
     end)
 
-    it("does not apply a record that would drop a slot with no window", function()
+    it("keeps a slot with no window at the end of the record, and does not apply it unasked", function()
       setup()
       laid_out_windows({ "t-a", "t-b" })
       local reply = call("record")
       assert.is_true(reply.ok, reply.error)
-      assert.are.equal("h[a, b:2]", reply.tree)
+      assert.are.equal("h[a, b:2, c]", reply.tree)
       assert.is_false(reply.applied)
       assert.are.same({ "c" }, reply.missing)
       assert.are.equal("h[a, b:2, c]", state().layouts.solo.workspaces["3"]["1"].tree)
@@ -331,7 +331,7 @@ return { slots = data.slots, specs = data.specs, desks = data.desks, layouts = l
       laid_out_windows({ "t-a", "t-b" })
       local reply = call("record", { apply = true })
       assert.is_true(reply.applied)
-      assert.are.equal("h[a, b:2]", state().layouts.solo.workspaces["3"]["1"].tree)
+      assert.are.equal("h[a, b:2, c]", state().layouts.solo.workspaces["3"]["1"].tree)
     end)
 
     it("previews without applying when asked to", function()

@@ -786,6 +786,13 @@ function M.set_tree(data, layout, n, screen, text)
   if not node then
     return nil, parse_err
   end
+  if type(data.slots) == "table" then
+    for _, slot in ipairs(tree.slots(node)) do
+      if data.slots[slot] == nil then
+        return nil, string.format("no slot '%s' (add it in the editor's Layout tab, s then a)", slot)
+      end
+    end
+  end
   local out = M.copy(data)
   trees_of(out.layouts[layout], n)[screen] = serialize.tree(node)
   return out
@@ -807,87 +814,6 @@ function M.set_trees(data, layout, n, trees)
     end
   end
   return out
-end
-
--- The data with slot `slot` placed in layout `layout`'s trees for workspace
--- n (the Assignment view's a on a slot no tree of the workspace places), on
--- `screen`: into a scroll branch in the global slot order (before the first
--- slot it sorts before, else after the last one), appended to a tiled tree's
--- root split (a bare leaf becoming h[leaf, slot]), or as the whole tree of a
--- screen with none. A workspace with trees of its own gets the slot there;
--- one showing the shared (default) trees gets it in them, so every
--- workspace showing them places it (an empty slot closes up), and never a
--- copy of its own. Returns the new data, the screen the slot went on and
--- the trees it went into (n, or "default"), the last two nil when the
--- workspace's trees already place it, on any screen: nothing changes; or nil
--- and why not.
-function M.place_slot(data, layout, n, slot, screen)
-  local entry, err = layout_entry(data, layout)
-  if not entry then
-    return nil, err
-  end
-  local ok, ws_err = check_workspace(n)
-  if not ok then
-    return nil, ws_err
-  end
-  local known, slot_err = existing_slot(data, slot)
-  if not known then
-    return nil, slot_err
-  end
-  screen = as_screen(screen)
-  local fits, screen_err = check_screen(layout, entry, screen)
-  if not fits then
-    return nil, screen_err
-  end
-  local own = type(entry.workspaces) == "table" and type(entry.workspaces[n]) == "table" and entry.workspaces[n] or nil
-  local shown = own or (type(entry.default) == "table" and entry.default) or {}
-  for _, text in pairs(shown) do
-    local node = tree.parse(text)
-    if node then
-      for _, name in ipairs(tree.slots(node)) do
-        if name == slot then
-          return M.copy(data), nil
-        end
-      end
-    end
-  end
-
-  local out = M.copy(data)
-  local into = own and n or "default"
-  local trees = trees_of(out.layouts[layout], into)
-  local text = trees[screen]
-  local node = text and tree.parse(text)
-  if not node then
-    if text then
-      return nil, string.format("layout '%s' %s, screen %d: tree '%s' does not parse", layout,
-        own and "workspace " .. n or "shared trees", screen, text)
-    end
-    trees[screen] = slot
-    return out, screen, into
-  end
-  local leaf = { slot = slot, weight = 1 }
-  if node.scroll then
-    local order = {}
-    for i, name in ipairs(sorted_keys(global_slots(data))) do
-      order[name] = i
-    end
-    local at, last = nil, 0
-    for i, child in ipairs(node.children) do
-      if child.slot then
-        if not at and (order[child.slot] or math.huge) > order[slot] then
-          at = i
-        end
-        last = i
-      end
-    end
-    table.insert(node.children, at or last + 1, leaf)
-  elseif node.children then
-    node.children[#node.children + 1] = leaf
-  else
-    node = { split = "h", weight = 1, children = { node, leaf } }
-  end
-  trees[screen] = serialize.tree(node)
-  return out, screen, into
 end
 
 -- The slots a set of trees (screen -> text) places, as a set.

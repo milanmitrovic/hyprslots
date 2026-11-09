@@ -115,12 +115,13 @@ return { slots = data.slots, specs = data.specs, desks = data.desks, layouts = d
 ]]
 
 -- Workspace 3: scroll[left, main, right] on the laptop screen; workspace 4: a split.
+-- Every tree holds every slot.
 local SLOTS = [[
 return {
-  slots = { left = {}, main = {}, right = {}, a = {}, b = {} },
+  slots = { left = {}, main = {}, right = {} },
   specs = {
     [3] = { left = "t-left", main = "t-main", right = "t-right" },
-    [4] = { a = "t-a", b = "t-b" },
+    [4] = { left = "t-a", right = "t-b" },
   },
   desks = { laptop = { monitors = { "eDP-1" }, layout = "laptop" } },
   layouts = {
@@ -128,7 +129,7 @@ return {
       screens = 1,
       workspaces = {
         [3] = { [1] = "scroll[left, main, right]" },
-        [4] = { [1] = "h[a, b]" },
+        [4] = { [1] = "h[left, main, right]" },
       },
     },
   },
@@ -470,7 +471,7 @@ describe("a scroll branch", function()
       open(2, "t-left", 3)
       hl.run_timers()
       local reply = call("record", '{"workspace_id": 3}')
-      assert.are.equal("scroll[left, right]", reply.tree)
+      assert.are.equal("scroll[left, right, main]", reply.tree, "a slot with no window stays, at the end")
       assert.are.same({ "main" }, reply.missing)
       assert.is_false(reply.applied)
     end)
@@ -485,8 +486,8 @@ describe("a scroll branch", function()
       hl.dispatch(hl.dsp.window.swap({ window = "address:" .. left.address, target = "address:" .. foot.address }))
       local reply = call("record", '{"workspace_id": 3}')
       assert.is_true(reply.ok, reply.error)
-      assert.are.equal("scroll[*, main, left]", reply.tree)
-      assert.are.same({}, reply.missing)
+      assert.are.equal("scroll[*, main, left, right]", reply.tree)
+      assert.are.same({ "right" }, reply.missing)
     end)
 
     it("says the overflow column is missing when no window with no slot shows", function()
@@ -496,8 +497,8 @@ describe("a scroll branch", function()
       assert.is_true(call("set_tree", json.encode({ workspace = 3, screen = 1, tree = "scroll[left, *, main]" })).ok)
       hl.run_timers()
       local reply = call("record", '{"workspace_id": 3}')
-      assert.are.equal("scroll[left, main]", reply.tree)
-      assert.are.same({ "*" }, reply.missing)
+      assert.are.equal("scroll[left, main, right]", reply.tree)
+      assert.are.same({ "*", "right" }, reply.missing)
       assert.is_false(reply.applied)
     end)
   end)

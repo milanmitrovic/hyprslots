@@ -20,7 +20,9 @@
 -- below). Pure; the table given is never changed.
 
 local desk = require("hyprslots.desk")
+local edit = require("hyprslots.edit")
 local serialize = require("hyprslots.serialize")
+local tree = require("hyprslots.tree")
 
 local M = {}
 
@@ -69,11 +71,127 @@ function M.legacy(data)
   return false
 end
 
--- The data in the global shape (a copy), and whether it had to change.
+-- The data in today's shape (a copy), and whether it had to change: the
+-- shapes of before (M.slots, M.desks), and then what today's shape no longer
+-- has or always has (M.unpin, M.normalize). The third value says whether a
+-- shape of before was read (the first two alone), which config.validate
+-- reports for a table config.lua builds in code.
 function M.data(data, monitors)
   local out, changed = M.slots(data)
   local converted, moved = M.desks(out, monitors)
-  return converted, changed or moved
+  local normalized, filled = M.normalize(converted)
+  return normalized, changed or moved or filled, changed or moved
+end
+
+local function set_of(list)
+  local out = {}
+  for _, value in ipairs(list) do
+    out[value] = true
+  end
+  return out
+end
+
+-- One tree set (screen -> text) holding every global slot (`names`,
+-- sorted, `global` the same as a set): the slots that are not global
+-- dropped (a tree left with none goes), the missing ones appended
+-- (tree.append) to the left-most screen that has a tree. Changes `trees`
+-- in place; a tree whose slots stay is kept as written. Returns whether
+-- anything changed. A set with a tree that does not parse is left alone,
+-- for config.validate to report.
+local function fill(trees, names, global)
+  local screens, nodes = {}, {}
+  for screen, text in pairs(trees) do
+    if type(text) ~= "string" then
+      return false
+    end
+    local node = tree.parse(text)
+    if not node then
+      return false
+    end
+    screens[#screens + 1] = screen
+    nodes[screen] = node
+  end
+  table.sort(screens, function(a, b)
+    if type(a) == type(b) then
+      return a < b
+    end
+    return type(a) == "number"
+  end)
+
+  local placed, touched = {}, {}
+  for _, screen in ipairs(screens) do
+    local node = nodes[screen]
+    for _, slot in ipairs(tree.slots(node)) do
+      if global[slot] then
+        placed[slot] = true
+      else
+        node = node and edit.remove_leaf(node, slot)
+        touched[screen] = true
+      end
+    end
+    nodes[screen] = node
+  end
+  local missing = {}
+  for _, name in ipairs(names) do
+    if not placed[name] then
+      missing[#missing + 1] = name
+    end
+  end
+  if #missing > 0 then
+    for _, screen in ipairs(screens) do
+      if nodes[screen] then
+        nodes[screen] = tree.append(nodes[screen], missing)
+        touched[screen] = true
+        break
+      end
+    end
+  end
+  local changed = false
+  for _, screen in ipairs(screens) do
+    if touched[screen] then
+      trees[screen] = nodes[screen] and serialize.tree(nodes[screen]) or nil
+      changed = true
+    end
+  end
+  return changed
+end
+
+-- Every tree holds every global slot: each tree set of each layout (its
+-- default trees, each workspace's own) gets the global slots it leaves out,
+-- by name, and loses the slots that are not global (fill above). Empty
+-- slots close up, so a slot nothing fills on a workspace takes no room.
+-- Returns the data (a copy) and whether it changed. A set with no trees
+-- stays without any.
+function M.normalize(data)
+  local out = copy(data)
+  if type(out) ~= "table" or type(out.slots) ~= "table" or type(out.layouts) ~= "table" then
+    return out, false
+  end
+  local names = {}
+  for name in pairs(out.slots) do
+    if type(name) == "string" then
+      names[#names + 1] = name
+    end
+  end
+  table.sort(names)
+  local global = set_of(names)
+  local changed = false
+  for _, name in ipairs(sorted(out.layouts)) do
+    local layout = out.layouts[name]
+    if type(layout) == "table" then
+      if type(layout.default) == "table" and fill(layout.default, names, global) then
+        changed = true
+      end
+      if type(layout.workspaces) == "table" then
+        for _, n in ipairs(sorted(layout.workspaces)) do
+          if type(layout.workspaces[n]) == "table" and fill(layout.workspaces[n], names, global) then
+            changed = true
+          end
+        end
+      end
+    end
+  end
+  return out, changed
 end
 
 -- The per-workspace slots of before read as global slots (a copy), and

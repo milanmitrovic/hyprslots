@@ -512,6 +512,19 @@ local function leaves(node, out)
   return out
 end
 
+-- The slot names among a record's missing leaves (not the overflow leaf):
+-- every tree places every slot, so a slot with no window to record stays in
+-- the recorded tree, at its end (tree.append), on the screen it was on.
+local function slots_of(missing)
+  local out = {}
+  for _, slot in ipairs(missing) do
+    if slot ~= tree.OVERFLOW then
+      out[#out + 1] = slot
+    end
+  end
+  return out
+end
+
 -- Apply a recorded tree when asked, or when it places every slot of the
 -- current tree; fills in reply.applied. Returns the reply, or a failure.
 local function apply_record(engine, args, reply)
@@ -566,10 +579,11 @@ record_scroll = function(engine, args, id, entry, name, branch)
       missing[#missing + 1] = slot
     end
   end
-  local node = { scroll = true, weight = 1, children = {} }
+  local node = { scroll = true, width = branch.width, weight = 1, children = {} }
   for i, slot in ipairs(present) do
     node.children[i] = slot == tree.OVERFLOW and { overflow = true, weight = 1 } or { slot = slot, weight = 1 }
   end
+  node = tree.append(node, slots_of(missing))
   return apply_record(engine, args, { layout = name, workspace = entry.workspace, screen = entry.screen,
     workspace_id = id, tree = serialize.tree(node), ratio = ratio.format(node), missing = missing, applied = false })
 end
@@ -615,6 +629,7 @@ function handlers.record(engine, args)
       missing[#missing + 1] = leaf.slot
     end
   end
+  node = tree.append(node, slots_of(missing))
   return apply_record(engine, args, { layout = name, workspace = entry.workspace, screen = entry.screen,
     workspace_id = id, tree = serialize.tree(node), ratio = ratio.format(node), missing = missing, applied = false })
 end
@@ -877,9 +892,9 @@ function handlers.add_slot(engine, args)
   return { slot = args.slot, description = cfg.slots[args.slot].description, seq = engine.seq }
 end
 
--- remove_slot { slot, force? }: refused while trees place the slot or workspaces
--- have specs for it, saying where, unless force; then it goes from all of
--- them too.
+-- remove_slot { slot, force? }: refused while workspaces have specs for it
+-- (every tree holds it anyway), saying which, unless force; then it goes from
+-- every tree and those specs too.
 function handlers.remove_slot(engine, args)
   local ok, err = editable_slots(engine)
   if not ok then
@@ -890,21 +905,16 @@ function handlers.remove_slot(engine, args)
   if not data then
     return fail(edit_err)
   end
+  -- Every tree holds every slot, so only the workspaces that fill it make
+  -- removing it a loss to confirm.
   local uses = edit.slot_uses(engine.data, slot)
-  if (#uses.trees > 0 or #uses.specs > 0) and args.force ~= true then
-    local where = {}
-    if #uses.trees > 0 then
-      where[#where + 1] = "placed by " .. table.concat(uses.trees, ", ")
+  if #uses.specs > 0 and args.force ~= true then
+    local workspaces = {}
+    for i, workspace in ipairs(uses.specs) do
+      workspaces[i] = tostring(workspace)
     end
-    if #uses.specs > 0 then
-      local workspaces = {}
-      for i, workspace in ipairs(uses.specs) do
-        workspaces[i] = tostring(workspace)
-      end
-      where[#where + 1] = "filled on workspace" .. (#workspaces > 1 and "s " or " ") .. list(workspaces)
-    end
-    return fail(string.format("slot '%s' is %s; remove it with force: true to take it out of all of them",
-      slot, table.concat(where, " and ")))
+    return fail(string.format("slot '%s' is filled on workspace%s %s; remove it with force: true to take it out of "
+      .. "every tree and those workspaces", slot, #workspaces > 1 and "s" or "", list(workspaces)))
   end
   local cfg, apply_err = apply_edit(engine, data, function(c)
     if c.slots[slot] then
@@ -1042,32 +1052,12 @@ function handlers.clear_spec(engine, args)
   return { workspace = workspace, slot = args.slot, spec = was, seq = engine.seq }
 end
 
--- The screen (on the active desk) of the workspace a window is on, or nil.
-local function window_screen(engine, window)
-  local entry = engine.workspaces[window.workspace_id]
-  if entry then
-    return entry.screen
-  end
-  local ok, monitor = pcall(adapter.workspace_monitor, window.workspace_id)
-  for screen, name in ipairs(ok and engine.active and engine.active.monitors or {}) do
-    if name == monitor then
-      return screen
-    end
-  end
-  return nil
-end
-
--- take_spec { workspace, slot, address, place?, layout?, screen? }: the
--- Assignment view's a (aerolayout's):
--- the window's spec (spec.from_window) becomes the workspace's spec for the slot,
--- replacing the one it had, and the window takes the slot (over any other
--- window the spec matches; the one that held it is routed again). The edit
--- is checked before anything moves. With place, a slot the workspace's trees
--- in the layout (default the active one) do not place is put into them first
--- (edit.place_slot: the workspace's own trees, else the layout's shared
--- ones, never a copy), on `screen`, else the screen of the window's
--- workspace, else 1; reply `placed` { layout, screen, tree, used_by[],
--- shared (true when it went into the shared trees) }.
+-- take_spec { workspace, slot, address }: the Assignment view's a
+-- (aerolayout's): the window's spec (spec.from_window) becomes the
+-- workspace's spec for the slot, replacing the one it had, and the window
+-- takes the slot (over any other window the spec matches; the one that held
+-- it is routed again). The edit is checked before anything moves. Every
+-- tree places every slot, so the slot is in the workspace's trees already.
 function handlers.take_spec(engine, args)
   local window = live_window(args.address)
   if not window then
@@ -1082,23 +1072,6 @@ function handlers.take_spec(engine, args)
     return fail("window " .. tostring(args.address) .. " has no class to make a spec of")
   end
   local data, edit_err = engine.data, nil
-  local placed
-  if args.place == true then
-    local name, layout_err = target_layout(engine, args)
-    if not name then
-      return fail(layout_err)
-    end
-    local screen = as_screen(args.screen) or window_screen(engine, window) or 1
-    if math.type(screen) ~= "integer" or screen < 1 or screen > engine.cfg.layouts[name].screens then
-      screen = 1
-    end
-    local on, into
-    data, on, into = edit.place_slot(data, name, workspace, args.slot, screen)
-    if not data then
-      return fail(on)
-    end
-    placed = on and { layout = name, screen = on, shared = into == "default" }
-  end
   data, edit_err = edit.set_spec(data, workspace, args.slot, text)
   if not data then
     return fail(edit_err)
@@ -1111,26 +1084,6 @@ function handlers.take_spec(engine, args)
   if not cfg then
     return fail(load_err)
   end
-  if placed then
-    -- the placed tree replaces a keyboard-resized one of that branch: of
-    -- every workspace showing the shared trees, when it went into them
-    local before = engine.cfg.layouts[placed.layout]
-    for n = 1, placed.shared and (engine.cfg.workspaces or WORKSPACES) or 0 do
-      if before.workspaces[n] == nil then
-        resize.clear(engine, placed.layout, n, placed.screen)
-      end
-    end
-    resize.clear(engine, placed.layout, workspace, placed.screen)
-    local users = array()
-    for _, desk_name in ipairs(cfg.desk_names) do
-      if cfg.desks[desk_name].layout == placed.layout then
-        users[#users + 1] = desk_name
-      end
-    end
-    placed = object({ layout = placed.layout, screen = placed.screen,
-      tree = serialize.tree(configured_tree(cfg, placed.layout, workspace, placed.screen)), used_by = users,
-      shared = placed.shared or nil })
-  end
   local before = engine.data.specs and engine.data.specs[workspace]
   local replaced = type(before) == "table" and before[args.slot] or nil
   -- Into the slot first, so the re-solve under the new spec keeps it there;
@@ -1141,7 +1094,7 @@ function handlers.take_spec(engine, args)
   end
   engine:apply_config(cfg, data, true)
   return { workspace = workspace, slot = args.slot, spec = text, replaced = replaced, address = window.address,
-    displaced = displaced, placed = placed, seq = engine.seq }
+    displaced = displaced, seq = engine.seq }
 end
 
 -- Desks and layouts (the Desk view) --------------------------------
