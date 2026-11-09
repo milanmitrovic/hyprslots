@@ -876,11 +876,12 @@ test_body() {
   expect_eq "it says so" "Cleared workspace 3's spec for side (t-side): the slot is empty. Ctrl+S saves." "$(smoke message)"
   expect_eq "side's row is empty again" "empty side -" "$(smoke selection)"
 
-  # [ pages back to every window, 3 jumps to workspace 3's page, 7 has none.
+  # [ pages back to workspace 2 (no every-window page), 7 has a page too,
+  # 3 jumps back to workspace 3's page.
   press_keys [
-  expect_eq "[ pages to every window" "slot main t-main" "$(smoke selection)"
+  expect_eq "[ pages to workspace 2" "Workspace 2" "$(smoke assignmentPage)"
   press_keys 7
-  expect_eq "7: workspace 7 has no page" "Workspace 7 has no slots: no tree places one and it has no spec." "$(smoke message)"
+  expect_eq "7 jumps to workspace 7's page" "Workspace 7" "$(smoke assignmentPage)"
   press_keys 3
   expect_eq "3 jumps to workspace 3's page" "slot main t-main" "$(smoke selection)"
   # workspaces = 9 in config.lua: 0 is no key, the help says 1–9.

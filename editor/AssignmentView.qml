@@ -14,7 +14,7 @@ import "Help.js" as Help
 // global slot is a row, those no tree of the workspace places looking the
 // same, and `a` into one places it in the active layout's tree; then
 // the windows overflowing on the workspace and any others on it, on any
-// screen. ←/→ (or [ ]) page through every window and each workspace, the
+// screen. ←/→ (or [ ]) page through workspaces 1 to N (the managed ones), the
 // digits jump to a workspace's page (0 is workspace 10); ↑/↓ select. `a` puts
 // the selected window into one of the global slots on the workspace (one key
 // per slot, as the TUI prompts) and makes the window's spec the workspace's
@@ -66,7 +66,6 @@ Item {
     }
     return count > 1
   }
-  readonly property bool showWorkspace: currentPage.workspace === null
   readonly property string placeNoteText: Assignment.placeNote(state, rows)
 
   // The controls strip (StyledText: each trigger key highlighted, Help.js).
@@ -104,14 +103,10 @@ Item {
     select(0)
   }
 
-  // A digit: workspace n's page, when it has one (workspaces with specs or
-  // trees).
+  // A digit: workspace n's page.
   function goWorkspace(n) {
     var i = Assignment.pageOfWorkspace(state, n)
-    if (i < 0) {
-      say("Workspace " + n + " has no slots: no tree places one and it has no spec.", true)
-      return
-    }
+    if (i < 0) return
     page = i
     selectedKey = ""
     select(0)
@@ -123,7 +118,7 @@ Item {
     messageIsError = !!isError
   }
 
-  // Back to the opening page: the focused workspace's number.
+  // Back to the opening page: the focused workspace's, else workspace 1's.
   function reset() {
     prompt = null
     _answer = null
@@ -148,13 +143,8 @@ Item {
       say("No window in " + row.slot + ": select a window, then a puts it there.", true)
       return
     }
-    var focusedNumber = Assignment.workspaceOf(state, focusedWorkspace)
-    var workspace = Assignment.assignWorkspace(state, currentPage.workspace, row, focusedNumber)
-    if (workspace === null) {
-      say(row.cls + " is on no workspace: page to a workspace (←/→, or its digit) to assign it there.", true)
-      return
-    }
-    var options = Assignment.slotOptions(state, currentPage.workspace, row, focusedNumber)
+    var workspace = currentPage.workspace
+    var options = Assignment.slotOptions(state, workspace)
     if (options.length === 0) {
       say("There are no slots yet: make them in the Layout tab's slot list (s, then a).", true)
       return
@@ -259,12 +249,11 @@ Item {
     return true
   }
 
-  // Columns: [Ws] [Screen] Slot App Title, sized by share of the width.
-  readonly property real workspaceWidth: showWorkspace ? width * 0.07 : 0
+  // Columns: [Screen] Slot App Title, sized by share of the width.
   readonly property real screenWidth: showScreen ? width * 0.1 : 0
   readonly property real slotWidth: width * 0.18
   readonly property real appWidth: width * 0.18
-  readonly property real titleWidth: width - workspaceWidth - screenWidth - slotWidth - appWidth
+  readonly property real titleWidth: width - screenWidth - slotWidth - appWidth
   readonly property int rowHeight: Math.max(Style.space(26), Style.font.body + Style.spacing.md * 2)
 
   Column {
@@ -345,7 +334,6 @@ Item {
       width: parent.width
       Repeater {
         model: [
-          { text: "Ws", width: root.workspaceWidth },
           { text: "Screen", width: root.screenWidth },
           { text: "Slot", width: root.slotWidth },
           { text: "App", width: root.appWidth },
@@ -401,19 +389,6 @@ Item {
 
         Row {
           anchors.fill: parent
-          Text {
-            width: root.workspaceWidth
-            visible: root.showWorkspace
-            anchors.verticalCenter: parent.verticalCenter
-            leftPadding: Style.spacing.md
-            textFormat: Text.PlainText
-            text: rowItem.modelData.workspace !== null && rowItem.modelData.workspace !== undefined ? String(rowItem.modelData.workspace) : ""
-            color: rowItem.ink
-            opacity: 0.7
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.body
-            elide: Text.ElideRight
-          }
           Text {
             width: root.screenWidth
             visible: root.showScreen

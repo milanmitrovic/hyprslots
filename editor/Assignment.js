@@ -26,27 +26,18 @@
 // for), "empty" (a slot of the workspace with no window and no spec: nothing
 // says what fills it, so nothing is missing).
 
-// The workspaces with a page: of the engine's used workspaces (specs, or
-// trees in any layout), those the active layout shows trees for or that
-// have specs; a workspace only another layout places slots on has nothing
-// to show here.
-function workspaceList(state) {
-  var used = state && Array.isArray(state.used_workspaces) ? state.used_workspaces : []
-  var specs = (state && state.specs) || {}
-  var layout = state && state.layouts && state.layout ? state.layouts[state.layout] : null
-  var shows = layout && layout.workspaces ? layout.workspaces : {}
-  return used.filter(function(n) {
-    var trees = shows[String(n)]
-    var spec = specs[String(n)]
-    return (!!trees && Object.keys(trees).length > 0) || (!!spec && Object.keys(spec).length > 0)
-  })
+// How many workspaces the engine manages (state `workspace_count`, 1 to 10;
+// 10 without one), as Workspaces.js counts them.
+function workspaceCount(state) {
+  var n = state && state.workspace_count
+  return typeof n === "number" && n >= 1 && n <= 10 ? n : 10
 }
 
-// The pages ←/→ move through: every window, then each workspace.
+// The pages ←/→ move through: workspaces 1 to N, the ones the engine manages.
 function pages(state) {
-  var out = [{ workspace: null, label: "All windows" }]
-  var numbers = workspaceList(state)
-  for (var i = 0; i < numbers.length; i++) out.push({ workspace: numbers[i], label: "Workspace " + numbers[i] })
+  var out = []
+  var last = workspaceCount(state)
+  for (var n = 1; n <= last; n++) out.push({ workspace: n, label: "Workspace " + n })
   return out
 }
 
@@ -153,48 +144,14 @@ function holders(state) {
   return out
 }
 
-// The rows of one page: `workspace` a workspace number, or null for every
-// window.
+// The rows of workspace `workspace`'s page.
 function rows(state, workspace) {
-  if (!state) return []
+  if (!state || workspace === null || workspace === undefined) return []
   var windows = windowList(state)
   var held = holders(state)
   var out = []
   var used = {}
   var i
-
-  if (workspace === null || workspace === undefined) {
-    var numbers = workspaceList(state)
-    for (var d = 0; d < numbers.length; d++) {
-      var order = slotOrder(state, numbers[d])
-      for (var s = 0; s < order.length; s++) {
-        var holder = held[numbers[d] + "/" + order[s].slot]
-        if (holder) {
-          used[holder.address] = true
-          out.push(windowRow(state, holder))
-        }
-      }
-    }
-    for (i = 0; i < windows.length; i++) {
-      if (!used[windows[i].address] && windows[i].slot !== undefined && windows[i].slot !== null) {
-        used[windows[i].address] = true // a slot of a workspace the list does not name
-        out.push(windowRow(state, windows[i]))
-      }
-    }
-    for (i = 0; i < windows.length; i++) {
-      if (!used[windows[i].address] && windows[i].overflow) {
-        used[windows[i].address] = true
-        out.push(windowRow(state, windows[i]))
-      }
-    }
-    var rest = windows.filter(function(w) { return !used[w.address] })
-    rest.sort(function(a, b) {
-      if (a.workspace_id !== b.workspace_id) return (a.workspace_id || 0) - (b.workspace_id || 0)
-      return a.address < b.address ? -1 : a.address > b.address ? 1 : 0
-    })
-    for (i = 0; i < rest.length; i++) out.push(windowRow(state, rest[i]))
-    return out
-  }
 
   var slots = slotOrder(state, workspace)
   var specs = workspaceSpecs(state, workspace)
@@ -306,32 +263,20 @@ function unassignPlan(state, row) {
     + " and clear workspace " + row.workspace + "'s spec for it (" + spec + ")? (the slot is left empty)" }
 }
 
-// The workspace `a` assigns on (and writes the spec into): the page's
-// workspace; on the every-window page the row's workspace, else the number of
-// the workspace it is on, else `focusedNumber` (the focused workspace's); null
-// when there is none.
-function assignWorkspace(state, workspace, row, focusedNumber) {
-  if (workspace !== null && workspace !== undefined) return workspace
-  if (row && row.workspace !== null && row.workspace !== undefined) return row.workspace
-  var own = row ? workspaceOf(state, row.workspaceId) : null
-  if (own !== null) return own
-  return focusedNumber === undefined ? null : focusedNumber
-}
-
 function assignTitle(workspace) {
   return "Assign to workspace " + workspace + " slot (takes its spec)"
 }
 
-// The slots `a` offers for a row: every global slot, on the workspace
-// assignWorkspace picks (none without one), the workspace's own in tree order
+// The slots `a` offers on workspace `workspace`'s page: every global slot,
+// the workspace's own in tree order
 // first, then the rest by name. Each option is { key, workspace, slot, spec
 // (the workspace's spec for it, "" for none), holder } where holder is the
 // address in the slot (or null) and key the letter that picks it: the slot's
 // first letter, or the first digit still free when that letter is taken
 // (aerolayout's rule); "" when there is none left (pick it with the arrows).
-function slotOptions(state, workspace, row, focusedNumber) {
-  var on = assignWorkspace(state, workspace, row, focusedNumber)
-  if (on === null) return []
+function slotOptions(state, workspace) {
+  var on = workspace
+  if (on === null || on === undefined) return []
   var held = holders(state)
   var specs = workspaceSpecs(state, on)
   var names = slotOrder(state, on).map(function(o) { return o.slot })
@@ -373,21 +318,18 @@ function promptOptions(options) {
   })
 }
 
-// The page to open on: the focused workspace's number, else every window.
 // The page of workspace `workspace` (the digit keys jump to it), -1 when it
-// has none.
+// is no managed one.
 function pageOfWorkspace(state, workspace) {
   var list = pages(state)
   for (var i = 0; i < list.length; i++) if (list[i].workspace === workspace) return i
   return -1
 }
 
+// The page to open on: the focused workspace's, else workspace 1's.
 function initialPage(state, workspaceId) {
-  var workspace = workspaceOf(state, workspaceId)
-  if (workspace === null) return 0
-  var list = pages(state)
-  for (var i = 0; i < list.length; i++) if (list[i].workspace === workspace) return i
-  return 0
+  var i = pageOfWorkspace(state, workspaceOf(state, workspaceId))
+  return i < 0 ? 0 : i
 }
 
 // The line under the header on a page with slots no tree places, when other

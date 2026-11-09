@@ -187,6 +187,11 @@ Item {
     return row ? row.status + " " + (row.slot || "-") + " " + (row.cls || row.spec || "-") : ""
   }
 
+  // The Assignment view's page label ("Workspace 3"): for the e2e smoke.
+  function assignmentPageText() {
+    return assignmentView.currentPage ? assignmentView.currentPage.label : ""
+  }
+
   // The Assignment view's rows, "<slot>|<app>|<title>" joined by "; ", and
   // the line under its header: for the e2e smoke.
   function assignmentRowsText() {

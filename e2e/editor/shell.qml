@@ -147,6 +147,11 @@ ShellRoot {
       return panel.headerText()
     }
 
+    // The Assignment view's page: "Workspace 3".
+    function assignmentPage(): string {
+      return panel.assignmentPageText()
+    }
+
     // The current view's help row, as the StyledText it draws (each trigger
     // key in <b><font color=accent>).
     function help(): string {
