@@ -636,7 +636,7 @@ Item {
         var specs = reply.specs || []
         root.say("Renamed '" + old + "' to '" + reply.to + "'."
           + (reply.trees > 0 ? " Rewrote " + reply.trees + (reply.trees === 1 ? " tree." : " trees.") : "")
-          + (specs.length ? " Moved the specs of workspace" + (specs.length > 1 ? "s " : " ") + specs.join(", ") + "." : ""),
+          + (specs.length ? " Its assignments on workspace" + (specs.length > 1 ? "s " : " ") + specs.join(", ") + " follow." : ""),
           false)
       })
     }

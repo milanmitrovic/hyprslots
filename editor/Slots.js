@@ -67,7 +67,7 @@ function deleteQuestion(row) {
   if (row.places.length) parts.push("the trees " + row.places.join(", "))
   if (row.specs.length) {
     var numbers = row.specs.map(function(s) { return s.workspace })
-    parts.push("the specs of workspace" + (numbers.length > 1 ? "s " : " ") + numbers.join(", "))
+    parts.push("the assignments of workspace" + (numbers.length > 1 ? "s " : " ") + numbers.join(", "))
   }
   if (parts.length) q += " It goes from " + parts.join(" and ") + "."
   return q

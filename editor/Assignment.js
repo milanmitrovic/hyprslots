@@ -202,7 +202,7 @@ function slotText(row) {
   switch (row.status) {
   case "slot": return row.slot
   case "manual": return row.slot + " (by hand)"
-  case "overflow": return "overflow (" + row.slot + ")"
+  case "overflow": return "other (" + row.slot + " taken)"
   case "unassigned": return "unassigned"
   case "missing": return row.slot
   case "empty": return row.slot
@@ -216,11 +216,12 @@ function specText(row) {
   return row.spec ? row.spec : "—"
 }
 
-// What the Title column says: "Missing" for a slot whose window is not
-// open, a dash for an empty one (placed by a tree or not: they look the
+// What the Title column says: "Missing — waiting for it to open" for a
+// slot whose window is not open (the App column names the window it waits
+// for), a dash for an empty one (placed by a tree or not: they look the
 // same), else the window's title.
 function titleText(row) {
-  if (row.kind === "missing") return "Missing"
+  if (row.kind === "missing") return "Missing — waiting for it to open"
   if (row.kind === "empty") return "—"
   return row.title || "No Title"
 }
@@ -245,26 +246,29 @@ function unassignPlan(state, row) {
     var waits = workspaceSpecs(state, row.workspace)[row.slot]
     var text = waits !== undefined ? String(waits) : row.spec
     return { clear: { workspace: row.workspace, slot: row.slot, spec: text },
-      question: "Clear workspace " + row.workspace + "'s spec for " + row.slot + " (" + text + ")? The slot is left empty" }
+      question: "Unassign " + text + " from " + row.slot + " on workspace " + row.workspace
+        + "? It is not open; the slot is left empty." }
   }
   if (row.kind !== "window") {
-    return { error: "Workspace " + row.workspace + " has no spec for " + row.slot
-      + " and no window in it: there is nothing to unassign." }
+    return { error: "Nothing is assigned to " + row.slot + " on workspace " + row.workspace + ": there is nothing to unassign." }
   }
   if (row.status === "overflow") {
-    return { address: row.address, clearSpec: false, question: "Take " + row.cls + " out of the overflow of " + row.slot + "?" }
+    return { address: row.address, clearSpec: false, question: "Unassign " + row.cls + " from " + row.slot
+      + "? It waits with the other windows while " + row.slot + " is taken." }
   }
-  if (row.status !== "slot" && row.status !== "manual") return { error: row.cls + " is in no slot." }
+  if (row.status !== "slot" && row.status !== "manual") return { error: row.cls + " is assigned to no slot." }
   var spec = workspaceSpecs(state, row.workspace)[row.slot]
   if (spec === undefined) {
     return { address: row.address, clearSpec: false, question: "Unassign " + row.cls + " from " + row.slot + "?" }
   }
   return { address: row.address, clearSpec: true, question: "Unassign " + row.cls + " from " + row.slot
-    + " and clear workspace " + row.workspace + "'s spec for it (" + spec + ")? (the slot is left empty)" }
+    + " on workspace " + row.workspace + "? The slot is left empty." }
 }
 
-function assignTitle(workspace) {
-  return "Assign to workspace " + workspace + " slot (takes its spec)"
+// The question `a` asks: which slot of workspace `workspace` the window
+// (its class, `cls`) goes into.
+function assignTitle(workspace, cls) {
+  return "Assign " + cls + " to a slot on workspace " + workspace
 }
 
 // The slots `a` offers on workspace `workspace`'s page: every global slot,

@@ -702,7 +702,7 @@ assignment_place() {
   local rows want_slots
   rows=$(smoke rows)
   log "workspace 8 rows: $rows"
-  if [[ $rows == "main|[Research]|Missing; right|—|—; "* ]]; then
+  if [[ $rows == "main|[Research]|Missing — waiting for it to open; right|—|—; "* ]]; then
     pass "workspace 8 lists main Missing [Research], then right empty, in tree order"
   else
     fail "rows: $rows"
@@ -724,7 +724,7 @@ assignment_place() {
   done
   expect_eq "the t-left window selected" "none - t-left" "$(smoke selection)"
   press_keys a
-  if [[ $(smoke message) == "Assign to workspace 8 slot (takes its spec): (m)ain, (r)ight, "*"(l)eft"* ]]; then
+  if [[ $(smoke message) == "Assign t-left to a slot on workspace 8: (m)ain, (r)ight, "*"(l)eft"* ]]; then
     pass "a offers workspace 8's slots, the tree's first: $(smoke message)"
   else
     fail "a prompt: $(smoke message)"
@@ -737,13 +737,13 @@ assignment_place() {
   fi
   expect_eq "and put t-left there" '{"slot":"left","workspace":8}' "$(assignment_of "$left")"
   eventually 5 smoke_idle || true
-  if [[ $(smoke message) == "Assigned t-left to left (workspace 8)"*"placed left in layout $layout, workspace 8 screen 1: scroll[left, main, right]"* ]]; then
+  if [[ $(smoke message) == "Assigned t-left to left on workspace 8"*"placed left in layout $layout, workspace 8 screen 1: scroll[left, main, right]"* ]]; then
     pass "the message says where left went: $(smoke message)"
   else
     fail "message: $(smoke message)"
   fi
   rows=$(smoke rows)
-  if [[ $rows == "left|t-left|window; main|[Research]|Missing; right|—|—; "* ]]; then
+  if [[ $rows == "left|t-left|window; main|[Research]|Missing — waiting for it to open; right|—|—; "* ]]; then
     pass "left is now in layout, in tree order"
   else
     fail "rows after a: $rows"
@@ -792,7 +792,7 @@ test_body() {
     "Desk: solo · Layout: solo (also used by: beamer)" "$(header)"
   local help
   help=$(smoke help)
-  if [[ $help == *'<b><font color="#'*'">a</font></b>ssign + take spec'* && $help == *'">u</font></b>nassign'* \
+  if [[ $help == *'<b><font color="#'*'">a</font></b>ssign  '* && $help == *'">u</font></b>nassign  '* && $help != *spec* \
     && $help == *'">Ctrl+S</font></b> save'* && $help == *'">q</font></b> close'* ]]; then
     pass "the help row highlights each trigger key in the accent colour"
   else
@@ -807,9 +807,9 @@ test_body() {
   local watch="qs ipc --pid $SMOKE_QS_PID call smoke"
   eventually 5 bash -c "[[ \$($watch selection) == 'none - t-stray' ]]"
   expect_eq "Down x3 selects the stray" "none - t-stray" "$(smoke selection)"
-  eventually 3 bash -c "[[ \$($watch message) == 'Assign to workspace 3 slot'* ]]" || fail "a opened no prompt: $(smoke message)"
+  eventually 3 bash -c "[[ \$($watch message) == 'Assign t-stray to a slot on workspace 3'* ]]" || fail "a opened no prompt: $(smoke message)"
   expect_eq "a prompts with the global slots on workspace 3" \
-    "Assign to workspace 3 slot (takes its spec): (m)ain, (r)ight, (s)ide? [Esc] cancel   → main" "$(smoke message)"
+    "Assign t-stray to a slot on workspace 3: (m)ain, (r)ight, (s)ide? [Esc] cancel   → main" "$(smoke message)"
   wait "$SMOKE_WTYPE_PID" 2>/dev/null
   if eventually 5 assigned_to_side "$stray"; then
     pass "keys a, s put the stray in side"
@@ -829,8 +829,8 @@ test_body() {
   # And u, y (through the panel's press() hook) takes it out again, the
   # spec a took from it with it: side is left empty, not Missing t-stray.
   expect_eq "u" "ok" "$(smoke press u)"
-  expect_eq "u asks, naming the spec it clears" \
-    "Unassign t-stray from side and clear workspace 3's spec for it (t-stray)? (the slot is left empty) (y/n)" "$(smoke message)"
+  expect_eq "u asks, saying the slot is left empty" \
+    "Unassign t-stray from side on workspace 3? The slot is left empty. (y/n)" "$(smoke message)"
   expect_eq "y" "ok" "$(smoke press y)"
   if eventually 5 unassigned "$stray"; then
     pass "u, y unassigned the stray"
@@ -856,13 +856,13 @@ test_body() {
   eventually 5 bash -c "[[ \$($watch selection) == 'missing side t-side' ]]" || true
   expect_eq "side is Missing t-side" "missing side t-side" "$(smoke selection)"
   expect_eq "c is no key" "ignored" "$(smoke press c)"
-  if [[ $(smoke help) == *'">u</font></b>nassign: clear the Missing spec'* ]]; then
-    pass "the help row says what u does on a Missing row"
+  if [[ $(smoke help) == *'">u</font></b>nassign  '* ]]; then
+    pass "the help row's u is unassign on a Missing row too"
   else
     fail "help row: $(smoke help)"
   fi
   press_keys u
-  expect_eq "u on a Missing row asks first" "Clear workspace 3's spec for side (t-side)? The slot is left empty (y/n)" \
+  expect_eq "u on a Missing row asks first" "Unassign t-side from side on workspace 3? It is not open; the slot is left empty. (y/n)" \
     "$(smoke message)"
   sleep 0.3
   shot 3b-unassign-missing
@@ -873,7 +873,7 @@ test_body() {
     fail "side's spec is $(api_state | jq -r '.specs["3"].side'): $(smoke message)"
   fi
   eventually 5 smoke_idle || true
-  expect_eq "it says so" "Cleared workspace 3's spec for side (t-side): the slot is empty. Ctrl+S saves." "$(smoke message)"
+  expect_eq "it says so" "Unassigned t-side from side on workspace 3: the slot is empty. Ctrl+S saves." "$(smoke message)"
   expect_eq "side's row is empty again" "empty side -" "$(smoke selection)"
 
   # [ pages back to workspace 2 (no every-window page), 7 has a page too,

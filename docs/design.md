@@ -754,14 +754,15 @@ the focused one is not managed). A workspace's table lists
 every global slot, always: first the ones the active layout's trees for it
 place, in tree order, screen by screen of the active desk, then every other
 global slot by name, looking exactly like the placed ones. Each is the window in
-it, a red `Missing` row with the spec it waits for when the workspace has a
-spec for the slot but no such window is open, or an empty row (`—` for app
+it, a red `Missing — waiting for it to open` row naming the window it waits
+for when one is assigned to the slot on the workspace but none is open, or an empty row (`—` for app
 and title alike, placed or not) when nothing says what fills it; then the
 windows overflowing on the workspace and any other windows on it. So a
 workspace whose tree is `scroll[main, right]` with a spec for main only
 lists main Missing, then right and left empty, alike. Columns: Screen (`N <connector>`, when more than one), Slot
-(`main`, `main (by hand)`, `overflow (main)`, `unassigned`, `—`), App (a
-Missing row's spec, `—` for an empty slot), Title (`Missing`, `—` for an
+(`main`, `main (by hand)`, `other (main taken)` (a window for main while main is taken, waiting with the other windows), `unassigned`, `—`), App (a
+Missing row's awaited window, `—` for an empty slot), Title (`Missing —
+waiting for it to open`, `—` for an
 empty slot, placed or not). When other desks share the active layout, a
 line under the header on a page with slots no tree places says that `a` into one places it
 there too. This is where each workspace's specs are set: there is no
@@ -772,8 +773,8 @@ workspace × slot table.
 | ↑/↓, k/j | select |
 | ←/→, h/l (p), [ / ] | previous / next workspace's page (1 to N, round) |
 | 1–9, 0 | workspace 1–9, 10's page (0 only when ten are managed) |
-| a | `Assign to workspace 3 slot (takes its spec): (m)ain, (r)ight, (1) more? [Esc] cancel`: every global slot, the workspace's own first; then `take_spec`: the window takes the slot and its spec (`spec.from_window`) becomes the workspace's for it, replacing the one it had; a slot no tree places is first put into the workspace's tree in the active layout (`take_spec` with `place`: a scroll branch in the global slot order, a tiled tree's root split as a new child, on the screen of the window's workspace; into the workspace's own trees when it has them, else the layout's shared trees, so every workspace on them places it, never a copy), and the message names the tree it went into (`placed left in layout scroll's shared tree (all workspaces) screen 1: ...`) and the other desks using that layout |
-| u | on a window in a slot: `Unassign kitty from main and clear workspace 3's spec for it (kitty/deltaf)? (the slot is left empty) (y/n)`, then `unassign` with `clear_spec`: the window leaves the slot and the workspace no longer says what fills it, so the row is empty, not Missing that window; on an overflowing window, or one in a slot the workspace has no spec for, `unassign` alone; on a red Missing row (a spec whose window is not open): `Clear workspace 3's spec for main (kitty/deltaf)? The slot is left empty (y/n)`, then `clear_spec` |
+| a | `Assign kitty to a slot on workspace 3: (m)ain, (r)ight, (1) more? [Esc] cancel`: every global slot, the workspace's own first; then `take_spec`: the window takes the slot and its spec (`spec.from_window`) becomes the workspace's for it, replacing the one it had; a slot no tree places is first put into the workspace's tree in the active layout (`take_spec` with `place`: a scroll branch in the global slot order, a tiled tree's root split as a new child, on the screen of the window's workspace; into the workspace's own trees when it has them, else the layout's shared trees, so every workspace on them places it, never a copy), and the message (`Assigned kitty to main on workspace 3 (instead of foot)`) names the tree it went into (`placed left in layout scroll's shared tree (all workspaces) screen 1: ...`) and the other desks using that layout |
+| u | on a window in a slot: `Unassign kitty from main on workspace 3? The slot is left empty. (y/n)`, then `unassign` with `clear_spec`: the window leaves the slot and the workspace no longer says what fills it, so the row is empty, not Missing that window; on an overflowing window, or one in a slot the workspace has no spec for, `unassign` alone; on a red Missing row (a window assigned but not open): `Unassign kitty/deltaf from main on workspace 3? It is not open; the slot is left empty. (y/n)`, then `clear_spec`. The editor's words are assign and unassign; "spec" is the api's |
 
 As aerolayout's `a` did, `a` writes the window's spec into the slot, and
 `u` takes it out again (in memory until Ctrl+S, the header saying "unsaved

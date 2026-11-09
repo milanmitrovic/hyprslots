@@ -75,8 +75,7 @@ Item {
   readonly property string helpText: prompting ? Help.escape(Prompts.help(prompt)) : Help.row([
     [{ key: "↑/↓", label: "select" }],
     { title: "Workspace", items: [{ key: "←/→ [ ]", label: "prev/next" }, { key: Workspaces.jumpKeys(Workspaces.count(state)), label: "jump" }] },
-    [{ key: "a", label: "assign + take spec" },
-      { key: "u", label: selectedRow && selectedRow.kind === "missing" ? "unassign: clear the Missing spec" : "unassign + clear spec" }],
+    [{ key: "a", label: "assign" }, { key: "u", label: "unassign" }],
     [{ key: "Ctrl+S", label: "save" }],
     [{ key: "Tab", label: "switch view" }, { key: "q", label: "close" }],
   ], accent)
@@ -152,7 +151,7 @@ Item {
       say("There are no slots yet: make them in the Layout tab's slot list (s, then a).", true)
       return
     }
-    ask(Prompts.choice(Assignment.assignTitle(workspace), Assignment.promptOptions(options)), function(option) {
+    ask(Prompts.choice(Assignment.assignTitle(workspace, row.cls), Assignment.promptOptions(options)), function(option) {
       root.assign(row, option)
     })
   }
@@ -173,8 +172,8 @@ Item {
         say(reply.error, true)
         return
       }
-      var text = "Assigned " + row.cls + " to " + reply.slot + " (workspace " + reply.workspace + "): its spec is " + reply.spec
-      if (reply.replaced && reply.replaced !== reply.spec) text += " (was " + reply.replaced + ")"
+      var text = "Assigned " + row.cls + " to " + reply.slot + " on workspace " + reply.workspace
+      if (reply.replaced && reply.replaced !== reply.spec) text += " (instead of " + reply.replaced + ")"
       if (reply.displaced) text += "; " + classOf(reply.displaced) + " gave it up"
       var placed = Assignment.placedText(reply, state ? state.desk : "")
       if (placed !== "") text += "; " + placed
@@ -210,8 +209,8 @@ Item {
     if (!engine) return
     engine.call("clear_spec", { workspace: target.workspace, slot: target.slot }, function(reply) {
       if (!reply.ok) root.say(reply.error, true)
-      else root.say("Cleared workspace " + reply.workspace + "'s spec for " + reply.slot + " (" + reply.spec
-        + "): the slot is empty. Ctrl+S saves.", false)
+      else root.say("Unassigned " + reply.spec + " from " + reply.slot + " on workspace " + reply.workspace
+        + ": the slot is empty. Ctrl+S saves.", false)
     })
   }
 
@@ -220,10 +219,10 @@ Item {
     engine.call("unassign", { address: plan.address, clear_spec: plan.clearSpec }, function(reply) {
       if (!reply.ok) say(reply.error, true)
       else if (reply.spec) {
-        say("Unassigned " + row.cls + " from " + reply.slot + " and cleared workspace " + reply.workspace + "'s spec for it ("
-          + reply.spec + "): the slot is empty. Ctrl+S saves.", false)
+        say("Unassigned " + row.cls + " from " + reply.slot + " on workspace " + reply.workspace
+          + ": the slot is empty. Ctrl+S saves.", false)
       } else {
-        say(reply.slot ? "Unassigned " + row.cls + " from " + reply.slot + "." : "Took " + row.cls + " out of the overflow.", false)
+        say(reply.slot ? "Unassigned " + row.cls + " from " + reply.slot + "." : "Unassigned " + row.cls + ".", false)
       }
     })
   }
