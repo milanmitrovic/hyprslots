@@ -83,10 +83,20 @@ function inUse(row) {
 function readOnlyReason(state) {
   var cfg = state && state.config
   if (!cfg) return ""
-  if (cfg.editable === false) return "config.lua loads no slots.lua, so there is nothing the editor may change"
+  if (cfg.editable === false) return "your config loads no editor data, so there is nothing the editor may change"
   var paths = Array.isArray(cfg.read_only) ? cfg.read_only : []
   for (var i = 0; i < paths.length; i++) {
-    if (paths[i] === "slots") return "the slots are set by code in config.lua; edit them there"
+    if (paths[i] === "slots") return "the slots are set by code in your config; edit them there"
   }
   return ""
+}
+
+// The slot list's a: the name prompt, and what it says once the engine made
+// the slot (which it puts into every tree; nothing to place).
+function newSlotLabel() {
+  return "New slot name (every tree gets it; an empty slot takes no room) [Enter] next  [Esc] cancel: "
+}
+
+function addedText(slot) {
+  return "Added slot '" + slot + "' to every tree. Ctrl+S saves."
 }

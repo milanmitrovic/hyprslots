@@ -81,7 +81,7 @@ test("a desk row reads: name, monitors with ● when connected, → the layout i
   });
   assert.deepEqual(plain(D.deskCells(rows[2])), {
     mark: "",
-    name: "office (set in config.lua)",
+    name: "office (set in your config)",
     monitors: "● eDP-1 (BOE 0x0BCA) + ○ Dell U2723QE ABC",
     layout: "→ docked",
   });
@@ -94,7 +94,7 @@ test("a layout row has its screen count and the desks that use it", () => {
   assert.deepEqual(plain(D.layoutCells(rows[3])), { mark: "● active", name: "docked", screens: "2 screens",
     usedBy: "used by docked, office" });
   assert.deepEqual(plain(D.layoutCells(rows[5])), { mark: "", name: "laptop", screens: "1 screen", usedBy: "used by laptop" });
-  assert.deepEqual(plain(D.layoutCells(rows[6])), { mark: "", name: "wide (set in config.lua)", screens: "2 screens",
+  assert.deepEqual(plain(D.layoutCells(rows[6])), { mark: "", name: "wide (set in your config)", screens: "2 screens",
     usedBy: "unused" });
 });
 
@@ -202,8 +202,8 @@ test("the other desks that use a layout, for the warning that an edit changes it
 
 test("a read-only row refuses edits, saying where it is set", () => {
   const rows = D.rows(fixture());
-  assert.equal(D.readOnlyError(rows[2]), "Desk 'office' is set in config.lua.");
-  assert.equal(D.readOnlyError(rows[6]), "Layout 'wide' is set in config.lua.");
+  assert.equal(D.readOnlyError(rows[2]), "Desk 'office' is set in your config.");
+  assert.equal(D.readOnlyError(rows[6]), "Layout 'wide' is set in your config.");
   assert.equal(D.readOnlyError(rows[0]), "");
 });
 

@@ -167,7 +167,7 @@ Item {
     if (!root.engine) return
     var write = function() {
       root.engine.call("save", {}, function(reply) {
-        if (reply.ok) view.say("Saved " + reply.path + ".", false)
+        if (reply.ok) view.say("Saved.", false)
         else view.say(reply.error, true)
       })
     }

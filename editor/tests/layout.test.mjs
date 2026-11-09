@@ -448,10 +448,10 @@ test("the view opens at the focused workspace's number and screen", () => {
 
 test("what may not be edited says why", () => {
   assert.equal(L.editBlock(fixture(), "dual"), "");
-  assert.match(L.editBlock(fixture(), "single"), /layout 'single' is set by code in config\.lua/);
+  assert.equal(L.editBlock(fixture(), "single"), "layout 'single' is set by code in your config; edit it there");
   const noData = fixture();
   noData.config.editable = false;
-  assert.match(L.editBlock(noData, "dual"), /loads no slots\.lua/);
+  assert.equal(L.editBlock(noData, "dual"), "your config loads no editor data, so there is nothing the editor may change");
   const off = fixture();
   off.refused = "hyprmoncfg's workspace planner is on";
   assert.match(L.editBlock(off, "dual"), /hyprslots is off: hyprmoncfg/);

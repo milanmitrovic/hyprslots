@@ -154,7 +154,7 @@ test("re-apply shows the workspace again on every screen (as Super+N does), then
 
 test("each call's outcome in a sentence, a failure in the engine's words", () => {
   assert.equal(B.outcome("arrange", 3, { ok: true, swaps: 0, widened: [] }), "Workspace 3 laid out again.");
-  assert.equal(B.outcome("save", 3, { ok: true, path: "/c/slots.lua" }), "Saved /c/slots.lua.");
+  assert.equal(B.outcome("save", 3, { ok: true, path: "/c/slots.lua" }), "Saved.", "no file names");
   assert.equal(B.outcome("reload", 3, { ok: true, desk: "laptop", layout: "solo" }),
     "Reloaded the config; desk laptop runs layout solo.");
   assert.equal(B.outcome("reload", 3, { ok: true }), "Reloaded the config; these monitors have no desk.");

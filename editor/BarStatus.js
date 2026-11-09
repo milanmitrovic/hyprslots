@@ -121,7 +121,7 @@ function calls(id, workspace) {
 function outcome(id, workspace, reply) {
   if (!reply || !reply.ok) return reply && reply.error ? String(reply.error) : "the call failed"
   if (id === "arrange") return "Workspace " + workspace + " laid out again."
-  if (id === "save") return "Saved " + reply.path + "."
+  if (id === "save") return "Saved."
   if (id === "reload") {
     return reply.desk ? "Reloaded the config; desk " + reply.desk + " runs layout " + reply.layout + "."
       : "Reloaded the config; these monitors have no desk."

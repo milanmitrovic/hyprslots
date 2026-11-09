@@ -70,12 +70,18 @@ test("no state, no rows", () => {
   assert.deepEqual(plain(S.rows(null)), []);
 });
 
-test("the slots are read-only when config.lua builds them in code, or there is no data file, and says why", () => {
+test("the slots are read-only when the config builds them in code, or there is no data file, and says why", () => {
   const state = fixture();
   state.config = { editable: true, read_only: ["specs.4"] };
   assert.equal(S.readOnlyReason(state), "");
   state.config.read_only = ["slots"];
-  assert.equal(S.readOnlyReason(state), "the slots are set by code in config.lua; edit them there");
+  assert.equal(S.readOnlyReason(state), "the slots are set by code in your config; edit them there");
   state.config = { editable: false, read_only: [] };
-  assert.equal(S.readOnlyReason(state), "config.lua loads no slots.lua, so there is nothing the editor may change");
+  assert.equal(S.readOnlyReason(state), "your config loads no editor data, so there is nothing the editor may change");
+});
+
+test("a new slot is in every tree at once: the editor asks nothing about placing it, it says so", () => {
+  assert.equal(S.newSlotLabel(), "New slot name (every tree gets it; an empty slot takes no room) [Enter] next  [Esc] cancel: ");
+  assert.equal(S.addedText("notes"), "Added slot 'notes' to every tree. Ctrl+S saves.");
+  assert.doesNotMatch(S.addedText("notes"), /\?|y\/n|Put it/);
 });

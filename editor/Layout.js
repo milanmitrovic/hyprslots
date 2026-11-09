@@ -859,12 +859,12 @@ function editBlock(state, layout) {
   if (!state) return "no state from hyprslots yet"
   if (state.refused) return "hyprslots is off: " + state.refused
   if (!state.config || !state.config.editable) {
-    return "config.lua loads no slots.lua, so there is nothing the editor may change"
+    return "your config loads no editor data, so there is nothing the editor may change"
   }
   if (!layout) return "no desk is active: these monitors have none yet"
   var entry = layoutEntry(state, layout)
   if (!entry) return "no layout '" + layout + "'"
-  if (entry.read_only) return "layout '" + layout + "' is set by code in config.lua; edit it there"
+  if (entry.read_only) return "layout '" + layout + "' is set by code in your config; edit it there"
   return ""
 }
 

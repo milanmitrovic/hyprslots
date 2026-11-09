@@ -95,7 +95,7 @@ function monitorText(m) {
 }
 
 function nameCell(row) {
-  return row.name + (row.auto ? " (new, unsaved)" : "") + (row.readOnly ? " (set in config.lua)" : "")
+  return row.name + (row.auto ? " (new, unsaved)" : "") + (row.readOnly ? " (set in your config)" : "")
 }
 
 // What a desk row shows, column by column.
@@ -250,5 +250,5 @@ function header(state) {
 
 function readOnlyError(row) {
   if (!row || !row.readOnly) return ""
-  return (row.kind === "desk" ? "Desk '" : "Layout '") + row.name + "' is set in config.lua."
+  return (row.kind === "desk" ? "Desk '" : "Layout '") + row.name + "' is set in your config."
 }
