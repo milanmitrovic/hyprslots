@@ -5,7 +5,8 @@
 -- scrolling, with hyprslots keeping the columns in slot order (windows with
 -- no slot in the branch where it places the overflow leaf, `scroll[a, *, b]`,
 -- else after them, in the order they are in) and making the
--- columns that arrive full width. All of it runs in a deferred pass (20 ms
+-- columns that arrive as wide as the tree says (full width, or
+-- `scroll:0.5[...]` half the screen). All of it runs in a deferred pass (20 ms
 -- timer), never inside an event:
 --
 --   order  after a window opens or moves to a workspace, the workspace is
