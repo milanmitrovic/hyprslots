@@ -196,6 +196,16 @@ test("/ flips every split of the tree, and leaves a scroll branch as it is", () 
   assert.equal(L.format(L.flip(tree("scroll[x, y]"))), "scroll[x, y]");
 });
 
+test("/ is for tiles: refused on a scroll tree, with nothing to say on tiles or no tree", () => {
+  assert.equal(L.flipError(tree("scroll[x, y]")),
+    "Flip is for tiles: a scroll tree's columns always stand in a row. t cycles to tiles.");
+  assert.equal(L.flipError(tree("scroll:0.5[x, y]")),
+    "Flip is for tiles: a scroll tree's columns always stand in a row. t cycles to tiles.");
+  assert.equal(L.flipError(tree("h[m, v[b, c]]")), "");
+  assert.equal(L.flipError(tree("m")), "");
+  assert.equal(L.flipError(null), "");
+});
+
 // t three times: tiles, then scroll half, then scroll full, then tiles.
 const cycled = (node, times) => {
   for (let i = 0; i < times; i++) {
@@ -672,12 +682,14 @@ test("the picture's help row: no add, take out or fork; d reverts; t says what i
   assert.doesNotMatch(line, /add|take out|fork|\.lua/);
 });
 
-test("r and ratios show on tiles only; t names the next of tiles, scroll half, scroll full", () => {
+test("/ flip and r ratios show on tiles only; t names the next of tiles, scroll half, scroll full", () => {
   const half = helpLine(L.pictureHelp({ node: tree("scroll:0.5[a, b]"), hasOwn: false, jumpKeys: "1–9" }));
-  assert.equal(half, "←↑↓→ select hjkl/HJKL move / flip t scroll full other windows · w apply d revert Record · slots · "
+  assert.equal(half, "←↑↓→ select hjkl/HJKL move t scroll full other windows · w apply d revert Record · slots · "
     + "[ ] 1–9 - workspace · Tab view");
-  assert.match(helpLine(L.pictureHelp({ node: tree("scroll[a, b]"), hasOwn: false, jumpKeys: "1–9" })), / t tiles /);
-  assert.match(helpLine(L.pictureHelp({ node: null, hasOwn: false, jumpKeys: "1–9" })), / t scroll half ratios /);
+  const full = helpLine(L.pictureHelp({ node: tree("scroll[a, b]"), hasOwn: false, jumpKeys: "1–9" }));
+  assert.match(full, / t tiles /);
+  assert.doesNotMatch(full, /flip|ratios/);
+  assert.match(helpLine(L.pictureHelp({ node: null, hasOwn: false, jumpKeys: "1–9" })), / \/ flip t scroll half ratios /);
 });
 
 test("the trigger keys are highlighted in the help row", () => {

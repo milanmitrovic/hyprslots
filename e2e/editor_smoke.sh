@@ -17,7 +17,7 @@
 # line, no a, x or f) flips workspace 3's tree, takes a typed ratio, applies
 # it (api state and the windows' geometry must follow) and saves it (the
 # editor's data must hold it); t cycles tiles, scroll half and scroll full,
-# drawn as a filmstrip (r refused on a scroll tree), w applies the scroll
+# drawn as a filmstrip (r and / refused on a scroll tree), w applies the scroll
 # tree and d reverts it to the saved one; it opens on All workspaces (the
 # layout's shared trees, first in the strip, a dot on each workspace with its
 # own); ] and 3 switch its workspace, - edits the shared trees (a workspace
@@ -1027,7 +1027,7 @@ test_body() {
   # t cycles the tree: tiles, scroll half, scroll full, back to tiles. A
   # scroll tree is drawn as a filmstrip (its columns half or full screen
   # width in slot order, the screen a viewport over them); l moves right a
-  # column on; r is refused on it before any prompt. w applies the scroll
+  # column on; r and / are refused on it before any prompt. w applies the scroll
   # tree, and d, y reverts it to the saved one (api reset).
   sleep 0.3
   shot 8a-layout-tiles
@@ -1038,8 +1038,8 @@ test_body() {
   expect_eq "drawn as scroll · half" "1: scroll · half" "$(smoke layoutMode)"
   smoke press l >/dev/null
   expect_eq "l moves right a column on" "1: scroll:0.5[main, side, right] *" "$(smoke layout)"
-  if [[ $(smoke help) == *'">t</font></b> scroll full'* && $(smoke help) != *atios* ]]; then
-    pass "the help row: t makes it full width, no r on a scroll tree"
+  if [[ $(smoke help) == *'">t</font></b> scroll full'* && $(smoke help) != *atios* && $(smoke help) != *flip* ]]; then
+    pass "the help row: t makes it full width, no r or / on a scroll tree"
   else
     fail "help row: $(smoke help)"
   fi
@@ -1049,6 +1049,10 @@ test_body() {
   expect_eq "r is refused on a scroll tree, no prompt" \
     "Ratios are for tiles: each column of a scroll tree is a set width of the screen (half here). t cycles to tiles." \
     "$(smoke message)"
+  smoke press / >/dev/null
+  expect_eq "/ is refused on a scroll tree, no prompt" \
+    "Flip is for tiles: a scroll tree's columns always stand in a row. t cycles to tiles." "$(smoke message)"
+  expect_eq "and the tree is as it was" "1: scroll:0.5[main, side, right] *" "$(smoke layout)"
   smoke press t >/dev/null
   expect_eq "t again: full-width columns" "1: scroll[main, side, right] *" "$(smoke layout)"
   expect_eq "drawn as scroll · full" "1: scroll · full" "$(smoke layoutMode)"

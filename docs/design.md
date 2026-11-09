@@ -875,7 +875,7 @@ each with its description and nothing else (below).
 | ←↑↓→ | select the leaf that way; off a pane's left/right edge, the next screen's |
 | h j k l | swap the leaf with its neighbour in its container; off the edge, move it to the next screen's tree |
 | H J K L | along its container: pair it with its neighbour in a new container across; across: move it out beside its container |
-| / | flip every split of the tree |
+| / | on a tiled tree: flip every split of the tree; on a scroll branch refused (its columns always stand in a row), and the help row leaves it out |
 | t | cycle tiles → scroll half → scroll full → tiles: a tiled tree becomes `scroll:0.5[...]` of its leaves in reading order (other windows' place, `*`, as the column they take), that becomes `scroll[...]` (any other width too), and that goes back to the tree it was made from while its columns are as they were, else its columns side by side; the slot order is kept |
 | r | on a tiled tree: prompt for the whole tree's ratio (grammar below; the current one shown, empty clears all); on a scroll branch refused (ratios are for tiles), and the help row leaves it out |
 | o | show/hide other windows: where windows assigned to no slot go, in the picture (it changes no tree; moving it with hjkl writes its `*`) |
@@ -894,7 +894,7 @@ keys grouped, the trigger keys highlighted: `←↑↓→ select  hjkl/HJKL move
 / flip  t scroll half  r ratios  o other windows · w apply  d revert
 R record  u use shared · s slots · [ ] 1–9 - workspace · Tab view`
 (`t`'s label names the next mode,
-`r` only on tiles, `u` only on a workspace with trees of its own).
+`/` and `r` only on tiles, `u` only on a workspace with trees of its own).
 A layout set in config.lua's code, a config without slots.lua, or the engine being
 off shows `Read only: <why>` (naming no file: `layout 'x' is set by code in
 your config`) and refuses the editing keys. No text the editor shows names

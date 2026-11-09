@@ -591,7 +591,12 @@ function forceMove(root, key, direction) {
   return { node: rooted(out), changed: true }
 }
 
-// /: every split turned the other way (flip_tree).
+// /: every split turned the other way (flip_tree). Tiles only: a scroll
+// tree's columns stand in a row whatever happens (flipError says so).
+function flipError(root) {
+  return root && root.kind === "scroll" ? "Flip is for tiles: a scroll tree's columns always stand in a row. t cycles to tiles." : ""
+}
+
 function flip(root) {
   var out = copy(root)
   ;(function walk(n) {
@@ -1040,12 +1045,13 @@ function workspaceHelp(jumpKeys) {
 }
 
 // The picture's keys. opts: { node (the selected pane's draft: t names
-// what it makes of it, r shows on tiles only), hasOwn (the workspace has
-// trees of its own: u), jumpKeys (Workspaces.jumpKeys) }.
+// what it makes of it, / and r show on tiles only), hasOwn (the workspace
+// has trees of its own: u), jumpKeys (Workspaces.jumpKeys) }.
 function pictureHelp(opts) {
   var tiles = scrollMode(opts.node) === "tiles"
-  var tree = [{ key: "←↑↓→", label: "select" }, { key: "hjkl/HJKL", label: "move" }, { key: "/", label: "flip" },
-    { key: "t", label: cycleLabel(opts.node), before: true }]
+  var tree = [{ key: "←↑↓→", label: "select" }, { key: "hjkl/HJKL", label: "move" }]
+  if (tiles) tree.push({ key: "/", label: "flip" })
+  tree.push({ key: "t", label: cycleLabel(opts.node), before: true })
   if (tiles) tree.push({ key: "r", label: "ratios" })
   tree.push({ key: "o", label: "other windows" })
   var layout = [{ key: "w", label: "apply" }, { key: "d", label: "revert" }, { key: "R", label: "record" }]

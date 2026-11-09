@@ -368,7 +368,11 @@ Item {
     if (arrow !== "") select(arrow)
     else if (moveKeys[text]) scoped(function() { root.moveSelected(root.moveKeys[text], false) }, true)
     else if (forceKeys[text]) scoped(function() { root.moveSelected(root.forceKeys[text], true) }, true)
-    else if (text === "/") scoped(function() { root.edit(function(n) { return { node: Layout.flip(n) } }, "Flipped every split.") }, true)
+    else if (text === "/") {
+      // flip is for tiles: refused on a scroll tree before anything asks
+      if (Layout.flipError(activeNode) !== "") say(Layout.flipError(activeNode), true)
+      else scoped(function() { root.edit(function(n) { return { node: Layout.flip(n) } }, "Flipped every split.") }, true)
+    }
     else if (text === "t") scoped(cycleScroll, true)
     else if (text === "o") toggleOther()
     else if (text === "r") {
