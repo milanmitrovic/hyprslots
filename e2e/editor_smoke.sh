@@ -141,7 +141,20 @@ start_editor() {
   ln -s "$omarchy/shell/Commons" "$SMOKE_QS_DIR/Commons"
   ln -s "$omarchy/shell/Ui" "$SMOKE_QS_DIR/Ui"
 
-  WAYLAND_DISPLAY=$E2E_WAYLAND_DISPLAY HYPRLAND_INSTANCE_SIGNATURE=$E2E_SIG QT_QPA_PLATFORM=wayland \
+  # SMOKE_THEME=<an Omarchy theme directory> (say
+  # /usr/share/omarchy/themes/catppuccin-latte) runs the panel in that theme,
+  # to check it in a light one: qs.Commons reads the theme in force from
+  # $HOME/.local/state/omarchy/current/theme, so qs gets a home of its own.
+  local home=$HOME
+  if [[ -n ${SMOKE_THEME:-} ]]; then
+    home=$E2E_DIR/home
+    mkdir -p "$home/.local/state/omarchy/current" "$home/.config"
+    ln -s "$SMOKE_THEME" "$home/.local/state/omarchy/current/theme"
+    if [[ -d $HOME/.config/fontconfig ]]; then ln -s "$HOME/.config/fontconfig" "$home/.config/fontconfig"; fi
+    log "theme: $SMOKE_THEME"
+  fi
+
+  HOME=$home WAYLAND_DISPLAY=$E2E_WAYLAND_DISPLAY HYPRLAND_INSTANCE_SIGNATURE=$E2E_SIG QT_QPA_PLATFORM=wayland \
     OMARCHY_PATH=$omarchy qs --no-color -p "$SMOKE_QS_DIR" >"$E2E_DIR/qs.log" 2>&1 &
   SMOKE_QS_PID=$!
   E2E_CLIENT_PIDS+=("$SMOKE_QS_PID")
