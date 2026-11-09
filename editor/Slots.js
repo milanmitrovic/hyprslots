@@ -59,18 +59,16 @@ function rows(state) {
   })
 }
 
-// The y/n `d` asks: plain when nothing uses the slot, else every tree and
-// workspace it goes from (the engine refuses those without force).
+// The y/n `d` asks: every tree holds every slot, so the slot goes from every
+// tree, and from the assignments of the workspaces that fill it (the engine
+// refuses those without force).
 function deleteQuestion(row) {
-  var q = "Delete slot '" + row.slot + "'?"
-  var parts = []
-  if (row.places.length) parts.push("the trees " + row.places.join(", "))
+  var q = "Delete slot '" + row.slot + "'? It goes from every tree"
   if (row.specs.length) {
     var numbers = row.specs.map(function(s) { return s.workspace })
-    parts.push("the assignments of workspace" + (numbers.length > 1 ? "s " : " ") + numbers.join(", "))
+    q += " and from the assignments of workspace" + (numbers.length > 1 ? "s " : " ") + numbers.join(", ")
   }
-  if (parts.length) q += " It goes from " + parts.join(" and ") + "."
-  return q
+  return q + "."
 }
 
 // Whether a delete needs the engine's force (something uses the slot).

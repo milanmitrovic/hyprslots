@@ -275,18 +275,18 @@ layout_slots() {
   press_keys /
   expect_eq "/ flips the draft back to the tree in force" "1: h[main:2, v[aside, side:3], notes]" "$(smoke layout)"
 
-  # d on side names the trees it goes from (n keeps it); d on notes deletes it
-  # from every tree.
+  # d on side says it goes from every tree (n keeps it); d on notes deletes
+  # it from every tree.
   press_keys s Up Up Up Up Down Down Down d
-  if [[ $(smoke message) == "Delete slot 'side'? It goes from the trees "*"solo/3/1"*" (y/n)" ]]; then
-    pass "d names what side goes from: $(smoke message)"
+  if [[ $(smoke message) == "Delete slot 'side'? It goes from every tree"*" (y/n)" ]]; then
+    pass "d says what side goes from: $(smoke message)"
   else
     fail "d on side: $(smoke message)"
   fi
   press_keys n
   press_keys Up d
-  if [[ $(smoke message) == "Delete slot 'notes'? It goes from the trees "*"(y/n)" ]]; then
-    pass "d on notes names the trees: $(smoke message)"
+  if [[ $(smoke message) == "Delete slot 'notes'? It goes from every tree"*"(y/n)" ]]; then
+    pass "d on notes: $(smoke message)"
   else
     fail "d on notes: $(smoke message)"
   fi

@@ -55,15 +55,15 @@ test("each row says which workspaces fill the slot, and with what", () => {
   assert.deepEqual(rows[3].specs, []);
 });
 
-test("deleting a slot asks plainly when nothing uses it, else names every tree and workspace it goes from", () => {
+test("deleting a slot says it goes from every tree, and from the workspaces that fill it", () => {
   const rows = S.rows(fixture());
-  assert.equal(S.deleteQuestion(rows[3]), "Delete slot 'spare'?");
+  assert.equal(S.deleteQuestion(rows[3]), "Delete slot 'spare'? It goes from every tree.");
   assert.equal(
     S.deleteQuestion(rows[2]),
-    "Delete slot 'right'? It goes from the trees dual/3/1, single/3/1 and the assignments of workspace 3.",
+    "Delete slot 'right'? It goes from every tree and from the assignments of workspace 3.",
   );
   assert.equal(S.deleteQuestion(rows[1]),
-    "Delete slot 'main'? It goes from the trees dual/3/1, dual/4/1, single/default/1, single/3/1 and the assignments of workspaces 3, 4.");
+    "Delete slot 'main'? It goes from every tree and from the assignments of workspaces 3, 4.");
 });
 
 test("no state, no rows", () => {
