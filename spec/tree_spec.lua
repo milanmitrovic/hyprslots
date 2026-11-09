@@ -259,7 +259,7 @@ describe("scroll containers", function()
   end)
 
   it("rejects the overflow leaf twice in a scroll container", function()
-    rejects("scroll[x, *, *]", "more than one overflow leaf '%*'")
+    rejects("scroll[x, *, *]", "more than one place for other windows '%*'")
   end)
 
   it("rejects a weight on its overflow column", function()
@@ -317,7 +317,7 @@ describe("the overflow leaf", function()
 
   -- aerolayout: validate_tree, "more than one overflow slot".
   it("rejects a second overflow leaf", function()
-    rejects("h[*, v[main, *]]", "more than one overflow leaf")
+    rejects("h[*, v[main, *]]", "more than one place for other windows")
   end)
 
   describe("tree.with_overflow", function()

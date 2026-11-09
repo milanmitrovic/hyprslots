@@ -194,7 +194,7 @@ end
 -- How an error names one cell: its slot when it is a window, else its position
 -- under its parent ("cell 1 > cell 2").
 local function cell_label(child, index, parent)
-  local own = child.slot or (is_leaf(child) and "the overflow") or ("cell " .. index)
+  local own = child.slot or (is_leaf(child) and "the place for other windows") or ("cell " .. index)
   if parent == ROOT_SUBJECT then
     return own
   end

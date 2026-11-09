@@ -134,7 +134,7 @@ local function parser(text)
   function p.node(root)
     if p.peek() == "*" then
       if p.overflow then
-        p.fail("more than one overflow leaf '*'")
+        p.fail("more than one place for other windows '*'")
       end
       p.overflow = true
       p.pos = p.pos + 1

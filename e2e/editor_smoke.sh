@@ -989,6 +989,18 @@ test_body() {
   sleep 0.3
   shot 7-layout-saved
 
+  # o shows where other windows (windows assigned to no slot) go, the column
+  # at the right the engine gives them, selected; it changes no tree, and o
+  # hides it again.
+  smoke press o >/dev/null
+  expect_eq "o shows other windows' place, selected" "1 *" "$(smoke selection)"
+  expect_eq "o changes no tree" "1: v[main:2, h[right, side:3]]" "$(smoke layout)"
+  sleep 0.3
+  shot 7b-layout-other-windows
+  smoke press o >/dev/null
+  expect_eq "o hides it again, a slot selected" "1 main" "$(smoke selection)"
+  expect_eq "still no tree changed" "1: v[main:2, h[right, side:3]]" "$(smoke layout)"
+
   # A scroll branch in the draft (t makes the whole tree full-width
   # scrolling columns in slot order, a filmstrip, l moves right a column
   # on), then d, y puts the screen back to what slots.lua holds (api reset).

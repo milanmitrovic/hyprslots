@@ -10,13 +10,17 @@
 //
 // A node is
 //   { kind: "slot", slot, weight }          a slot
-//   { kind: "overflow", weight }            the overflow leaf, written *
+//   { kind: "overflow", weight }            where other windows go (windows
+//                                           assigned to no slot), written *
 //   { kind: "h" | "v", weight, children }   a split
 //   { kind: "scroll", weight, children, was? }  a scroll branch: the whole
 //                                           tree, slots only, full-width
 //                                           scrolling columns in order; `was`
 //                                           remembers the tree t made it from
-// A leaf is named by its key: the slot's name, or "*" for the overflow leaf.
+// A leaf is named by its key: the slot's name, or "*" for other windows.
+// Every tree has a place for other windows: its * leaf, or, without one,
+// where the engine puts them (withOther). The editor never takes it away;
+// it only shows it in the picture or not (picture).
 // Every edit returns { node } (a new tree) or { error }; the tree given is
 // never changed.
 
@@ -107,7 +111,7 @@ function parse(text) {
   // `root` when the node is the whole tree (where scroll[...] may be).
   function node(root) {
     if (peek() === "*") {
-      if (overflow) fail("more than one overflow leaf '*'")
+      if (overflow) fail("more than one place for other windows '*'")
       overflow = true
       pos++
       return { kind: "overflow" }
@@ -305,7 +309,7 @@ function integers(values) {
 }
 
 function cellLabel(child, index, parent) {
-  var own = child.kind === "slot" ? child.slot : child.kind === "overflow" ? "the overflow" : "cell " + index
+  var own = child.kind === "slot" ? child.slot : child.kind === "overflow" ? "the place for other windows" : "cell " + index
   return parent === ROOT_SUBJECT ? own : parent + " > " + own
 }
 
@@ -578,7 +582,7 @@ function toggleScroll(root) {
     return { node: tiled }
   }
   var keys = leaves(root)
-  if (!keys.some(function(key) { return key !== OVERFLOW })) return { error: "this tree has no slot to scroll" }
+  if (!keys.some(function(key) { return key !== OVERFLOW })) return { error: "this tree has only other windows: nothing to scroll" }
   return { node: {
     kind: "scroll", weight: 1,
     children: keys.map(function(key) {
@@ -615,39 +619,28 @@ function withOverflow(root) {
   return rooted({ kind: "h", weight: 1, children: [kept, { kind: "overflow", weight: 1 }] })
 }
 
-// o: park the overflow leaf (out of the tree; the engine then gives windows
-// with no slot a column at the right, or, on a scroll branch, the columns
-// after its own), or put it back: exactly as it was when the tree has not
-// changed since, else beside the leaf it was next to, else where the engine
-// would put it. `memory` is what parking returned.
-// { node, parked, memory } or { error }.
-function toggleOverflow(root, memory) {
-  var keys = leaves(root)
-  if (keys.indexOf(OVERFLOW) >= 0) {
-    if (keys.length === 1) return { error: "the overflow leaf is the whole tree; there would be nothing left to edit" }
-    var taken = takeOut(root, OVERFLOW)
-    return { node: taken.node, parked: true,
-      memory: { saved: format(root), shape: format(taken.node), anchor: taken.anchor } }
-  }
-  if (memory && memory.shape === format(root)) {
-    return { node: parse(memory.saved).node, parked: false, memory: null }
-  }
-  if (memory && memory.anchor) {
-    var out = copy(root)
-    var path = pathTo(out, memory.anchor.key)
-    if (path && path.length >= 2) {
-      var parent = path[path.length - 2].node
-      var index = path[path.length - 1].index
-      parent.children.splice(memory.anchor.side === "after" ? index + 1 : index, 0, { kind: "overflow", weight: 1 })
-      return { node: out, parked: false, memory: null }
-    }
-  }
+// The tree with its place for other windows written out: as it is when it
+// has its * leaf, else where the engine puts them without one (a scroll
+// branch: a column after its own; any other tree: a column at the right,
+// withOverflow). Moving * first writes it out so.
+function withOther(root) {
+  if (leaves(root).indexOf(OVERFLOW) >= 0) return root
   if (root.kind === "scroll") {
     var last = copy(root)
     last.children.push({ kind: "overflow", weight: 1 })
-    return { node: last, parked: false, memory: null }
+    return last
   }
-  return { node: withOverflow(root), parked: false, memory: null }
+  return withOverflow(root)
+}
+
+// The tree the picture draws: with its place for other windows (withOther)
+// when `showOther` (o), else without it (a * leaf that is the whole tree
+// stays). null for no tree.
+function picture(root, showOther) {
+  if (!root) return null
+  if (showOther) return withOther(root)
+  if (isLeaf(root) || leaves(root).indexOf(OVERFLOW) < 0) return root
+  return takeOut(root, OVERFLOW).node
 }
 
 // A leaf moved off the left or right edge of its screen's tree onto the
@@ -655,12 +648,11 @@ function toggleOverflow(root, memory) {
 // workspace), arriving at the near edge (aerolayout's cross-pane move).
 // { source, target } or { error }.
 function crossMove(source, target, key, direction) {
-  if (isLeaf(source)) {
-    return { error: (key === OVERFLOW ? "the overflow leaf" : key) + " is the only window on this screen; "
-      + "moving it would leave the screen empty" }
+  if (key === OVERFLOW) {
+    return { error: "other windows stay on their screen: every screen's tree has its own place for them" }
   }
-  if (key === OVERFLOW && target && leaves(target).indexOf(OVERFLOW) >= 0) {
-    return { error: "that screen has an overflow leaf already" }
+  if (isLeaf(source)) {
+    return { error: key + " is the only window on this screen; moving it would leave the screen empty" }
   }
   var path = pathTo(source, key)
   var leaf = path[path.length - 1].node
@@ -697,9 +689,9 @@ function addSlot(root, key, slot) {
 }
 
 // x: the slot `key` taken out of the tree, tidied ({ node: null } when it
-// was all of it). The overflow leaf is o's, not x's. { node } or { error }.
+// was all of it). Never the place for other windows. { node } or { error }.
 function removeSlot(root, key) {
-  if (key === OVERFLOW) return { error: "the overflow leaf is no slot: o parks it" }
+  if (key === OVERFLOW) return { error: "other windows always have a place in the tree: o only hides it from the picture" }
   if (isLeaf(root)) return { node: null }
   return { node: takeOut(root, key).node }
 }
@@ -873,7 +865,7 @@ function rects(root, area, opts) {
 
   function leaf(node, box, depth, cell) {
     var key = keyOf(node)
-    var label = node.kind === "overflow" ? "* overflow" : node.slot
+    var label = node.kind === "overflow" ? "other windows" : node.slot
     if (cell !== undefined && cell !== 1) label += " ×" + cell
     var r = { kind: node.kind, key: key, x: box.x, y: box.y, w: box.w, h: box.h, depth: depth, label: label,
       selected: key === opts.selected }
@@ -935,22 +927,4 @@ function ratioPrompt(root) {
   }
   var hints = ["current " + current, "empty clears all"]
   return { text: "Ratios for the whole tree (" + hints.join("; ") + ") [Enter] set  [Esc] cancel: " }
-}
-
-// The leaves in the order the tree holds them, once it nests (a flat tree's
-// picture already is the order): "1.main → 2.right → 3.overflow".
-function order(root) {
-  if (root.kind === "scroll") {
-    var keys = leaves(root)
-    if (keys.indexOf(OVERFLOW) < 0) {
-      return keys.map(function(key, i) { return (i + 1) + "." + key }).join(" → ") + ", then windows with no slot"
-    }
-    return keys.map(function(key, i) {
-      return (i + 1) + "." + (key === OVERFLOW ? "overflow (windows with no slot)" : key)
-    }).join(" → ")
-  }
-  if (isLeaf(root) || !root.children.some(function(c) { return !isLeaf(c) })) return ""
-  return leaves(root).map(function(key, i) {
-    return (i + 1) + "." + (key === OVERFLOW ? "overflow" : key)
-  }).join(" → ")
 }

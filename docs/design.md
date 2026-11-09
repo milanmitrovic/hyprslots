@@ -732,8 +732,10 @@ each action shows its trigger key highlighted in the theme's accent colour,
 bold, inside its label where the label has that letter (**a**dd,
 **f**ork, **u**nassign, **R**ecord), else before it (**x** delete); keys of
 more than one character go before their label (**Ctrl+S** save, **[ ]**
-prev/next, **Tab** switch view). Labels are escaped (Qt StyledText). A
-prompt's own help line stays plain.
+prev/next, **Tab** switch view), as does the key of an item marked so
+(**o** show/hide other windows). Labels are escaped (Qt StyledText). A
+prompt's own help line stays plain. The help row sits under the page, on
+the card's recessed surface.
 
 **Prompts** (`Prompts.js`, one implementation for every view): a line of
 text typed in place (←/→ Home End move, Backspace Delete, Ctrl+U clears,
@@ -793,12 +795,16 @@ name, `×n` for a share other than 1, and the title of the window in the
 slot; a nested split is a box titled with its kind and ratio (`h 1:3`); a
 scroll branch is a filmstrip: its columns side by side in equal frames,
 numbered in order (no tabs: each frame stands for a full-width column of
-the screen); the overflow leaf is `* overflow`. Under each pane its tree
-text and ratio string (and `overflow parked` when the tree has no `*`, or
-that windows with no slot go after a scroll branch's columns); under the
-panes the leaf order once the tree nests, or a scroll branch's column
-order (its `*`, when it has one, a frame of the filmstrip like any
-column). Edits go to a **draft**
+the screen). The picture is the whole story: no tree text, ratio string or
+order line under it (the ratios are the `×n` shares and the split titles).
+**Other windows** (windows assigned to no slot) always have a place in
+every tree: its `*` leaf, else where the engine puts them (a column at the
+right, `h[tree:3, *:1]`; after a scroll branch's columns). `o` shows or
+hides that place in the picture (hidden by default), a dim box or
+filmstrip frame labelled `other windows`; while it shows it can be
+selected and moved with hjkl like a slot, which writes the `*` into the
+tree there. No key takes it away (`x` refuses; it never moves to another
+screen). Edits go to a **draft**
 per pane (`edited` on the pane, `edited, not applied (w)` in the header).
 The header shows the workspace, the layout, and a strip: `All workspaces`
 first, the layout's shared (default) trees, then the managed workspaces
@@ -826,9 +832,9 @@ each with its description and nothing else (below).
 | a | add a global slot no pane of the workspace places yet, after the selected leaf (or as the tree of a screen that has none) |
 | x | take the selected slot out of the tree (it stays a slot) |
 | / | flip every split of the tree |
-| t | make the whole tree a scroll branch of its leaves in reading order (the overflow leaf as the column windows with no slot take), or back to the tree it was made from while its columns are as they were, else its columns side by side |
+| t | make the whole tree a scroll branch of its leaves in reading order (other windows' place, `*`, as the column they take), or back to the tree it was made from while its columns are as they were, else its columns side by side |
 | r | prompt for the whole tree's ratio (grammar below; the current one shown, empty clears all) |
-| o | park the overflow leaf (the engine then gives it a column at the right; on a scroll branch, puts those windows after the columns) or put it back where it was (with nothing remembered: where the engine would put it, on a scroll branch the last column) |
+| o | show/hide other windows: where windows assigned to no slot go, in the picture (it changes no tree; moving it with hjkl writes its `*`) |
 | w | apply the edited panes (`set_trees`) |
 | Ctrl+S | apply the edited panes, then `save` (the panel's key) |
 | d | after y/n, put the pane's tree back to slots.lua (`reset`) |
@@ -853,8 +859,8 @@ the workspace (aerolayout's `g` picked a workspace or "all"); the layout is
 always the active desk's (aerolayout's arrangements were the Monitors
 tab's); the logical slots are made in this view's slot list, not
 a tab of their own; `R` always
-previews and asks; a parked overflow leaf is remembered only while the
-panel is open (aerolayout kept it hidden in the saved tree); a scroll
+previews and asks; o only shows or hides the place for other windows
+(aerolayout's `o` hid the overflow slot in the saved tree); a scroll
 branch's columns are a row, so h / l move a column (the `*` column too;
 H J K L refuse: a scroll branch holds slots and `*` only), and a leaf
 moved onto a screen whose tree is one becomes its column at the near edge.

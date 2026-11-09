@@ -8,7 +8,8 @@
 // An item is { key, label }: a single-character key is highlighted where it
 // first occurs in the label, ignoring case (a shifted key shows itself in
 // place: "Record" for R), else it goes before the label ("x delete", "/ flip");
-// a longer key (Tab, Ctrl+S, "[ ]", ←→) always goes before it. { text } is
+// a longer key (Tab, Ctrl+S, "[ ]", ←→) always goes before it, as does any
+// key of an item with `before: true` ("o show/hide other windows"). { text } is
 // plain text. A row is a list of groups, each a list of items or { title,
 // items }; items are joined by two spaces, groups by a dot.
 
@@ -28,7 +29,7 @@ function item(entry, accent) {
   var key = String(entry.key)
   var label = entry.label ? String(entry.label) : ""
   if (label === "") return mark(key, accent)
-  if (key.length === 1) {
+  if (key.length === 1 && !entry.before) {
     var at = label.toLowerCase().indexOf(key.toLowerCase())
     if (at >= 0) {
       var found = label.charAt(at)

@@ -73,7 +73,7 @@ Item {
     return Layout.panes(state, layout, workspace)
   }
   // screen key -> { node (the draft, null when the screen has no tree), base
-  // (the tree text in force it started from), memory (a parked overflow leaf) }
+  // (the tree text in force it started from) }
   property var drafts: ({})
   readonly property string block: Layout.editBlock(state, layout)
   // The other desks using this layout: every edit changes it for them too.
@@ -88,6 +88,11 @@ Item {
   property bool messageIsError: false
   // Counts say(): the panel's message band knows a message by it.
   property int messageSeq: 0
+
+  // o: whether the picture shows where other windows (windows assigned to
+  // no slot) go. Every tree has that place (Layout.withOther); o only shows
+  // or hides it, and while it shows, hjkl move it like a slot.
+  property bool showOther: false
 
   readonly property var activeDraft: drafts[screen] || null
   readonly property var activeNode: activeDraft ? activeDraft.node : null
@@ -122,7 +127,7 @@ Item {
       [{ key: "←↑↓→", label: "select" }],
       { title: "Tree", items: [{ key: "a", label: "add slot" }, { key: "x", label: "take out" }, { key: "hjkl", label: "move" },
         { key: "HJKL", label: "force move" }, { key: "/", label: "flip" }, { key: "t", label: toggleLabel },
-        { key: "r", label: "ratios" }, { key: "o", label: "overflow" }] },
+        { key: "r", label: "ratios" }, { key: "o", label: "show/hide other windows", before: true }] },
       { title: "Layout", items: [{ key: "w", label: "apply" }, { key: "Ctrl+S", label: "apply+save" },
         { key: "d", label: "back to slots.lua" }, { key: "R", label: "record" }, { key: "f", label: "fork" }]
           .concat(Layout.hasOwn(state, layout, workspace) ? [{ key: "u", label: "use the shared tree" }] : []) },
@@ -173,6 +178,7 @@ Item {
     drafts = ({})
     selectedKey = ""
     slotFocus = false
+    showOther = false
     selectedSlot = ""
     scope = ""
     if (state) {
@@ -218,10 +224,10 @@ Item {
       var p = list[i]
       var d = drafts[p.key]
       if (d && edited(p.key)) {
-        next[p.key] = { node: d.node, base: p.tree, memory: d.memory }
+        next[p.key] = { node: d.node, base: p.tree }
       } else {
         var parsed = p.tree !== null ? Layout.parse(p.tree) : { node: null }
-        next[p.key] = { node: parsed.node || null, base: p.tree, memory: d && d.base === p.tree ? d.memory : null }
+        next[p.key] = { node: parsed.node || null, base: p.tree }
       }
     }
     drafts = next
@@ -232,7 +238,7 @@ Item {
     var list = currentPanes()
     if (screen === "" || !drafts[screen]) screen = list.length ? list[0].key : ""
     var draft = drafts[screen]
-    var node = draft ? draft.node : null
+    var node = draft ? pictureOf(draft.node) : null
     if (node && Layout.leaves(node).indexOf(selectedKey) >= 0) return
     if (!node) {
       // the selection is on a screen with no tree: move to one that has one
@@ -240,7 +246,7 @@ Item {
         var d = drafts[list[i].key]
         if (d && d.node) {
           screen = list[i].key
-          node = d.node
+          node = pictureOf(d.node)
           break
         }
       }
@@ -248,11 +254,22 @@ Item {
     selectedKey = node ? Layout.leaves(node)[0] : ""
   }
 
-  function setDraft(k, node, memory) {
+  function setDraft(k, node) {
     var next = Object.assign({}, drafts)
     var old = drafts[k] || { base: null }
-    next[k] = { node: node, base: old.base, memory: memory === undefined ? old.memory : memory }
+    next[k] = { node: node, base: old.base }
     drafts = next
+  }
+
+  // The tree as the picture draws it (Layout.picture): with or without
+  // the place for other windows, as o says.
+  function pictureOf(node) {
+    return Layout.picture(node, showOther)
+  }
+
+  // A leaf as messages name it.
+  function leafName(key) {
+    return key === "*" ? "other windows" : key
   }
 
   function draftNote() {
@@ -290,14 +307,14 @@ Item {
 
   function select(direction) {
     if (!activeNode) return
-    var next = Layout.navigate(activeNode, selectedKey, direction)
+    var next = Layout.navigate(pictureOf(activeNode), selectedKey, direction)
     if (next !== null) {
       selectedKey = next
       return
     }
     var other = neighbourPane(direction)
     if (!other || !drafts[other.key] || !drafts[other.key].node) return
-    var keys = Layout.leaves(drafts[other.key].node)
+    var keys = Layout.leaves(pictureOf(drafts[other.key].node))
     screen = other.key
     selectedKey = direction === "right" ? keys[0] : keys[keys.length - 1]
   }
@@ -310,14 +327,17 @@ Item {
 
   function moveSelected(direction, forced) {
     if (!activeNode || refuseEdit()) return
-    var result = forced ? Layout.forceMove(activeNode, selectedKey, direction) : Layout.move(activeNode, selectedKey, direction)
+    // other windows' place, where the engine puts them unless the tree
+    // says (*), is written into the tree as it moves
+    var from = selectedKey === "*" ? Layout.withOther(activeNode) : activeNode
+    var result = forced ? Layout.forceMove(from, selectedKey, direction) : Layout.move(from, selectedKey, direction)
     if (result.error) {
       say(result.error, true)
       return
     }
     if (result.changed) {
       setDraft(screen, result.node)
-      say("Moved " + selectedKey + "." + draftNote(), false)
+      say("Moved " + leafName(selectedKey) + "." + draftNote(), false)
       return
     }
     // Nothing moved here: off this screen's edge is the next screen.
@@ -330,9 +350,9 @@ Item {
       return
     }
     var next = Object.assign({}, drafts)
-    next[screen] = { node: crossed.source, base: drafts[screen].base, memory: drafts[screen].memory }
-    var old = drafts[other.key] || { base: null, memory: null }
-    next[other.key] = { node: crossed.target, base: old.base, memory: old.memory }
+    next[screen] = { node: crossed.source, base: drafts[screen].base }
+    var old = drafts[other.key] || { base: null }
+    next[other.key] = { node: crossed.target, base: old.base }
     drafts = next
     screen = other.key
     say("Moved " + selectedKey + " to screen " + other.key + "." + draftNote(), false)
@@ -345,7 +365,7 @@ Item {
       say(result.error, true)
       return
     }
-    setDraft(screen, result.node, result.memory)
+    setDraft(screen, result.node)
     say(what + draftNote(), false)
     keepSelection()
   }
@@ -373,7 +393,7 @@ Item {
       root.edit(function(n) { return Layout.toggleScroll(n) },
         root.toggleLabel === "tiles" ? "Tiled again." : "Scrolling: full-width columns in this order (hl move them).")
     }, true)
-    else if (text === "o") scoped(toggleOverflow, true)
+    else if (text === "o") toggleOther()
     else if (text === "a") scoped(startAddSlot, false)
     else if (text === "x") scoped(removeSelected, true)
     else if (text === "r") scoped(startRatio, true)
@@ -593,7 +613,7 @@ Item {
     var next = Object.assign({}, drafts)
     for (var k in next) {
       var d = next[k]
-      if (d && d.node && edited(k)) next[k] = { node: fn(d.node), base: d.base, memory: d.memory }
+      if (d && d.node && edited(k)) next[k] = { node: fn(d.node), base: d.base }
     }
     drafts = next
   }
@@ -654,23 +674,13 @@ Item {
     })
   }
 
-  function toggleOverflow() {
-    if (!activeNode || refuseEdit()) return
-    var memory = activeDraft.memory
-    var result = Layout.toggleOverflow(activeNode, memory)
-    if (result.error) {
-      say(result.error, true)
-      return
-    }
-    var scrolling = result.node.kind === "scroll"
-    setDraft(screen, result.node, result.memory)
-    if (!result.parked) selectedKey = "*"
+  // o: show or hide where other windows go. It changes no tree.
+  function toggleOther() {
+    showOther = !showOther
+    if (showOther && activeNode) selectedKey = "*"
     keepSelection()
-    say((result.parked
-      ? (scrolling ? "Overflow column parked — windows with no slot go after the columns."
-        : "Overflow leaf parked — windows with no slot get a column at the right.")
-      : (scrolling ? "Overflow column back — h/l move it among the columns to choose where they go."
-        : "Overflow leaf back — move it like any node to choose where they go.")) + draftNote(), false)
+    say(showOther ? "Showing where other windows (windows not assigned to a slot) go: hjkl move it."
+      : "Other windows hidden from the picture; they still go where the tree puts them.", false)
   }
 
   // Open a prompt; answer(value) runs on its answer.
@@ -804,7 +814,7 @@ Item {
         var next = Object.assign({}, root.drafts)
         for (var k in reply.trees) {
           var parsed = Layout.parse(reply.trees[k].tree)
-          next[k] = { node: parsed.node, base: reply.trees[k].tree, memory: next[k] ? next[k].memory : null }
+          next[k] = { node: parsed.node, base: reply.trees[k].tree }
         }
         root.drafts = next
         root.keepSelection()
@@ -836,7 +846,7 @@ Item {
           return
         }
         var next = Object.assign({}, root.drafts)
-        next[k] = { node: reply.tree ? Layout.parse(reply.tree).node : null, base: reply.tree || null, memory: null }
+        next[k] = { node: reply.tree ? Layout.parse(reply.tree).node : null, base: reply.tree || null }
         root.drafts = next
         root.keepSelection()
         root.say(what + " on screen " + k + " is back to "
@@ -902,7 +912,7 @@ Item {
             return
           }
           var next = Object.assign({}, root.drafts)
-          next[r] = { node: Layout.parse(set.trees[r].tree).node, base: set.trees[r].tree, memory: null }
+          next[r] = { node: Layout.parse(set.trees[r].tree).node, base: set.trees[r].tree }
           root.drafts = next
           root.keepSelection()
           root.say("Applied the recorded tree " + set.trees[r].tree + ". Ctrl+S saves.", false)
@@ -959,7 +969,8 @@ Item {
 
   readonly property int gap: Style.spacing.md
   readonly property color scrollColor: Commons.Color.accent
-  readonly property color overflowColor: Commons.Color.urgent
+  // other windows' place: drawn dim, beside the slots
+  readonly property color otherColor: Commons.Color.muted
 
   Column {
     anchors.fill: parent
@@ -1083,7 +1094,7 @@ Item {
       width: parent.width
       height: parent.height - headerBox.height - (problem.visible ? problem.height + parent.spacing : 0)
         - (sharedNote.visible ? sharedNote.height + parent.spacing : 0)
-        - orderText.height - parent.spacing * 3
+        - parent.spacing
       spacing: root.gap * 2
 
       Row {
@@ -1124,7 +1135,7 @@ Item {
             Item {
               id: frame
               width: parent.width
-              height: parent.height - paneTitle.height - treeText.height - ratioText.height - parent.spacing * 3
+              height: parent.height - paneTitle.height - parent.spacing
               readonly property real aspect: root.aspectOf(pane.modelData.connector)
               readonly property int boxW: Math.floor(Math.min(width, height * aspect))
               readonly property int boxH: Math.floor(Math.min(height, width / aspect))
@@ -1156,7 +1167,7 @@ Item {
                 }
 
                 Repeater {
-                  model: pane.node ? Layout.rects(pane.node, { x: 0, y: 0, w: screenBox.width - 8, h: screenBox.height - 8 }, {
+                  model: pane.node ? Layout.rects(Layout.picture(pane.node, root.showOther), { x: 0, y: 0, w: screenBox.width - 8, h: screenBox.height - 8 }, {
                     pad: 5,
                     title: Style.font.bodySmall + 6,
                     selected: pane.active ? root.selectedKey : "",
@@ -1166,6 +1177,7 @@ Item {
                     id: cell
                     required property var modelData
                     readonly property bool isLeaf: modelData.kind === "slot" || modelData.kind === "overflow"
+                    readonly property bool isOther: modelData.kind === "overflow"
                     readonly property bool isFrame: !!modelData.column
                     readonly property bool isContainer: !isLeaf
                     readonly property bool picked: !!modelData.selected
@@ -1176,12 +1188,12 @@ Item {
                     radius: Style.cornerRadius
                     color: picked && isLeaf ? root.selectedBackground
                       : isFrame ? Commons.Util.alpha(root.scrollColor, 0.08)
-                      : isLeaf ? Commons.Util.alpha(modelData.kind === "overflow" ? root.overflowColor : root.foreground, 0.06)
+                      : isLeaf ? Commons.Util.alpha(isOther ? root.otherColor : root.foreground, isOther ? 0.04 : 0.06)
                       : "transparent"
                     border.width: picked ? 2 : 1
                     border.color: picked ? Commons.Color.accent
                       : isFrame ? Commons.Util.alpha(root.scrollColor, 0.8)
-                      : modelData.kind === "overflow" ? Commons.Util.alpha(root.overflowColor, 0.8)
+                      : isOther ? Commons.Util.alpha(root.otherColor, 0.45)
                       : isContainer ? Commons.Util.alpha(root.foreground, 0.3)
                       : Commons.Util.alpha(root.foreground, 0.5)
 
@@ -1212,10 +1224,11 @@ Item {
                         elide: Text.ElideRight
                         text: cell.modelData.label
                         color: cell.picked ? root.selectedText
-                          : cell.modelData.kind === "overflow" ? root.overflowColor : root.foreground
+                          : cell.isOther ? root.otherColor : root.foreground
                         font.family: root.fontFamily
                         font.pixelSize: Style.font.body
-                        font.bold: true
+                        font.bold: !cell.isOther
+                        font.italic: cell.isOther
                       }
                       Text {
                         width: parent.width
@@ -1242,33 +1255,6 @@ Item {
                   }
                 }
               }
-            }
-
-            Text {
-              id: treeText
-              width: parent.width
-              textFormat: Text.PlainText
-              elide: Text.ElideRight
-              text: "tree   " + (pane.node ? Layout.format(pane.node) : "—")
-              color: root.foreground
-              font.family: "monospace"
-              font.pixelSize: Style.font.body
-            }
-            Text {
-              id: ratioText
-              width: parent.width
-              textFormat: Text.PlainText
-              elide: Text.ElideRight
-              text: "ratio  " + (pane.node && Layout.ratio(pane.node) !== "" ? Layout.ratio(pane.node) : "—")
-                + (!pane.node ? ""
-                  : pane.node.kind === "scroll" ? (Layout.leaves(pane.node).indexOf("*") < 0
-                    ? "   full-width scrolling columns; windows with no slot after them (o: a column of their own)"
-                    : "   full-width scrolling columns; windows with no slot in the * column")
-                  : Layout.leaves(pane.node).indexOf("*") < 0 ? "   overflow parked (a column at the right)" : "")
-              color: root.foreground
-              opacity: 0.75
-              font.family: "monospace"
-              font.pixelSize: Style.font.body
             }
           }
         }
@@ -1397,19 +1383,6 @@ Item {
           }
         }
       }
-    }
-
-    // The order the active tree holds its leaves in, once it nests.
-    Text {
-      id: orderText
-      width: parent.width
-      textFormat: Text.PlainText
-      elide: Text.ElideRight
-      text: root.activeNode && Layout.order(root.activeNode) !== "" ? "order  " + Layout.order(root.activeNode) : " "
-      color: root.foreground
-      opacity: 0.6
-      font.family: root.fontFamily
-      font.pixelSize: Style.font.bodySmall
     }
   }
 }

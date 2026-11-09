@@ -60,3 +60,8 @@ test("an item with no key in a row is its plain, escaped text", () => {
 test("the plain text of a row is what it reads like without the markup", () => {
   assert.equal(H.plain(H.row([[{ key: "a", label: "add" }, { key: "x", label: "a & b" }]], ACCENT)), "add  x a & b");
 });
+
+test("an item with `before` puts even a one-letter key before its label", () => {
+  assert.equal(H.item({ key: "o", label: "show/hide other windows", before: true }, ACCENT), k("o") + " show/hide other windows");
+  assert.equal(H.item({ key: "o", label: "show/hide other windows" }, ACCENT), "sh" + k("o") + "w/hide other windows");
+});
