@@ -430,7 +430,9 @@ local function validate_title_matching(raw, fail)
 end
 
 -- scroll = { width = <fraction of the screen> }: how wide scroll branches'
--- columns are (scroll.lua; default 0.99, Omarchy's full-width scrolling).
+-- columns were before each tree said its own (scroll:0.5[...]); config.load
+-- writes it into the trees that say none (migrate.scroll_width), and it is
+-- still checked here.
 local function validate_scroll(raw, fail)
   if raw == nil then
     return nil
@@ -507,8 +509,8 @@ function M.validate(raw, monitors)
     desk_names = {},
     layouts = {},
     layout_names = {},
-    scroll = validate_scroll(raw.scroll, fail),
   }
+  validate_scroll(raw.scroll, fail) -- of before: config.load wrote it into the trees
 
   for _, section in ipairs({ "layouts", "desks" }) do
     local entries = raw[section]
@@ -596,6 +598,19 @@ function M.load(dir, opts)
         .. "does not return: add `desks = data.desks, layouts = data.layouts` (in place of `arrangements`)"
     end
   end
+
+  -- config.lua's scroll width of before goes into the scroll trees, the
+  -- data file's included, so save writes it there.
+  local width = type(raw.scroll) == "table" and raw.scroll.width or nil
+  for _, file in pairs(loaded) do
+    if type(file.data) == "table" and migrate.scroll_width(file.data.layouts, width) then
+      file.migrated = true
+    end
+    if type(file.given) == "table" then
+      migrate.scroll_width(file.given.layouts, width)
+    end
+  end
+  migrate.scroll_width(raw.layouts, width)
 
   local cfg, invalid = M.validate(raw, monitors)
   if not cfg then

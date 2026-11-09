@@ -104,6 +104,44 @@ function M.unpin(data)
   return out, changed
 end
 
+-- config.lua's `scroll = { width = w }` of before gave every scroll branch's
+-- columns one width; each tree says its own now (`scroll:0.5[...]`), full
+-- width when it says none. The width of before goes into every scroll tree
+-- of `layouts` (a layouts table: name -> { default, workspaces }) that
+-- says none, in place, since config.lua may hand the very table on; a
+-- full width (FULL_WIDTH or more, the default) changes nothing. Returns
+-- whether anything changed.
+M.FULL_WIDTH = 0.99
+
+function M.scroll_width(layouts, width)
+  if type(layouts) ~= "table" or type(width) ~= "number" or width < 0.1 or width >= M.FULL_WIDTH then
+    return false
+  end
+  local changed = false
+  local function widen(trees)
+    if type(trees) ~= "table" then
+      return
+    end
+    for screen, text in pairs(trees) do
+      local node = type(text) == "string" and tree.parse(text)
+      if node and node.scroll and not node.width then
+        node.width = width
+        trees[screen] = serialize.tree(node)
+        changed = true
+      end
+    end
+  end
+  for _, layout in pairs(layouts) do
+    if type(layout) == "table" then
+      widen(layout.default)
+      for _, trees in pairs(type(layout.workspaces) == "table" and layout.workspaces or {}) do
+        widen(trees)
+      end
+    end
+  end
+  return changed
+end
+
 local function set_of(list)
   local out = {}
   for _, value in ipairs(list) do

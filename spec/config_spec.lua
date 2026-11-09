@@ -53,6 +53,44 @@ describe("config.load", function()
     dir = nil
   end)
 
+  describe("with config.lua's scroll width of before", function()
+    local SCROLLING = [[
+return {
+  slots = { left = {}, main = {} },
+  desks = { solo = { monitors = { "HEADLESS-2" }, layout = "solo" } },
+  layouts = { solo = { screens = 1, default = { [1] = "scroll[left, main]" },
+    workspaces = { [3] = { [1] = "scroll:0.25[main, left]" }, [4] = { [1] = "h[left, main]" } } } },
+}
+]]
+    local function with_width(width)
+      return [[
+local data = load_data("slots.lua")
+return { slots = data.slots, desks = data.desks, layouts = data.layouts, scroll = { width = ]] .. width .. [[ } }
+]]
+    end
+
+    it("gives it to every scroll tree without a width of its own, in slots.lua's data too", function()
+      dir = config_dir({ ["config.lua"] = with_width(0.5), ["slots.lua"] = SCROLLING })
+      local cfg = assert(config.load(dir))
+      assert.is_true(cfg.migrated)
+      assert.are.equal(0.5, cfg.layouts.solo.default[1].width)
+      assert.are.equal(0.25, cfg.layouts.solo.workspaces[3][1].width, "a tree's own width stays")
+      local layouts = cfg.data_files["slots.lua"].data.layouts
+      assert.are.equal("scroll:0.5[left, main]", layouts.solo.default[1])
+      assert.are.equal("scroll:0.25[main, left]", layouts.solo.workspaces[3][1])
+      assert.are.equal("h[left, main]", layouts.solo.workspaces[4][1])
+      assert.are.same({ "scroll" }, require("hyprslots.edit").read_only(cfg.raw, cfg.data_files["slots.lua"].given),
+        "the layouts are still slots.lua's")
+    end)
+
+    it("changes nothing when it was full width (0.99, the default)", function()
+      dir = config_dir({ ["config.lua"] = with_width(0.99), ["slots.lua"] = SCROLLING })
+      local cfg = assert(config.load(dir))
+      assert.is_falsy(cfg.migrated)
+      assert.is_nil(cfg.layouts.solo.default[1].width)
+    end)
+  end)
+
   it("loads config.lua, which loads slots.lua through load_data", function()
     dir = config_dir({ ["config.lua"] = CONFIG_LUA, ["slots.lua"] = SLOTS_LUA })
     local cfg = assert(config.load(dir))
@@ -467,11 +505,10 @@ describe("config.validate", function()
     assert.are.equal(0.5, node.width)
   end)
 
-  it("takes the scroll columns' width, a fraction of the screen", function()
+  it("still checks the scroll columns' width of before (each tree has its own now)", function()
     local raw = valid()
-    assert.is_nil(assert(config.validate(raw)).scroll)
     raw.scroll = { width = 0.95 }
-    assert.are.same({ width = 0.95 }, assert(config.validate(raw)).scroll)
+    assert(config.validate(raw))
     raw.scroll = { width = 1.5 }
     rejects(raw, "scroll%.width: must be a fraction of the screen from 0%.1 to 1, got 1%.5")
     raw.scroll = { widht = 0.9 }
