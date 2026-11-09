@@ -353,3 +353,85 @@ describe("the overflow leaf", function()
     end)
   end)
 end)
+
+describe("a scroll branch's column width", function()
+  local function rejects(text, pattern)
+    local node, err = tree.parse(text)
+    assert.is_nil(node)
+    assert.matches(pattern, err)
+  end
+  local serialize = require("hyprslots.serialize")
+
+  it("is full width when the branch says none", function()
+    assert.is_nil(parse("scroll[a, b]").width)
+  end)
+
+  it("is a fraction of the screen after scroll:", function()
+    local node = parse("scroll:0.5[a, *, b]")
+    assert.are.equal(0.5, node.width)
+    assert.are.same({ "a", "*", "b" }, tree.columns(node))
+    assert.are.equal(0.5, parse("scroll : .5 [a]").width)
+  end)
+
+  it("is full width at 1, written back without one", function()
+    assert.is_nil(parse("scroll:1[a]").width)
+    assert.are.equal("scroll[a]", serialize.tree(parse("scroll:1.0[a]")))
+  end)
+
+  it("is written back as it reads", function()
+    for _, text in ipairs({ "scroll:0.5[left, main, right]", "scroll:0.33[a, *]", "scroll[a]" }) do
+      assert.are.equal(text, serialize.tree(parse(text)))
+    end
+  end)
+
+  it("must be a fraction of the screen from 0.1 to 1", function()
+    rejects("scroll:2[a]", "a scroll width must be a fraction of the screen from 0.1 to 1, got '2' at position 8")
+    rejects("scroll:0.05[a]", "got '0.05'")
+    rejects("scroll:x[a]", "got 'x'")
+    rejects("scroll:[a]", "got ''")
+  end)
+
+  it("leaves a slot named scroll with a weight alone", function()
+    assert.are.same({ "scroll", "b" }, tree.slots(parse("h[scroll:2, b]")))
+    assert.are.equal(2, parse("h[scroll:2, b]").children[1].weight)
+  end)
+
+  it("still keeps scroll at the root", function()
+    rejects("h[scroll:0.5[x], d]", "scroll%[...%] is a whole screen's tree, found it inside a split at position 3")
+  end)
+
+  it("survives closing up around absent columns", function()
+    local boxes = tree.boxes(parse("scroll:0.5[x, y]"), area(0, 0, 2400, 1350), { x = true })
+    assert.are.same({ x = area(0, 0, 2400, 1350) }, boxes)
+  end)
+end)
+
+describe("tree.append", function()
+  local serialize = require("hyprslots.serialize")
+  local function appended(text, slots)
+    return serialize.tree(tree.append(parse(text), slots))
+  end
+
+  it("adds slots as new children of a tiled tree's root split", function()
+    assert.are.equal("h[a:2, v[b, c], x, y]", appended("h[a:2, v[b, c]]", { "x", "y" }))
+    assert.are.equal("v[a, x]", appended("v[a]", { "x" }))
+  end)
+
+  it("makes a bare leaf a split beside it", function()
+    assert.are.equal("h[a, x]", appended("a", { "x" }))
+    assert.are.equal("h[*, x]", appended("*", { "x" }))
+  end)
+
+  it("adds columns at the end of a scroll branch, before a trailing *", function()
+    assert.are.equal("scroll[a, b, x]", appended("scroll[a, b]", { "x" }))
+    assert.are.equal("scroll:0.5[a, x, y, *]", appended("scroll:0.5[a, *]", { "x", "y" }))
+    assert.are.equal("scroll[a, *, b, x]", appended("scroll[a, *, b]", { "x" }))
+  end)
+
+  it("changes nothing with no slots, and never the tree given", function()
+    local node = parse("h[a, b]")
+    assert.are.equal("h[a, b]", serialize.tree(tree.append(node, {})))
+    tree.append(node, { "x" })
+    assert.are.equal("h[a, b]", serialize.tree(node))
+  end)
+end)

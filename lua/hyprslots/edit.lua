@@ -188,7 +188,8 @@ local function shape(node, weighted)
     for i, child in ipairs(node.children) do
       parts[i] = shape(child, not node.scroll and math.tointeger((child.weight or 1) // math.max(divisor, 1)))
     end
-    text = (node.scroll and "scroll" or node.split) .. "[" .. table.concat(parts, ", ") .. "]"
+    local kind = node.scroll and "scroll" .. (node.width and ":" .. serialize.width(node.width) or "") or node.split
+    text = kind .. "[" .. table.concat(parts, ", ") .. "]"
   else
     text = node.overflow and tree.OVERFLOW or node.slot
   end

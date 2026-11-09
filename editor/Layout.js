@@ -13,9 +13,11 @@
 //   { kind: "overflow", weight }            where other windows go (windows
 //                                           assigned to no slot), written *
 //   { kind: "h" | "v", weight, children }   a split
-//   { kind: "scroll", weight, children, was? }  a scroll branch: the whole
-//                                           tree, slots only, full-width
-//                                           scrolling columns in order; `was`
+//   { kind: "scroll", weight, children, width?, was? }  a scroll branch:
+//                                           the whole tree, slots only,
+//                                           scrolling columns in order, each
+//                                           `width` of the screen (none: full
+//                                           width, scroll:0.5[...]: half); `was`
 //                                           remembers the tree t made it from
 // A leaf is named by its key: the slot's name, or "*" for other windows.
 // Every tree has a place for other windows: its * leaf, or, without one,
@@ -29,6 +31,8 @@ var OVERFLOW = "*"
 // --- tree text (tree.lua) ---------------------------------------------------
 
 var NAME = /^[A-Za-z0-9_\-.]+/
+// The narrowest column a scroll branch may ask for (a fraction of the screen).
+var MIN_WIDTH = 0.1
 var CONTAINER = { h: true, v: true, a: true, scroll: true }
 
 function TreeError(message) {
@@ -108,6 +112,23 @@ function parse(text) {
       return { kind: "slot", slot: n }
     }
   }
+  // After `scroll`: `:<width>[` gives a scroll branch's column width (a
+  // fraction of the screen, 1 = full width, kept as none). Returns
+  // { width } (null for full) with the position at its '[', or null when
+  // `scroll` is no container with a width.
+  function scrollWidth() {
+    var m = /^\s*:\s*([^\[\]\s,]*)\s*\[/.exec(text.slice(pos))
+    if (!m) return null
+    var given = m[1]
+    var w = /^\d*\.?\d+$/.test(given) ? parseFloat(given) : NaN
+    if (!(w >= MIN_WIDTH && w <= 1)) {
+      pos = text.indexOf(":", pos) + 1
+      skip()
+      fail("a scroll width must be a fraction of the screen from " + MIN_WIDTH + " to 1, got '" + given + "'")
+    }
+    pos += m[0].length - 1
+    return { width: w < 1 ? w : null }
+  }
   // `root` when the node is the whole tree (where scroll[...] may be).
   function node(root) {
     if (peek() === "*") {
@@ -119,6 +140,16 @@ function parse(text) {
     skip()
     var start = pos
     var n = name()
+    var sized = null
+    if (n === "scroll") {
+      var probe = pos
+      sized = scrollWidth()
+      if (sized && !root) {
+        pos = start
+        fail("scroll[...] is a whole screen's tree, found it inside a split")
+      }
+      if (!sized) pos = probe
+    }
     if (CONTAINER[n] && peek() === "[") {
       if (n === "a") {
         var slots = children(member("a[...]"), "a[...] is gone").map(function(c) { return c.slot })
@@ -131,7 +162,9 @@ function parse(text) {
           pos = start
           fail("scroll[...] is a whole screen's tree, found it inside a split")
         }
-        return { kind: "scroll", children: children(member("scroll[...]", true), "columns of scroll[...] take no weight (each is full width)") }
+        var branch = { kind: "scroll", children: children(member("scroll[...]", true), "columns of scroll[...] take no weight (each is full width)") }
+        if (sized && sized.width) branch.width = sized.width
+        return branch
       }
       return { kind: n, children: children(function() { return node(false) }, false) }
     }
@@ -174,7 +207,13 @@ function format(node) {
     var text = format(child)
     return child.weight && child.weight !== 1 ? text + ":" + child.weight : text
   })
-  return node.kind + "[" + parts.join(", ") + "]"
+  var kind = node.kind === "scroll" && node.width ? "scroll:" + formatWidth(node.width) : node.kind
+  return kind + "[" + parts.join(", ") + "]"
+}
+
+// A scroll branch's column width as serialize.lua writes it (%.4g).
+function formatWidth(width) {
+  return String(Number(width.toPrecision(4)))
 }
 
 // The keys of a tree's leaves in reading order.

@@ -10,8 +10,12 @@
 --
 --   { slot = "main", weight = 2 }                               -- leaf
 --   { split = "h", weight = 1, children = { node, ... } }       -- split
---   { scroll = true, weight = 1, children = { leaf, ... } }     -- scroll
+--   { scroll = true, width = 0.5, weight = 1, children = { leaf, ... } }  -- scroll
 --   { overflow = true, weight = 1 }                             -- overflow leaf
+--
+-- A scroll branch's columns are full width unless it says otherwise:
+-- `scroll:0.5[a, b]` gives each column half the screen (`width`, a fraction
+-- from 0.1 to 1; nil for full width, which `scroll:1[...]` is too).
 --
 -- The overflow leaf, written `*` (at most one per tree), is where windows with
 -- no slot in the tree go; in a scroll container it is the column they take
@@ -24,6 +28,9 @@
 -- integers. Pure: no `hl`, no I/O.
 
 local M = {}
+
+-- The narrowest column a scroll branch may ask for (a fraction of the screen).
+local MIN_WIDTH = 0.1
 
 local NAME = "^[%w_%-%.]+"
 
@@ -130,6 +137,25 @@ local function parser(text)
     end
   end
 
+  -- After `scroll`: `:<width>[` gives a scroll branch's column width (a
+  -- fraction of the screen, 1 = full width, written as none). Returns
+  -- true and the width (nil for full) when one is there, with the position
+  -- at its '['; false when `scroll` is no container with a width.
+  function p.scroll_width()
+    local first, last, given = text:find("^%s*:%s*([^%[%]%s,]*)%s*%[", p.pos)
+    if not first then
+      return false
+    end
+    local width = given:match("^%d*%.?%d+$") and tonumber(given)
+    if not width or width < MIN_WIDTH or width > 1 then
+      p.pos = text:find(":", p.pos, true) + 1
+      p.skip()
+      p.fail("a scroll width must be a fraction of the screen from " .. MIN_WIDTH .. " to 1, got '" .. given .. "'")
+    end
+    p.pos = last
+    return true, width < 1 and width or nil
+  end
+
   -- A node; `root` when it is the whole tree (where scroll[...] may be).
   function p.node(root)
     if p.peek() == "*" then
@@ -143,6 +169,18 @@ local function parser(text)
     p.skip()
     local start = p.pos
     local name = p.name()
+    local sized, width = false, nil
+    if name == "scroll" then
+      local probe = p.pos
+      sized, width = p.scroll_width()
+      if sized and not root then
+        p.pos = start
+        p.fail("scroll[...] is a whole screen's tree, found it inside a split")
+      end
+      if not sized then
+        p.pos = probe
+      end
+    end
     if CONTAINER[name] and p.peek() == "[" then
       if name == "a" then
         -- Read its members for the suggestion, then refuse it where it starts.
@@ -160,7 +198,7 @@ local function parser(text)
           p.pos = start
           p.fail("scroll[...] is a whole screen's tree, found it inside a split")
         end
-        return { scroll = true,
+        return { scroll = true, width = width,
           children = p.children(member("scroll[...]", true), "columns of scroll[...] take no weight (each is full width)") }
       end
       return { split = name, children = p.children(p.node) }
@@ -246,6 +284,46 @@ function M.columns(node)
   return out
 end
 
+local function shallow(node)
+  local out = {}
+  for key, value in pairs(node) do
+    out[key] = value
+  end
+  return out
+end
+
+-- The tree with `slots` (names, in order) added: as new children of a tiled
+-- tree's root split (a bare leaf becoming h[leaf, slot, ...]), or as columns
+-- at the end of a scroll branch, before its `*` when that is the last
+-- column (windows with no slot keep coming last). The tree given is not
+-- modified.
+function M.append(node, slots)
+  if #slots == 0 then
+    return node
+  end
+  local out
+  if node.children then
+    out = shallow(node)
+    out.children = {}
+    for i, child in ipairs(node.children) do
+      out.children[i] = child
+    end
+  else
+    local leaf = shallow(node)
+    leaf.weight = 1
+    out = { split = "h", weight = node.weight or 1, children = { leaf } }
+  end
+  local at = #out.children + 1
+  if out.scroll and out.children[#out.children].overflow then
+    at = #out.children
+  end
+  for _, slot in ipairs(slots) do
+    table.insert(out.children, at, { slot = slot, weight = 1 })
+    at = at + 1
+  end
+  return out
+end
+
 -- Parse tree text. Returns the root node, or nil and an error message.
 function M.parse(text)
   if type(text) ~= "string" then
@@ -304,7 +382,7 @@ local function prune(node, present)
   if #children == 0 then
     return nil
   end
-  return { split = node.split, scroll = node.scroll, weight = node.weight, children = children }
+  return { split = node.split, scroll = node.scroll, width = node.width, weight = node.weight, children = children }
 end
 
 local function divide(node, x, y, w, h, out)

@@ -17,9 +17,16 @@
 
 local M = {}
 
+-- A scroll branch's column width as tree text writes it (`0.5`): four
+-- significant digits at most, as the editor's Layout.js writes it too.
+function M.width(width)
+  return string.format("%.4g", width)
+end
+
 -- The text of a parsed tree: weights of 1 are left out, children are joined
 -- with ", ". A split is written as h[...] or v[...], a scroll branch
--- ({ scroll = true }, tree.lua) as scroll[...], and a leaf without a slot is
+-- ({ scroll = true }, tree.lua) as scroll[...] (scroll:0.5[...] with a
+-- width), and a leaf without a slot is
 -- the overflow leaf `*`. Any other split kind is written as kind[children].
 function M.tree(node)
   if node.slot then
@@ -37,6 +44,9 @@ function M.tree(node)
     parts[i] = text
   end
   local kind = node.scroll and "scroll" or node.split
+  if node.scroll and node.width then
+    kind = kind .. ":" .. M.width(node.width)
+  end
   return kind .. "[" .. table.concat(parts, ", ") .. "]"
 end
 

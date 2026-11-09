@@ -300,6 +300,10 @@ test("tree text and ratios read as tree.lua, serialize.lua and ratio.lua read th
     ["a[x, y]", "1"], ["h[a[x, y], d]", "1"], ["h[scroll[x], y]", "1"], ["scroll[x, *]", "1"], ["scroll[main]", "1"],
     ["scroll[x, y]", "*[1]:*"], ["scroll[x, *, y]", "*:*:*"], ["scroll[*, x]", "1:1"], ["scroll[x, *, *]", "1"],
     ["scroll[x, *:2]", "1"], ["scroll[x, *]", "2:1"],
+    ["scroll:0.5[x, y]", "*:*"], ["scroll:1[x]", "1"], ["scroll:1.0[x, *]", "*:1"], ["scroll:2[x]", "1"],
+    ["scroll:x[a]", "1"], ["scroll:[a]", "1"], ["h[scroll:0.5[x], y]", "1"], ["h[scroll:2, b]", "1:1"],
+    ["scroll : .5 [a, *]", "1:1"], ["scroll:0.33333[a]", "1"], ["scroll:0.05[a]", "1"], ["scroll:0.5[a]:2", "1"],
+    ["scroll:0.25[a, v[b]]", "1"],
   ];
   const here = dirname(fileURLToPath(import.meta.url));
   const root = join(here, "..", "..");
