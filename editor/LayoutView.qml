@@ -965,77 +965,81 @@ Item {
     anchors.fill: parent
     spacing: Style.spacing.md
 
-    // Header: what is being edited.
-    Rectangle {
+    // Header: what is being edited, a quiet line over the picture; the
+    // workspace strip after it, the one edited in the accent colour and
+    // underlined; at the right, edits the engine does not run yet.
+    Item {
       id: headerBox
       width: parent.width
-      height: headerText.implicitHeight + Style.spacing.md * 2
-      radius: Style.cornerRadius
-      color: Commons.Util.alpha(Commons.Color.accent, 0.12)
-      border.color: Commons.Util.alpha(Commons.Color.accent, 0.5)
-      border.width: 1
+      height: Math.max(headerText.implicitHeight, workspaceStrip.height)
       Text {
         id: headerText
         anchors.left: parent.left
-        anchors.leftMargin: Style.spacing.lg
+        anchors.leftMargin: Style.spacing.md
         anchors.verticalCenter: parent.verticalCenter
         textFormat: Text.PlainText
         text: root.headerLine()
-        color: root.foreground
+        color: Commons.Color.muted
         font.family: root.fontFamily
-        font.pixelSize: Style.font.title
-        font.bold: true
+        font.pixelSize: Style.font.body
       }
       // "All workspaces", the shared trees (-), then the managed workspaces
-      // by their keys ([ ] step, the digits jump): the one edited reversed,
-      // the ones with trees of their own brighter and dotted, the ones
-      // using the shared trees dimmer.
+      // by their keys ([ ] step, the digits jump): the one edited in the
+      // accent colour, the ones with trees of their own brighter and dotted,
+      // the ones using the shared trees dimmer.
       Row {
         id: workspaceStrip
         anchors.left: headerText.right
         anchors.leftMargin: Style.spacing.lg * 2
         anchors.verticalCenter: parent.verticalCenter
-        spacing: Style.spacing.xs
+        spacing: Style.spacing.xxs
         Repeater {
           model: Workspaces.strip(root.state, root.layout, root.workspace)
-          delegate: Rectangle {
+          delegate: Item {
+            id: stripItem
             required property var modelData
+            readonly property bool lit: modelData.current
+            readonly property bool strong: modelData.own || modelData.workspace === "default"
             width: workspaceKey.implicitWidth + Style.spacing.sm * 2
             height: workspaceKey.implicitHeight + Style.spacing.xs * 2
-            radius: Style.cornerRadius
-            color: modelData.current ? root.selectedBackground : "transparent"
             Text {
               id: workspaceKey
               anchors.centerIn: parent
               textFormat: Text.PlainText
-              text: Workspaces.stripText(parent.modelData)
-              color: parent.modelData.current ? root.selectedText : root.foreground
-              opacity: parent.modelData.current || parent.modelData.own || parent.modelData.workspace === "default" ? 1 : 0.6
+              text: Workspaces.stripText(stripItem.modelData)
+              color: stripItem.lit ? Commons.Color.accent : stripItem.strong ? root.foreground : Commons.Color.muted
+              opacity: stripItem.lit || stripItem.strong ? 1 : 0.75
               font.family: root.fontFamily
               font.pixelSize: Style.font.body
-              font.bold: parent.modelData.current || parent.modelData.own || parent.modelData.workspace === "default"
-              font.italic: parent.modelData.shared
+              font.bold: stripItem.lit
+              font.italic: stripItem.modelData.shared
+            }
+            Rectangle {
+              visible: stripItem.lit
+              anchors.bottom: parent.bottom
+              anchors.horizontalCenter: parent.horizontalCenter
+              width: workspaceKey.implicitWidth
+              height: Math.max(1, Style.spacing.xxs)
+              radius: height / 2
+              color: Commons.Color.accent
             }
             MouseArea {
               anchors.fill: parent
-              onClicked: root.goWorkspace(parent.modelData.workspace)
+              onClicked: root.goWorkspace(stripItem.modelData.workspace)
             }
           }
         }
       }
       Text {
         anchors.right: parent.right
-        anchors.rightMargin: Style.spacing.lg
+        anchors.rightMargin: Style.spacing.md
         anchors.verticalCenter: parent.verticalCenter
+        visible: root.editedScreens().length > 0
         textFormat: Text.PlainText
-        readonly property int pending: root.editedScreens().length
-        text: (pending > 0 ? "edited, not applied (w)   " : "")
-          + (root.state && root.state.dirty ? "● unsaved (Ctrl+S)" : "saved")
-        color: root.state && root.state.dirty || pending > 0 ? Commons.Color.urgent : root.foreground
-        opacity: root.state && root.state.dirty || pending > 0 ? 1 : 0.6
+        text: "edited, not applied (w)"
+        color: Commons.Color.urgent
         font.family: root.fontFamily
-        font.pixelSize: Style.font.body
-        font.bold: root.state && root.state.dirty
+        font.pixelSize: Style.font.bodySmall
       }
     }
 
@@ -1043,14 +1047,15 @@ Item {
     Text {
       id: sharedNote
       width: parent.width
+      leftPadding: Style.spacing.md
       visible: root.sharedWith.length > 0
       textFormat: Text.PlainText
       wrapMode: Text.WordWrap
       text: "Layout '" + root.layout + "' is also used by " + (root.sharedWith.length === 1 ? "desk " : "desks ")
         + root.sharedWith.join(", ") + ": every edit here changes it there too (f forks it for this desk)."
-      color: Commons.Color.accent
+      color: Commons.Color.muted
       font.family: root.fontFamily
-      font.pixelSize: Style.font.body
+      font.pixelSize: Style.font.bodySmall
     }
 
     // Why the trees cannot be edited, or the engine cannot be reached.

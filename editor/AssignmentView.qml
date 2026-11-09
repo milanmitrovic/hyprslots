@@ -263,37 +263,31 @@ Item {
     anchors.fill: parent
     spacing: Style.spacing.md
 
-    // Header: what this page is, and what the screens run.
-    Rectangle {
+    // Header: what this page is, a quiet line over the rows; the page's
+    // number among them in the accent colour.
+    Item {
       id: headerBox
       width: parent.width
-      height: headerText.implicitHeight + Style.spacing.md * 2
-      radius: Style.cornerRadius
-      color: Commons.Util.alpha(Commons.Color.accent, 0.12)
-      border.color: Commons.Util.alpha(Commons.Color.accent, 0.5)
-      border.width: 1
+      height: headerText.implicitHeight
       Text {
         id: headerText
         anchors.left: parent.left
-        anchors.leftMargin: Style.spacing.lg
-        anchors.verticalCenter: parent.verticalCenter
+        anchors.leftMargin: Style.spacing.md
         textFormat: Text.PlainText
-        text: root.currentPage.label + (root.state && root.state.dirty ? "   unsaved edits" : "")
-        color: root.foreground
+        text: root.currentPage.label
+        color: Commons.Color.muted
         font.family: root.fontFamily
-        font.pixelSize: Style.font.title
-        font.bold: true
+        font.pixelSize: Style.font.body
       }
       Text {
         anchors.right: parent.right
-        anchors.rightMargin: Style.spacing.lg
-        anchors.verticalCenter: parent.verticalCenter
-        textFormat: Text.PlainText
-        text: (root.page + 1) + " / " + root.pageList.length
-        color: root.foreground
-        opacity: 0.6
+        anchors.rightMargin: Style.spacing.md
+        anchors.verticalCenter: headerText.verticalCenter
+        textFormat: Text.StyledText
+        text: '<font color="' + root.accent + '">' + (root.page + 1) + "</font> / " + root.pageList.length
+        color: Commons.Color.muted
         font.family: root.fontFamily
-        font.pixelSize: Style.font.body
+        font.pixelSize: Style.font.bodySmall
       }
     }
 
@@ -302,13 +296,14 @@ Item {
     Text {
       id: placeNote
       width: parent.width
+      leftPadding: Style.spacing.md
       visible: text !== ""
       textFormat: Text.PlainText
       wrapMode: Text.WordWrap
       text: root.placeNoteText
-      color: Commons.Color.accent
+      color: Commons.Color.muted
       font.family: root.fontFamily
-      font.pixelSize: Style.font.body
+      font.pixelSize: Style.font.bodySmall
     }
 
     // Why the editor cannot see the engine, or why the engine is off.

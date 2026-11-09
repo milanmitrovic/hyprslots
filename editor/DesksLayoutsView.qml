@@ -317,29 +317,19 @@ Item {
     anchors.fill: parent
     spacing: Style.spacing.md
 
-    Rectangle {
+    // What this tab is about, a quiet line over the lists.
+    Text {
       id: headerBox
       width: parent.width
-      height: headerText.implicitHeight + Style.spacing.md * 2
-      radius: Style.cornerRadius
-      color: Commons.Util.alpha(Commons.Color.accent, 0.12)
-      border.color: Commons.Util.alpha(Commons.Color.accent, 0.5)
-      border.width: 1
-      Text {
-        id: headerText
-        anchors.left: parent.left
-        anchors.leftMargin: Style.spacing.lg
-        anchors.right: parent.right
-        anchors.rightMargin: Style.spacing.lg
-        anchors.verticalCenter: parent.verticalCenter
-        textFormat: Text.PlainText
-        wrapMode: Text.WordWrap
-        text: "A desk is a monitor setup; it uses a layout with as many screens, and desks may share one."
-          + " The other tabs edit the active desk's layout."
-        color: root.foreground
-        font.family: root.fontFamily
-        font.pixelSize: Style.font.body
-      }
+      leftPadding: Style.spacing.md
+      rightPadding: Style.spacing.md
+      textFormat: Text.PlainText
+      wrapMode: Text.WordWrap
+      text: "A desk is a monitor setup; it uses a layout with as many screens, and desks may share one."
+        + " The other tabs edit the active desk's layout."
+      color: Commons.Color.muted
+      font.family: root.fontFamily
+      font.pixelSize: Style.font.bodySmall
     }
 
     Text {
