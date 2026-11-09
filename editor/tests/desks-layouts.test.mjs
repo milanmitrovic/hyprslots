@@ -74,7 +74,7 @@ test("a desk the engine just made is marked new and unsaved", () => {
 test("a desk row reads: name, monitors with ● when connected, → the layout it uses", () => {
   const rows = D.rows(fixture());
   assert.deepEqual(plain(D.deskCells(rows[0])), {
-    mark: "● active",
+    mark: "●",
     name: "docked",
     monitors: "● eDP-1 (BOE 0x0BCA) + ● " + SAMSUNG + " (DP-2)",
     layout: "→ docked",
@@ -87,13 +87,18 @@ test("a desk row reads: name, monitors with ● when connected, → the layout i
   });
 });
 
+test("each section has a quiet header: its title and what it lists", () => {
+  assert.deepEqual(plain(D.sectionHeader("desk")), { title: "Desks", hint: "monitor setups · ● connected  ○ not" });
+  assert.deepEqual(plain(D.sectionHeader("layout")), { title: "Layouts", hint: "arrangements for N screens" });
+});
+
 test("a layout row has its screen count and the desks that use it", () => {
   const rows = D.rows(fixture());
   assert.deepEqual(plain(rows[3]), { kind: "layout", key: "layout:docked", name: "docked", active: true, readOnly: false,
     screens: 2, usedBy: ["docked", "office"] });
-  assert.deepEqual(plain(D.layoutCells(rows[3])), { mark: "● active", name: "docked", screens: "2 screens",
-    usedBy: "used by docked, office" });
-  assert.deepEqual(plain(D.layoutCells(rows[5])), { mark: "", name: "laptop", screens: "1 screen", usedBy: "used by laptop" });
+  assert.deepEqual(plain(D.layoutCells(rows[3])), { mark: "●", name: "docked", screens: "2 screens",
+    usedBy: "docked, office" });
+  assert.deepEqual(plain(D.layoutCells(rows[5])), { mark: "", name: "laptop", screens: "1 screen", usedBy: "laptop" });
   assert.deepEqual(plain(D.layoutCells(rows[6])), { mark: "", name: "wide (set in your config)", screens: "2 screens",
     usedBy: "unused" });
 });

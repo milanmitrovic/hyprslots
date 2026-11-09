@@ -98,10 +98,11 @@ function nameCell(row) {
   return row.name + (row.auto ? " (new, unsaved)" : "") + (row.readOnly ? " (set in your config)" : "")
 }
 
-// What a desk row shows, column by column.
+// What a desk row shows, column by column; the mark, a quiet ● on the
+// active one.
 function deskCells(row) {
   return {
-    mark: row.active ? "● active" : "",
+    mark: row.active ? "●" : "",
     name: nameCell(row),
     monitors: row.monitors.map(monitorText).join(" + "),
     layout: "→ " + row.layout,
@@ -117,11 +118,18 @@ function columnTitles(kind) {
 
 function layoutCells(row) {
   return {
-    mark: row.active ? "● active" : "",
+    mark: row.active ? "●" : "",
     name: nameCell(row),
     screens: screensLabel(row.screens),
-    usedBy: row.usedBy.length ? "used by " + row.usedBy.join(", ") : "unused",
+    usedBy: row.usedBy.length ? row.usedBy.join(", ") : "unused",
   }
+}
+
+// A section's quiet header ("desk" or "layout"): its title, and what it
+// lists.
+function sectionHeader(kind) {
+  if (kind === "desk") return { title: "Desks", hint: "monitor setups · ● connected  ○ not" }
+  return { title: "Layouts", hint: "arrangements for N screens" }
 }
 
 // The keys that act on the selected row, for the help row: [{ key, label }].

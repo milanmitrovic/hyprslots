@@ -959,14 +959,19 @@ Uses layout; Layout, Screens, Used by):
 - **Desks** (monitor setups): each stored desk by name, its monitors (`●`
   connected, `○` not; a connected one by connector and description), the
   layout it uses as a mapping (`→ dual`, so a desk and a layout of one
-  name do not read as the name twice); the active desk tinted in the accent
-  colour and marked `● active`; `(new, unsaved)` on one the engine made.
+  name do not read as the name twice); the active desk marked quietly: a
+  small `●` in the accent colour and its text at full strength where the
+  other rows' is a little dimmer; `(new, unsaved)` on one the engine made.
 - **Layouts** (logical arrangements for N screens): each by name, its screen
   count, the desks using it (`unused` when none); the active layout marked
   the same way.
 
-One selection runs through both sections (↑/↓, k/j); it opens on the active
-desk. hyprslots picks the desk itself (§8): this view says which layout a
+The section headers are quiet labels (`DESKS monitor setups · ● connected
+○ not`, muted small capitals), the column titles muted. One selection runs
+through both sections (↑/↓, k/j); it opens on the active desk, and it is
+the strongest thing on the page: the theme's selected accent fill, a
+stripe of the accent down its left edge, its name in the selected text
+colour. hyprslots picks the desk itself (§8): this view says which layout a
 desk uses and edits the stored mappings, never the monitors themselves.
 
 | Key | On a desk | On a layout |

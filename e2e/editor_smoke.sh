@@ -420,6 +420,14 @@ desks_layouts() {
   fi
   sleep 0.3
   shot 14-desks-layouts
+  # The selection on a row that is not the active one: it outshines the
+  # active desk's quiet mark.
+  press_keys Up
+  expect_eq "Up selects desk beamer" "desk:beamer" "$(smoke selection)"
+  sleep 0.3
+  shot 14b-desks-selection
+  press_keys Down
+  expect_eq "Down back to the active desk" "desk:solo" "$(smoke selection)"
 
   # f on the desk row forks its layout (solo), suggesting solo-2; the drafts
   # of the Layout tab carry over to the copy.
