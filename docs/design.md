@@ -693,7 +693,7 @@ the running engine only through Hyprland:
 |---|---|
 | `Engine.qml` | the service: runs the api through `hyprctl repl` (one `Process` per command, in order, 3 s watchdog), reads `state` debounced (60 ms) on `custom>>hyprslots changed` and on window events (`openwindow`, `closewindow`, `movewindowv2`, `windowtitlev2`, monitor events, `configreloaded`) via `Quickshell.Hyprland`'s `rawEvent`, only while someone follows it (`active`: the panel is open; `watchers`: bar widgets, from `watch()` / `unwatch()`); keeps `error` (last state read) and `lastError` (last call); `busy` while a call runs or the re-read after it is pending |
 | `Panel.qml` | the panel: an `OverlayWindow` card (`qs.Ui`), themed through `qs.Commons` (`Color.menu.*`, `Style`) like Omarchy's own panels; tabs Assignment, Layout, Desk (Tab / Shift+Tab) under a header naming the active desk and layout, Ctrl+S saves, Esc or q closes (Esc in the Layout tab's slot list goes back to its picture); `press(key)` feeds a key by name (`Ctrl+s` with the modifier) |
-| `BarWidget.qml` | the bar widget (below): glyph, desk and workspace; left click toggles the panel, right click a menu |
+| `BarWidget.qml` | the bar widget (below): glyph and active layout; left click toggles the panel, right click a menu |
 | `Services.js` | where the service registers itself, for a bar widget whose bar hands it no `serviceFor` |
 | `AssignmentView.qml`, `LayoutView.qml`, `DesksLayoutsView.qml` | aerolayout's Assignment, Layout (with its logical slots as a list beside the screens) and monitors views (below) |
 | `Protocol.js`, `Assignment.js`, `Layout.js`, `Slots.js`, `DesksLayouts.js`, `Prompts.js`, `Workspaces.js`, `BarStatus.js`, `Help.js` | pure logic, tested under node (`editor/tests/`); `Slots.js` is the slot list's, `Workspaces.js` the workspace keys', `DesksLayouts.js` the Desk view's and the panel header's, `Help.js` the help rows' |
@@ -899,10 +899,11 @@ An entry config.lua builds in code (`read_only`) refuses every edit with
 `set in config.lua`.
 
 **Bar widget** (`BarWidget.qml`, model `BarStatus.js`). A grid glyph and
-`<desk> · ws <n>`: the active desk and the workspace its bar's monitor
-shows (`state.workspaces`; `ws –` on a workspace with no tree on that
-screen, `none` when no desk is active); the tooltip names the layout
-(`Layout: ultrawide`, and `also used by: office` when shared). It reads the
+the active layout's name (`none` when no desk is active), nothing else: no
+desk or workspace (Omarchy's workspace switcher shows those); the tooltip
+names the desk, the workspace its bar's monitor shows (`state.workspaces`)
+and the layout (`Layout: ultrawide`, and `also used by: office` when
+shared). It reads the
 plugin's service and calls its `watch()` so the service follows change
 events while the panel is closed: one poller for the panel and every widget
 instance. Omarchy's built-in bar hands a widget `serviceFor`; a replacement
@@ -916,8 +917,8 @@ from Quickshell's Hyprland objects, with no state read.
 
 | State | Shows |
 |---|---|
-| normal | `󰕰 solo · ws 3` in the bar's foreground |
-| unsaved edits (`dirty`) | `󰕰 solo · ws 3 •`, the tooltip says "unsaved edits" |
+| normal | `󰕰 scroll` in the bar's foreground |
+| unsaved edits (`dirty`) | `󰕰 scroll •`, the tooltip says "unsaved edits" |
 | error | the bar's urgent colour, the error first in the tooltip: the service missing, a state read failing (hyprctl, `hyprslots` not loaded: `󰕰 hyprslots` until a state was read, else the last one), `refused` (`󰕰 off`), `config_error` (the running config still shown) |
 
 Left click toggles the panel (`shell.toggle`). Right click opens a menu

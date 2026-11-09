@@ -49,8 +49,8 @@ function layoutLine(state) {
 // null), workspaceId (the bar's monitor's active Hyprland workspace id, -1 if
 // none) }. Returns { label, status: "normal" | "dirty" | "error", tooltip,
 // error, workspace (its number 1 to 10, or null), desk ("" when none),
-// dirty }. The label is "<desk> · ws <n>", a dash for a workspace with no
-// tree on the bar's screen.
+// dirty }. The label is the active layout's name ("none" without one), and a
+// dot for unsaved edits.
 function view(input) {
   var state = input.state
   var entry = entryOf(state, input.workspaceId)
@@ -58,7 +58,7 @@ function view(input) {
   var tree = entry ? hasTree(state, entry) : false
   var desk = state && state.desk ? String(state.desk) : ""
   var dirty = !!(state && state.dirty === true)
-  var label = GLYPH + " " + (desk || "none") + " · ws " + (tree ? workspace : "–") + (dirty ? " •" : "")
+  var label = GLYPH + " " + (state && state.layout ? String(state.layout) : "none") + (dirty ? " •" : "")
   var line = layoutLine(state)
   var here = where(desk, entry, tree, input.workspaceId) + (dirty ? " · unsaved edits" : "") + (line ? "\n" + line : "")
   var out = { label: label, status: dirty ? "dirty" : "normal", tooltip: "", error: "", workspace: workspace,

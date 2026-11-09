@@ -26,31 +26,31 @@ function state(extra) {
 const running = (extra, workspaceId = 3) => ({ engine: true, error: "", state: state(extra), workspaceId });
 const HINT = "Click: editor · Right-click: menu";
 
-test("the label is the grid glyph, the active desk and the workspace on the bar's screen", () => {
+test("the label is the grid glyph and the active layout's name", () => {
   const view = B.view(running());
-  assert.equal(view.label, "󰕰 laptop · ws 3");
+  assert.equal(view.label, "󰕰 solo");
   assert.equal(view.status, "normal");
   assert.equal(view.workspace, 3);
   assert.equal(view.desk, "laptop");
 });
 
-test("a workspace with no tree on the bar's screen shows a dash", () => {
-  assert.equal(B.view(running({}, 7)).label, "󰕰 laptop · ws –", "a workspace id the desk does not manage");
+test("the label names no desk or workspace, whatever the bar's screen shows", () => {
+  assert.equal(B.view(running({}, 7)).label, "󰕰 solo", "a workspace id the desk does not manage");
   assert.equal(B.view(running({}, 7)).workspace, null);
   const side = B.view(running({}, 13));
-  assert.equal(side.label, "󰕰 laptop · ws –", "workspace 3 has no tree on screen 2");
+  assert.equal(side.label, "󰕰 solo", "workspace 3 has no tree on screen 2");
   assert.equal(side.workspace, 3, "it is still workspace 3, to re-apply");
 });
 
-test("monitors with no desk say none", () => {
+test("monitors with no desk (no layout) say none", () => {
   const view = B.view(running({ desk: null, layout: null, workspaces: {} }));
-  assert.equal(view.label, "󰕰 none · ws –");
+  assert.equal(view.label, "󰕰 none");
   assert.equal(view.desk, "");
 });
 
 test("unsaved edits add a subtle dot and say so in the tooltip", () => {
   const view = B.view(running({ dirty: true }));
-  assert.equal(view.label, "󰕰 laptop · ws 3 •");
+  assert.equal(view.label, "󰕰 solo •");
   assert.equal(view.status, "dirty");
   assert.equal(view.tooltip, "Hyprslots: desk laptop, workspace 3 · unsaved edits\nLayout: solo (also used by: office)\n" + HINT);
 });
@@ -82,7 +82,7 @@ test("a failed state read (hyprslots not loaded) is an error, even over an older
   assert.equal(fresh.error, missing);
   const stale = B.view({ engine: true, error: "hyprctl exited 1: no", state: state(), workspaceId: 3 });
   assert.equal(stale.status, "error");
-  assert.equal(stale.label, "󰕰 laptop · ws 3");
+  assert.equal(stale.label, "󰕰 solo");
   assert.equal(stale.tooltip, "Hyprslots: hyprctl exited 1: no\nClick: editor · Right-click: menu");
 });
 
@@ -96,7 +96,7 @@ test("an engine that refused to run is an error", () => {
 test("a config error is an error; the running config still shows", () => {
   const view = B.view(running({ config_error: "slots.lua:3: unexpected symbol", dirty: true }));
   assert.equal(view.status, "error");
-  assert.equal(view.label, "󰕰 laptop · ws 3 •");
+  assert.equal(view.label, "󰕰 solo •");
   assert.equal(view.error, "config error: slots.lua:3: unexpected symbol");
   assert.equal(view.tooltip, "Hyprslots: config error: slots.lua:3: unexpected symbol\ndesk laptop, workspace 3 · unsaved edits\nLayout: solo (also used by: office)\n" + HINT);
 });

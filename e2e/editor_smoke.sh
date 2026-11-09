@@ -29,7 +29,7 @@
 # of it to slots.lua; then it deletes a used layout moving its desk to
 # another, is refused deleting one no other can replace, deletes a desk,
 # pins and unpins a screen and makes a new layout. Last, the bar widget on a stand-in bar strip: its
-# label (`<desk> · ws <n>`), the unsaved dot, its menu (Save, Re-apply,
+# label (the active layout's name), the unsaved dot, its menu (Save, Re-apply,
 # Record), left clicks toggling the panel, and the error state while the
 # hyprslots global is gone. Then workspace 8 (scroll[main, right]) lists every
 # global slot, left looking like any empty slot, and a puts a window into left, placing
@@ -584,9 +584,9 @@ desks_layouts_edits() {
 bar_widget() {
   local watch="qs ipc --pid $SMOKE_QS_PID call smoke"
   expect_eq "the widget loads" "ok" "$(smoke bar)"
-  eventually 5 bash -c "[[ \$($watch barLabel) == 'dirty 󰕰 solo · ws 3 •' ]]" || true
-  expect_eq "it shows the active desk and workspace, a dot for the unsaved edits" \
-    "dirty 󰕰 solo · ws 3 •" "$(smoke barLabel)"
+  eventually 5 bash -c "[[ \$($watch barLabel) == 'dirty 󰕰 solo-3 •' ]]" || true
+  expect_eq "it shows the active layout, a dot for the unsaved edits" \
+    "dirty 󰕰 solo-3 •" "$(smoke barLabel)"
   expect_eq "its tooltip says so, and names the layout and the desk sharing it" \
     $'Hyprslots: desk solo, workspace 3 · unsaved edits\nLayout: solo-3 (also used by: projector)\nClick: editor · Right-click: menu' \
     "$(smoke barTooltip)"
@@ -599,7 +599,7 @@ bar_widget() {
   sleep 0.5
   shot 20-bar-menu
   expect_eq "Save" "ok" "$(smoke barChoose save)"
-  if eventually 5 bash -c "[[ \$($watch barLabel) == 'normal 󰕰 solo · ws 3' ]]"; then
+  if eventually 5 bash -c "[[ \$($watch barLabel) == 'normal 󰕰 solo-3' ]]"; then
     pass "the menu's Save saved: the dot is gone"
   else
     fail "after Save the widget shows $(smoke barLabel); dirty $(api_state | jq -r .dirty)"
@@ -665,7 +665,7 @@ bar_widget() {
   shot 23-bar-error
   repl 'hyprslots = hyprslots_smoke; hyprslots_smoke = nil; return "back"' >/dev/null
   repl 'hl.dispatch(hl.dsp.event("hyprslots changed 901")); return "ok"' >/dev/null
-  if eventually 5 bash -c "[[ \$($watch barLabel) == 'normal 󰕰 solo · ws 3' ]]"; then
+  if eventually 5 bash -c "[[ \$($watch barLabel) == 'normal 󰕰 solo-3' ]]"; then
     pass "with hyprslots back the widget is too"
   else
     fail "the widget shows $(smoke barLabel)"

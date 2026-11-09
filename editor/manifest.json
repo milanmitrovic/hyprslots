@@ -17,7 +17,7 @@
   },
   "barWidget": {
     "displayName": "Hyprslots",
-    "description": "The active desk and workspace; click for the editor, right-click to re-apply, record, save or reload",
+    "description": "The active layout; click for the editor, right-click to re-apply, record, save or reload",
     "category": "Compositor",
     "allowMultiple": false
   }
