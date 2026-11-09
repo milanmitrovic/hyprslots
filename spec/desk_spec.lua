@@ -139,11 +139,6 @@ describe("desk.select", function()
     assert.are.equal("alpha", desk.select(c, { monitor("HEADLESS-2") }).desk)
   end)
 
-  it("hands back the desk's pinned screens", function()
-    local c = assert(config.validate({ slots = { a = {} }, layouts = { two = { screens = 2 } },
-      desks = { dual = { monitors = { "A", "B" }, layout = "two", pinned = { 2 } } } }))
-    assert.are.same({ [2] = true }, desk.select(c, { monitor("A"), monitor("B", { x = 10 }) }).pinned)
-  end)
 end)
 
 describe("a new desk for unknown monitors", function()

@@ -14,9 +14,9 @@
 -- they landed on (13 becomes 4). Hop 2 is created while hop 1 runs, so it
 -- runs after that timer whichever order same-timeout timers fire in, and sees
 -- the workspaces as Omarchy left them. Nothing here focuses a monitor or
--- changes what a screen shows, so pinned screens stay as they are, with one
--- exception: a non-pinned screen that was just plugged in shows the active
--- workspace (the last one switched to), and focus goes back where it was.
+-- changes what a screen shows, with one exception: a screen that was just
+-- plugged in shows the active workspace (the last one switched to), and
+-- focus goes back where it was.
 
 local adapter = require("hyprslots.hl_adapter")
 local workspaces = require("hyprslots.workspaces")

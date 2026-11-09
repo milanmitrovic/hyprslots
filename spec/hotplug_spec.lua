@@ -7,7 +7,6 @@ local hl_stub = require("helpers.hl_stub")
 
 local BLOCKS = { ["HEADLESS-2"] = 0, ["HEADLESS-3"] = 1 }
 
-local PINNED_SIDE = engine.TWO_SCREENS:gsub('layout = "dual" }', 'layout = "dual", pinned = { 2 } }', 1)
 
 describe("hotplug", function()
   local hl, o, hyprslots, side
@@ -146,37 +145,6 @@ describe("hotplug", function()
       hl.run_timers()
       hl.run_timers()
       assert.are.equal(3, workspace_of("firefox"))
-    end)
-  end)
-
-  describe("with a pinned screen", function()
-    it("leaves a pinned screen that came back on its own workspace", function()
-      hl.monitors = { hl.monitors[1] }
-      hyprslots = engine.setup(PINNED_SIDE)
-      engine.call(hyprslots, "workspace", '{"workspace": 3}')
-      o.workspaces.focused = {}
-      hl.dispatched = {}
-      hl.monitors[2] = side
-      hl.emit("monitor.added", side)
-      hl.run_timers()
-      hl.run_timers()
-      assert.are.equal("dual", engine.state(hyprslots).desk)
-      assert.are.same({}, o.workspaces.focused)
-      assert.are.same({}, hl.dispatched_of("focus"))
-    end)
-
-    it("just re-selects when the pinned screen goes, refocusing nothing", function()
-      omarchy_reconcile_on_removal()
-      window_on(1, "t-left", 13)
-      window_on(2, "t-main", 3)
-      hyprslots = engine.setup(PINNED_SIDE)
-      unplug_side()
-      hl.run_timers()
-      hl.run_timers()
-      assert.are.equal("single", engine.state(hyprslots).desk)
-      assert.are.equal(3, workspace_of("t-left"))
-      assert.are.same({}, hl.dispatched_of("focus"))
-      assert.are.same({}, o.workspaces.focused)
     end)
   end)
 

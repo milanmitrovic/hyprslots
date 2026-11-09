@@ -81,8 +81,7 @@ end
 -- The active desk for these monitors ({ name, description, serial, x, y }
 -- each), or nil when no desk is them:
 --   { desk = name, layout = layout name, entry = cfg.layouts[layout],
---     monitors = screen -> connector, screens = connector -> screen,
---     pinned = screen -> true }
+--     monitors = screen -> connector, screens = connector -> screen }
 function M.select(cfg, monitors)
   monitors = M.usable(monitors)
   for _, name in ipairs(cfg.desk_names or {}) do
@@ -94,7 +93,7 @@ function M.select(cfg, monitors)
         by_monitor[monitor.name] = i
       end
       return { desk = name, layout = desk.layout, entry = cfg.layouts[desk.layout], monitors = by_screen,
-        screens = by_monitor, pinned = desk.pinned or {} }
+        screens = by_monitor }
     end
   end
   return nil

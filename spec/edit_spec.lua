@@ -36,7 +36,7 @@ describe("edit.read_only", function()
 
   it("reports a desk or layout config.lua rebuilt from the data's as code's", function()
     local given = data()
-    local desks = { solo = { monitors = given.desks.solo.monitors, layout = "solo", pinned = { 1 } } }
+    local desks = { solo = { monitors = given.desks.solo.monitors, layout = "solo" } }
     local raw = { slots = given.slots, specs = given.specs, desks = desks, layouts = given.layouts }
     assert.are.same({ "desks.solo" }, edit.read_only(raw, given))
   end)
@@ -83,7 +83,7 @@ local function two()
     desks = {
       solo = { monitors = { "HEADLESS-2" }, layout = "solo" },
       laptop = { monitors = { "eDP-1" }, layout = "solo" },
-      dual = { monitors = { "HEADLESS-2", "HEADLESS-3" }, layout = "dual", pinned = { 2 } },
+      dual = { monitors = { "HEADLESS-2", "HEADLESS-3" }, layout = "dual" },
     },
     layouts = {
       solo = { screens = 1, workspaces = { [3] = { [1] = "h[a:1, b:2, c:1]" }, [4] = { [1] = "h[mail, b]" } } },
@@ -552,7 +552,7 @@ describe("edit.add_desk", function()
 end)
 
 describe("edit.rename_desk", function()
-  it("renames it, monitors, layout and pinned screens and all", function()
+  it("renames it, monitors, layout and all", function()
     local before = two()
     local after = assert(edit.rename_desk(before, "dual", "office"))
     assert.is_nil(after.desks.dual)
@@ -584,7 +584,6 @@ describe("edit.set_desk_layout", function()
     local data = assert(edit.add_layout(two(), "wide", 2))
     local after = assert(edit.set_desk_layout(data, "dual", "wide"))
     assert.are.equal("wide", after.desks.dual.layout)
-    assert.are.same({ 2 }, after.desks.dual.pinned, "pinned screens stay")
   end)
 
   it("refuses a missing desk, a missing layout and one for another number of screens", function()
@@ -592,22 +591,6 @@ describe("edit.set_desk_layout", function()
     assert.matches("no layout 'nope'", select(2, edit.set_desk_layout(two(), "dual", "nope")))
     assert.matches("layout 'solo' is for 1 screen, and the desk has 2 monitors",
       select(2, edit.set_desk_layout(two(), "dual", "solo")))
-  end)
-end)
-
-describe("edit.set_pinned", function()
-  it("sets a desk's pinned screens, sorted and once each; none removes them", function()
-    assert.are.same({ 1, 2 }, assert(edit.set_pinned(two(), "dual", { 2, 1, 2 })).desks.dual.pinned)
-    assert.are.same({ 1 }, assert(edit.set_pinned(two(), "dual", { 1.0 })).desks.dual.pinned, "JSON numbers")
-    assert.is_nil(assert(edit.set_pinned(two(), "dual", {})).desks.dual.pinned)
-  end)
-
-  it("refuses a screen the desk does not have, a list that is none, and a missing desk", function()
-    assert.matches("desk 'solo' has screens 1 to 1, got 2", select(2, edit.set_pinned(two(), "solo", { 2 })))
-    assert.matches("got 0", select(2, edit.set_pinned(two(), "solo", { 0 })))
-    assert.matches("got side", select(2, edit.set_pinned(two(), "dual", { "side" })))
-    assert.matches("must be a list", select(2, edit.set_pinned(two(), "dual", 2)))
-    assert.matches("no desk 'nope'", select(2, edit.set_pinned(two(), "nope", {})))
   end)
 end)
 

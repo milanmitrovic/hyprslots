@@ -590,36 +590,6 @@ function M.set_desk_layout(data, name, layout)
   return out
 end
 
--- The data with desk `name`'s pinned screens (excluded from workspace
--- switching) set, sorted and once each.
-function M.set_pinned(data, name, screens)
-  local entry, err = desk_entry(data, name)
-  if not entry then
-    return nil, err
-  end
-  if type(screens) ~= "table" then
-    return nil, "pinned must be a list of screens (1 is the left-most)"
-  end
-  local count = type(entry.monitors) == "table" and #entry.monitors or 0
-  local seen, list = {}, {}
-  for _, index in ipairs(screens) do
-    if math.type(index) == "float" and index == math.floor(index) then
-      index = math.tointeger(index)
-    end
-    if math.type(index) ~= "integer" or index < 1 or index > count then
-      return nil, string.format("desk '%s' has screens 1 to %d, got %s", name, count, tostring(index))
-    end
-    if not seen[index] then
-      seen[index] = true
-      list[#list + 1] = index
-    end
-  end
-  table.sort(list)
-  local out = M.copy(data)
-  out.desks[name].pinned = #list > 0 and list or nil
-  return out
-end
-
 -- The data with a new layout for `screens` screens: empty, or with these
 -- default trees (screen -> text).
 function M.add_layout(data, name, screens, default)

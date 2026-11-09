@@ -2,7 +2,7 @@
 -- the api (docs/design.md §9): global slot edits (add, remove, rename across
 -- every tree and workspace, describe), per-workspace specs (set, clear, take a
 -- window's spec, the Assignment view's a), desk edits (add, rename, delete,
--- apply a layout, pinned screens) and layout edits (add, fork, rename,
+-- apply a layout) and layout edits (add, fork, rename,
 -- delete). Every edit stays in memory until save, re-runs config.lua, and
 -- re-routes.
 
@@ -339,7 +339,7 @@ return { slots = data.slots, specs = specs, desks = data.desks, layouts = data.l
       assert.are.same({ ok = true, desk = "office", monitors = { "DP-1", "DP-2" }, layout = "dual", active = "dual",
         seq = state().seq }, reply)
       local s = state()
-      assert.are.same({ monitors = { "DP-1", "DP-2" }, connected = { false, false }, layout = "dual", pinned = {},
+      assert.are.same({ monitors = { "DP-1", "DP-2" }, connected = { false, false }, layout = "dual",
         active = false, read_only = false }, s.desks.office)
       assert.are.same({ "dual", "office" }, s.layouts.dual.used_by)
       assert.are.equal("dual", s.desk)
@@ -436,39 +436,36 @@ return { slots = data.slots, specs = specs, desks = data.desks, layouts = data.l
     end)
   end)
 
-  describe("set_pinned", function()
-    it("sets a desk's pinned screens, the active one's by default", function()
-      local reply = ok("set_pinned", { pinned = { 2, 2 } })
-      assert.are.same({ "dual", { 2 } }, { reply.desk, reply.pinned })
-      assert.are.same({ 2 }, state().pinned)
-      assert.are.same({ 2 }, state().desks.dual.pinned)
-      ok("set_pinned", { desk = "single", pinned = { 1 } })
-      assert.are.same({ 1 }, state().desks.single.pinned)
-      assert.are.same({ 2 }, state().pinned, "the active desk's")
-    end)
-
-    it("refuses a screen the desk does not have", function()
-      assert.matches("desk 'dual' has screens 1 to 2, got 3", call("set_pinned", { pinned = { 3 } }).error)
-      assert.matches("pinned must be a list", call("set_pinned", { pinned = 2 }).error)
-    end)
-
-    it("refuses a desk config.lua builds in code", function()
+  describe("a desk config.lua builds in code", function()
+    it("is read only", function()
       setup(engine.TWO_SCREENS, [[
 local data = load_data("slots.lua")
-local desks = { dual = { monitors = { "HEADLESS-2", "HEADLESS-3" }, layout = "dual", pinned = { 2 } },
-  single = data.desks.single }
+local desks = { dual = { monitors = { "HEADLESS-2", "HEADLESS-3" }, layout = "dual" }, single = data.desks.single }
 return { slots = data.slots, specs = data.specs, desks = desks, layouts = data.layouts }
 ]])
       assert.are.same({ "desks.dual" }, state().config.read_only)
       assert.is_true(state().desks.dual.read_only)
       assert.is_false(state().desks.single.read_only)
-      assert.are.same({ 2 }, state().pinned)
-      local reply = call("set_pinned", { pinned = {} })
-      assert.is_false(reply.ok)
-      assert.matches("desk 'dual' is set by code in config.lua", reply.error)
-      assert.are.same({ 2 }, state().pinned)
       assert.matches("desk 'dual' is set by code", call("rename_desk", { desk = "dual", to = "x" }).error)
-      assert.is_true(call("set_pinned", { desk = "single", pinned = { 1 } }).ok)
+    end)
+  end)
+
+  describe("pinned screens (gone)", function()
+    it("are no call and no state", function()
+      assert.matches("unknown", call("set_pinned", { pinned = { 2 } }).error)
+      assert.is_nil(state().pinned)
+      assert.is_nil(state().desks.dual.pinned)
+    end)
+
+    it("are dropped from slots.lua without a word, the engine dirty until saved", function()
+      setup((engine.TWO_SCREENS:gsub('layout = "dual" }', 'layout = "dual", pinned = { 2 } }', 1)))
+      local s = state()
+      assert.is_nil(s.config_error)
+      assert.is_nil(s.desks.dual.pinned)
+      assert.is_true(s.dirty)
+      ok("save")
+      assert.is_nil(read(s.config.data_file):find("pinned", 1, true))
+      assert.is_false(state().dirty)
     end)
   end)
 

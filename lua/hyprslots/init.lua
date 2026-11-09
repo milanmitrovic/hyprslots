@@ -224,7 +224,7 @@ function Engine:new_desk()
       self.cfg.layout_names[#self.cfg.layout_names + 1] = layout
       table.sort(self.cfg.layout_names)
     end
-    self.cfg.desks[name] = { name = name, monitors = selectors, layout = layout, pinned = {}, pinned_list = {} }
+    self.cfg.desks[name] = { name = name, monitors = selectors, layout = layout }
     self.cfg.desk_names[#self.cfg.desk_names + 1] = name
     table.sort(self.cfg.desk_names)
     self:apply_config(self.cfg, self.data, self.dirty)

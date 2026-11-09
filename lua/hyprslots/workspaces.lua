@@ -1,7 +1,7 @@
 -- Workspace switching on top of Omarchy's per-monitor workspaces (docs/design.md §5).
 --
 -- Workspace N on a screen is o.workspaces.focus(N, <its connector>). A
--- workspace switch shows workspace N on every non-pinned screen of the active
+-- workspace switch shows workspace N on every screen of the active
 -- desk, the focused screen (the origin) last, then refocuses the origin.
 -- With no desk it switches the focused screen alone, as Omarchy's Super+N
 -- does.
@@ -49,22 +49,19 @@ function M.activate(engine, workspace)
 end
 
 -- The connectors a workspace switch shows the workspace on, in order: every
--- non-pinned screen of the active desk, left to right, the origin last; or
--- just the origin when no desk is active.
+-- screen of the active desk, left to right, the origin last; or just the
+-- origin when no desk is active.
 function M.screens(engine, origin)
   local active = engine.active
   if not active then
     return { origin }
   end
-  local pinned = active.pinned or {}
   local out, origin_switches = {}, false
-  for screen, monitor in ipairs(active.monitors) do
-    if not pinned[screen] then
-      if monitor == origin then
-        origin_switches = true
-      else
-        out[#out + 1] = monitor
-      end
+  for _, monitor in ipairs(active.monitors) do
+    if monitor == origin then
+      origin_switches = true
+    else
+      out[#out + 1] = monitor
     end
   end
   if origin_switches then
@@ -74,7 +71,7 @@ function M.screens(engine, origin)
 end
 
 -- Show the active workspace (the last one switched to) on screens that were
--- just plugged in, unless they are pinned, then refocus the focused screen.
+-- just plugged in, then refocus the focused screen.
 -- `monitors` is a set of connector names. Does nothing before the first
 -- workspace switch or with no active desk.
 function M.show_active(engine, monitors)
@@ -82,10 +79,9 @@ function M.show_active(engine, monitors)
   if not workspace or not active or engine.refused then
     return
   end
-  local pinned = active.pinned or {}
   local shown = {}
-  for screen, monitor in ipairs(active.monitors) do
-    if monitors[monitor] and not pinned[screen] then
+  for _, monitor in ipairs(active.monitors) do
+    if monitors[monitor] then
       shown[#shown + 1] = monitor
     end
   end

@@ -10,7 +10,7 @@
 -- Assignment view (each workspace's specs) take_spec, set_spec, clear_spec; for
 -- the Layout view's shared trees fold_trees, drop_override; for
 -- the Desk view add_desk, rename_desk, delete_desk, apply_layout,
--- set_pinned, add_layout, fork_layout, rename_layout, delete_layout (the
+-- add_layout, fork_layout, rename_layout, delete_layout (the
 -- contract is in docs/design.md §9). Every change bumps `seq` and emits hl.dsp.event("hyprslots changed
 -- <seq>").
 
@@ -153,7 +153,7 @@ local function layouts_info(engine, read_only)
 end
 
 -- name -> { monitors[] (selectors), connected[] (whether each is),
--- layout, pinned[], active, screens[] (the active desk's connectors, left
+-- layout, active, screens[] (the active desk's connectors, left
 -- to right), auto (made for these monitors, not saved yet), read_only }.
 local function desks_info(engine, read_only, monitors)
   local out = object()
@@ -172,7 +172,6 @@ local function desks_info(engine, read_only, monitors)
       monitors = array(shallow(entry.monitors)),
       connected = connected,
       layout = entry.layout,
-      pinned = array(shallow(entry.pinned_list)),
       active = active,
       screens = active and array(shallow(engine.active.monitors)) or nil,
       auto = engine.auto_desks[name] or nil,
@@ -319,11 +318,6 @@ function M.snapshot(engine)
   local unassigned = array(sorted_keys(engine.unassigned))
   local read_only = read_only_paths(engine.cfg)
   local dir = engine.config_dir or config.dir()
-  local pinned = array()
-  for screen in pairs(engine.active and engine.active.pinned or {}) do
-    pinned[#pinned + 1] = screen
-  end
-  table.sort(pinned)
   local ok, monitors = pcall(adapter.monitors)
   monitors = ok and desk.usable(monitors) or {}
   return {
@@ -346,7 +340,6 @@ function M.snapshot(engine)
     specs = specs_info(engine),
     monitors = monitors_info(monitors),
     used_workspaces = used_workspaces(engine),
-    pinned = pinned,
     windows = windows_info(engine),
     dirty = engine.dirty == true or next(engine.resized or {}) ~= nil,
     resized = resized_info(engine),
@@ -1239,35 +1232,6 @@ function handlers.apply_layout(engine, args)
     return fail(apply_err)
   end
   return { desk = name, layout = args.layout, active = active_desk(engine), seq = engine.seq }
-end
-
--- set_pinned { desk?, pinned[] }: the desk's screens (1 the left-most)
--- excluded from workspace switching.
-function handlers.set_pinned(engine, args)
-  local name, err = target_desk(engine, args)
-  if not name then
-    return fail(err)
-  end
-  local data, edit_err = edit.set_pinned(engine.data, name, args.pinned)
-  if not data then
-    return fail(edit_err)
-  end
-  local want = data.desks[name].pinned or {}
-  local cfg, apply_err = apply_edit(engine, data, took_desk(name, function(entry)
-    if #entry.pinned_list ~= #want then
-      return false
-    end
-    for i, index in ipairs(want) do
-      if entry.pinned_list[i] ~= index then
-        return false
-      end
-    end
-    return true
-  end))
-  if not cfg then
-    return fail(apply_err)
-  end
-  return { desk = name, pinned = array(shallow(want)), seq = engine.seq }
 end
 
 local function took_layout(name)

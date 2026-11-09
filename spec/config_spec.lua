@@ -25,7 +25,7 @@ return {
     [3] = { left = "t-left", main = "t-main", right = "t-right" },
   },
   desks = {
-    dual = { monitors = { "HEADLESS-2", "HEADLESS-3" }, layout = "dual", pinned = { 2 } },
+    dual = { monitors = { "HEADLESS-2", "HEADLESS-3" }, layout = "dual" },
     single = { monitors = { "HEADLESS-2" }, layout = "single" },
   },
   layouts = {
@@ -63,7 +63,6 @@ describe("config.load", function()
     assert.are.same({ "dual", "single" }, cfg.desk_names)
     assert.are.same({ "HEADLESS-2", "HEADLESS-3" }, cfg.desks.dual.monitors)
     assert.are.equal("dual", cfg.desks.dual.layout)
-    assert.are.same({ [2] = true }, cfg.desks.dual.pinned)
     assert.are.same({ "dual", "single" }, cfg.layout_names)
     assert.are.equal(2, cfg.layouts.dual.screens)
     assert.are.same({ "main", "right" }, require("hyprslots.tree").slots(cfg.layouts.dual.workspaces[3][1]))
@@ -197,11 +196,11 @@ return {
     local cfg = assert(config.load(dir, { monitors = monitors }))
     assert.is_true(cfg.migrated)
     assert.are.same({ "HEADLESS-3", "HEADLESS-2" }, cfg.desks.dual.monitors)
-    assert.are.same({ [1] = true }, cfg.desks.dual.pinned)
+    assert.is_nil(cfg.desks.dual.pinned, "pinned screens are gone")
     assert.are.same({ "left" }, require("hyprslots.tree").slots(cfg.layouts.dual.workspaces[3][1]))
     local file = cfg.data_files["slots.lua"]
     assert.is_nil(file.data.arrangements)
-    assert.are.same({ monitors = { "HEADLESS-3", "HEADLESS-2" }, layout = "dual", pinned = { 1 } }, file.data.desks.dual)
+    assert.are.same({ monitors = { "HEADLESS-3", "HEADLESS-2" }, layout = "dual" }, file.data.desks.dual)
   end)
 
   it("refuses a config.lua that passes arrangements on, saying what to add", function()
@@ -255,7 +254,6 @@ describe("config.validate", function()
   it("accepts a well-formed config", function()
     local cfg = assert(config.validate(valid()))
     assert.are.same({ "solo" }, cfg.desk_names)
-    assert.are.same({}, cfg.desks.solo.pinned)
     assert.are.same({ "solo" }, cfg.layout_names)
   end)
 
@@ -391,12 +389,6 @@ describe("config.validate", function()
     assert.are.equal(cfg.desks.office.layout, cfg.desks.solo.layout)
   end)
 
-  it("rejects a desk's pinned screen it does not have", function()
-    local raw = valid()
-    raw.desks.solo.pinned = { 2 }
-    rejects(raw, "desks%.solo%.pinned%[1%]: must be a screen from 1 to 1")
-  end)
-
   it("rejects a desk or layout name with a '/'", function()
     local raw = valid()
     raw.desks["a/b"] = { monitors = { "X" }, layout = "solo" }
@@ -424,13 +416,18 @@ describe("config.validate", function()
     assert.is_nil(config.trees_for(assert(config.validate(raw)).layouts.solo, 5))
   end)
 
-  it("rejects arrangements beside desks and layouts, and top-level pinned", function()
+  it("rejects arrangements beside desks and layouts", function()
     local raw = valid()
     raw.arrangements = {}
     rejects(raw, "arrangements: arrangements are desks and layouts now")
-    raw = valid()
+  end)
+
+  it("drops pinned screens (gone), a desk's or top-level, without a word", function()
+    local raw = valid()
     raw.pinned = { "laptop" }
-    rejects(raw, "pinned: pinned screens are per desk now")
+    raw.desks.solo.pinned = { 1 }
+    local cfg = assert(config.validate(raw))
+    assert.is_nil(cfg.desks.solo.pinned)
   end)
 
   it("rejects an unparsable tree with its path", function()
@@ -489,12 +486,6 @@ describe("config.validate", function()
     raw.desks.solo.monitors = { "HEADLESS-2", "HEADLESS-3" }
     raw.layouts.solo.workspaces[3][2] = "main"
     rejects(raw, "slot 'main' is placed on both screen 1 and screen 2")
-  end)
-
-  it("rejects pinned that is not a list of screens", function()
-    local raw = valid()
-    raw.desks.solo.pinned = "laptop"
-    rejects(raw, "desks%.solo%.pinned")
   end)
 
   it("reports every error, not just the first", function()

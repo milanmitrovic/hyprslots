@@ -62,7 +62,7 @@ describe("migrate.desks: arrangements become desks and layouts", function()
     assert.is_nil(out.layouts.office)
   end)
 
-  it("turns pinned roles into each desk's pinned screens", function()
+  it("drops pinned roles (pinned screens are gone)", function()
     local out = migrate.desks({
       slots = { main = {} },
       pinned = { "side" },
@@ -71,7 +71,7 @@ describe("migrate.desks: arrangements become desks and layouts", function()
         single = { screens = { big = "A" } },
       },
     })
-    assert.are.same({ 2 }, out.desks.dual.pinned)
+    assert.is_nil(out.desks.dual.pinned)
     assert.is_nil(out.desks.single.pinned)
     assert.is_nil(out.pinned)
   end)

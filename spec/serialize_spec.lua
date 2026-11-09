@@ -57,7 +57,7 @@ local DATA = {
   },
   desks = {
     single = { monitors = { "HEADLESS-2" }, layout = "single" },
-    dual = { pinned = { 2 }, layout = "dual", monitors = { "HEADLESS-2", "Samsung Odyssey G95NC HNTW700044" } },
+    dual = { layout = "dual", monitors = { "HEADLESS-2", "Samsung Odyssey G95NC HNTW700044" } },
   },
   layouts = {
     single = { screens = 1, workspaces = { [3] = { [1] = "h[left, main, right]" } } },
@@ -127,7 +127,6 @@ return {
     dual = {
       monitors = { "HEADLESS-2", "Samsung Odyssey G95NC HNTW700044" },
       layout = "dual",
-      pinned = { 2 },
     },
     single = {
       monitors = { "HEADLESS-2" },
@@ -171,17 +170,15 @@ return {
     assert.are.same(data, load_text(serialize.dump(data)))
   end)
 
-  it("writes only monitors and pinned lists of scalars on one line", function()
-    local data = { desks = { d = { monitors = { "a \"b\"", "c" }, pinned = { 1, 3 } } },
-      other = { monitors = { { "nested" } }, pinned = { x = 1 }, list = { "a", "b" } },
-      gappy = { pinned = { [1] = 1, [3] = 3 } } }
+  it("writes only monitors lists of scalars on one line", function()
+    local data = { desks = { d = { monitors = { "a \"b\"", "c" } } },
+      other = { monitors = { { "nested" } }, list = { "a", "b" } },
+      gappy = { monitors = { [1] = "x", [3] = "z" } } }
     local text = serialize.dump(data)
     assert.matches('\n      monitors = { "a \\"b\\"", "c" },\n', text, 1, true)
-    assert.matches("\n      pinned = { 1, 3 },\n", text, 1, true)
     assert.matches('list = {\n      [1] = "a",\n', text, 1, true)
     assert.matches('monitors = {\n      [1] = {\n', text, 1, true)
-    assert.matches('pinned = {\n      x = 1,\n', text, 1, true)
-    assert.matches('pinned = {\n      [1] = 1,\n      [3] = 3,\n', text, 1, true)
+    assert.matches('monitors = {\n      [1] = "x",\n      [3] = "z",\n', text, 1, true)
     assert.are.same(data, load_text(text))
   end)
 
@@ -192,12 +189,12 @@ return {
 
   it("puts known keys first in a fixed order, then the rest sorted", function()
     local text = serialize.dump({ zeta = 1, workspaces = {}, layouts = {}, alpha = 2, specs = {}, desks = {},
-      slots = {}, default = {}, screens = 1, pinned = {}, layout = "x", monitors = {} })
+      slots = {}, default = {}, screens = 1, layout = "x", monitors = {} })
     local order = {}
     for key in text:gmatch("\n  ([%w_]+) = ") do
       order[#order + 1] = key
     end
-    assert.are.same({ "slots", "specs", "desks", "layouts", "monitors", "layout", "pinned", "screens", "default",
+    assert.are.same({ "slots", "specs", "desks", "layouts", "monitors", "layout", "screens", "default",
       "workspaces", "alpha", "zeta" }, order)
   end)
 

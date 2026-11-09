@@ -2,10 +2,10 @@
 --
 -- `dump(data)` is the text of a data-only Lua file: one `return { ... }`
 -- table literal under a header comment, two-space indentation, one entry per
--- line with a trailing comma; a desk's `monitors` and `pinned` lists of
+-- line with a trailing comma; a desk's `monitors` list of
 -- scalars go on one line (`monitors = { "eDP-1", "DP-1" },`), trees stay one
 -- screen per line. Key order is fixed (slots, specs, desks, layouts, then a
--- desk's monitors, layout, pinned and a layout's screens, default,
+-- desk's monitors and layout and a layout's screens, default,
 -- workspaces, then integer keys ascending, then string keys sorted), strings
 -- are written with %q, so the same data always gives the same bytes and
 -- load(dump(x)) == x.
@@ -57,11 +57,11 @@ M.HEADER = [[
 ]]
 
 -- Keys that come first, in this order, wherever they appear.
-local KEY_ORDER = { slots = 1, specs = 2, desks = 3, layouts = 4, monitors = 5, layout = 6, pinned = 7, screens = 8,
+local KEY_ORDER = { slots = 1, specs = 2, desks = 3, layouts = 4, monitors = 5, layout = 6, screens = 8,
   default = 9, workspaces = 10 }
 
 -- Keys whose list of scalars is written on one line.
-local INLINE = { monitors = true, pinned = true }
+local INLINE = { monitors = true }
 
 local KEYWORDS = {}
 for word in ([[and break do else elseif end false for function goto if in

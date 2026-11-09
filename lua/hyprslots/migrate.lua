@@ -79,8 +79,29 @@ end
 function M.data(data, monitors)
   local out, changed = M.slots(data)
   local converted, moved = M.desks(out, monitors)
-  local normalized, filled = M.normalize(converted)
-  return normalized, changed or moved or filled, changed or moved
+  local unpinned, dropped = M.unpin(converted)
+  local normalized, filled = M.normalize(unpinned)
+  return normalized, changed or moved or dropped or filled, changed or moved
+end
+
+-- Pinned screens are gone (a desk's `pinned`, and the arrangements' top-level
+-- `pinned` roles): the data without them (a copy), and whether it had any.
+function M.unpin(data)
+  local out = copy(data)
+  if type(out) ~= "table" then
+    return out, false
+  end
+  local changed = out.pinned ~= nil
+  out.pinned = nil
+  if type(out.desks) == "table" then
+    for _, entry in pairs(out.desks) do
+      if type(entry) == "table" and entry.pinned ~= nil then
+        entry.pinned = nil
+        changed = true
+      end
+    end
+  end
+  return out, changed
 end
 
 local function set_of(list)
@@ -266,7 +287,8 @@ end
 -- Arrangements of before, read as desks and layouts.
 --
 -- Before, an arrangement was a monitor setup and its trees in one, with a
--- name per screen (a role), and `pinned` listed roles for every arrangement:
+-- name per screen (a role), and `pinned` listed roles for every arrangement
+-- (pinned screens are gone: M.unpin drops them):
 --
 --   arrangements = { docked = { screens = { laptop = "eDP-1", wide = "DP-1" },
 --                               desks = { [3] = { wide = "h[left, main]" } } } },
@@ -275,7 +297,7 @@ end
 -- Now a desk is the monitor setup and a layout the trees, by screen number
 -- (1 the left-most):
 --
---   desks = { docked = { monitors = { "eDP-1", "DP-1" }, layout = "docked", pinned = { 1 } } },
+--   desks = { docked = { monitors = { "eDP-1", "DP-1" }, layout = "docked" } },
 --   layouts = { docked = { screens = 2, workspaces = { [3] = { [2] = "h[left, main]" } } } },
 --
 -- Each arrangement becomes a desk of the same name (its selectors, in screen
@@ -283,8 +305,7 @@ end
 -- right when `monitors` (the connected ones, { name, description, serial,
 -- x, y }) has every one of its screens; otherwise the roles' sort order,
 -- the order slots.lua writes them in. Arrangements whose layouts come out
--- the same share one, named after the first of them. Top-level `pinned`
--- roles become each desk's pinned screens.
+-- the same share one, named after the first of them.
 local function before(a, b)
   return desk.order({ a, b })[1] == a and a ~= b
 end
@@ -329,12 +350,6 @@ function M.desks(data, monitors)
     return out, false
   end
   local arrangements = out.arrangements
-  local pinned_roles = {}
-  if type(out.pinned) == "table" then
-    for _, role in ipairs(out.pinned) do
-      pinned_roles[role] = true
-    end
-  end
   local desks, layouts, by_text = {}, {}, {}
   for _, name in ipairs(sorted(arrangements)) do
     local entry = arrangements[name]
@@ -352,13 +367,10 @@ function M.desks(data, monitors)
           return before(found[a], found[b])
         end)
       end
-      local index, selectors, pinned = {}, {}, {}
+      local index, selectors = {}, {}
       for i, role in ipairs(roles) do
         index[role] = i
         selectors[i] = screens[role]
-        if pinned_roles[role] then
-          pinned[#pinned + 1] = i
-        end
       end
       local workspaces = {}
       for n, branches in pairs(type(entry.desks) == "table" and entry.desks or {}) do
@@ -380,7 +392,7 @@ function M.desks(data, monitors)
         by_text[text] = name
         layouts[name] = layout
       end
-      desks[name] = { monitors = selectors, layout = shared, pinned = #pinned > 0 and pinned or nil }
+      desks[name] = { monitors = selectors, layout = shared }
     end
   end
   out.desks = desks

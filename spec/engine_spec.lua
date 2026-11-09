@@ -149,7 +149,7 @@ return {
       assert.are.equal("solo", s.desk)
       assert.are.equal("solo", s.layout)
       assert.are.same({ workspace = 3, screen = 1, monitor = "HEADLESS-2", layout = "lua:slots" }, s.workspaces["3"])
-      assert.are.same({ 1 }, s.desks.solo.pinned)
+      assert.is_nil(s.desks.solo.pinned, "pinned screens are gone")
       assert.is_true(s.config.migrated)
       assert.is_true(s.dirty, "what runs differs from the file until it is saved")
       local placed = recalculate({ hl_stub.window(1, "t-a", { workspace = 3 }), hl_stub.window(2, "t-b", { workspace = 3 }) })
@@ -165,7 +165,7 @@ return {
       local written = assert(loadfile(dir .. "/slots.lua", "t", {}))()
       assert.is_nil(written.arrangements)
       assert.is_nil(written.pinned)
-      assert.are.same({ solo = { monitors = { "HEADLESS-2" }, layout = "solo", pinned = { 1 } } }, written.desks)
+      assert.are.same({ solo = { monitors = { "HEADLESS-2" }, layout = "solo" } }, written.desks)
       assert.are.same({ solo = { screens = 1, workspaces = { [3] = { [1] = "h[a:1, b:2, c:1]" } } } }, written.layouts)
 
       hyprslots.setup({ config_dir = dir })

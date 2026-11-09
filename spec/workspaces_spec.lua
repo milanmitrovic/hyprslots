@@ -7,7 +7,6 @@ local BLOCKS = { ["HEADLESS-2"] = 0, ["HEADLESS-3"] = 1 }
 
 local NINE = engine.CONFIG:gsub("layouts = data.layouts", "layouts = data.layouts, workspaces = 9", 1)
 
-local PINNED_SIDE = engine.TWO_SCREENS:gsub('layout = "dual" }', 'layout = "dual", pinned = { 2 } }', 1)
 
 describe("workspaces across screens", function()
   local hl, o, hyprslots
@@ -56,37 +55,6 @@ describe("workspaces across screens", function()
       }, o.workspaces.focused)
     end)
 
-    it("leaves a pinned screen on whatever workspace it shows", function()
-      hyprslots = engine.setup(PINNED_SIDE)
-      engine.call(hyprslots, "workspace", '{"workspace": 3}')
-      assert.are.same({ { workspace = 3, monitor = "HEADLESS-2" } }, o.workspaces.focused)
-    end)
-
-    it("switches the other screens from a pinned one and keeps focus on it", function()
-      hyprslots = engine.setup(PINNED_SIDE)
-      focus("HEADLESS-3")
-      engine.call(hyprslots, "workspace", '{"workspace": 3}')
-      assert.are.same({ { workspace = 3, monitor = "HEADLESS-2" } }, o.workspaces.focused)
-      local focused = hl.dispatched_of("focus")
-      assert.are.same({ monitor = "HEADLESS-3" }, focused[#focused])
-    end)
-
-    it("skips a screen set_pinned pins on the active desk, and switches it again once unpinned", function()
-      hyprslots = engine.setup(engine.TWO_SCREENS)
-      local reply = engine.call(hyprslots, "set_pinned", '{"pinned": [2]}')
-      assert.is_true(reply.ok, reply.error)
-      assert.are.equal("dual", reply.desk)
-      assert.are.same({ 2 }, reply.pinned)
-      assert.are.same({ 2 }, engine.state(hyprslots).pinned)
-      assert.are.same({ 2 }, engine.state(hyprslots).desks.dual.pinned)
-      engine.call(hyprslots, "workspace", '{"workspace": 3}')
-      assert.are.same({ { workspace = 3, monitor = "HEADLESS-2" } }, o.workspaces.focused)
-
-      assert.is_true(engine.call(hyprslots, "set_pinned", '{"desk": "dual", "pinned": []}').ok)
-      assert.are.same({}, engine.state(hyprslots).pinned)
-      engine.call(hyprslots, "workspace", '{"workspace": 4}')
-      assert.are.same({ workspace = 4, monitor = "HEADLESS-3" }, o.workspaces.focused[2])
-    end)
   end)
 
   it("switches only the focused screen when no desk matches", function()

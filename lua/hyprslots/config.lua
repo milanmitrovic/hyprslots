@@ -324,8 +324,7 @@ local function validate_layout(name, raw, slots, fail, count)
   return layout
 end
 
--- The desks: name -> { monitors = { selector, ... }, layout = name, pinned
--- = { screen, ... } }. A desk is a monitor setup; it uses a layout for as
+-- The desks: name -> { monitors = { selector, ... }, layout = name }. A desk is a monitor setup; it uses a layout for as
 -- many screens as it has monitors.
 local function validate_desk(name, raw, layouts, fail)
   local path = key_path("desks", name)
@@ -334,11 +333,11 @@ local function validate_desk(name, raw, layouts, fail)
     return nil
   end
   for key in pairs(raw) do
-    if key ~= "monitors" and key ~= "layout" and key ~= "pinned" then
+    if key ~= "monitors" and key ~= "layout" then
       fail(path, "unknown key '" .. tostring(key) .. "'")
     end
   end
-  local desk = { name = name, monitors = {}, layout = nil, pinned = {}, pinned_list = {} }
+  local desk = { name = name, monitors = {}, layout = nil }
   local monitors_path = path .. ".monitors"
   if type(raw.monitors) ~= "table" or raw.monitors[1] == nil then
     fail(monitors_path, "must list at least one monitor: { \"description|serial|connector\", ... }")
@@ -373,21 +372,6 @@ local function validate_desk(name, raw, layouts, fail)
         layout.screens, layout.screens == 1 and "" or "s", #desk.monitors, #desk.monitors == 1 and "" or "s"))
     end
     desk.layout = raw.layout
-  end
-  if raw.pinned ~= nil then
-    if type(raw.pinned) ~= "table" then
-      fail(path .. ".pinned", "must be a list of screens (1 is the left-most)")
-    else
-      for i, index in ipairs(raw.pinned) do
-        if math.type(index) ~= "integer" or index < 1 or index > math.max(#desk.monitors, 1) then
-          fail(path .. ".pinned[" .. i .. "]", "must be a screen from 1 to " .. #desk.monitors)
-        elseif not desk.pinned[index] then
-          desk.pinned[index] = true
-          desk.pinned_list[#desk.pinned_list + 1] = index
-        end
-      end
-      table.sort(desk.pinned_list)
-    end
   end
   return desk
 end
@@ -505,8 +489,6 @@ function M.validate(raw, monitors)
   for _, key in ipairs(sorted_keys(raw)) do
     if key == "arrangements" then
       fail("arrangements", "arrangements are desks and layouts now; give either, not both")
-    elseif key == "pinned" then
-      fail("pinned", "pinned screens are per desk now: desks.<name>.pinned = { 1 } (1 is the left-most screen)")
     elseif not KNOWN[key] then
       fail("config", "unknown key '" .. tostring(key) .. "'")
     end
@@ -611,7 +593,7 @@ function M.load(dir, opts)
     if type(file.data) == "table" and (file.data.desks ~= nil or file.data.layouts ~= nil)
       and raw.desks == nil and raw.layouts == nil then
       return nil, path .. ": " .. name .. " holds desks and layouts (the arrangements of before) that config.lua "
-        .. "does not return: add `desks = data.desks, layouts = data.layouts` (in place of `arrangements` and `pinned`)"
+        .. "does not return: add `desks = data.desks, layouts = data.layouts` (in place of `arrangements`)"
     end
   end
 
