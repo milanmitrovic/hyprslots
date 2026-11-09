@@ -44,6 +44,8 @@ Item {
   readonly property bool prompting: prompt !== null
   property string message: ""
   property bool messageIsError: false
+  // Counts say(): the panel's message band knows a message by it.
+  property int messageSeq: 0
 
   readonly property string accent: String(Commons.Color.accent)
   readonly property string helpText: prompting ? Help.escape(Prompts.help(prompt)) : Help.row([
@@ -69,6 +71,7 @@ Item {
   function say(text, isError) {
     message = text
     messageIsError = !!isError
+    messageSeq++
   }
 
   function reset() {
@@ -361,7 +364,7 @@ Item {
       id: list
       width: parent.width
       height: parent.height - headerBox.height - (problem.visible ? problem.height + parent.spacing : 0)
-        - footerText.height - parent.spacing * 2
+        - parent.spacing
       clip: true
       model: root.rows
       boundsBehavior: Flickable.StopAtBounds
@@ -517,22 +520,6 @@ Item {
         font.family: root.fontFamily
         font.pixelSize: Style.font.body
       }
-    }
-
-    // The prompt (with the refusal under it), or the last call's outcome.
-    Text {
-      id: footerText
-      width: parent.width
-      textFormat: Text.PlainText
-      wrapMode: Text.WordWrap
-      text: root.prompting
-        ? Prompts.display(root.prompt) + (root.prompt.error ? "\n" + root.prompt.error : "")
-        : (root.message !== "" ? root.message : " ")
-      color: root.prompting ? (root.prompt.error ? Commons.Color.urgent : Commons.Color.accent)
-        : (root.messageIsError ? Commons.Color.urgent : root.foreground)
-      font.family: root.fontFamily
-      font.pixelSize: Style.font.body
-      font.bold: root.prompting
     }
   }
 }

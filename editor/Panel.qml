@@ -9,6 +9,7 @@ import qs.Ui
 import "Prompts.js" as Prompts
 import "DesksLayouts.js" as DesksLayouts
 import "Assignment.js" as Assignment
+import "Messages.js" as Messages
 
 // The hyprslots editor panel (docs/design.md §9): aerolayout's `edit` TUI as
 // an Omarchy shell panel. Three tabs, cycled with Tab / Shift+Tab as in the
@@ -51,6 +52,27 @@ Item {
   property color selectedText: Commons.Color.menu.selectedText
   property string fontFamily: Style.font.menuFamily
   property int contentMargin: Style.spacing.panelPadding
+  // The chrome, all from the theme: the card is a recessed desk, the page
+  // (and the current tab, one shape with it) the menu surface on it; the
+  // other tabs and the controls strip sit back on the desk.
+  readonly property int hairline: Math.max(1, Style.spacing.hairline)
+  readonly property color deskColor: root.recess(root.background, 1)
+  readonly property color tabRecessed: root.recess(root.background, 0.55)
+  readonly property color tabRecessedBorder: Commons.Util.alpha(root.foreground, 0.07)
+  readonly property color frameBorder: Commons.Util.alpha(root.foreground, 0.16)
+  readonly property int tabRadius: Math.max(Style.cornerRadius, Style.spacing.sm)
+  readonly property int tabHeight: Style.font.subtitle + Style.spacing.md * 2 + Style.spacing.xs * 2
+  readonly property int tabInset: Style.spacing.lg
+  readonly property int pagePadding: Style.spacing.xxl
+
+  // A surface sunk below `c` by `amount` (0..1): darker on a light theme
+  // and on a dark one; on a near-black one (nothing darker to go to), a
+  // trace of the foreground instead.
+  function recess(c, amount) {
+    if (c.hslLightness < 0.06) return Qt.tint(c, Commons.Util.alpha(root.foreground, 0.035 * amount))
+    return Qt.darker(c, 1 + (c.hslLightness > 0.5 ? 0.07 : 0.28) * amount)
+  }
+
   property int cardWidth: Math.min(Style.space(1100), window.width - Style.gapsOut * 2)
   property int cardHeight: Math.min(Style.space(640), window.height - Style.gapsOut * 2)
 
@@ -110,6 +132,7 @@ Item {
   // One key press, from the keyboard or from press(). Returns whether the
   // panel used it.
   function handleKey(key, text, modifiers) {
+    if (Messages.dismissedByKey(root.bandKind)) root.dismissedKey = root.messageKey
     if (assignmentView.prompting && root.tab === 0) return assignmentView.handleKey(key, text, modifiers)
     if (layoutView.prompting && root.tab === 1) return layoutView.handleKey(key, text, modifiers)
     if (desksView.prompting && root.tab === 2) return desksView.handleKey(key, text, modifiers)
@@ -243,6 +266,44 @@ Item {
     return DesksLayouts.header(s) + (s && s.dirty ? "   ● unsaved edits (Ctrl+S)" : "")
   }
 
+  // The message band (Messages.js): the current view's prompt, or its last
+  // message until it fades (info, after Messages.HOLD_MS) or the next key
+  // dismisses it (an error). A message is known by its view and its count
+  // (the view's messageSeq), so the same text said again shows again.
+  readonly property var views: [assignmentView, layoutView, desksView]
+  readonly property var currentView: root.views[root.tab] || null
+  readonly property string messageKey: root.currentView ? Messages.key(root.tab, root.currentView.messageSeq) : ""
+  property string dismissedKey: ""
+  readonly property string bandKind: root.currentView
+    ? Messages.kind(root.currentView.prompting, root.currentView.message, root.currentView.messageIsError,
+      root.messageKey === root.dismissedKey)
+    : "none"
+
+  function armBand() {
+    var hold = Messages.holdMs(root.bandKind)
+    if (hold > 0) {
+      bandTimer.forKey = root.messageKey
+      bandTimer.interval = hold
+      bandTimer.restart()
+    } else {
+      bandTimer.stop()
+    }
+  }
+  onMessageKeyChanged: Qt.callLater(root.armBand)
+  onBandKindChanged: Qt.callLater(root.armBand)
+  // A tab's old message is not news when it comes back into view.
+  onTabChanged: {
+    var view = root.views[root.tab]
+    if (view) root.dismissedKey = Messages.key(root.tab, view.messageSeq)
+  }
+
+  Timer {
+    id: bandTimer
+    property string forKey: ""
+    repeat: false
+    onTriggered: if (root.messageKey === forKey) root.dismissedKey = forKey
+  }
+
   // The current view's controls strip, as StyledText (its keys highlighted).
   readonly property string helpText: root.tab === 0 ? assignmentView.helpText
     : root.tab === 1 ? layoutView.helpText
@@ -286,7 +347,7 @@ Item {
       height: root.cardHeight
       radius: Style.cornerRadius
       anchors.centerIn: parent
-      color: root.background
+      color: root.deskColor
       borderSpec: root.borderSpec
       padding: root.contentMargin
 
@@ -309,113 +370,196 @@ Item {
         anchors.rightMargin: card.contentRightInset
         anchors.bottomMargin: card.contentBottomInset
         anchors.leftMargin: card.contentLeftInset
-        spacing: Style.spacing.md
+        spacing: 0
 
-        // The tab bar, as the TUI draws it: the current tab reversed; the
-        // active desk and its layout at its right.
+        // The tab bar: folder tabs over the page. The current tab is the
+        // page's own surface and opens into it (the page's top edge stops
+        // under it); the others sit back on the recessed desk, dimmer and
+        // apart. The active desk and its layout at the right, quietly.
         Item {
           id: tabBar
+          z: 1 // over the page's top edge, which the current tab opens
           width: parent.width
-          height: tabRow.height
+          height: root.tabHeight
           Row {
             id: tabRow
-            spacing: Style.spacing.sm
+            x: root.tabInset
+            height: parent.height
+            spacing: Style.spacing.xs
             Repeater {
               model: root.tabs
-              delegate: Rectangle {
+              delegate: Item {
+                id: tabItem
                 required property string modelData
                 required property int index
                 readonly property bool current: index === root.tab
-                width: label.implicitWidth + Style.spacing.lg * 2
-                height: label.implicitHeight + Style.spacing.sm * 2
-                radius: Style.cornerRadius
-                color: current ? root.selectedBackground : "transparent"
+                width: label.implicitWidth + Style.spacing.xl * 2
+                height: parent.height
+                Rectangle {
+                  id: tabFace
+                  y: tabItem.current ? 0 : Style.spacing.xs
+                  width: parent.width
+                  // the current one reaches over the page's top edge
+                  height: parent.height - y + (tabItem.current ? root.hairline : 0)
+                  topLeftRadius: root.tabRadius
+                  topRightRadius: root.tabRadius
+                  bottomLeftRadius: 0
+                  bottomRightRadius: 0
+                  color: tabItem.current ? root.background : root.tabRecessed
+                  border.color: tabItem.current ? root.frameBorder : root.tabRecessedBorder
+                  border.width: root.hairline
+                }
+                // The current tab's bottom: the page's surface, so the two
+                // are one shape.
+                Rectangle {
+                  visible: tabItem.current
+                  x: root.hairline
+                  y: parent.height
+                  width: parent.width - root.hairline * 2
+                  height: root.hairline
+                  color: root.background
+                }
                 Text {
                   id: label
-                  anchors.centerIn: parent
+                  anchors.horizontalCenter: parent.horizontalCenter
+                  anchors.verticalCenter: tabFace.verticalCenter
+                  anchors.verticalCenterOffset: tabItem.current ? 0 : -root.hairline
                   textFormat: Text.PlainText
-                  text: parent.modelData
-                  color: parent.current ? root.selectedText : root.foreground
-                  opacity: parent.current ? 1 : 0.6
+                  text: tabItem.modelData
+                  color: tabItem.current ? root.foreground : Commons.Color.muted
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.subtitle
-                  font.bold: parent.current
+                  font.bold: tabItem.current
                 }
                 MouseArea {
                   anchors.fill: parent
                   cursorShape: Qt.PointingHandCursor
-                  onClicked: root.tab = parent.index
+                  onClicked: root.tab = tabItem.index
                 }
               }
             }
           }
-          Text {
+          // "Desk: solo · Layout: solo (also used by: beamer)", muted; the
+          // unsaved mark after it in the urgent colour.
+          Row {
             id: deskHeader
-            anchors.left: tabRow.right
-            anchors.leftMargin: Style.spacing.lg * 2
             anchors.right: parent.right
+            anchors.rightMargin: root.tabInset
             anchors.verticalCenter: parent.verticalCenter
-            horizontalAlignment: Text.AlignRight
-            elide: Text.ElideRight
-            textFormat: Text.PlainText
-            text: root.headerText()
-            color: root.engine && root.engine.state && root.engine.state.dirty ? Commons.Color.urgent : root.foreground
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.body
-            font.bold: true
+            anchors.verticalCenterOffset: Style.spacing.xs / 2
+            spacing: Style.spacing.lg
+            Text {
+              width: Math.min(implicitWidth, tabBar.width - tabRow.x - tabRow.width - Style.spacing.lg * 3
+                - (dirtyMark.visible ? dirtyMark.implicitWidth + parent.spacing : 0))
+              elide: Text.ElideRight
+              textFormat: Text.PlainText
+              text: DesksLayouts.header(root.engine ? root.engine.state : null)
+              color: Commons.Color.muted
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+            }
+            Text {
+              id: dirtyMark
+              visible: !!(root.engine && root.engine.state && root.engine.state.dirty)
+              textFormat: Text.PlainText
+              text: "● unsaved (Ctrl+S)"
+              color: Commons.Color.urgent
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.bodySmall
+            }
           }
         }
 
+        // The page: the current view, and the message band at its foot.
+        Rectangle {
+          id: page
+          width: parent.width
+          height: parent.height - tabBar.height - helpArea.height
+          color: root.background
+          border.color: root.frameBorder
+          border.width: root.hairline
+          radius: root.tabRadius
+
+          Item {
+            id: body
+            anchors.fill: parent
+            anchors.margins: root.pagePadding
+            anchors.bottomMargin: root.pagePadding + band.height + Style.spacing.md
+
+            AssignmentView {
+              id: assignmentView
+              anchors.fill: parent
+              visible: root.tab === 0
+              engine: root.engine
+              foreground: root.foreground
+              selectedBackground: root.selectedBackground
+              selectedText: root.selectedText
+              fontFamily: root.fontFamily
+            }
+
+            LayoutView {
+              id: layoutView
+              anchors.fill: parent
+              visible: root.tab === 1
+              engine: root.engine
+              foreground: root.foreground
+              selectedBackground: root.selectedBackground
+              selectedText: root.selectedText
+              fontFamily: root.fontFamily
+            }
+
+            DesksLayoutsView {
+              id: desksView
+              anchors.fill: parent
+              visible: root.tab === 2
+              engine: root.engine
+              foreground: root.foreground
+              selectedBackground: root.selectedBackground
+              selectedText: root.selectedText
+              fontFamily: root.fontFamily
+            }
+          }
+
+          // The prompt being answered, or the last call's outcome: a band of
+          // its own over the page's foot, its space kept whether or not it
+          // shows (a long line grows it upwards, over the view).
+          MessageBand {
+            id: band
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            anchors.margins: root.pagePadding
+            kind: root.bandKind
+            message: root.currentView ? root.currentView.message : ""
+            prompt: root.currentView ? root.currentView.prompt : null
+            foreground: root.foreground
+            background: root.background
+            fontFamily: root.fontFamily
+          }
+        }
+
+        // The controls strip, under the page's bottom edge on the desk: what
+        // the keys of the current view do, each trigger key in the accent
+        // colour.
         Item {
-          id: body
+          id: helpArea
           width: parent.width
-          height: parent.height - tabBar.height - help.height - layout.spacing * 2
-
-          AssignmentView {
-            id: assignmentView
-            anchors.fill: parent
-            visible: root.tab === 0
-            engine: root.engine
-            foreground: root.foreground
-            selectedBackground: root.selectedBackground
-            selectedText: root.selectedText
-            fontFamily: root.fontFamily
+          height: help.implicitHeight + Style.spacing.lg + Style.spacing.xs
+          Text {
+            id: help
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.leftMargin: root.pagePadding
+            anchors.rightMargin: root.pagePadding
+            anchors.bottom: parent.bottom
+            textFormat: Text.StyledText
+            wrapMode: Text.WordWrap
+            lineHeight: 1.15
+            text: root.helpText
+            color: Commons.Util.alpha(root.foreground, 0.7)
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
           }
-
-          LayoutView {
-            id: layoutView
-            anchors.fill: parent
-            visible: root.tab === 1
-            engine: root.engine
-            foreground: root.foreground
-            selectedBackground: root.selectedBackground
-            selectedText: root.selectedText
-            fontFamily: root.fontFamily
-          }
-
-          DesksLayoutsView {
-            id: desksView
-            anchors.fill: parent
-            visible: root.tab === 2
-            engine: root.engine
-            foreground: root.foreground
-            selectedBackground: root.selectedBackground
-            selectedText: root.selectedText
-            fontFamily: root.fontFamily
-          }
-        }
-
-        // The controls strip: what the keys of the current view do, each
-        // trigger key highlighted in the accent colour.
-        Text {
-          id: help
-          width: parent.width
-          textFormat: Text.StyledText
-          wrapMode: Text.WordWrap
-          text: root.helpText
-          color: Commons.Util.alpha(root.foreground, 0.75)
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.bodySmall
         }
       }
     }

@@ -692,25 +692,40 @@ the running engine only through Hyprland:
 | File | Role |
 |---|---|
 | `Engine.qml` | the service: runs the api through `hyprctl repl` (one `Process` per command, in order, 3 s watchdog), reads `state` debounced (60 ms) on `custom>>hyprslots changed` and on window events (`openwindow`, `closewindow`, `movewindowv2`, `windowtitlev2`, monitor events, `configreloaded`) via `Quickshell.Hyprland`'s `rawEvent`, only while someone follows it (`active`: the panel is open; `watchers`: bar widgets, from `watch()` / `unwatch()`); keeps `error` (last state read) and `lastError` (last call); `busy` while a call runs or the re-read after it is pending |
-| `Panel.qml` | the panel: an `OverlayWindow` card (`qs.Ui`), themed through `qs.Commons` (`Color.menu.*`, `Style`) like Omarchy's own panels; tabs Assignment, Layout, Desk (Tab / Shift+Tab) under a header naming the active desk and layout, Ctrl+S saves, Esc or q closes (Esc in the Layout tab's slot list goes back to its picture); `press(key)` feeds a key by name (`Ctrl+s` with the modifier) |
+| `Panel.qml` | the panel: an `OverlayWindow` card (`qs.Ui`), themed through `qs.Commons` (`Color.menu.*`, `Color.muted`, `Style`) like Omarchy's own panels; folder tabs Assignment, Layout, Desk (Tab / Shift+Tab) over the page, the active desk and layout beside them, the message band (`MessageBand.qml`, `Messages.js`) at the page's foot and the help row under it; Ctrl+S saves, Esc or q closes (Esc in the Layout tab's slot list goes back to its picture); `press(key)` feeds a key by name (`Ctrl+s` with the modifier) |
 | `BarWidget.qml` | the bar widget (below): glyph and active layout; left click toggles the panel, right click a menu |
 | `Services.js` | where the service registers itself, for a bar widget whose bar hands it no `serviceFor` |
 | `AssignmentView.qml`, `LayoutView.qml`, `DesksLayoutsView.qml` | aerolayout's Assignment, Layout (with its logical slots as a list beside the screens) and monitors views (below) |
-| `Protocol.js`, `Assignment.js`, `Layout.js`, `Slots.js`, `DesksLayouts.js`, `Prompts.js`, `Workspaces.js`, `BarStatus.js`, `Help.js` | pure logic, tested under node (`editor/tests/`); `Slots.js` is the slot list's, `Workspaces.js` the workspace keys', `DesksLayouts.js` the Desk view's and the panel header's, `Help.js` the help rows' |
+| `Protocol.js`, `Assignment.js`, `Layout.js`, `Slots.js`, `DesksLayouts.js`, `Prompts.js`, `Workspaces.js`, `BarStatus.js`, `Help.js`, `Messages.js` | pure logic, tested under node (`editor/tests/`); `Slots.js` is the slot list's, `Workspaces.js` the workspace keys', `DesksLayouts.js` the Desk view's and the panel header's, `Help.js` the help rows', `Messages.js` the message band's |
 
 **Every view.** The panel's keys come first: Tab / Shift+Tab cycle the
 tabs (Assignment, Layout, Desk), **Ctrl+S saves** (api
 `save`, in every tab; the Layout tab applies its edited panes first), Esc
-or q closes. The header, in every tab, names what the edits go to: `Desk:
+or q closes. The tabs are folder tabs: the current one is the page's own
+surface and opens into it (the page's edge stops under it); the others sit
+back on the card's recessed surface, dimmer and apart. Beside them, in
+every tab and quietly (muted, small), what the edits go to: `Desk:
 home · Layout: ultrawide (also used by: office)` (`Desk: none` with no
 active desk, `(new, unsaved)` after a desk the engine made for new
-monitors), then `● unsaved edits (Ctrl+S)` in the urgent colour while
+monitors), then `● unsaved (Ctrl+S)` in the urgent colour while
 there are any. Every edit outside the Desk view goes to the
-active desk's layout, and so to every desk that shares it. The outcome of
-every call shows on the view's message line, a failure (`{ok:false,error}`,
-hyprctl failing, hyprslots not loaded, the engine off, a config error) in
-the urgent colour. Edits go to the engine as they are made and stay in
-memory until saved.
+active desk's layout, and so to every desk that shares it. Each view's own
+header (the Assignment page's workspace, the Layout view's workspace strip,
+the Desk tab's note) is a quiet line too: the content is the focus. Edits go
+to the engine as they are made and stay in memory until saved.
+
+**Message band** (`MessageBand.qml`, `Messages.js`): the outcome of every
+call shows in a band of its own at the foot of the page, just above the
+page's bottom edge (the divider over the help row): an info message on an
+accent tint with an accent stripe, a failure (`{ok:false,error}`, hyprctl
+failing, hyprslots not loaded, the engine off, a config error) on an urgent
+tint with an urgent stripe. Info fades after 4 s; an error stays until the
+next key. A prompt takes the same band as an input: its question in the
+accent colour, what is typed or offered after it, an accent outline, and a
+refusal after it (under it when the line is full) in the urgent colour; it
+stays while it is open. The
+band's one-line height is always kept, so nothing moves when a message
+comes or goes; a longer text grows it upwards over the view.
 
 **Help rows** (`Help.js`, one helper for every view and the slot list):
 each action shows its trigger key highlighted in the theme's accent colour,
