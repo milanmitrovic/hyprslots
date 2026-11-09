@@ -17,6 +17,8 @@
 #     to the left edge with e's next to it, and the windows inside keep the
 #     same margins (no gaps_in at the screen edge, 2 * gaps_in between):
 #     d  12,12 2347x1326     e  2373,12 2347x1326 (off to the right)
+#   then scroll:0.5[d, e]: each column half of the 2380 px (1190), both in view:
+#     d  12,12 1181x1326     e  1207,12 1181x1326
 #     No window is in a Hyprland group, so no groupbar takes any height.
 
 test_setup() {
@@ -114,6 +116,20 @@ test_body() {
   expect_eq "no Hyprland group" "0" "$(hc clients -j | jq '[.[] | select((.grouped | length) > 0)] | length')"
   expect_client t-d 4 12 12 2347 1326
   expect_client t-e 4 2373 12 2347 1326
+
+  # When the tree asks for half-width columns, both share the screen, each
+  # half of the 2380 px area (1190) less the same margins.
+  log "set_tree -> $(repl 'return hyprslots.api.call("set_tree", "{\"workspace\": 4, \"screen\": 1, \"tree\": \"scroll:0.5[d, e]\"}")')"
+  eventually 10 widths_are 4 "1181 1181" || true
+  settle
+  expect_client t-d 4 12 12 1181 1326
+  expect_client t-e 4 1207 12 1181 1326
+
+  # And back to full width when it asks for that again.
+  log "set_tree -> $(repl 'return hyprslots.api.call("set_tree", "{\"workspace\": 4, \"screen\": 1, \"tree\": \"scroll[d, e]\"}")')"
+  eventually 10 widths_are 4 "2347 2347" || true
+  settle
+  expect_eq "full-width columns again" "2347 2347" "$(widths 4)"
 
   log "windows at the end:"
   client_table | sed 's/^/    /'

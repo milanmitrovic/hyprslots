@@ -1,5 +1,5 @@
 # A scroll branch on Hyprland's scrolling layout: full-width columns in slot
-# order.
+# order, half-width ones when the tree says scroll:0.5[...].
 #
 # Screen: HEADLESS-2, 2400x1350 at 0,0, Omarchy block 0 (workspace N = workspace id N).
 # Workspace 3, desk and layout "solo": scroll[left, main, right]. Gaps and borders are
@@ -10,7 +10,8 @@
 # A window with no slot opened next to the first column goes last, or, once
 # the branch is scroll[left, *, main, right], where the `*` is. A column
 # the user moves stays where they put it through focus changes, and a workspace
-# switch puts it back. The cursor never jumps.
+# switch puts it back. The cursor never jumps. scroll:0.5[...] makes every
+# column 1200 px (half the screen), and scroll[...] full width again.
 
 test_setup() {
   cat >"$E2E_CONFIG_HOME/hypr/test-extra.lua" <<'LUA'
@@ -172,6 +173,21 @@ test_body() {
   expect_eq "focus kept through those swaps" "t-right" "$(active_class)"
 
   expect_eq "cursor:no_warps put back after the swaps" "false" "$(hc getoption cursor:no_warps -j | jq -r '.bool')"
+
+  # When the tree asks for half-width columns, every column becomes half the
+  # screen (1200 px), in the same order, two of them in view; and full width
+  # again when it asks for that.
+  log "set_tree -> $(repl 'return hyprslots.api.call("set_tree", "{\"workspace\": 3, \"screen\": 1, \"tree\": \"scroll:0.5[left, *, main, right]\"}")')"
+  eventually 5 widths_are 3 "1200 1200 1200 1200" || true
+  settle 3
+  expect_eq "half-width columns" "1200 1200 1200 1200" "$(widths 3)"
+  expect_eq "in the same order" "t-left t-other t-main t-right" "$(columns 3)"
+  expect_eq "state says the width" "0.5" "$(repl 'return hyprslots.api.call("state", "{}")' | jq -r '.scroll[0].width')"
+  expect_in_view t-right
+  log "set_tree -> $(repl 'return hyprslots.api.call("set_tree", "{\"workspace\": 3, \"screen\": 1, \"tree\": \"scroll[left, *, main, right]\"}")')"
+  eventually 5 widths_are 3 "2376 2376 2376 2376" || true
+  settle 3
+  expect_eq "full-width columns again" "2376 2376 2376 2376" "$(widths 3)"
 
   log "windows at the end:"
   hc clients -j | jq -r 'sort_by(.at[0])[] | "\(.class) ws=\(.workspace.id) at=\(.at[0]),\(.at[1]) size=\(.size[0])x\(.size[1]) grouped=\(.grouped | length)"' | sed 's/^/    /'
