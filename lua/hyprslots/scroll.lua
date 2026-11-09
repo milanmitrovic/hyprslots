@@ -15,7 +15,9 @@
 --          window (cursor:no_warps for the duration).
 --   widen  on the focused workspace only (Hyprland's colresize acts on the
 --          focused workspace): when a column it has not widened before is
---          there, `colresize all <width>`, then `fit_into_view` so the
+--          there, or the tree asks for another width, `colresize all
+--          <width>` (the tree's: scroll:0.5[...] half the screen, scroll[...]
+--          full width), then `fit_into_view` so the
 --          focused column stays in view. A focus change runs this alone, so
 --          a column the user moved or resized is never put back on one.
 --
@@ -38,7 +40,9 @@ local WIDTH_TOLERANCE = 0.005
 -- Deferral for the pass, after the event that asked for it.
 local DEFER_MS = 20
 
-M.DEFAULT_WIDTH = 0.99
+-- Full width (scroll[...] with no width of its own): Omarchy's full-width
+-- stop, a hair under the screen.
+M.FULL_WIDTH = 0.99
 
 -- Windows ({ address, column, row }) in column order: left to right, then
 -- down a column.
@@ -105,10 +109,10 @@ function M.plan(slots, windows)
   return swaps
 end
 
--- The column width scroll branches get.
-function M.width(engine)
-  local scroll = engine.cfg and engine.cfg.scroll
-  return scroll and scroll.width or M.DEFAULT_WIDTH
+-- The column width a scroll branch gives its columns (a fraction of the
+-- screen): its own (`scroll:0.5[...]`, tree.lua), else full width.
+function M.width(branch)
+  return branch and branch.width or M.FULL_WIDTH
 end
 
 -- The layout workspace `id` should have under the active desk:
@@ -173,7 +177,7 @@ function M.arrange(engine, opts)
   end
   engine.scroll_seen = engine.scroll_seen or {}
   local active = adapter.active_window()
-  local width = M.width(engine)
+  engine.scroll_widths = engine.scroll_widths or {}
 
   local ids, scrolls = {}, {}
   for id, entry in pairs(engine.workspaces) do
@@ -190,6 +194,11 @@ function M.arrange(engine, opts)
       engine.scroll_seen[id] = nil
     end
   end
+  for id in pairs(engine.scroll_widths) do
+    if not scrolls[id] then
+      engine.scroll_widths[id] = nil
+    end
+  end
 
   for _, id in ipairs(ids) do
     if not M.managed(engine, id) then
@@ -198,6 +207,12 @@ function M.arrange(engine, opts)
       local entry = engine.workspaces[id]
       local windows, slots = columns(engine, id, entry)
       local changed = false
+      -- A tree that asks for another width makes every column a new one.
+      local width = M.width(entry.branch)
+      if engine.scroll_widths[id] ~= width then
+        engine.scroll_seen[id] = nil
+        engine.scroll_widths[id] = width
+      end
 
       if reorder then
         local swaps = M.plan(slots, windows)
@@ -278,7 +293,8 @@ function M.attach(engine)
 end
 
 -- Every scroll branch on a workspace of the active desk, for the
--- api's state: { workspace_id, workspace, screen, slots, layout = its tiled layout,
+-- api's state: { workspace_id, workspace, screen, slots, width (its columns'),
+-- layout = its tiled layout,
 -- managed, columns = addresses in column order, members = slot -> address,
 -- in_order = whether the columns are in slot order }.
 function M.describe(engine)
@@ -305,6 +321,7 @@ function M.describe(engine)
     end
     out[#out + 1] = {
       workspace_id = id, workspace = entry.workspace, screen = entry.screen, slots = tree.scroll(entry.branch),
+      width = M.width(entry.branch),
       layout = adapter.workspace_tiled_layout(id), managed = M.managed(engine, id),
       columns = order, members = members, in_order = #M.plan(order_of, windows) == 0,
     }

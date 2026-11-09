@@ -254,7 +254,7 @@ local function scroll_info(engine)
   end
   for _, s in ipairs(described) do
     out[#out + 1] = object({ workspace_id = s.workspace_id, workspace = s.workspace, screen = s.screen,
-      slots = array(s.slots),
+      slots = array(s.slots), width = s.width,
       layout = s.layout, managed = s.managed, columns = array(s.columns), members = object(s.members),
       in_order = s.in_order })
   end
