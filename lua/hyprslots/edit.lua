@@ -457,7 +457,7 @@ end
 local function desk_entry(data, name)
   local entry = section(data, "desks")[name]
   if type(entry) ~= "table" then
-    return nil, "no desk '" .. tostring(name) .. "' in slots.lua"
+    return nil, "no desk '" .. tostring(name) .. "'"
   end
   return entry
 end
@@ -465,7 +465,7 @@ end
 local function layout_entry(data, name)
   local entry = section(data, "layouts")[name]
   if type(entry) ~= "table" then
-    return nil, "no layout '" .. tostring(name) .. "' in slots.lua"
+    return nil, "no layout '" .. tostring(name) .. "'"
   end
   return entry
 end

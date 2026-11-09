@@ -233,7 +233,7 @@ return { slots = data.slots, specs = data.specs, desks = data.desks, layouts = l
 ]],
         ["slots.lua"] = SLOTS,
       })
-      assert.matches("layout 'work' is set by code in config.lua", call("reset", { layout = "work", workspace = 3, screen = 1 }).error)
+      assert.matches("layout 'work' is set by code in your config", call("reset", { layout = "work", workspace = 3, screen = 1 }).error)
       assert.matches("layout 'dual' has screens 1 to 2, got 3", call("reset", { workspace = 3, screen = 3 }).error)
 
       write(dir .. "/slots.lua", "return {")

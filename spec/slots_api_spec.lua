@@ -106,7 +106,7 @@ return { slots = slots, specs = data.specs, desks = data.desks, layouts = data.l
 ]])
       local reply = call("add_slot", { slot = "chat" })
       assert.is_false(reply.ok)
-      assert.matches("slots are set by code in config.lua", reply.error)
+      assert.matches("slots are set by code in your config", reply.error)
     end)
   end)
 
@@ -255,7 +255,7 @@ return { slots = data.slots, specs = specs, desks = data.desks, layouts = data.l
 ]])
       local reply = call("set_spec", { workspace = 4, slot = "main", spec = "x" })
       assert.is_false(reply.ok)
-      assert.matches("workspace 4's specs are set by code in config.lua", reply.error)
+      assert.matches("workspace 4's specs are set by code in your config", reply.error)
     end)
   end)
 
@@ -684,7 +684,7 @@ return { slots = { main = {} }, specs = { [3] = { main = "t-main" } }, desks = {
         local reply = call(name, { workspace = 3, slot = "main", spec = "x", to = "y", name = "n", monitors = { "X" },
           layout = "x", screens = 1 })
         assert.is_false(reply.ok, name)
-        assert.matches("slots.lua", reply.error, nil, name)
+        assert.matches("loads no editor data", reply.error, nil, name)
       end
     end)
   end)

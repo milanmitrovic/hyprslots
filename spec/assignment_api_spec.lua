@@ -302,7 +302,7 @@ return { slots = data.slots, specs = { [3] = { main = "t-main" } }, desks = data
         local first = open(1, "t-main", 1)
         local reply = call("unassign", { address = first.address, clear_spec = true })
         assert.is_false(reply.ok)
-        assert.matches("set by code in config.lua", reply.error)
+        assert.matches("set by code in your config", reply.error)
         assert.are.same({ workspace = 3, slot = "main" }, state().assignments[first.address])
         assert.are.same({}, state().unassigned)
       end)

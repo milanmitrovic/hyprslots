@@ -32,6 +32,8 @@ local spec = require("hyprslots.spec")
 local tree = require("hyprslots.tree")
 
 local DATA_FILE = "slots.lua"
+-- Messages reach the editor, so they name no files.
+local NO_DATA = "your config loads no editor data, so there is nothing the editor may change"
 local WORKSPACES = 10
 
 local M = {}
@@ -378,7 +380,7 @@ local function target_layout(engine, args)
     return nil, "no layout '" .. tostring(name) .. "'"
   end
   if not edit.editable(read_only_paths(engine.cfg), "layouts", name) then
-    return nil, "layout '" .. name .. "' is set by code in config.lua; edit it there"
+    return nil, "layout '" .. name .. "' is set by code in your config; edit it there"
   end
   return name
 end
@@ -429,7 +431,7 @@ end
 
 local function set_tree(engine, name, n, screen, text)
   if not engine.data then
-    return nil, "config.lua loads no " .. DATA_FILE .. ", so there is nothing the editor may change"
+    return nil, NO_DATA
   end
   local data, err = edit.set_tree(engine.data, name, n, screen, text)
   if not data then
@@ -630,7 +632,7 @@ end
 -- save {}: write the running data to slots.lua (atomically).
 function handlers.save(engine)
   if not engine.data then
-    return fail("config.lua loads no " .. DATA_FILE .. ", so there is nothing to save")
+    return fail("your config loads no editor data, so there is nothing to save")
   end
   local data = edit.copy(engine.data)
   local read_only = read_only_paths(engine.cfg)
@@ -748,7 +750,6 @@ end
 -- not), and only then runs it like any edit: re-assign, re-route, window
 -- rules, relayout, change event. Nothing is written until save.
 
-local NO_DATA = "config.lua loads no " .. DATA_FILE .. ", so there is nothing the editor may change"
 
 
 -- Run edited data. `check(cfg)` returns why the edit did not take, or nil;
@@ -777,8 +778,8 @@ local function apply_edit(engine, data, check, carry)
 end
 
 local function not_taken(what)
-  return "config.lua does not take " .. what .. " from " .. DATA_FILE .. ", so the edit would change nothing; "
-    .. "change it in config.lua"
+  return "your config does not take " .. what .. " from the editor's data, so the edit would change nothing; "
+    .. "change it in your config"
 end
 
 -- Remember an edit that renames or removes what slots.lua names (a slot, an
@@ -796,7 +797,7 @@ local function editable_slots(engine)
     return nil, NO_DATA
   end
   if not edit.editable(read_only_paths(engine.cfg), "slots") then
-    return nil, "the slots are set by code in config.lua; edit them there"
+    return nil, "the slots are set by code in your config; edit them there"
   end
   return true
 end
@@ -808,7 +809,7 @@ local function editable_specs(engine, args)
   end
   local workspace = as_integer(args.workspace)
   if not edit.editable(read_only_paths(engine.cfg), "specs", workspace) then
-    return nil, "workspace " .. tostring(workspace) .. "'s specs are set by code in config.lua; edit them there"
+    return nil, "workspace " .. tostring(workspace) .. "'s specs are set by code in your config; edit them there"
   end
   return workspace
 end
@@ -1097,7 +1098,7 @@ local function section_editable(engine, section, name, what)
     return nil, NO_DATA
   end
   if not edit.editable(read_only_paths(engine.cfg), section, name) then
-    return nil, what .. " is set by code in config.lua; edit it there"
+    return nil, what .. " is set by code in your config; edit it there"
   end
   return true
 end
@@ -1425,7 +1426,7 @@ function M.new_desk(engine, name, selectors, layout, screens, trees)
   end
   local read_only = read_only_paths(engine.cfg)
   if not edit.editable(read_only, "desks", name) or (trees and not edit.editable(read_only, "layouts", layout)) then
-    return nil, "config.lua sets the desks or layouts by code"
+    return nil, "your config sets the desks or layouts by code"
   end
   local data, err = engine.data, nil
   if trees then
@@ -1519,7 +1520,7 @@ function handlers.set_trees(engine, args)
     return fail(err)
   end
   if not engine.data then
-    return fail("config.lua loads no " .. DATA_FILE .. ", so there is nothing the editor may change")
+    return fail(NO_DATA)
   end
   local n = as_workspace(args.workspace)
   if type(args.trees) ~= "table" then
@@ -1622,11 +1623,11 @@ local function saved_data(engine)
   local path = (engine.config_dir or config.dir()) .. "/" .. DATA_FILE
   local chunk, err = loadfile(path, "t", {})
   if not chunk then
-    return nil, "cannot read " .. DATA_FILE .. ": " .. tostring(err)
+    return nil, "cannot read the editor's saved data: " .. tostring(err)
   end
   local ok, data = pcall(chunk)
   if not ok or type(data) ~= "table" then
-    return nil, "cannot read " .. DATA_FILE .. ": " .. (ok and "it returns no table" or tostring(data))
+    return nil, "cannot read the editor's saved data: " .. (ok and "it returns no table" or tostring(data))
   end
   local ok_monitors, monitors = pcall(adapter.monitors)
   return migrate.data(data, ok_monitors and monitors or nil) -- read as load_data reads it
@@ -1656,7 +1657,7 @@ function handlers.reset(engine, args)
     return fail(err)
   end
   if not engine.data then
-    return fail("config.lua loads no " .. DATA_FILE .. ", so there is nothing the editor may change")
+    return fail(NO_DATA)
   end
   local n, screen = as_workspace(args.workspace), as_screen(args.screen)
   local saved, migrated_or_err = saved_data(engine)

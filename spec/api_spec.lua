@@ -247,7 +247,7 @@ return { slots = data.slots, specs = data.specs, desks = data.desks, layouts = l
       })
       local reply = call("set_tree", { workspace = 3, screen = 1, tree = "h[a, b]" })
       assert.is_false(reply.ok)
-      assert.matches("layout 'solo' is set by code in config.lua", reply.error)
+      assert.matches("layout 'solo' is set by code in your config", reply.error)
     end)
 
     it("announces the change with a custom event", function()
@@ -492,7 +492,8 @@ return { slots = data.slots, specs = data.specs, desks = data.desks, layouts = l
       setup({ ["config.lua"] = "return { slots = {}, desks = {}, layouts = {} }" })
       local reply = call("save")
       assert.is_false(reply.ok)
-      assert.matches("slots.lua", reply.error)
+      assert.matches("loads no editor data", reply.error)
+      assert.is_nil(reply.error:find(".lua", 1, true), "no file names")
     end)
 
     it("announces the save", function()
