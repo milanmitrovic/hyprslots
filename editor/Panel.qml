@@ -222,7 +222,7 @@ Item {
       var kept = row.kind !== "window"
       return Assignment.slotText(row) + "|" + (kept ? Assignment.specText(row) : row.cls) + "|"
         + (kept ? Assignment.titleText(row) : "window")
-    }).join("; ") + (assignmentView.placeNoteText !== "" ? " | " + assignmentView.placeNoteText : "")
+    }).join("; ")
   }
 
   // The Layout view's draft trees, "1: h[a, b]; 2: c" (edited ones marked

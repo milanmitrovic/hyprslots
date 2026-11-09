@@ -12,10 +12,7 @@
 //
 // A row is
 //   { kind: "window" | "missing" | "empty", status, address, cls, title,
-//     workspaceId, workspace, slot, screen, spec, placed }
-// (placed false: a global slot no tree of the active layout places on the
-// workspace, listed after the placed ones and looking just like them; `a`
-// into it places it)
+//     workspaceId, workspace, slot, screen, spec }
 // (workspaceId the Hyprland workspace id the window is on, workspace the
 // number 1 to 10 of its slot or its workspace, screen its screen number on
 // the active desk)
@@ -69,11 +66,11 @@ function slotNames(state) {
   return list.map(function(s) { return s.name })
 }
 
-// The slots of a workspace as [{ slot, screen, placed }]: those the active
-// layout's trees for it place (its own, else the default ones), in tree
-// order, screen by screen, then every other global slot (screen null, placed
-// false), by name, with any the workspace has a spec for
-// that is no global slot among them.
+// The slots of a workspace as [{ slot, screen }]: those the active layout's
+// trees for it place (its own, else the default ones; every tree has every
+// global slot), in tree order, screen by screen, then any other global slot
+// (screen null; a layout with no tree for the workspace), by name, with any
+// the workspace has a spec for that is no global slot among them.
 function slotOrder(state, workspace) {
   var out = []
   var seen = {}
@@ -87,14 +84,14 @@ function slotOrder(state, workspace) {
     for (var s = 0; s < slots.length; s++) {
       if (!seen[slots[s]]) {
         seen[slots[s]] = true
-        out.push({ slot: slots[s], screen: r, placed: true })
+        out.push({ slot: slots[s], screen: r })
       }
     }
   }
   var others = {}
   slotNames(state).concat(Object.keys(specs)).forEach(function(name) { if (!seen[name]) others[name] = true })
   var rest = Object.keys(others).sort()
-  for (var i = 0; i < rest.length; i++) out.push({ slot: rest[i], screen: null, placed: false })
+  for (var i = 0; i < rest.length; i++) out.push({ slot: rest[i], screen: null })
   return out
 }
 
@@ -120,7 +117,6 @@ function windowRow(state, w) {
     screen: entry ? entry.screen : null,
     spec: null,
     status: w.unassigned ? "unassigned" : "none",
-    placed: true,
   }
   if (w.slot !== undefined && w.slot !== null) {
     row.workspace = w.workspace
@@ -161,7 +157,6 @@ function rows(state, workspace) {
       used[w.address] = true
       var row = windowRow(state, w)
       if (!row.screen) row.screen = slots[i].screen
-      row.placed = slots[i].placed
       out.push(row)
     } else {
       var waits = specs[slots[i].slot] !== undefined
@@ -175,7 +170,6 @@ function rows(state, workspace) {
         workspace: workspace,
         slot: slots[i].slot,
         screen: slots[i].screen,
-        placed: slots[i].placed,
         spec: specs[slots[i].slot] !== undefined ? String(specs[slots[i].slot]) : "",
       })
     }
@@ -218,8 +212,7 @@ function specText(row) {
 
 // What the Title column says: "Missing — waiting for it to open" for a
 // slot whose window is not open (the App column names the window it waits
-// for), a dash for an empty one (placed by a tree or not: they look the
-// same), else the window's title.
+// for), a dash for an empty one, else the window's title.
 function titleText(row) {
   if (row.kind === "missing") return "Missing — waiting for it to open"
   if (row.kind === "empty") return "—"
@@ -336,27 +329,16 @@ function initialPage(state, workspaceId) {
   return i < 0 ? 0 : i
 }
 
-// The line under the header on a page with slots no tree places, when other
-// desks share the active layout: `a` into one of them places it in that
-// layout, so there too. "" otherwise.
-function placeNote(state, rows) {
-  var unplaced = (rows || []).some(function(r) { return r.placed === false })
-  var l = activeLayout(state)
-  if (!unplaced || !l) return ""
-  var others = (Array.isArray(l.used_by) ? l.used_by : []).filter(function(d) { return d !== state.desk })
-  if (others.length === 0) return ""
-  return "Layout '" + state.layout + "' is also used by " + (others.length === 1 ? "desk " : "desks ") + others.join(", ")
-    + ": a on a slot its trees lack places it there too."
-}
-
-// What the message after `a` adds when take_spec placed the slot (its reply's
-// `placed`): the tree it went into, and the other desks using that layout.
-// "" when it placed nothing.
-function placedText(reply, desk) {
-  var p = reply && reply.placed
-  if (!p) return ""
-  var others = (Array.isArray(p.used_by) ? p.used_by : []).filter(function(d) { return d !== desk })
-  var where = p.shared ? "layout " + p.layout + "'s shared tree (all workspaces)" : "layout " + p.layout + ", workspace " + reply.workspace
-  return "placed " + reply.slot + " in " + where + " screen " + p.screen + ": "
-    + p.tree + (others.length ? " (also used by " + others.join(", ") + ")" : "")
+// The message after `a` (take_spec's reply): the slot the window took, the
+// window it replaced and the one that gave the slot up.
+function assignedText(state, cls, reply) {
+  var text = "Assigned " + cls + " to " + reply.slot + " on workspace " + reply.workspace
+  if (reply.replaced && reply.replaced !== reply.spec) text += " (instead of " + reply.replaced + ")"
+  if (reply.displaced) {
+    var windows = windowList(state)
+    var gone = reply.displaced
+    for (var i = 0; i < windows.length; i++) if (windows[i].address === reply.displaced) gone = windows[i].class
+    text += "; " + gone + " gave it up"
+  }
+  return text + ". Ctrl+S saves."
 }

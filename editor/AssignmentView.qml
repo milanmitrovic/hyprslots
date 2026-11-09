@@ -11,8 +11,7 @@ import "Help.js" as Help
 // of the windows on a workspace with the screen, slot, app and title of each,
 // plus a "Missing" row for every slot whose window is not running (a slot
 // the workspace has no spec for and no window in is an empty row); every
-// global slot is a row, those no tree of the workspace places looking the
-// same, and `a` into one places it in the active layout's tree; then
+// global slot is a row (every tree has every slot); then
 // the windows overflowing on the workspace and any others on it, on any
 // screen. ←/→ (or [ ]) page through workspaces 1 to N (the managed ones), the
 // digits jump to a workspace's page (0 is workspace 10); ↑/↓ select. `a` puts
@@ -68,7 +67,6 @@ Item {
     }
     return count > 1
   }
-  readonly property string placeNoteText: Assignment.placeNote(state, rows)
 
   // The controls strip (StyledText: each trigger key highlighted, Help.js).
   readonly property string accent: String(Commons.Color.accent)
@@ -167,25 +165,14 @@ Item {
   function assign(row, option) {
     if (!engine) return
     say("Assigning " + row.cls + " to " + option.slot + "…", false)
-    engine.call("take_spec", { address: row.address, workspace: option.workspace, slot: option.slot, place: true }, function(reply) {
+    engine.call("take_spec", { address: row.address, workspace: option.workspace, slot: option.slot }, function(reply) {
       if (!reply.ok) {
         say(reply.error, true)
         return
       }
-      var text = "Assigned " + row.cls + " to " + reply.slot + " on workspace " + reply.workspace
-      if (reply.replaced && reply.replaced !== reply.spec) text += " (instead of " + reply.replaced + ")"
-      if (reply.displaced) text += "; " + classOf(reply.displaced) + " gave it up"
-      var placed = Assignment.placedText(reply, state ? state.desk : "")
-      if (placed !== "") text += "; " + placed
-      say(text + ". Ctrl+S saves.", false)
+      say(Assignment.assignedText(state, row.cls, reply), false)
       selectedKey = row.address
     })
-  }
-
-  function classOf(address) {
-    var windows = state && state.windows ? state.windows : []
-    for (var i = 0; i < windows.length; i++) if (windows[i].address === address) return windows[i].class
-    return address
   }
 
   // u: the window out of its slot, and (Assignment.unassignPlan) the
@@ -290,21 +277,6 @@ Item {
       }
     }
 
-    // Slots no tree places, in a layout other desks share: a places them
-    // there too.
-    Text {
-      id: placeNote
-      width: parent.width
-      leftPadding: Style.spacing.md
-      visible: text !== ""
-      textFormat: Text.PlainText
-      wrapMode: Text.WordWrap
-      text: root.placeNoteText
-      color: Commons.Color.muted
-      font.family: root.fontFamily
-      font.pixelSize: Style.font.bodySmall
-    }
-
     // Why the editor cannot see the engine, or why the engine is off.
     Text {
       id: problem
@@ -357,7 +329,6 @@ Item {
       id: list
       width: parent.width
       height: parent.height - headerBox.height - titles.height - (problem.visible ? problem.height + parent.spacing : 0)
-        - (placeNote.visible ? placeNote.height + parent.spacing : 0)
         - parent.spacing * 2
       clip: true
       model: root.rows
