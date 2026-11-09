@@ -564,38 +564,39 @@ test("a nested container is drawn as a titled box, its children inside it", () =
   ]);
 });
 
-// A pane 1000 x 300 for a 2:1 screen, a tenth of its width kept on each side
-// for the columns beyond the screen: the screen (the viewport) is 600 x 300.
-const PANE = { x: 0, y: 0, w: 1000, h: 300 };
-const film = (text, opts) => plain(L.filmstrip(tree(text), PANE, Object.assign({ aspect: 2, peek: 0.1 }, opts)));
+// A pane 1800 x 300 for a 2:1 screen, three screen widths across it: the
+// screen (the viewport) is 600 x 300 in the middle, a screen's width of the
+// strip on each side of it.
+const PANE = { x: 0, y: 0, w: 1800, h: 300 };
+const film = (text, opts) => plain(L.filmstrip(tree(text), PANE, Object.assign({ aspect: 2, span: 3 }, opts)));
 const columns = (strip) => strip.columns.map((c) => [c.key, c.x, c.w, c.visible, !!c.selected]);
 
 test("a scroll tree is a filmstrip: columns of the screen's width in slot order, the screen a viewport over them", () => {
   const strip = film("scroll[a, b]", { selected: "a" });
-  assert.deepEqual(strip.viewport, { x: 200, y: 0, w: 600, h: 300 });
-  assert.deepEqual(columns(strip), [["a", 200, 600, 1, true], ["b", 800, 600, 0, false]]);
+  assert.deepEqual(strip.viewport, { x: 600, y: 0, w: 600, h: 300 });
+  assert.deepEqual(columns(strip), [["a", 600, 600, 1, true], ["b", 1200, 600, 0, false]]);
   assert.equal(strip.label, "scroll · full");
   assert.deepEqual([strip.columns[0].y, strip.columns[0].h], [0, 300]);
 });
 
 test("half-width columns take half the screen each, two to a screen", () => {
   const strip = film("scroll:0.5[a, b, c]", { selected: "a" });
-  assert.deepEqual(columns(strip), [["a", 200, 300, 1, true], ["b", 500, 300, 1, false], ["c", 800, 300, 0, false]]);
+  assert.deepEqual(columns(strip), [["a", 600, 300, 1, true], ["b", 900, 300, 1, false], ["c", 1200, 300, 0, false]]);
   assert.equal(strip.label, "scroll · half");
 });
 
 test("the selected column is scrolled into the screen, the least that shows it", () => {
   assert.deepEqual(columns(film("scroll:0.5[a, b, c, d]", { selected: "c" })),
-    [["a", -100, 300, 0, false], ["b", 200, 300, 1, false], ["c", 500, 300, 1, true], ["d", 800, 300, 0, false]]);
+    [["a", 300, 300, 0, false], ["b", 600, 300, 1, false], ["c", 900, 300, 1, true], ["d", 1200, 300, 0, false]]);
   assert.deepEqual(columns(film("scroll[a, b, c]", { selected: "b" })),
-    [["a", -400, 600, 0, false], ["b", 200, 600, 1, true], ["c", 800, 600, 0, false]]);
-  assert.deepEqual(columns(film("scroll[a, b, c]", { selected: "" })).map((c) => c[1]), [200, 800, 1400],
+    [["a", 0, 600, 0, false], ["b", 600, 600, 1, true], ["c", 1200, 600, 0, false]]);
+  assert.deepEqual(columns(film("scroll[a, b, c]", { selected: "" })).map((c) => c[1]), [600, 1200, 1800],
     "nothing selected: the strip starts at the screen's left edge");
 });
 
 test("a column partly on the screen says how much of it shows", () => {
   const strip = film("scroll:0.4[a, b, c]", { selected: "a" });
-  assert.deepEqual(columns(strip), [["a", 200, 240, 1, true], ["b", 440, 240, 1, false], ["c", 680, 240, 0.5, false]]);
+  assert.deepEqual(columns(strip), [["a", 600, 240, 1, true], ["b", 840, 240, 1, false], ["c", 1080, 240, 0.5, false]]);
   assert.equal(strip.label, "scroll · 40%");
 });
 
@@ -605,8 +606,13 @@ test("filmstrip columns are labelled as slots are: name and window title; other 
     [["slot", "main", "main", "editor"], ["overflow", "*", "other windows", ""], ["slot", "right", "right", ""]]);
 });
 
+test("three screen widths across: the screen is a third of a tall pane's width, centred", () => {
+  const strip = plain(L.filmstrip(tree("scroll[a]"), { x: 10, y: 20, w: 900, h: 400 }, { aspect: 16 / 9, span: 3 }));
+  assert.deepEqual(strip.viewport, { x: 310, y: 136, w: 300, h: 168 });
+});
+
 test("the screen fits the pane's height when the pane is wide", () => {
-  const strip = plain(L.filmstrip(tree("scroll[a]"), { x: 10, y: 20, w: 1000, h: 100 }, { aspect: 2, peek: 0.1 }));
+  const strip = plain(L.filmstrip(tree("scroll[a]"), { x: 10, y: 20, w: 1000, h: 100 }, { aspect: 2, span: 3 }));
   assert.deepEqual(strip.viewport, { x: 410, y: 20, w: 200, h: 100 });
 });
 

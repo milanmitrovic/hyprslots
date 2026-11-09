@@ -994,17 +994,20 @@ function rects(root, area, opts) {
 // a viewport over the strip, scrolled the least that shows the selected
 // column (none selected: the strip starts at the screen's left edge), as
 // Hyprland's scrolling layout brings the focused column into view. The
-// viewport is the largest box of the screen's `aspect` in `area` that
-// leaves `peek` of the area's width free on each side, where the columns
-// beyond the screen show. Returns { label (modeLabel), viewport: { x, y, w,
-// h }, columns: [{ kind, key, label, title?, x, y, w, h, selected, visible
-// (how much of it is on the screen, 0 to 1) }] }.
-// opts: { aspect (screen width / height), peek, selected, titles }.
+// viewport is the largest box of the screen's `aspect` that is at most
+// 1/`span` of the area's width and fits its height, centred in the area:
+// with span 3, about a screen's width of the strip shows on each side of
+// it, where the columns beyond the screen are. Returns { label
+// (modeLabel), viewport: { x, y, w, h }, columns: [{ kind, key, label,
+// title?, x, y, w, h, selected, visible (how much of it is on the screen, 0
+// to 1) }] }.
+// opts: { aspect (screen width / height), span (screen widths across the
+// area, default 1), selected, titles }.
 function filmstrip(root, area, opts) {
   opts = opts || {}
   var aspect = opts.aspect > 0 ? opts.aspect : 16 / 9
-  var peek = opts.peek || 0
-  var vw = Math.floor(Math.min(area.w * (1 - 2 * peek), area.h * aspect))
+  var span = opts.span >= 1 ? opts.span : 1
+  var vw = Math.floor(Math.min(area.w / span, area.h * aspect))
   var vh = Math.floor(vw / aspect)
   var viewport = { x: area.x + Math.floor((area.w - vw) / 2), y: area.y + Math.floor((area.h - vh) / 2), w: vw, h: vh }
   var cw = Math.round(vw * (root.width || 1))

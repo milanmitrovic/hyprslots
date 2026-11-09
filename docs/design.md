@@ -843,10 +843,10 @@ name, `×n` for a share other than 1, and the title of the window in the
 slot; a nested split is a box titled with its kind and ratio (`h 1:3`). A
 scroll branch is a **filmstrip** (`Layout.filmstrip`, node-tested): no tile
 boxes, but its columns in slot order on a horizontal strip, each as wide as
-the branch says (half or the whole screen; the pane is the screen), a
-viewport frame the size of the screen scrolled to show the selected
-column, and the columns beyond it faded, labelled in the part that peeks
-in; a quiet `scroll · half` / `scroll · full` over the frame. The picture
+the branch says (half or the whole screen), a viewport frame the size of
+the screen, a third of the picture's width and centred, so about three
+screens' widths of the strip show at once, scrolled to show the selected
+column, and the columns beyond it faded, labelled in the part that shows; a quiet `scroll · half` / `scroll · full` over the frame. The picture
 is the whole story: no tree text, ratio string or order line under it (a
 tiled tree's ratios are the `×n` shares and the split titles; a scroll
 branch has none).

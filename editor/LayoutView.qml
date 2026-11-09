@@ -1183,17 +1183,21 @@ Item {
 
               // A scroll tree: a filmstrip. Its columns, half or full screen
               // width, in slot order; the screen a viewport over them,
-              // scrolled to the selected column; columns beyond it faded.
+              // scrolled to the selected column, a third of the picture's
+              // width so a screen's width of the strip shows on each side;
+              // columns beyond it faded.
               Item {
                 id: film
                 visible: frame.scrolls
                 anchors.fill: parent
                 clip: true
                 readonly property int labelHeight: filmLabel.implicitHeight + Style.spacing.xs
+                // between neighbouring columns, half of it each side
+                readonly property int gap: Math.max(2, Style.spacing.xs)
                 readonly property var strip: frame.scrolls
                   ? Layout.filmstrip(frame.picture, { x: 0, y: labelHeight, w: width, h: height - labelHeight }, {
                     aspect: frame.aspect,
-                    peek: 0.12,
+                    span: 3,
                     selected: pane.active ? root.selectedKey : "",
                     titles: frame.titles,
                   })
@@ -1224,10 +1228,10 @@ Item {
                     // screen peeks in at the side): its label goes there
                     readonly property real shownLeft: Math.max(x, 0)
                     readonly property real shownRight: Math.min(x + width, film.width)
-                    x: modelData.x + 5
-                    y: modelData.y + 5
-                    width: Math.max(0, modelData.w - 10)
-                    height: Math.max(0, modelData.h - 10)
+                    x: modelData.x + film.gap
+                    y: modelData.y + film.gap
+                    width: Math.max(0, modelData.w - film.gap * 2)
+                    height: Math.max(0, modelData.h - film.gap * 2)
                     radius: Style.cornerRadius
                     opacity: onScreen ? 1 : 0.45
                     color: picked ? root.selectedBackground
