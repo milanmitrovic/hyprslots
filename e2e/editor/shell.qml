@@ -172,6 +172,25 @@ ShellRoot {
       return panel.layoutStripText()
     }
 
+    // The Layout tab's warning on a shared layout.
+    function sharedNote(): string {
+      return panel.layoutSharedNote()
+    }
+
+    // The Desk tab's column titles over the desks.
+    function deskColumns(): string {
+      return panel.deskColumnsText()
+    }
+
+    // How many lines the help row wraps to.
+    function helpLines(): string {
+      return String(panel.helpLines())
+    }
+
+    function layoutMode(): string {
+      return panel.layoutModeText()
+    }
+
     function press(key: string): string {
       return panel.press(key)
     }

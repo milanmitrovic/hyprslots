@@ -241,9 +241,30 @@ Item {
     return layoutView.headerLine()
   }
 
-  // The Layout view's workspace strip, "[All workspaces] 1 2 3• ...".
+  // The Layout view's workspace strip, "[All workspaces] · 1 2 3• ...".
   function layoutStripText() {
     return layoutView.stripText()
+  }
+
+  // The Layout tab's warning on a layout other desks share.
+  function layoutSharedNote() {
+    return DesksLayouts.sharedNote(layoutView.sharedWith)
+  }
+
+  // The Desk tab's column titles over the desks, " | " between them.
+  function deskColumnsText() {
+    var t = DesksLayouts.columnTitles("desk")
+    return Object.keys(t).map(function(k) { return t[k] }).join(" | ")
+  }
+
+  // How many lines the help row takes (it should take one): for the e2e smoke.
+  function helpLines() {
+    return help.lineCount
+  }
+
+  // What each pane's tree is, "1: scroll · half".
+  function layoutModeText() {
+    return layoutView.modeText()
   }
 
   // A view's prompt as one line, the refusal after " | "; the view's
