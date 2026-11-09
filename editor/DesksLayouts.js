@@ -236,6 +236,14 @@ function sharedWith(state, layout, desk) {
   return users.filter(function(name) { return name !== desk })
 }
 
+// The Layout tab's warning while other desks (`names`) use the layout it
+// edits; "" when none do. Forking is the Desk tab's.
+function sharedNote(names) {
+  if (!names || names.length === 0) return ""
+  return "Shared with desk" + (names.length > 1 ? "s " : " ") + names.join(", ")
+    + ": edits here change it there too — fork it in the Desk tab."
+}
+
 // The panel's header line, on every tab.
 function header(state) {
   if (!state || !state.desk) return "Desk: none"

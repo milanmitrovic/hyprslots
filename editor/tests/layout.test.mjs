@@ -196,29 +196,67 @@ test("/ flips every split of the tree, and leaves a scroll branch as it is", () 
   assert.equal(L.format(L.flip(tree("scroll[x, y]"))), "scroll[x, y]");
 });
 
-test("t makes the whole tree a scroll branch of its slots in order, and back as it was", () => {
-  const scrolled = L.toggleScroll(tree("h[a, v[b:2, c]:3]"));
-  assert.equal(L.format(scrolled.node), "scroll[a, b, c]");
-  assert.equal(L.format(L.toggleScroll(scrolled.node).node), "h[a, v[b:2, c]:3]");
+// t three times: tiles, then scroll half, then scroll full, then tiles.
+const cycled = (node, times) => {
+  for (let i = 0; i < times; i++) {
+    const r = L.cycleScroll(node);
+    assert.equal(r.error, undefined, r.error);
+    node = r.node;
+  }
+  return node;
+};
+
+test("t cycles tiles, scroll half, scroll full and back to the tiles it was made from", () => {
+  const tiles = tree("h[a, v[b:2, c]:3]");
+  assert.equal(L.format(cycled(tiles, 1)), "scroll:0.5[a, b, c]");
+  assert.equal(L.format(cycled(tiles, 2)), "scroll[a, b, c]");
+  assert.equal(L.format(cycled(tiles, 3)), "h[a, v[b:2, c]:3]");
   // the overflow leaf becomes the column windows with no slot take, in
   // reading order, and comes back with the tree
-  const withOverflow = L.toggleScroll(tree("h[a, v[*, b]]"));
-  assert.equal(L.format(withOverflow.node), "scroll[a, *, b]");
-  assert.equal(L.format(L.toggleScroll(withOverflow.node).node), "h[a, v[*, b]]");
-  assert.equal(edited("main", (n) => L.toggleScroll(n)), "scroll[main]");
+  const withOverflow = tree("h[a, v[*, b]]");
+  assert.equal(L.format(cycled(withOverflow, 1)), "scroll:0.5[a, *, b]");
+  assert.equal(L.format(cycled(withOverflow, 2)), "scroll[a, *, b]");
+  assert.equal(L.format(cycled(withOverflow, 3)), "h[a, v[*, b]]");
+  assert.equal(edited("main", (n) => L.cycleScroll(n)), "scroll:0.5[main]");
 });
 
-test("t back from a scroll branch whose columns changed tiles them side by side in their order", () => {
-  const scrolled = L.toggleScroll(tree("h[a, v[b, c]]"));
-  const moved = L.move(scrolled.node, "a", "right");
-  assert.equal(L.format(moved.node), "scroll[b, a, c]");
-  assert.equal(L.format(L.toggleScroll(moved.node).node), "h[b, a, c]");
-  // one parsed as text has no tree to go back to: side by side
-  assert.equal(edited("scroll[x, y]", (n) => L.toggleScroll(n)), "h[x, y]");
+test("t on a scroll tree keeps its columns in their order", () => {
+  const half = cycled(tree("h[a, v[b, c]]"), 1);
+  const moved = L.move(half, "a", "right").node;
+  assert.equal(L.format(moved), "scroll:0.5[b, a, c]");
+  assert.equal(L.format(cycled(moved, 1)), "scroll[b, a, c]");
+  // columns no longer as they were: back to tiles side by side, in their order
+  assert.equal(L.format(cycled(moved, 2)), "h[b, a, c]");
+  // read as text, there is no tree to go back to
+  assert.equal(edited("scroll:0.5[x, y]", (n) => L.cycleScroll(n)), "scroll[x, y]");
+  assert.equal(edited("scroll[x, y]", (n) => L.cycleScroll(n)), "h[x, y]");
+  assert.equal(edited("scroll[x]", (n) => L.cycleScroll(n)), "x");
+});
+
+test("t on a scroll tree of any other width makes it full width", () => {
+  assert.equal(edited("scroll:0.33[x, y]", (n) => L.cycleScroll(n)), "scroll[x, y]");
+  assert.equal(edited("scroll:0.75[x, *]", (n) => L.cycleScroll(n)), "scroll[x, *]");
+});
+
+test("what a tree is, and what t makes of it, as the view words them", () => {
+  assert.equal(L.scrollMode(tree("h[a, b]")), "tiles");
+  assert.equal(L.scrollMode(tree("a")), "tiles");
+  assert.equal(L.scrollMode(tree("scroll:0.5[a]")), "half");
+  assert.equal(L.scrollMode(tree("scroll[a]")), "full");
+  assert.equal(L.scrollMode(tree("scroll:0.33[a]")), "other");
+  assert.equal(L.modeLabel(tree("h[a, b]")), "tiles");
+  assert.equal(L.modeLabel(tree("scroll:0.5[a]")), "scroll · half");
+  assert.equal(L.modeLabel(tree("scroll[a]")), "scroll · full");
+  assert.equal(L.modeLabel(tree("scroll:0.33[a]")), "scroll · 33%");
+  assert.equal(L.cycleLabel(tree("h[a, b]")), "scroll half");
+  assert.equal(L.cycleLabel(tree("scroll:0.5[a]")), "scroll full");
+  assert.equal(L.cycleLabel(tree("scroll[a]")), "tiles");
+  assert.equal(L.cycleLabel(tree("scroll:0.33[a]")), "scroll full");
+  assert.equal(L.cycleLabel(null), "scroll half");
 });
 
 test("t refuses a tree with no slot to scroll", () => {
-  assert.match(refused("*", (n) => L.toggleScroll(n)), /nothing to scroll/);
+  assert.match(refused("*", (n) => L.cycleScroll(n)), /nothing to scroll/);
 });
 
 // --- other windows (windows assigned to no slot): o shows or hides their place --
@@ -335,6 +373,40 @@ end`;
         + (applied.error ? "error: " + applied.error : L.format(applied.node));
     }
     assert.equal(js, lua[i], `${text} at ${JSON.stringify(entry)}`);
+  });
+});
+
+test("appendSlots adds slots as the engine's tree.append does: root split children, or columns before a trailing *", () => {
+  assert.equal(edited("h[a, b:2]", (n) => ({ node: L.appendSlots(n, ["x", "y"]) })), "h[a, b:2, x, y]");
+  assert.equal(edited("v[a, h[b, c]]", (n) => ({ node: L.appendSlots(n, ["x"]) })), "v[a, h[b, c], x]");
+  assert.equal(edited("main", (n) => ({ node: L.appendSlots(n, ["x"]) })), "h[main, x]");
+  assert.equal(edited("scroll:0.5[a, *]", (n) => ({ node: L.appendSlots(n, ["x"]) })), "scroll:0.5[a, x, *]");
+  assert.equal(edited("scroll[*, a]", (n) => ({ node: L.appendSlots(n, ["x"]) })), "scroll[*, a, x]");
+  assert.equal(edited("h[a, *]", (n) => ({ node: L.appendSlots(n, ["x"]) })), "h[a, *, x]");
+  assert.equal(edited("h[a, b]", (n) => ({ node: L.appendSlots(n, []) })), "h[a, b]");
+  const given = tree("h[a, b]");
+  L.appendSlots(given, ["x"]);
+  assert.equal(L.format(given), "h[a, b]", "the tree given is untouched");
+});
+
+test("appendSlots gives what tree.append gives", { skip: !LUA && "no lua" }, () => {
+  const cases = [["h[a, b:2]", "x,y"], ["v[a, h[b, c]]", "x"], ["main", "x"], ["*", "x"], ["scroll:0.5[a, *]", "x,y"],
+    ["scroll[*, a]", "x"], ["scroll[a]", "x"], ["h[a, *]", "x"], ["h[a:3, v[b, c]:2]", "x"], ["h[a, b]", ""]];
+  const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+  const script = `
+package.path = "${root}/lua/?.lua;" .. package.path
+local tree, serialize = require("hyprslots.tree"), require("hyprslots.serialize")
+for line in io.lines() do
+  local text, list = line:match("^(.-)\\t(.*)$")
+  local slots = {}
+  for s in list:gmatch("[^,]+") do slots[#slots + 1] = s end
+  print(serialize.tree(tree.append(assert(tree.parse(text)), slots)))
+end`;
+  const run = spawnSync(LUA, ["-e", script], { input: cases.map((c) => c.join("\t")).join("\n") + "\n", encoding: "utf8" });
+  assert.equal(run.status, 0, run.stderr);
+  const lua = run.stdout.trimEnd().split("\n");
+  cases.forEach(([text, list], i) => {
+    assert.equal(L.format(L.appendSlots(tree(text), list ? list.split(",") : [])), lua[i], `${text} + ${list}`);
   });
 });
 
@@ -482,23 +554,50 @@ test("a nested container is drawn as a titled box, its children inside it", () =
   ]);
 });
 
-test("a scroll branch is a filmstrip: its columns side by side in order, numbered, no tabs", () => {
-  const rects = plain(L.rects(tree("scroll[x, y, z]"), { x: 0, y: 0, w: 301, h: 100 }, { pad: 4, title: 10, selected: "y" }));
-  assert.deepEqual(rects.map((r) => [r.kind, r.key, r.x, r.y, r.w, r.h, r.label, r.column, !!r.selected]), [
-    ["slot", "x", 0, 0, 100, 100, "1. x", 1, false],
-    ["slot", "y", 100, 0, 100, 100, "2. y", 2, true],
-    ["slot", "z", 200, 0, 101, 100, "3. z", 3, false],
-  ]);
-  assert.equal(rects.some((r) => r.kind === "tab"), false);
+// A pane 1000 x 300 for a 2:1 screen, a tenth of its width kept on each side
+// for the columns beyond the screen: the screen (the viewport) is 600 x 300.
+const PANE = { x: 0, y: 0, w: 1000, h: 300 };
+const film = (text, opts) => plain(L.filmstrip(tree(text), PANE, Object.assign({ aspect: 2, peek: 0.1 }, opts)));
+const columns = (strip) => strip.columns.map((c) => [c.key, c.x, c.w, c.visible, !!c.selected]);
+
+test("a scroll tree is a filmstrip: columns of the screen's width in slot order, the screen a viewport over them", () => {
+  const strip = film("scroll[a, b]", { selected: "a" });
+  assert.deepEqual(strip.viewport, { x: 200, y: 0, w: 600, h: 300 });
+  assert.deepEqual(columns(strip), [["a", 200, 600, 1, true], ["b", 800, 600, 0, false]]);
+  assert.equal(strip.label, "scroll · full");
+  assert.deepEqual([strip.columns[0].y, strip.columns[0].h], [0, 300]);
 });
 
-test("a scroll branch's column for other windows is a frame of the filmstrip where it stands", () => {
-  const rects = plain(L.rects(tree("scroll[x, *, z]"), { x: 0, y: 0, w: 300, h: 100 }, { selected: "*" }));
-  assert.deepEqual(rects.map((r) => [r.kind, r.key, r.x, r.w, r.label, r.column, !!r.selected]), [
-    ["slot", "x", 0, 100, "1. x", 1, false],
-    ["overflow", "*", 100, 100, "2. other windows", 2, true],
-    ["slot", "z", 200, 100, "3. z", 3, false],
-  ]);
+test("half-width columns take half the screen each, two to a screen", () => {
+  const strip = film("scroll:0.5[a, b, c]", { selected: "a" });
+  assert.deepEqual(columns(strip), [["a", 200, 300, 1, true], ["b", 500, 300, 1, false], ["c", 800, 300, 0, false]]);
+  assert.equal(strip.label, "scroll · half");
+});
+
+test("the selected column is scrolled into the screen, the least that shows it", () => {
+  assert.deepEqual(columns(film("scroll:0.5[a, b, c, d]", { selected: "c" })),
+    [["a", -100, 300, 0, false], ["b", 200, 300, 1, false], ["c", 500, 300, 1, true], ["d", 800, 300, 0, false]]);
+  assert.deepEqual(columns(film("scroll[a, b, c]", { selected: "b" })),
+    [["a", -400, 600, 0, false], ["b", 200, 600, 1, true], ["c", 800, 600, 0, false]]);
+  assert.deepEqual(columns(film("scroll[a, b, c]", { selected: "" })).map((c) => c[1]), [200, 800, 1400],
+    "nothing selected: the strip starts at the screen's left edge");
+});
+
+test("a column partly on the screen says how much of it shows", () => {
+  const strip = film("scroll:0.4[a, b, c]", { selected: "a" });
+  assert.deepEqual(columns(strip), [["a", 200, 240, 1, true], ["b", 440, 240, 1, false], ["c", 680, 240, 0.5, false]]);
+  assert.equal(strip.label, "scroll · 40%");
+});
+
+test("filmstrip columns are labelled as slots are: name and window title; other windows' column where it stands", () => {
+  const strip = film("scroll:0.5[main, *, right]", { selected: "*", titles: { main: "editor" } });
+  assert.deepEqual(strip.columns.map((c) => [c.kind, c.key, c.label, c.title || ""]),
+    [["slot", "main", "main", "editor"], ["overflow", "*", "other windows", ""], ["slot", "right", "right", ""]]);
+});
+
+test("the screen fits the pane's height when the pane is wide", () => {
+  const strip = plain(L.filmstrip(tree("scroll[a]"), { x: 10, y: 20, w: 1000, h: 100 }, { aspect: 2, peek: 0.1 }));
+  assert.deepEqual(strip.viewport, { x: 410, y: 20, w: 200, h: 100 });
 });
 
 test("the ratio prompt names the current ratio, and refuses a tree with nothing to divide", () => {
@@ -507,40 +606,40 @@ test("the ratio prompt names the current ratio, and refuses a tree with nothing 
   assert.equal(L.ratioPrompt(tree("h[a, b]")).text,
     "Ratios for the whole tree (current 1:1; empty clears all) [Enter] set  [Esc] cancel: ");
   assert.match(L.ratioPrompt(tree("main")).error, /Nothing to divide/);
-  assert.match(L.ratioPrompt(tree("scroll[x, y]")).error,
-    /Ratios don't apply to a scroll branch — each of its columns is full width \(\*:\*\)\. Press t for tiles first\./);
+  assert.equal(L.ratioPrompt(tree("scroll[x, y]")).error,
+    "Ratios are for tiles: each column of a scroll tree is a set width of the screen (full here). t cycles to tiles.");
+  assert.equal(L.ratioPrompt(tree("scroll:0.5[x, y]")).error,
+    "Ratios are for tiles: each column of a scroll tree is a set width of the screen (half here). t cycles to tiles.");
 });
 
-// --- adding and removing slots (global slots) --------------------------------
+// --- drafts follow the slot list (global slots) -----------------------------
 
-test("a adds a slot right after the selected leaf, in its container", () => {
-  assert.equal(edited("h[a, b:2, c]", (n) => L.addSlot(n, "b", "x")), "h[a, b:2, x, c]");
-  assert.equal(edited("h[a, v[b, c]]", (n) => L.addSlot(n, "b", "x")), "h[a, v[b, x, c]]");
-  assert.equal(edited("scroll[a, b]", (n) => L.addSlot(n, "a", "x")), "scroll[a, x, b]");
-  assert.equal(edited("h[a, *]", (n) => L.addSlot(n, "*", "x")), "h[a, *, x]");
-});
-
-test("a on a tree that is one leaf splits it side by side; on a screen with no tree the slot is the tree", () => {
-  assert.equal(edited("main", (n) => L.addSlot(n, "main", "x")), "h[main, x]");
-  assert.equal(L.format(L.addSlot(null, "", "x").node), "x");
-});
-
-test("a refuses a slot the tree already has", () => {
-  assert.match(refused("h[a, b]", (n) => L.addSlot(n, "a", "b")), /already/);
-});
-
-test("x takes the selected slot out of the tree, tidied; the last leaf leaves no tree", () => {
+test("a deleted slot leaves a draft tidied; the last leaf leaves no tree; other windows keep their place", () => {
   assert.equal(edited("h[a, v[b, c]:2]", (n) => L.removeSlot(n, "b")), "h[a, c:2]");
   assert.equal(edited("scroll[a, b]", (n) => L.removeSlot(n, "a")), "scroll[b]");
   assert.equal(L.removeSlot(tree("a"), "a").node, null);
   assert.match(refused("h[a, *]", (n) => L.removeSlot(n, "*")), /other windows always have a place/);
 });
 
-test("the slots a adds are the global ones no pane of the workspace places yet", () => {
-  const state = { slots: [{ name: "left" }, { name: "main" }, { name: "right" }, { name: "side" }] };
-  const drafts = { 1: { node: tree("h[main, right]") }, 2: { node: null }, 3: { node: tree("left") } };
-  assert.deepEqual(plain(L.slotChoices(state, drafts)), ["side"]);
-  assert.deepEqual(plain(L.slotChoices(null, drafts)), []);
+test("an edited draft follows a new slot onto the screen whose tree in force has it now", () => {
+  const drafts = {
+    1: { node: tree("h[b, a]"), base: "h[a, b]" }, // edited
+    2: { node: tree("c"), base: "c" }, // not edited: it takes the engine's tree on the re-read
+    3: { node: null, base: null },
+  };
+  const panes = [{ key: "1", tree: "h[a, b, notes]" }, { key: "2", tree: "c" }, { key: "3", tree: null }];
+  const out = L.followNewSlot(drafts, panes, "notes");
+  assert.equal(L.format(out[1].node), "h[b, a, notes]");
+  assert.equal(out[1].base, "h[a, b]", "still edited against what it started from");
+  assert.equal(out[2], drafts[2]);
+  assert.equal(out[3], drafts[3]);
+  assert.equal(L.format(drafts[1].node), "h[b, a]", "the drafts given are untouched");
+  const scroll = { 1: { node: tree("scroll:0.5[b, a, *]"), base: "scroll:0.5[a, b, *]" } };
+  assert.equal(L.format(L.followNewSlot(scroll, [{ key: "1", tree: "scroll:0.5[a, b, notes, *]" }], "notes")[1].node),
+    "scroll:0.5[b, a, notes, *]");
+  const has = { 1: { node: tree("h[notes, a]"), base: "h[a]" } };
+  assert.equal(L.format(L.followNewSlot(has, [{ key: "1", tree: "h[a, notes]" }], "notes")[1].node), "h[notes, a]",
+    "a draft that has it already keeps it where it is");
 });
 
 test("the screen whose draft places a slot, null when no screen of the workspace does", () => {
@@ -555,4 +654,51 @@ test("a slot renamed in a draft keeps its place and weight", () => {
   assert.equal(edited("h[main:2, v[right, *]]", (n) => ({ node: L.renameSlot(n, "right", "aside") })), "h[main:2, v[aside, *]]");
   assert.equal(edited("scroll[a, b]", (n) => ({ node: L.renameSlot(n, "a", "x") })), "scroll[x, b]");
   assert.equal(edited("main", (n) => ({ node: L.renameSlot(n, "other", "x") })), "main");
+});
+
+// --- the help row: one line at the panel's width ----------------------------
+
+const H = load("Help.js");
+// The row as it reads on screen: StyledText collapses runs of spaces.
+const helpLine = (groups) => H.plain(H.row(groups, "#fff")).replace(/\s+/g, " ");
+// What fits on one line of the panel (1100 px wide, its 11 px font).
+const ONE_LINE = 150;
+
+test("the picture's help row: no add, take out or fork; d reverts; t says what it makes next", () => {
+  const line = helpLine(L.pictureHelp({ node: tree("h[a, b]"), hasOwn: true, jumpKeys: "1–9 0" }));
+  assert.equal(line, "←↑↓→ select hjkl/HJKL move / flip t scroll half ratios other windows · w apply d revert Record "
+    + "use shared · slots · [ ] 1–9 0 - workspace · Tab view");
+  assert.ok(line.length <= ONE_LINE, `${line.length} characters: ${line}`);
+  assert.doesNotMatch(line, /add|take out|fork|\.lua/);
+});
+
+test("r and ratios show on tiles only; t names the next of tiles, scroll half, scroll full", () => {
+  const half = helpLine(L.pictureHelp({ node: tree("scroll:0.5[a, b]"), hasOwn: false, jumpKeys: "1–9" }));
+  assert.equal(half, "←↑↓→ select hjkl/HJKL move / flip t scroll full other windows · w apply d revert Record · slots · "
+    + "[ ] 1–9 - workspace · Tab view");
+  assert.match(helpLine(L.pictureHelp({ node: tree("scroll[a, b]"), hasOwn: false, jumpKeys: "1–9" })), / t tiles /);
+  assert.match(helpLine(L.pictureHelp({ node: null, hasOwn: false, jumpKeys: "1–9" })), / t scroll half ratios /);
+});
+
+test("the trigger keys are highlighted in the help row", () => {
+  const styled = H.row(L.pictureHelp({ node: tree("h[a, b]"), hasOwn: true, jumpKeys: "1–9" }), "#fff");
+  const k = (key) => `<b><font color="#fff">${key}</font></b>`;
+  for (const part of [k("t") + " scroll half", k("r") + "atios", k("o") + "ther windows", k("d") + " revert",
+    k("R") + "ecord", k("u") + "se shared", k("s") + "lots", k("hjkl/HJKL") + " move", k("[ ] 1–9 -") + " workspace"]) {
+    assert.ok(styled.includes(part), `${part} in ${styled}`);
+  }
+});
+
+test("the slot list's help row: add, rename, describe, delete, Return shows it in the picture, one line", () => {
+  const line = helpLine(L.slotListHelp({ jumpKeys: "1–9 0" }));
+  assert.equal(line, "↑/↓ select add rename describe delete Return show in the picture · s/Esc back · [ ] 1–9 0 - workspace · Tab view");
+  assert.ok(line.length <= ONE_LINE);
+});
+
+test("d reverts a tree to how it was last saved, asking first, in words with no file names", () => {
+  assert.equal(L.revertQuestion(3, "1"), "Revert workspace 3's tree on screen 1 to how it was last saved? Its unsaved edits go.");
+  assert.equal(L.revertQuestion("default", "2"),
+    "Revert the shared tree on screen 2 to how it was last saved? Its unsaved edits go.");
+  assert.equal(L.revertedText(3, "1", "h[a, b]"), "Reverted workspace 3's tree on screen 1: h[a, b].");
+  assert.equal(L.revertedText("default", "1", null), "Reverted the shared tree on screen 1: no tree.");
 });

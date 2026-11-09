@@ -200,6 +200,13 @@ test("the other desks that use a layout, for the warning that an edit changes it
   assert.deepEqual(plain(D.sharedWith(fixture(), "nope", "docked")), []);
 });
 
+test("the Layout tab's warning on a shared layout points to the Desk tab for a fork", () => {
+  assert.equal(D.sharedNote(["office"]), "Shared with desk office: edits here change it there too — fork it in the Desk tab.");
+  assert.equal(D.sharedNote(["office", "travel"]),
+    "Shared with desks office, travel: edits here change it there too — fork it in the Desk tab.");
+  assert.equal(D.sharedNote([]), "");
+});
+
 test("a read-only row refuses edits, saying where it is set", () => {
   const rows = D.rows(fixture());
   assert.equal(D.readOnlyError(rows[2]), "Desk 'office' is set in your config.");

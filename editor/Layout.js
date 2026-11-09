@@ -550,7 +550,7 @@ function move(root, key, direction) {
   return { node: out, changed: true }
 }
 
-var SCROLL_SLOTS = "a scroll branch holds slots only (full-width columns in order); press t for tiles first"
+var SCROLL_SLOTS = "a scroll branch holds slots only (its columns in order); t cycles to tiles"
 
 // H J K L (force_move_node). Along its container: pair the leaf with its
 // neighbour that way in a new container across it. Across its container:
@@ -602,13 +602,46 @@ function flip(root) {
   return out
 }
 
-// t: the whole tree as a scroll branch, its leaves in reading order as
-// full-width scrolling columns (the overflow leaf as the column windows with
-// no slot take), or a scroll branch back to the tree it was made from when
-// its columns are as they were, else its columns side by side.
-// { node } or { error }.
-function toggleScroll(root) {
-  if (root.kind === "scroll") {
+// The width t gives a tiled tree first: half the screen per column.
+var HALF = 0.5
+
+// What a tree is to t: "tiles", a scroll branch of "half" or "full"
+// screen-width columns, or one of an "other" width.
+function scrollMode(node) {
+  if (!node || node.kind !== "scroll") return "tiles"
+  if (!node.width) return "full"
+  return node.width === HALF ? "half" : "other"
+}
+
+// What the view calls a tree: "tiles", "scroll · half", "scroll · full",
+// "scroll · 33%".
+function modeLabel(node) {
+  var mode = scrollMode(node)
+  if (mode === "tiles") return "tiles"
+  if (mode === "other") return "scroll · " + Math.round(node.width * 100) + "%"
+  return "scroll · " + mode
+}
+
+// What t makes of a tree, for the help row.
+function cycleLabel(node) {
+  var mode = scrollMode(node)
+  return mode === "tiles" ? "scroll half" : mode === "full" ? "tiles" : "scroll full"
+}
+
+// t: tiles -> scroll half -> scroll full -> tiles. The whole tree becomes a
+// scroll branch of its leaves in reading order, half-width columns (the
+// overflow leaf as the column windows with no slot take); then the same
+// columns full width (a scroll branch of any other width goes to full);
+// then back to the tree it was made from when its columns are as they were,
+// else its columns side by side. { node } or { error }.
+function cycleScroll(root) {
+  var mode = scrollMode(root)
+  if (mode === "half" || mode === "other") {
+    var full = copy(root)
+    delete full.width
+    return { node: full }
+  }
+  if (mode === "full") {
     var columns = leaves(root).join(",")
     if (root.was && root.was.columns === columns) {
       var back = parse(root.was.text)
@@ -623,7 +656,7 @@ function toggleScroll(root) {
   var keys = leaves(root)
   if (!keys.some(function(key) { return key !== OVERFLOW })) return { error: "this tree has only other windows: nothing to scroll" }
   return { node: {
-    kind: "scroll", weight: 1,
+    kind: "scroll", weight: 1, width: HALF,
     children: keys.map(function(key) {
       return key === OVERFLOW ? { kind: "overflow", weight: 1 } : { kind: "slot", slot: key, weight: 1 }
     }),
@@ -709,42 +742,52 @@ function crossMove(source, target, key, direction) {
   return { source: rest, target: rooted(into) }
 }
 
-// a: slot `slot` added right after the leaf `key` in its container (a
-// tree that is one leaf becomes h[leaf, slot]; no tree at all, `root` null,
-// becomes the slot alone). { node } or { error }.
-function addSlot(root, key, slot) {
-  var leaf = { kind: "slot", slot: slot, weight: 1 }
-  if (!root) return { node: leaf }
-  if (leaves(root).indexOf(slot) >= 0) return { error: "this tree places " + slot + " already" }
-  var out = copy(root)
-  var path = pathTo(out, key)
-  if (!path || path.length < 2) {
-    out.weight = 1
-    return { node: { kind: "h", weight: 1, children: [out, leaf] } }
-  }
-  var parent = path[path.length - 2].node
-  parent.children.splice(path[path.length - 1].index + 1, 0, leaf)
-  return { node: out }
-}
-
-// x: the slot `key` taken out of the tree, tidied ({ node: null } when it
-// was all of it). Never the place for other windows. { node } or { error }.
+// The slot `key` taken out of a tree, tidied ({ node: null } when it was
+// all of it): an edited draft following the slot list's delete. Never the
+// place for other windows. { node } or { error }.
 function removeSlot(root, key) {
   if (key === OVERFLOW) return { error: "other windows always have a place in the tree: o only hides it from the picture" }
   if (isLeaf(root)) return { node: null }
   return { node: takeOut(root, key).node }
 }
 
-// The global slots (state.slots) no pane's draft of the workspace places
-// yet: what `a` offers. `drafts` is screen key ("1") -> { node }.
-function slotChoices(state, drafts) {
-  var placed = {}
-  for (var screen in drafts || {}) {
-    var d = drafts[screen]
-    if (d && d.node) leaves(d.node).forEach(function(k) { placed[k] = true })
+// The tree with `slots` added as tree.append adds the global slots a tree
+// lacks: new children at the end of its root split (a tree that is one leaf
+// becomes h[leaf, ...]), or a scroll branch's last columns, before a
+// trailing * (other windows stay the last column).
+function appendSlots(root, slots) {
+  if (!slots || slots.length === 0) return copy(root)
+  var out
+  if (isLeaf(root)) {
+    var leaf = copy(root)
+    leaf.weight = 1
+    out = { kind: "h", weight: root.weight || 1, children: [leaf] }
+  } else {
+    out = copy(root)
   }
-  var list = state && Array.isArray(state.slots) ? state.slots : []
-  return list.map(function(s) { return s.name }).filter(function(name) { return !placed[name] })
+  var at = out.children.length
+  if (out.kind === "scroll" && out.children[at - 1].kind === "overflow") at--
+  slots.forEach(function(slot) {
+    out.children.splice(at, 0, { kind: "slot", slot: slot, weight: 1 })
+    at++
+  })
+  return out
+}
+
+// The drafts (screen key -> { node, base }) after the slot list made slot
+// `slot`, which the engine puts into every tree: an edited draft gets it
+// (appendSlots) when its screen's tree in force (`panes`, as panes() reads
+// the state) has it now; the others take the engine's trees on the re-read.
+function followNewSlot(drafts, panes, slot) {
+  var out = {}
+  for (var k in drafts) out[k] = drafts[k]
+  ;(panes || []).forEach(function(p) {
+    var d = out[p.key]
+    if (!d || !d.node || format(d.node) === d.base || leaves(d.node).indexOf(slot) >= 0 || p.tree === null) return
+    var inForce = parse(p.tree)
+    if (inForce.node && leaves(inForce.node).indexOf(slot) >= 0) out[p.key] = { node: appendSlots(d.node, [slot]), base: d.base }
+  })
+  return out
 }
 
 // The screen key whose draft places slot `slot` (drafts: "1" -> { node }),
@@ -888,13 +931,11 @@ function containerLabel(node) {
 
 // The picture of a tree laid over `area`, as rectangles in drawing order:
 //   { kind: "slot" | "overflow" | "h" | "v", key?, x, y, w, h, depth, label,
-//     title?, selected?, column? }
+//     title?, selected? }
 // Boxes are proportional to the weights in whole pixels (tree.lua's
 // arithmetic: the remainder goes to the last child). A nested container is a
 // box titled with its kind and ratio, its children inset by `pad` (and
-// `title` more at the top). A scroll branch is a filmstrip: its columns side
-// by side in equal frames, numbered in order (`column`, from 1), each
-// standing for a full-width column of the screen.
+// `title` more at the top). For tiles: a scroll tree is a filmstrip.
 // opts: { pad, title, selected, titles }.
 function rects(root, area, opts) {
   opts = opts || {}
@@ -913,18 +954,6 @@ function rects(root, area, opts) {
   }
 
   function inside(node, box, depth) {
-    if (node.kind === "scroll") {
-      var offset = 0
-      node.children.forEach(function(child, i) {
-        var w = i === node.children.length - 1 ? box.w - offset : Math.floor(box.w / node.children.length)
-        leaf(child, { x: box.x + offset, y: box.y, w: w, h: box.h }, depth)
-        var frame = out[out.length - 1]
-        frame.column = i + 1
-        frame.label = (i + 1) + ". " + frame.label
-        offset += w
-      })
-      return
-    }
     var total = node.children.reduce(function(s, c) { return s + c.weight }, 0)
     var cells = integers(node.children.map(function(c) { return c.weight }))
     var extent = node.kind === "h" ? box.w : box.h
@@ -955,15 +984,97 @@ function rects(root, area, opts) {
   return out
 }
 
+// The picture of a scroll tree: a filmstrip. Its columns stand in slot
+// order, each its `width` of the SCREEN (half, full, ...), and the screen is
+// a viewport over the strip, scrolled the least that shows the selected
+// column (none selected: the strip starts at the screen's left edge), as
+// Hyprland's scrolling layout brings the focused column into view. The
+// viewport is the largest box of the screen's `aspect` in `area` that
+// leaves `peek` of the area's width free on each side, where the columns
+// beyond the screen show. Returns { label (modeLabel), viewport: { x, y, w,
+// h }, columns: [{ kind, key, label, title?, x, y, w, h, selected, visible
+// (how much of it is on the screen, 0 to 1) }] }.
+// opts: { aspect (screen width / height), peek, selected, titles }.
+function filmstrip(root, area, opts) {
+  opts = opts || {}
+  var aspect = opts.aspect > 0 ? opts.aspect : 16 / 9
+  var peek = opts.peek || 0
+  var vw = Math.floor(Math.min(area.w * (1 - 2 * peek), area.h * aspect))
+  var vh = Math.floor(vw / aspect)
+  var viewport = { x: area.x + Math.floor((area.w - vw) / 2), y: area.y + Math.floor((area.h - vh) / 2), w: vw, h: vh }
+  var cw = Math.round(vw * (root.width || 1))
+  var keys = root.children.map(keyOf)
+  var at = keys.indexOf(opts.selected)
+  var offset = at >= 0 ? Math.max(0, (at + 1) * cw - vw) : 0
+  var columns = root.children.map(function(child, i) {
+    var key = keyOf(child)
+    var x = viewport.x + i * cw - offset
+    var shown = Math.max(0, Math.min(x + cw, viewport.x + vw) - Math.max(x, viewport.x))
+    var c = { kind: child.kind, key: key, label: child.kind === "overflow" ? "other windows" : child.slot,
+      x: x, y: viewport.y, w: cw, h: vh, selected: key === opts.selected, visible: cw > 0 ? shown / cw : 0 }
+    if (opts.titles && opts.titles[key]) c.title = opts.titles[key]
+    return c
+  })
+  return { label: modeLabel(root), viewport: viewport, columns: columns }
+}
+
 // The ratio prompt for a tree (aerolayout's [r]): { text } or { error } when
 // there is nothing a ratio could divide.
 function ratioPrompt(root) {
   if (isLeaf(root)) return { error: "Nothing to divide — this layout is one window." }
-  var current = ratio(root)
   if (root.kind === "scroll") {
-    return { error: "Ratios don't apply to a scroll branch — each of its columns is full width (" + current
-      + "). Press t for tiles first." }
+    var mode = scrollMode(root)
+    var width = mode === "other" ? Math.round(root.width * 100) + "%" : mode
+    return { error: "Ratios are for tiles: each column of a scroll tree is a set width of the screen (" + width
+      + " here). t cycles to tiles." }
   }
+  var current = ratio(root)
   var hints = ["current " + current, "empty clears all"]
   return { text: "Ratios for the whole tree (" + hints.join("; ") + ") [Enter] set  [Esc] cancel: " }
+}
+
+// --- the help rows (Help.row groups): each one line at the panel's width ----
+
+function workspaceHelp(jumpKeys) {
+  return [[{ key: "[ ] " + jumpKeys + " -", label: "workspace" }], [{ key: "Tab", label: "view" }]]
+}
+
+// The picture's keys. opts: { node (the selected pane's draft: t names
+// what it makes of it, r shows on tiles only), hasOwn (the workspace has
+// trees of its own: u), jumpKeys (Workspaces.jumpKeys) }.
+function pictureHelp(opts) {
+  var tiles = scrollMode(opts.node) === "tiles"
+  var tree = [{ key: "←↑↓→", label: "select" }, { key: "hjkl/HJKL", label: "move" }, { key: "/", label: "flip" },
+    { key: "t", label: cycleLabel(opts.node), before: true }]
+  if (tiles) tree.push({ key: "r", label: "ratios" })
+  tree.push({ key: "o", label: "other windows" })
+  var layout = [{ key: "w", label: "apply" }, { key: "d", label: "revert" }, { key: "R", label: "record" }]
+  if (opts.hasOwn) layout.push({ key: "u", label: "use shared" })
+  return [tree, layout, [{ key: "s", label: "slots" }]].concat(workspaceHelp(opts.jumpKeys))
+}
+
+// The slot list's keys. opts: { jumpKeys }.
+function slotListHelp(opts) {
+  return [
+    [{ key: "↑/↓", label: "select" }, { key: "a", label: "add" }, { key: "r", label: "rename" },
+      { key: "e", label: "describe" }, { key: "d", label: "delete" }, { key: "Return", label: "show in the picture" }],
+    [{ key: "s/Esc", label: "back" }],
+  ].concat(workspaceHelp(opts.jumpKeys))
+}
+
+// --- d: revert ------------------------------------------------------------------
+
+function treeName(workspace, screen) {
+  return (workspace === "default" ? "the shared tree" : "workspace " + workspace + "'s tree") + " on screen " + screen
+}
+
+// The y/n d asks: the tree of `workspace` ("default": the shared tree) on
+// `screen` back to how it was last saved (api reset), its draft and its
+// applied but unsaved edits gone.
+function revertQuestion(workspace, screen) {
+  return "Revert " + treeName(workspace, screen) + " to how it was last saved? Its unsaved edits go."
+}
+
+function revertedText(workspace, screen, tree) {
+  return "Reverted " + treeName(workspace, screen) + ": " + (tree || "no tree") + "."
 }

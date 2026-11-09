@@ -76,3 +76,10 @@ test("the help's jump keys follow the count", () => {
   assert.equal(W.jumpKeys(4), "1–4");
   assert.equal(W.jumpKeys(1), "1");
 });
+
+test("the Layout header is one strip: All workspaces, a dot, the workspaces; the current one in brackets as text", () => {
+  const state = { workspace_count: 9, layouts: { solo: { screens: 1, own: [3], default: {}, workspaces: {} } } };
+  assert.equal(W.stripLine(W.strip(state, "solo", "default")), "[All workspaces] · 1 2 3• 4 5 6 7 8 9");
+  assert.equal(W.stripLine(W.strip(state, "solo", 3)), "All workspaces · 1 2 [3•] 4 5 6 7 8 9");
+  assert.equal(W.stripLine(W.strip(state, "solo", 9)), "All workspaces · 1 2 3• 4 5 6 7 8 [9]");
+});

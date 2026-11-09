@@ -12,31 +12,33 @@ import "Help.js" as Help
 
 // One workspace's trees in the active desk's layout, edited (aerolayout's
 // LayoutView). A pane per screen 1..N of the layout, labelled with the
-// active desk's monitor at that position, each a scale model of it: boxes proportional
-// to the weights, nested containers titled with their kind and ratio, a
-// scroll branch as a filmstrip of its numbered full-width columns in order
-// (no tabs: Hyprland's scrolling layout, not a group), then the tree text and ratio
-// string. Edits go to a draft; `w` applies it (api set_trees), Ctrl+S (the
-// panel's) applies it and saves (api save), `d` puts a screen's tree back
-// to what slots.lua holds (api reset), `R` records the windows on screen
+// active desk's monitor at that position, each a scale model of it: tiles are
+// boxes proportional to the weights, nested containers titled with their kind
+// and ratio; a scroll tree is a filmstrip, its columns half or full screen
+// width in slot order with the screen a viewport over them (Layout.filmstrip).
+// Every tree has every global slot (the engine sees to it; an empty slot
+// takes no room), so there is nothing to add to a tree or take out of it. t
+// cycles a tree through tiles, scroll half and scroll full; r sets a tiled
+// tree's ratios. Edits go to a draft; `w` applies it (api set_trees), Ctrl+S
+// (the panel's) applies it and saves (api save), `d` reverts a screen's tree
+// to how it was last saved (api reset), `R` records the windows on screen
 // (api record, previewed). It opens on "All workspaces" (`-`): the layout's
 // shared (default) trees, which every workspace with none of its own uses;
 // [ ] and the digits change the workspace (Workspaces.js; a dot marks one
 // with trees of its own). A workspace on the shared trees shows them, and
 // its first edit asks whether it is for all workspaces (the shared trees)
 // or only this one (w then gives it its own); `u` drops a workspace's own
-// trees, back to the shared ones (api drop_override). `f` forks the layout
-// (the active desk then uses the copy: other desks sharing the layout see
-// every edit to it).
+// trees, back to the shared ones (api drop_override). Forking a layout
+// other desks share is the Desk tab's.
 //
 // Beside the picture, the global slots (aerolayout's logical slots), their
 // names and descriptions: `s` moves the keys to that list and back (Esc
 // too), where a makes a slot (name, then an optional description; api
-// add_slot) and offers to put it in the tree at once, Return puts the
-// selected one in the tree after the selected leaf, r renames it everywhere
-// (rename_slot), e describes it (describe_slot), d deletes it after y/n
-// naming the trees and workspaces it goes from (remove_slot). The models are
-// Layout.js and Slots.js; the calls are in docs/design.md §9.
+// add_slot: every tree gets it), Return selects the selected one in the
+// picture, r renames it everywhere (rename_slot), e describes it
+// (describe_slot), d deletes it after y/n naming the trees and workspaces it
+// goes from (remove_slot). The models are Layout.js and Slots.js; the calls
+// are in docs/design.md §9.
 Item {
   id: root
 
@@ -61,10 +63,9 @@ Item {
   property string scope: ""
   property string screen: ""
   property string selectedKey: ""
-  // The layout the view follows changes under it (a, f, x in the Desks &
-  // Desk tab, a hotplug): edited drafts are dropped, except after this
-  // view's own fork (the copy is the same trees).
-  property bool _keepDrafts: false
+  // A slot the slot list just made: edited drafts get it (appendSlots) on
+  // the screen the engine's state shows it on, once a re-read has it.
+  property string _newSlot: ""
 
   readonly property var paneList: Layout.panes(state, layout, workspace)
   // The same, computed now: a handler running on a state change can see the
@@ -110,36 +111,11 @@ Item {
   readonly property string accent: String(Commons.Color.accent)
   readonly property string helpText: {
     if (prompting) return Help.escape(Prompts.help(prompt))
-    var workspaceKeys = { title: "Workspace", items: [{ key: "[ ]", label: "prev/next" }, { key: Workspaces.jumpKeys(Workspaces.count(state)), label: "jump" },
-      { key: "-", label: "all workspaces (the shared tree)" }] }
-    if (slotFocus) {
-      return Help.row([
-        { title: "Slot list", items: [{ key: "↑/↓", label: "select" }, { key: "a", label: "new" },
-          { key: "Return", label: "put in " + (screen ? "screen " + screen + "'s" : "the") + " tree" },
-          { key: "r", label: "rename" }, { key: "e", label: "describe" }, { key: "d", label: "delete" }] },
-        [{ key: "s/Esc", label: "back to the screens" }],
-        workspaceKeys,
-        [{ key: "Ctrl+S", label: "save" }],
-        [{ key: "Tab", label: "switch view" }, { key: "q", label: "close" }],
-      ], accent)
-    }
-    return Help.row([
-      [{ key: "←↑↓→", label: "select" }],
-      { title: "Tree", items: [{ key: "a", label: "add slot" }, { key: "x", label: "take out" }, { key: "hjkl", label: "move" },
-        { key: "HJKL", label: "force move" }, { key: "/", label: "flip" }, { key: "t", label: toggleLabel },
-        { key: "r", label: "ratios" }, { key: "o", label: "show/hide other windows", before: true }] },
-      { title: "Layout", items: [{ key: "w", label: "apply" }, { key: "Ctrl+S", label: "apply+save" },
-        { key: "d", label: "back to slots.lua" }, { key: "R", label: "record" }, { key: "f", label: "fork" }]
-          .concat(Layout.hasOwn(state, layout, workspace) ? [{ key: "u", label: "use the shared tree" }] : []) },
-      [{ key: "s", label: "slot list" }],
-      workspaceKeys,
-      [{ key: "Tab", label: "switch view" }, { key: "q", label: "close" }],
-    ], accent)
+    var jump = Workspaces.jumpKeys(Workspaces.count(state))
+    if (slotFocus) return Help.row(Layout.slotListHelp({ jumpKeys: jump }), accent)
+    return Help.row(Layout.pictureHelp({ node: activeNode, hasOwn: Layout.hasOwn(state, layout, workspace), jumpKeys: jump }),
+      accent)
   }
-
-  // t turns the whole tree into a scroll branch (full-width scrolling
-  // columns in order) and back.
-  readonly property string toggleLabel: activeNode && activeNode.kind === "scroll" ? "tiles" : "scroll"
 
   function say(text, isError) {
     message = text
@@ -202,24 +178,29 @@ Item {
   }
 
   // Follow the trees in force: a pane whose draft is unedited takes the new
-  // tree; an edited one keeps the edit. Keep the selection on a leaf. When
-  // the active desk's layout changes (another applied, a fork, a rename, a
+  // tree; an edited one keeps the edit (and gets a slot the slot list just
+  // made, where the engine put it). Keep the selection on a leaf. When the
+  // active desk's layout changes (another applied, a fork, a rename, a
   // hotplug), follow it.
   function sync() {
     var now = state && state.layout ? state.layout : ""
     if (state && now !== layout) {
       var was = layout
-      var dropped = _keepDrafts ? [] : editedScreens()
+      var dropped = editedScreens()
       layout = now
-      if (!_keepDrafts) drafts = ({})
-      if (was !== "" && !_keepDrafts) {
+      drafts = ({})
+      if (was !== "") {
         say((now !== "" ? "The active desk uses layout '" + now + "' now; editing it." : "No desk is active: nothing to edit.")
           + (dropped.length ? " Unapplied edits dropped (screen " + dropped.join(", ") + ")." : ""), dropped.length > 0)
       }
-      _keepDrafts = false
+    }
+    var list = currentPanes()
+    if (_newSlot !== "" && state && Array.isArray(state.slots)
+        && state.slots.some(function(s) { return s.name === root._newSlot })) {
+      drafts = Layout.followNewSlot(drafts, list, _newSlot)
+      _newSlot = ""
     }
     var next = {}
-    var list = currentPanes()
     for (var i = 0; i < list.length; i++) {
       var p = list[i]
       var d = drafts[p.key]
@@ -275,7 +256,7 @@ Item {
   function draftNote() {
     return " Not applied: w applies, Ctrl+S applies and saves."
       + (sharedWith.length ? " Desk" + (sharedWith.length > 1 ? "s " : " ") + sharedWith.join(", ") + " share" + (sharedWith.length > 1 ? "" : "s")
-        + " this layout: f forks it first." : "")
+        + " this layout: fork it in the Desk tab first." : "")
   }
 
   // --- keys -----------------------------------------------------------------
@@ -375,7 +356,6 @@ Item {
     if (text === "[" || text === "]") goWorkspace(Workspaces.step(workspace, text === "]" ? 1 : -1, Workspaces.count(state)))
     else if (Workspaces.ofDigit(text, Workspaces.count(state)) !== null) goWorkspace(Workspaces.ofDigit(text, Workspaces.count(state)))
     else if (text === "-") goWorkspace("default")
-    else if (text === "f") startFork()
     else if (text === "u" && !slotFocus) startDropOverride()
     else if (slotFocus) return handleSlotKey(key, text)
     else if (text === "s") focusSlots(true)
@@ -389,16 +369,15 @@ Item {
     else if (moveKeys[text]) scoped(function() { root.moveSelected(root.moveKeys[text], false) }, true)
     else if (forceKeys[text]) scoped(function() { root.moveSelected(root.forceKeys[text], true) }, true)
     else if (text === "/") scoped(function() { root.edit(function(n) { return { node: Layout.flip(n) } }, "Flipped every split.") }, true)
-    else if (text === "t") scoped(function() {
-      root.edit(function(n) { return Layout.toggleScroll(n) },
-        root.toggleLabel === "tiles" ? "Tiled again." : "Scrolling: full-width columns in this order (hl move them).")
-    }, true)
+    else if (text === "t") scoped(cycleScroll, true)
     else if (text === "o") toggleOther()
-    else if (text === "a") scoped(startAddSlot, false)
-    else if (text === "x") scoped(removeSelected, true)
-    else if (text === "r") scoped(startRatio, true)
+    else if (text === "r") {
+      // ratios are for tiles: refused on a scroll tree before anything asks
+      if (activeNode && activeNode.kind === "scroll") say(Layout.ratioPrompt(activeNode).error, true)
+      else scoped(startRatio, true)
+    }
     else if (text === "w") apply(null)
-    else if (text === "d") scoped(startReset, false)
+    else if (text === "d") scoped(startRevert, false)
     else if (text === "R") scoped(startRecord, false)
     else return false
     return true
@@ -451,42 +430,13 @@ Item {
     })
   }
 
-  // a: one of the global slots no pane of this workspace places yet, added after
-  // the selected leaf (or as the tree of a screen that has none).
-  function startAddSlot() {
-    if (refuseEdit() || screen === "") return
-    var names = Layout.slotChoices(state, drafts)
-    if (names.length === 0) {
-      say("Every slot is placed on " + workspaceName(workspace) + " already; s, then a, makes a new one.", true)
-      return
-    }
-    var k = screen
-    ask(Prompts.choice("Add slot to screen " + k, Prompts.options(names)), function(name) {
-      var result = Layout.addSlot(root.drafts[k] ? root.drafts[k].node : null, root.selectedKey, name)
-      if (result.error) {
-        root.say(result.error, true)
-        return
-      }
-      root.setDraft(k, result.node)
-      root.screen = k
-      root.selectedKey = name
-      root.say("Added " + name + " to screen " + k + "." + root.draftNote(), false)
-    })
-  }
-
-  // x: the selected slot out of this screen's tree (it stays a slot; the
-  // slot list's d deletes slots).
-  function removeSelected() {
-    if (!activeNode || refuseEdit()) return
-    var key = selectedKey
-    var result = Layout.removeSlot(activeNode, key)
-    if (result.error) {
-      say(result.error, true)
-      return
-    }
-    setDraft(screen, result.node)
-    keepSelection()
-    say("Took " + key + " out of screen " + screen + "." + draftNote(), false)
+  // t: tiles -> scroll half -> scroll full -> tiles (Layout.cycleScroll).
+  function cycleScroll() {
+    var what = { tiles: "Tiles again.", half: "Scrolling, each column half the screen (h/l move them).",
+      full: "Scrolling, each column the full screen (h/l move them)." }
+    if (!activeNode) return
+    var result = Layout.cycleScroll(activeNode)
+    edit(function() { return result }, result.node ? what[Layout.scrollMode(result.node)] || "" : "")
   }
 
   // --- the slot list ---------------------------------------------------------
@@ -495,7 +445,7 @@ Item {
     if (key === Qt.Key_Up || text === "k") selectSlot(slotIndex - 1)
     else if (key === Qt.Key_Down || text === "j") selectSlot(slotIndex + 1)
     else if (text === "a") startNewSlot(null)
-    else if (key === Qt.Key_Return || key === Qt.Key_Enter) placeSelectedSlot()
+    else if (key === Qt.Key_Return || key === Qt.Key_Enter) showSelectedSlot()
     else if (text === "r") startRenameSlot()
     else if (text === "e") startDescribeSlot()
     else if (text === "d") startDeleteSlot()
@@ -534,76 +484,50 @@ Item {
     return false
   }
 
-  // Return (and a's offer): the slot into the selected screen's tree, after
-  // the selected leaf, as a draft; the keys go back to the picture with it
-  // selected, to move it where it belongs. A slot this workspace places already
-  // is selected where it is.
-  function placeSlot(name) {
-    if (refuseEdit()) return
-    if (screen === "") {
-      say("Layout '" + layout + "' has no screens to put " + name + " on.", true)
+  // Return: the selected slot selected in the picture, where this
+  // workspace's trees have it (every tree has every slot), the keys back to
+  // the picture to move it.
+  function showSlot(name) {
+    var where = null
+    for (var k in drafts) {
+      var d = drafts[k]
+      if (d && d.node && Layout.leaves(pictureOf(d.node)).indexOf(name) >= 0) where = where === null ? k : where
+    }
+    if (where === null) {
+      say(name + " is in no tree of " + workspaceName(workspace) + " yet.", true)
       return
     }
-    var where = Layout.placedIn(drafts, name)
-    if (where !== null) {
-      screen = where
-      selectedKey = name
-      slotFocus = false
-      say(name + " is on screen " + where + " already: selected it there.", false)
-      return
-    }
-    var r = screen
-    var after = activeNode && Layout.leaves(activeNode).indexOf(selectedKey) >= 0 ? selectedKey : ""
-    var result = Layout.addSlot(activeNode, selectedKey, name)
-    if (result.error) {
-      say(result.error, true)
-      return
-    }
-    setDraft(r, result.node)
+    screen = where
     selectedKey = name
     slotFocus = false
-    say("Put " + name + " in screen " + r + "'s tree" + (after !== "" ? " after " + after : "")
-      + " — hjkl move it." + draftNote(), false)
+    say(name + " is on screen " + where + ": hjkl move it.", false)
   }
 
-  function placeSelectedSlot() {
+  function showSelectedSlot() {
     if (!needSlot()) return
-    var name = slotRow.slot
-    scoped(function() { root.placeSlot(name) }, false)
+    showSlot(slotRow.slot)
   }
 
-  // a: a new global slot, a name and then an optional description; then,
-  // when this workspace's trees may be edited, the offer to put it in the tree.
+  // a: a new global slot, a name and then an optional description; the
+  // engine puts it into every tree (an empty slot takes no room), and edited
+  // drafts follow on the next state read (sync).
   function startNewSlot(values) {
     if (!slotsEditable()) return
     values = values || { name: "", description: "", error: "" }
-    ask(Prompts.withError(Prompts.text("New slot name (every workspace's trees may place it) [Enter] next  [Esc] cancel: ",
-      { value: values.name, required: true }), values.error), function(name) {
-      root.ask(Prompts.text("Description, optional [Enter] add  [Esc] cancel: ", { value: values.description }),
-        function(description) {
-          root.engine.call("add_slot", { slot: name.trim(), description: description }, function(reply) {
-            if (!reply.ok) {
-              root.startNewSlot({ name: name, description: description, error: reply.error })
-              return
-            }
-            root.selectedSlot = reply.slot
-            root.offerPlace(reply.slot)
+    ask(Prompts.withError(Prompts.text(Slots.newSlotLabel(), { value: values.name, required: true }), values.error),
+      function(name) {
+        root.ask(Prompts.text("Description, optional [Enter] add  [Esc] cancel: ", { value: values.description }),
+          function(description) {
+            root.engine.call("add_slot", { slot: name.trim(), description: description }, function(reply) {
+              if (!reply.ok) {
+                root.startNewSlot({ name: name, description: description, error: reply.error })
+                return
+              }
+              root.selectedSlot = reply.slot
+              root._newSlot = reply.slot
+              root.say(Slots.addedText(reply.slot), false)
+            })
           })
-        })
-    })
-  }
-
-  function offerPlace(slot) {
-    if (block !== "" || screen === "") {
-      say("Added slot '" + slot + "'.", false)
-      return
-    }
-    var after = activeNode && Layout.leaves(activeNode).indexOf(selectedKey) >= 0 ? " after " + selectedKey : ""
-    ask(Prompts.confirm("Added slot '" + slot + "'. Put it in screen " + screen + "'s tree on " + workspaceName(workspace)
-      + after + "?"),
-      function(yes) {
-        if (yes) root.scoped(function() { root.placeSlot(slot) }, false)
-        else root.say("Added slot '" + slot + "'. Return puts it in a tree.", false)
       })
   }
 
@@ -726,31 +650,6 @@ Item {
     })
   }
 
-  // f: fork the layout (the active desk then uses the copy, so editing it
-  // leaves the other desks' alone); the edited drafts carry over to it.
-  function startFork() {
-    if (!state || layout === "") {
-      say("No desk is active: there is no layout to fork.", true)
-      return
-    }
-    var source = layout
-    var label = "Fork layout '" + source + "' as [Enter] fork  [Esc] cancel: "
-    var answer = function(to) {
-      to = to.trim()
-      root._keepDrafts = true
-      root.engine.call("fork_layout", { layout: source, to: to }, function(reply) {
-        if (!reply.ok) {
-          root._keepDrafts = false
-          root.ask(Prompts.withError(Prompts.text(label, { value: to, required: true }), reply.error), answer)
-          return
-        }
-        if (!reply.desk) root._keepDrafts = false
-        root.say(DesksLayouts.forkMessage(reply), false)
-      })
-    }
-    ask(Prompts.text(label, { value: DesksLayouts.forkName(state, source), required: true }), answer)
-  }
-
   // [ ] and the digits: another workspace of the same layout, `-` its default
   // trees (the arrows stay the picture's).
   function goWorkspace(n) {
@@ -834,12 +733,13 @@ Item {
     else apply(then)
   }
 
-  function startReset() {
+  // d: the selected screen's tree back to how it was last saved, after
+  // y/n (api reset): its draft and its applied but unsaved edits go.
+  function startRevert() {
     if (refuseEdit()) return
     var k = screen
     var into = target()
-    var what = into === "default" ? "The shared tree" : "Workspace " + into
-    confirm("Put " + workspaceName(into) + " on screen " + k + " back to the tree slots.lua holds?", function() {
+    confirm(Layout.revertQuestion(into, k), function() {
       root.engine.call("reset", { layout: root.layout, workspace: into, screen: parseInt(k, 10) }, function(reply) {
         if (!reply.ok) {
           root.say(reply.error, true)
@@ -849,8 +749,7 @@ Item {
         next[k] = { node: reply.tree ? Layout.parse(reply.tree).node : null, base: reply.tree || null }
         root.drafts = next
         root.keepSelection()
-        root.say(what + " on screen " + k + " is back to "
-          + (reply.tree || "no tree") + ".", false)
+        root.say(Layout.revertedText(into, k, reply.tree), false)
       })
     })
   }
@@ -941,19 +840,25 @@ Item {
     return currentPanes().map(function(p) { return Layout.screenLabel(root.state, p.screen) }).join(" | ")
   }
 
-  // The header's text: what is edited, and the desks sharing it.
+  // The header as it reads: the workspace strip, the current one in
+  // brackets ("All workspaces · 1 2 [3•] ..."), then the note on a workspace
+  // that uses the shared trees: for the e2e smoke.
   function headerLine() {
     var note = Layout.defaultNote(state, layout, workspace, scope)
-    return (workspace === "default" ? "All workspaces (the shared tree)" : "Workspace " + workspace) + "   [" + (layout || "no layout") + "]"
-      + (note ? "   " + note : "")
+    return stripText() + (note ? "   " + note : "")
   }
 
-  // The workspace strip as it reads, the current one in brackets:
-  // "[All workspaces] 1 2 3• ...": for the e2e smoke.
   function stripText() {
-    return Workspaces.strip(state, layout, workspace).map(function(w) {
-      return w.current ? "[" + Workspaces.stripText(w) + "]" : Workspaces.stripText(w)
-    }).join(" ")
+    return Workspaces.stripLine(Workspaces.strip(state, layout, workspace))
+  }
+
+  // What a pane's picture is, "tiles" or "scroll · half"..., for the e2e
+  // smoke: "1: scroll · half; 2: tiles".
+  function modeText() {
+    return currentPanes().map(function(p) {
+      var d = root.drafts[p.key]
+      return p.key + ": " + (d && d.node ? Layout.modeLabel(d.node) : "-")
+    }).join("; ")
   }
 
   // --- drawing --------------------------------------------------------------
@@ -968,7 +873,6 @@ Item {
   }
 
   readonly property int gap: Style.spacing.md
-  readonly property color scrollColor: Commons.Color.accent
   // other windows' place: drawn dim, beside the slots
   readonly property color otherColor: Commons.Color.muted
 
@@ -976,78 +880,93 @@ Item {
     anchors.fill: parent
     spacing: Style.spacing.md
 
-    // Header: what is being edited, a quiet line over the picture; the
-    // workspace strip after it, the one edited in the accent colour and
-    // underlined; at the right, edits the engine does not run yet.
+    // Header: one quiet strip, "All workspaces · 1 2 3• ...", the one
+    // edited in the accent colour and underlined (All workspaces: the
+    // layout's shared trees, -; the workspaces by their keys, [ ] step, the
+    // digits jump; a dot on one with trees of its own, the ones using the
+    // shared trees dimmer); a note on a workspace that uses them; at the
+    // right, edits the engine does not run yet.
     Item {
       id: headerBox
       width: parent.width
-      height: Math.max(headerText.implicitHeight, workspaceStrip.height)
-      Text {
-        id: headerText
-        anchors.left: parent.left
-        anchors.leftMargin: Style.spacing.md
-        anchors.verticalCenter: parent.verticalCenter
-        textFormat: Text.PlainText
-        text: root.headerLine()
-        color: Commons.Color.muted
-        font.family: root.fontFamily
-        font.pixelSize: Style.font.body
-      }
-      // "All workspaces", the shared trees (-), then the managed workspaces
-      // by their keys ([ ] step, the digits jump): the one edited in the
-      // accent colour, the ones with trees of their own brighter and dotted,
-      // the ones using the shared trees dimmer.
+      height: workspaceStrip.height
       Row {
         id: workspaceStrip
-        anchors.left: headerText.right
-        anchors.leftMargin: Style.spacing.lg * 2
+        anchors.left: parent.left
+        anchors.leftMargin: Style.spacing.md - Style.spacing.sm
         anchors.verticalCenter: parent.verticalCenter
         spacing: Style.spacing.xxs
         Repeater {
           model: Workspaces.strip(root.state, root.layout, root.workspace)
-          delegate: Item {
+          delegate: Row {
             id: stripItem
             required property var modelData
+            required property int index
             readonly property bool lit: modelData.current
             readonly property bool strong: modelData.own || modelData.workspace === "default"
-            width: workspaceKey.implicitWidth + Style.spacing.sm * 2
-            height: workspaceKey.implicitHeight + Style.spacing.xs * 2
+            spacing: Style.spacing.xxs
             Text {
-              id: workspaceKey
-              anchors.centerIn: parent
+              visible: stripItem.index === 1
+              anchors.verticalCenter: parent.verticalCenter
               textFormat: Text.PlainText
-              text: Workspaces.stripText(stripItem.modelData)
-              color: stripItem.lit ? Commons.Color.accent : stripItem.strong ? root.foreground : Commons.Color.muted
-              opacity: stripItem.lit || stripItem.strong ? 1 : 0.75
+              text: "·"
+              color: Commons.Color.muted
               font.family: root.fontFamily
               font.pixelSize: Style.font.body
-              font.bold: stripItem.lit
-              font.italic: stripItem.modelData.shared
             }
-            Rectangle {
-              visible: stripItem.lit
-              anchors.bottom: parent.bottom
-              anchors.horizontalCenter: parent.horizontalCenter
-              width: workspaceKey.implicitWidth
-              height: Math.max(1, Style.spacing.xxs)
-              radius: height / 2
-              color: Commons.Color.accent
-            }
-            MouseArea {
-              anchors.fill: parent
-              onClicked: root.goWorkspace(stripItem.modelData.workspace)
+            Item {
+              width: workspaceKey.implicitWidth + Style.spacing.sm * 2
+              height: workspaceKey.implicitHeight + Style.spacing.xs * 2
+              Text {
+                id: workspaceKey
+                anchors.centerIn: parent
+                textFormat: Text.PlainText
+                text: Workspaces.stripText(stripItem.modelData)
+                color: stripItem.lit ? Commons.Color.accent : stripItem.strong ? root.foreground : Commons.Color.muted
+                opacity: stripItem.lit || stripItem.strong ? 1 : 0.75
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.body
+                font.bold: stripItem.lit
+                font.italic: stripItem.modelData.shared
+              }
+              Rectangle {
+                visible: stripItem.lit
+                anchors.bottom: parent.bottom
+                anchors.horizontalCenter: parent.horizontalCenter
+                width: workspaceKey.implicitWidth
+                height: Math.max(1, Style.spacing.xxs)
+                radius: height / 2
+                color: Commons.Color.accent
+              }
+              MouseArea {
+                anchors.fill: parent
+                onClicked: root.goWorkspace(stripItem.modelData.workspace)
+              }
             }
           }
         }
       }
       Text {
+        anchors.left: workspaceStrip.right
+        anchors.leftMargin: Style.spacing.lg
+        anchors.right: editedMark.left
+        anchors.rightMargin: Style.spacing.md
+        anchors.verticalCenter: parent.verticalCenter
+        textFormat: Text.PlainText
+        elide: Text.ElideRight
+        text: Layout.defaultNote(root.state, root.layout, root.workspace, root.scope)
+        color: Commons.Color.muted
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.bodySmall
+      }
+      Text {
+        id: editedMark
         anchors.right: parent.right
         anchors.rightMargin: Style.spacing.md
         anchors.verticalCenter: parent.verticalCenter
         visible: root.editedScreens().length > 0
         textFormat: Text.PlainText
-        text: "edited, not applied (w)"
+        text: visible ? "edited, not applied (w)" : ""
         color: Commons.Color.urgent
         font.family: root.fontFamily
         font.pixelSize: Style.font.bodySmall
@@ -1062,8 +981,7 @@ Item {
       visible: root.sharedWith.length > 0
       textFormat: Text.PlainText
       wrapMode: Text.WordWrap
-      text: "Layout '" + root.layout + "' is also used by " + (root.sharedWith.length === 1 ? "desk " : "desks ")
-        + root.sharedWith.join(", ") + ": every edit here changes it there too (f forks it for this desk)."
+      text: DesksLayouts.sharedNote(root.sharedWith)
       color: Commons.Color.muted
       font.family: root.fontFamily
       font.pixelSize: Style.font.bodySmall
@@ -1139,9 +1057,15 @@ Item {
               readonly property real aspect: root.aspectOf(pane.modelData.connector)
               readonly property int boxW: Math.floor(Math.min(width, height * aspect))
               readonly property int boxH: Math.floor(Math.min(height, width / aspect))
+              // the tree as drawn (o: with other windows' place or not)
+              readonly property var picture: pane.node ? Layout.picture(pane.node, root.showOther) : null
+              readonly property bool scrolls: !!picture && picture.kind === "scroll"
+              readonly property var titles: Layout.titles(root.state, root.workspace, pane.modelData.screen)
 
+              // Tiles: boxes in a scale model of the screen.
               Rectangle {
                 id: screenBox
+                visible: !frame.scrolls
                 x: Math.floor((frame.width - frame.boxW) / 2)
                 width: frame.boxW
                 height: frame.boxH
@@ -1167,18 +1091,17 @@ Item {
                 }
 
                 Repeater {
-                  model: pane.node ? Layout.rects(Layout.picture(pane.node, root.showOther), { x: 0, y: 0, w: screenBox.width - 8, h: screenBox.height - 8 }, {
+                  model: frame.picture && !frame.scrolls ? Layout.rects(frame.picture, { x: 0, y: 0, w: screenBox.width - 8, h: screenBox.height - 8 }, {
                     pad: 5,
                     title: Style.font.bodySmall + 6,
                     selected: pane.active ? root.selectedKey : "",
-                    titles: Layout.titles(root.state, root.workspace, pane.modelData.screen),
+                    titles: frame.titles,
                   }) : []
                   delegate: Rectangle {
                     id: cell
                     required property var modelData
                     readonly property bool isLeaf: modelData.kind === "slot" || modelData.kind === "overflow"
                     readonly property bool isOther: modelData.kind === "overflow"
-                    readonly property bool isFrame: !!modelData.column
                     readonly property bool isContainer: !isLeaf
                     readonly property bool picked: !!modelData.selected
                     x: 4 + modelData.x + 2
@@ -1187,12 +1110,10 @@ Item {
                     height: Math.max(0, modelData.h - 4)
                     radius: Style.cornerRadius
                     color: picked && isLeaf ? root.selectedBackground
-                      : isFrame ? Commons.Util.alpha(root.scrollColor, 0.08)
                       : isLeaf ? Commons.Util.alpha(isOther ? root.otherColor : root.foreground, isOther ? 0.04 : 0.06)
                       : "transparent"
                     border.width: picked ? 2 : 1
                     border.color: picked ? Commons.Color.accent
-                      : isFrame ? Commons.Util.alpha(root.scrollColor, 0.8)
                       : isOther ? Commons.Util.alpha(root.otherColor, 0.45)
                       : isContainer ? Commons.Util.alpha(root.foreground, 0.3)
                       : Commons.Util.alpha(root.foreground, 0.5)
@@ -1253,6 +1174,118 @@ Item {
                       }
                     }
                   }
+                }
+              }
+
+              // A scroll tree: a filmstrip. Its columns, half or full screen
+              // width, in slot order; the screen a viewport over them,
+              // scrolled to the selected column; columns beyond it faded.
+              Item {
+                id: film
+                visible: frame.scrolls
+                anchors.fill: parent
+                clip: true
+                readonly property int labelHeight: filmLabel.implicitHeight + Style.spacing.xs
+                readonly property var strip: frame.scrolls
+                  ? Layout.filmstrip(frame.picture, { x: 0, y: labelHeight, w: width, h: height - labelHeight }, {
+                    aspect: frame.aspect,
+                    peek: 0.12,
+                    selected: pane.active ? root.selectedKey : "",
+                    titles: frame.titles,
+                  })
+                  : null
+
+                // what it is, quietly, over the screen: "scroll · half"
+                Text {
+                  id: filmLabel
+                  x: film.strip ? film.strip.viewport.x : 0
+                  y: film.strip ? Math.max(0, film.strip.viewport.y - implicitHeight - Style.spacing.sm) : 0
+                  textFormat: Text.PlainText
+                  text: film.strip ? film.strip.label : ""
+                  color: Commons.Color.muted
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.bodySmall
+                  font.italic: true
+                }
+
+                Repeater {
+                  model: film.strip ? film.strip.columns : []
+                  delegate: Rectangle {
+                    id: column
+                    required property var modelData
+                    readonly property bool isOther: modelData.kind === "overflow"
+                    readonly property bool picked: !!modelData.selected
+                    readonly property bool onScreen: modelData.visible > 0.999
+                    // the part of it the pane shows (a column beyond the
+                    // screen peeks in at the side): its label goes there
+                    readonly property real shownLeft: Math.max(x, 0)
+                    readonly property real shownRight: Math.min(x + width, film.width)
+                    x: modelData.x + 5
+                    y: modelData.y + 5
+                    width: Math.max(0, modelData.w - 10)
+                    height: Math.max(0, modelData.h - 10)
+                    radius: Style.cornerRadius
+                    opacity: onScreen ? 1 : 0.45
+                    color: picked ? root.selectedBackground
+                      : Commons.Util.alpha(isOther ? root.otherColor : root.foreground, isOther ? 0.04 : 0.06)
+                    border.width: picked ? 2 : 1
+                    border.color: picked ? Commons.Color.accent
+                      : isOther ? Commons.Util.alpha(root.otherColor, 0.45)
+                      : Commons.Util.alpha(root.foreground, 0.5)
+
+                    Column {
+                      x: column.shownLeft - column.x + Style.spacing.sm
+                      anchors.verticalCenter: parent.verticalCenter
+                      width: Math.max(0, column.shownRight - column.shownLeft - Style.spacing.sm * 2)
+                      Text {
+                        width: parent.width
+                        horizontalAlignment: Text.AlignHCenter
+                        textFormat: Text.PlainText
+                        elide: Text.ElideRight
+                        text: column.modelData.label
+                        color: column.picked ? root.selectedText
+                          : column.isOther ? root.otherColor : root.foreground
+                        font.family: root.fontFamily
+                        font.pixelSize: Style.font.body
+                        font.bold: !column.isOther
+                        font.italic: column.isOther
+                      }
+                      Text {
+                        width: parent.width
+                        visible: !!column.modelData.title
+                        horizontalAlignment: Text.AlignHCenter
+                        textFormat: Text.PlainText
+                        elide: Text.ElideRight
+                        text: column.modelData.title || ""
+                        color: column.picked ? root.selectedText : root.foreground
+                        opacity: 0.55
+                        font.family: root.fontFamily
+                        font.pixelSize: Style.font.bodySmall
+                      }
+                    }
+
+                    MouseArea {
+                      anchors.fill: parent
+                      onClicked: {
+                        root.screen = pane.modelData.key
+                        root.selectedKey = column.modelData.key
+                      }
+                    }
+                  }
+                }
+
+                // the screen: a viewport over the strip, just outside the
+                // columns it shows
+                Rectangle {
+                  x: film.strip ? film.strip.viewport.x - 2 : 0
+                  y: film.strip ? film.strip.viewport.y - 2 : 0
+                  width: film.strip ? film.strip.viewport.w + 4 : 0
+                  height: film.strip ? film.strip.viewport.h + 4 : 0
+                  radius: Style.cornerRadius
+                  color: "transparent"
+                  border.width: pane.active && !root.slotFocus ? 2 : 1
+                  border.color: pane.active ? Commons.Util.alpha(Commons.Color.accent, root.slotFocus ? 0.5 : 1)
+                    : Commons.Util.alpha(root.foreground, 0.35)
                 }
               }
             }

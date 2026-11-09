@@ -62,3 +62,13 @@ function jumpKeys(last) {
   if (n === COUNT) return "1–9 0"
   return n === 1 ? "1" : "1–" + n
 }
+
+// The strip as one line of text, the current entry in brackets and a dot
+// between All workspaces and the workspaces (as the header draws it):
+// "All workspaces · 1 2 [3•] 4 …".
+function stripLine(entries) {
+  return entries.map(function(entry, i) {
+    var text = entry.current ? "[" + stripText(entry) + "]" : stripText(entry)
+    return i === 1 ? "· " + text : text
+  }).join(" ")
+}
