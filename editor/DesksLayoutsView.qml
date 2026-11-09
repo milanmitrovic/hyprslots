@@ -207,7 +207,7 @@ Item {
           }
           root.cursor = "layout:" + reply.layout
           root.say("Created layout '" + reply.layout + "' (" + reply.screens + (reply.screens === 1 ? " screen" : " screens")
-            + (withDefault ? ", the default trees" : ", empty") + "). a applies it to the active desk. Ctrl+S saves.", false)
+            + ", the default trees). a applies it to the active desk. Ctrl+S saves.", false)
         })
       })
     })

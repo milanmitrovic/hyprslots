@@ -26,8 +26,9 @@ return {
     single = { monitors = { "HEADLESS-2" }, layout = "single" },
   },
   layouts = {
-    dual = { screens = 2, workspaces = { [3] = { [1] = "h[main:2, right:1]", [2] = "left" } } },
-    single = { screens = 1, workspaces = { [3] = { [1] = "h[left, main, right]" } } },
+    dual = { screens = 2, default = { [1] = "h[left, main, right]" },
+      workspaces = { [3] = { [1] = "h[main:2, right:1]", [2] = "left" } } },
+    single = { screens = 1, default = { [1] = "h[left, main, right]" }, workspaces = { [3] = { [1] = "h[left, main, right]" } } },
   },
 }
 ]]

@@ -11,7 +11,7 @@ return {
   slots = { a = {}, b = {}, c = {} },
   specs = { [3] = { a = "t-a", b = "t-b", c = "t-c" } },
   desks = { solo = { monitors = { "HEADLESS-2" }, layout = "solo" } },
-  layouts = { solo = { screens = 1, workspaces = { [3] = { [1] = "h[a:1, b:2, c:1]" } } } },
+  layouts = { solo = { screens = 1, default = { [1] = "h[a, b, c]" }, workspaces = { [3] = { [1] = "h[a:1, b:2, c:1]" } } } },
 }
 ]]
 
@@ -133,7 +133,7 @@ describe("hyprslots editor api", function()
       local solo = s.layouts.solo
       assert.are.equal(1, solo.screens)
       assert.are.same({ tree = "h[a, b:2, c]", ratio = "1:2:1", slots = { "a", "b", "c" } }, solo.workspaces["3"]["1"])
-      assert.are.same({}, solo.default)
+      assert.are.same({ ["1"] = { tree = "h[a, b, c]", ratio = "1:1:1", slots = { "a", "b", "c" } } }, solo.default)
       assert.are.same({ 3 }, solo.own)
       assert.are.same({ "solo" }, solo.used_by)
       assert.is_true(solo.active)
@@ -146,9 +146,20 @@ describe("hyprslots editor api", function()
       assert.are.same({ ["3"] = { a = "t-a", b = "t-b", c = "t-c" } }, state().specs)
     end)
 
-    it("lists the workspaces with specs or trees", function()
+    it("lists the workspaces with specs or trees: every one, with the shared trees", function()
       setup()
-      assert.are.same({ 3 }, state().used_workspaces)
+      assert.are.same({ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 }, state().used_workspaces)
+    end)
+
+    it("gives a layout slots.lua leaves treeless the default trees, unsaved until saved", function()
+      setup({ ["config.lua"] = CONFIG, ["slots.lua"] = (SLOTS:gsub('default = { %[1%] = "h%[a, b, c%]" }, ', "")) })
+      local s = state()
+      assert.are.equal("h[a, b, c]", s.layouts.solo.default["1"].tree)
+      assert.is_true(s.dirty)
+      assert.is_true(call("save").ok)
+      assert.matches('default = {%s*%[1%] = "h%[a, b, c%]",%s*}', read(dir .. "/slots.lua"))
+      assert.is_true(call("reload").ok)
+      assert.is_false(state().dirty)
     end)
 
     it("reports live windows with their assignments and boxes", function()
@@ -276,11 +287,11 @@ return { slots = data.slots, specs = data.specs, desks = data.desks, layouts = l
       assert.are.same({}, events())
     end)
 
-    it("reports a workspace the layout has no tree for", function()
+    it("reports a screen the layout has no tree for", function()
       setup()
-      local reply = call("set_ratio", { workspace = 4, screen = 1, ratio = "1:1" })
+      local reply = call("set_ratio", { workspace = 4, screen = 2, ratio = "1:1" })
       assert.is_false(reply.ok)
-      assert.matches("workspace 4", reply.error)
+      assert.matches("no tree for workspace 4 on screen 2", reply.error)
     end)
   end)
 

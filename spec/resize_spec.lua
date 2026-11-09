@@ -8,7 +8,7 @@ return {
   slots = { a = {}, b = {}, c = {} },
   specs = { [3] = { a = "t-a", b = "t-b", c = "t-c" } },
   desks = { solo = { monitors = { "HEADLESS-2" }, layout = "solo" } },
-  layouts = { solo = { screens = 1, workspaces = { [3] = { [1] = "v[h[a, b], c]" } } } },
+  layouts = { solo = { screens = 1, default = { [1] = "v[h[a, b], c]" }, workspaces = { [3] = { [1] = "v[h[a, b], c]" } } } },
 }
 ]]
 
@@ -197,7 +197,7 @@ describe("keyboard resize", function()
     end)
 
     it("a focused window off any workspace", function()
-      assert.matches("not on a hyprslots workspace", msg("nudge r 0.1", hl_stub.window(9, "t-x", { workspace = 1 })))
+      assert.matches("not on a hyprslots workspace", msg("nudge r 0.1", hl_stub.window(9, "t-x", { workspace = 99 })))
       unchanged()
     end)
 

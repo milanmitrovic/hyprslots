@@ -80,7 +80,7 @@ function M.data(data, monitors)
   local out, changed = M.slots(data)
   local converted, moved = M.desks(out, monitors)
   local unpinned, dropped = M.unpin(converted)
-  local normalized, filled = M.normalize(unpinned)
+  local normalized, filled = M.normalize(unpinned, monitors)
   return normalized, changed or moved or dropped or filled, changed or moved
 end
 
@@ -215,13 +215,61 @@ local function fill(trees, names, global)
   return changed
 end
 
+-- The monitor a layout's screen 1 is, as far as the data and `monitors`
+-- (the connected ones, or nil) tell: for the first desk using the layout
+-- (by name) whose monitors are all connected, the left-most of them; else
+-- the first monitor the first desk using it lists, connected or not (a
+-- laptop panel is selected by its connector, so it is known by name);
+-- else, when no desk uses it and as many monitors as it has screens are
+-- connected, the left-most of those. nil when nothing tells.
+local function first_screen(data, name, screens, monitors)
+  local usable = desk.usable(monitors)
+  local users = {}
+  if type(data.desks) == "table" then
+    for _, desk_name in ipairs(sorted(data.desks)) do
+      local entry = data.desks[desk_name]
+      if type(entry) == "table" and entry.layout == name and type(entry.monitors) == "table"
+        and type(entry.monitors[1]) == "string" then
+        users[#users + 1] = entry.monitors
+      end
+    end
+  end
+  for _, selectors in ipairs(users) do
+    local found = desk.match(selectors, usable)
+    if found then
+      local list = {}
+      for _, selector in ipairs(selectors) do
+        list[#list + 1] = found[selector]
+      end
+      return desk.order(list)[1]
+    end
+  end
+  if users[1] then
+    return desk.find(users[1][1], usable) or { name = users[1][1] }
+  end
+  if #usable > 0 and #usable == screens then
+    return desk.order(usable)[1]
+  end
+  return nil
+end
+
+-- Whether a tree set has no tree.
+local function treeless(trees)
+  return trees == nil or (type(trees) == "table" and next(trees) == nil)
+end
+
 -- Every tree holds every global slot: each tree set of each layout (its
 -- default trees, each workspace's own) gets the global slots it leaves out,
 -- by name, and loses the slots that are not global (fill above). Empty
 -- slots close up, so a slot nothing fills on a workspace takes no room.
--- Returns the data (a copy) and whether it changed. A set with no trees
--- stays without any.
-function M.normalize(data)
+-- A layout is never treeless: one with no default tree (none given, or
+-- every one dropped above) gets the default trees of a new desk's layout
+-- (desk.default_trees), every global slot on screen 1, as a scroll branch
+-- (full width) when screen 1 is a laptop panel (first_screen above), else
+-- side by side. A workspace with no trees of its own stays without any (it
+-- uses the layout's). `monitors` (the connected ones, or nil) tell which
+-- monitor screen 1 is. Returns the data (a copy) and whether it changed.
+function M.normalize(data, monitors)
   local out = copy(data)
   if type(out) ~= "table" or type(out.slots) ~= "table" or type(out.layouts) ~= "table" then
     return out, false
@@ -239,6 +287,13 @@ function M.normalize(data)
     local layout = out.layouts[name]
     if type(layout) == "table" then
       if type(layout.default) == "table" and fill(layout.default, names, global) then
+        changed = true
+      end
+      local screens = layout.screens
+      if treeless(layout.default) and #names > 0 and math.type(screens) == "integer" and screens >= 1 then
+        local first = first_screen(out, name, screens, monitors) or { name = "screen-1" }
+        layout.default = desk.default_trees({ first }, names)
+        fill(layout.default, names, global)
         changed = true
       end
       if type(layout.workspaces) == "table" then

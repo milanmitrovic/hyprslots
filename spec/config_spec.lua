@@ -29,7 +29,8 @@ return {
     single = { monitors = { "HEADLESS-2" }, layout = "single" },
   },
   layouts = {
-    dual = { screens = 2, workspaces = { [3] = { [1] = "h[main:2, right:1]", [2] = "left" } } },
+    dual = { screens = 2, default = { [1] = "h[left, main, right]" },
+      workspaces = { [3] = { [1] = "h[main:2, right:1]", [2] = "left" } } },
     single = { screens = 1, default = { [1] = "h[left, main, right]" } },
   },
 }
@@ -450,8 +451,19 @@ describe("config.validate", function()
     assert.are.same({ "left", "main" }, require("hyprslots.tree").slots(config.trees_for(layout, 3)[1]))
     assert.are.same({ "main", "left" }, require("hyprslots.tree").slots(config.trees_for(layout, 5)[1]),
       "every tree holds every slot")
-    raw.layouts.solo.default = nil
-    assert.is_nil(config.trees_for(assert(config.validate(raw)).layouts.solo, 5))
+  end)
+
+  it("gives a layout with no default tree one with every slot: a scroll branch on a laptop panel", function()
+    local raw = valid()
+    local tree = require("hyprslots.tree")
+    local layout = assert(config.validate(raw)).layouts.solo
+    assert.is_nil(tree.scroll(layout.default[1]))
+    assert.are.same({ "left", "main" }, tree.slots(config.trees_for(layout, 5)[1]))
+    assert.are.same({ "left", "main" }, tree.slots(config.trees_for(layout, 3)[1]), "a workspace's own stays")
+    raw.desks.solo.monitors = { "eDP-1" }
+    local laptop = assert(config.validate(raw)).layouts.solo
+    assert.is_truthy(tree.scroll(laptop.default[1]))
+    assert.are.same({ "left", "main" }, tree.slots(laptop.default[1]))
   end)
 
   it("rejects arrangements beside desks and layouts", function()

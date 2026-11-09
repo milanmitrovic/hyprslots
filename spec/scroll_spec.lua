@@ -114,8 +114,8 @@ local data = load_data("slots.lua")
 return { slots = data.slots, specs = data.specs, desks = data.desks, layouts = data.layouts, scroll = %s }
 ]]
 
--- Workspace 3: scroll[left, main, right] on the laptop screen; workspace 4: a split.
--- Every tree holds every slot.
+-- Workspace 3: scroll[left, main, right] on the laptop screen; workspace 4
+-- and the shared tree: a split. Every tree holds every slot.
 local SLOTS = [[
 return {
   slots = { left = {}, main = {}, right = {} },
@@ -127,6 +127,7 @@ return {
   layouts = {
     laptop = {
       screens = 1,
+      default = { [1] = "h[left, main, right]" },
       workspaces = {
         [3] = { [1] = "scroll[left, main, right]" },
         [4] = { [1] = "h[left, main, right]" },

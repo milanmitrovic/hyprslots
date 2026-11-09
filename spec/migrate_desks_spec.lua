@@ -105,7 +105,7 @@ describe("migrate.data", function()
   end)
 
   it("says when nothing had to change", function()
-    local _, changed = migrate.data({ slots = { main = {} }, layouts = { x = { screens = 1 } } })
+    local _, changed = migrate.data({ slots = { main = {} }, layouts = { x = { screens = 1, default = { [1] = "main" } } } })
     assert.is_false(changed)
   end)
 end)

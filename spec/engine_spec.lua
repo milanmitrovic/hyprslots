@@ -8,7 +8,7 @@ return {
   slots = { a = {}, b = {}, c = {} },
   specs = { [3] = { a = "t-a", b = "t-b", c = "t-c" } },
   desks = { solo = { monitors = { "HEADLESS-2" }, layout = "solo" } },
-  layouts = { solo = { screens = 1, workspaces = { [3] = { [1] = "h[a:1, b:2, c:1]" } } } },
+  layouts = { solo = { screens = 1, default = { [1] = "h[a, b, c]" }, workspaces = { [3] = { [1] = "h[a:1, b:2, c:1]" } } } },
 }
 ]]
 
@@ -78,7 +78,7 @@ describe("hyprslots engine", function()
       assert.is_function(hl.layouts.slots.recalculate)
     end)
 
-    it("makes every block's workspace 3 use lua:slots", function()
+    it("makes every block's workspaces use lua:slots, the shared tree where they have none", function()
       setup()
       local rules = {}
       for _, rule in ipairs(hl.workspace_rules) do
@@ -86,7 +86,7 @@ describe("hyprslots engine", function()
       end
       assert.are.equal("lua:slots", rules["3"])
       assert.are.equal("lua:slots", rules["13"])
-      assert.is_nil(rules["4"], "workspace 4 has no tree")
+      assert.are.equal("lua:slots", rules["4"], "workspace 4 has the shared tree")
     end)
 
     it("selects the desk for the monitors already connected", function()
@@ -166,7 +166,8 @@ return {
       assert.is_nil(written.arrangements)
       assert.is_nil(written.pinned)
       assert.are.same({ solo = { monitors = { "HEADLESS-2" }, layout = "solo" } }, written.desks)
-      assert.are.same({ solo = { screens = 1, workspaces = { [3] = { [1] = "h[a:1, b:2, c:1]" } } } }, written.layouts)
+      assert.are.same({ solo = { screens = 1, default = { [1] = "h[a, b, c]" }, workspaces = { [3] = { [1] = "h[a:1, b:2, c:1]" } } } },
+        written.layouts, "the layout of before had no shared tree: it gets the default one")
 
       hyprslots.setup({ config_dir = dir })
       assert.is_false(state().dirty)

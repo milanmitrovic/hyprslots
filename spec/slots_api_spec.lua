@@ -122,7 +122,7 @@ return { slots = slots, specs = data.specs, desks = data.desks, layouts = data.l
     it("with force, takes it out of every tree of every workspace and every workspace's specs", function()
       local right = open(1, "t-right", 1)
       local reply = ok("remove_slot", { slot = "right", force = true })
-      assert.are.same({ "dual/3/1", "single/3/1" }, reply.trees)
+      assert.are.same({ "dual/default/1", "dual/3/1", "single/default/1", "single/3/1" }, reply.trees)
       assert.are.same({ 3 }, reply.specs)
       local s = state()
       assert.are.same({ { name = "left" }, { name = "main" } }, s.slots)
@@ -145,7 +145,7 @@ return { slots = slots, specs = data.specs, desks = data.desks, layouts = data.l
       ok("set_spec", { workspace = 5, slot = "main", spec = "kitty" })
       local reply = ok("rename_slot", { slot = "main", to = "editor" })
       assert.are.equal("editor", reply.to)
-      assert.are.equal(2, reply.trees)
+      assert.are.equal(4, reply.trees, "each layout's shared tree and workspace 3's own")
       assert.are.same({ 3, 5 }, reply.specs)
       local s = state()
       assert.are.same({ name = "editor", description = "the editor" }, s.slots[1])
@@ -226,7 +226,7 @@ return { slots = slots, specs = data.specs, desks = data.desks, layouts = data.l
     it("gives a workspace with no specs its first, for a global slot", function()
       ok("set_spec", { workspace = 7, slot = "main", spec = "spotify" })
       assert.are.same({ main = "spotify" }, state().specs["7"])
-      assert.are.same({ 3, 7 }, state().used_workspaces)
+      assert.are.same({ main = "spotify" }, state().specs["7"], "workspace 7 had none before")
     end)
 
     it("refuses a spec the grammar rejects, or a slot that is not defined, changing nothing", function()
@@ -411,7 +411,7 @@ return { slots = data.slots, specs = specs, desks = data.desks, layouts = data.l
   describe("apply_layout", function()
     it("points the active desk at another layout for as many screens", function()
       ok("add_layout", { name = "wide", screens = 2 })
-      ok("set_tree", { layout = "wide", workspace = 3, screen = 2, tree = "h[left, main, right]" })
+      ok("set_trees", { layout = "wide", workspace = 3, trees = { ["1"] = "left", ["2"] = "h[main, right]" } })
       local main = open(1, "t-main", 1)
       assert.are.equal(3, main.workspace.id)
       local reply = ok("apply_layout", { layout = "wide" })
@@ -470,11 +470,14 @@ return { slots = data.slots, specs = data.specs, desks = desks, layouts = data.l
   end)
 
   describe("add_layout", function()
-    it("adds an empty layout for a number of screens", function()
+    it("adds a layout for a number of screens: asked for empty, it still gets every slot on screen 1", function()
       local reply = ok("add_layout", { name = "wide", screens = 2 })
       assert.are.same({ "wide", 2 }, { reply.layout, reply.screens })
-      assert.are.same({ screens = 2, default = {}, workspaces = {}, own = {}, used_by = {}, active = false,
-        read_only = false }, state().layouts.wide)
+      local wide = state().layouts.wide
+      assert.are.equal("h[left, main, right]", wide.default["1"].tree)
+      assert.is_nil(wide.default["2"])
+      assert.are.same({}, wide.own)
+      assert.are.same({}, wide.used_by)
       assert.is_true(state().dirty)
     end)
 

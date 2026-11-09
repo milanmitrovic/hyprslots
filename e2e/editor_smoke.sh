@@ -42,8 +42,9 @@
 # Screen: HEADLESS-2, 1920x1080, Omarchy block 0 (workspace N = workspace id N).
 # config.lua sets workspaces = 9: hyprslots manages workspaces 1 to 9.
 # Desk solo (HEADLESS-2) uses layout solo, which desk beamer (a projector not
-# connected) shares; its shared tree is main (every global slot appended:
-# h[main, right, side]); workspace 3: h[main:2, v[right, side]]; t-side never
+# connected) shares; it gives no shared tree, so the engine gives it the
+# default one (every global slot, side by side on a screen that is no laptop
+# panel: h[main, right, side]); workspace 3: h[main:2, v[right, side]]; t-side never
 # opens. Desk away (HEADLESS-2 and a Dell not connected) uses the 2-screen
 # layout dual; layout spare is unused.
 
@@ -70,7 +71,7 @@ return {
     away = { monitors = { "HEADLESS-2", "Dell U2723QE ABC" }, layout = "dual" },
   },
   layouts = {
-    solo = { screens = 1, default = { [1] = "main" }, workspaces = { [3] = { [1] = "h[main:2, v[right, side]]" } } },
+    solo = { screens = 1, workspaces = { [3] = { [1] = "h[main:2, v[right, side]]" } } },
     dual = { screens = 2, default = { [1] = "main" } },
     spare = { screens = 1, default = { [1] = "h[main, right]" } },
   },

@@ -14,8 +14,8 @@ return {
     single = { monitors = { "HEADLESS-2" }, layout = "single" },
   },
   layouts = {
-    dual = { screens = 2, workspaces = { [3] = { [1] = "h[a:2, b]", [2] = "c" } } },
-    single = { screens = 1, workspaces = { [3] = { [1] = "h[a, b, c]" } } },
+    dual = { screens = 2, default = { [1] = "h[a, b, c]" }, workspaces = { [3] = { [1] = "h[a:2, b]", [2] = "c" } } },
+    single = { screens = 1, default = { [1] = "h[a, b, c]" }, workspaces = { [3] = { [1] = "h[a, b, c]" } } },
   },
 }
 ]]
@@ -269,7 +269,7 @@ return {
       [4] = { [1] = "h[a, b, c]" },
       [5] = { [1] = "h[a:2, b:2, c:2]" },
     } },
-    single = { screens = 1, workspaces = { [3] = { [1] = "h[a, b, c]" } } },
+    single = { screens = 1, default = { [1] = "v[a, b, c]" }, workspaces = { [3] = { [1] = "h[a, b, c]" } } },
   },
 }
 ]]
@@ -300,7 +300,7 @@ return {
       setup({ ["config.lua"] = CONFIG, ["slots.lua"] = FOLDING })
       local reply = call("fold_trees", { layout = "single" })
       assert.is_true(reply.ok, reply.error)
-      assert.are.same({}, reply.folded, "single has no shared trees to fold into")
+      assert.are.same({}, reply.folded, "single's shared tree lays workspace 3 out otherwise")
       assert.are.same({ { workspace = 3, reason = "screen 1's tree is not the shared one with slots left out" } },
         reply.kept)
       assert.is_false(call("state").dirty)
@@ -424,14 +424,16 @@ return {
       assert.are.equal("c", branch("dual-2", 2).tree)
     end)
 
-    it("reset in a layout added since the save takes its tree away", function()
+    it("reset in a layout added since the save takes its own tree away: the shared one shows", function()
       setup()
       assert.is_true(call("add_layout", { name = "wide", screens = 2 }).ok)
       call("set_tree", { layout = "wide", workspace = 3, screen = 1, tree = "h[a, b]" })
       local reply = call("reset", { layout = "wide", workspace = 3, screen = 1 })
       assert.is_true(reply.ok, reply.error)
-      assert.is_nil(reply.tree)
-      assert.is_nil(call("state").layouts.wide.workspaces["3"])
+      local wide = call("state").layouts.wide
+      assert.are.equal(wide.default["1"].tree, reply.tree)
+      assert.are.same({}, wide.own, "workspace 3 has no tree of its own any more")
+      assert.are.equal(wide.default["1"].tree, wide.workspaces["3"]["1"].tree, "it shows the shared tree")
     end)
 
     it("forgets the edits once they are reloaded away", function()

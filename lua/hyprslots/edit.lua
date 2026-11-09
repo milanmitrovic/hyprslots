@@ -900,7 +900,7 @@ end
 -- put back to the one `saved` (the data as slots.lua holds it) gives it:
 -- the workspace's own tree there, else (it has none of its own there) the
 -- saved default one, or no tree at all. A workspace whose trees are then the
--- saved default ones, and has none of its own in `saved`, goes back to
+-- default ones, or none, and has none of its own in `saved`, goes back to
 -- using the default ones. Returns the new data, or nil and why not.
 function M.reset_tree(data, saved, layout, n, screen)
   local entry, err = layout_entry(data, layout)
@@ -942,7 +942,8 @@ function M.reset_tree(data, saved, layout, n, screen)
     if next(trees) == nil then
       target.default = nil
     end
-  elseif not saved_own and serialize.dump(trees) == serialize.dump(type(target.default) == "table" and target.default or {}) then
+  elseif not saved_own and (next(trees) == nil
+    or serialize.dump(trees) == serialize.dump(type(target.default) == "table" and target.default or {})) then
     target.workspaces[n] = nil
     if next(target.workspaces) == nil then
       target.workspaces = nil

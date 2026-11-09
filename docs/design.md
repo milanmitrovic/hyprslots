@@ -185,8 +185,18 @@ appended, by name, to its left-most screen that has a tree (new children
 of a tiled tree's root split, a bare leaf becoming `h[leaf, slot]`; columns
 at the end of a scroll branch, before its `*` when that is its last
 column: `tree.append`), and a slot that is not global is dropped from the
-tree. A tree set with no trees (a layout without default trees, `[5] = {}`)
-stays without any. So a new slot is in every tree at once, a removed one
+tree. **No layout is treeless**: one with no default tree (none given,
+`default = {}`, or every one dropped as above; a new layout the Desk tab's
+`n` makes empty) gets the default trees a new desk's layout gets (§8):
+every global slot on screen 1, `left`, `main` and `right` first, as a
+full-width scroll branch (`scroll[...]`) when screen 1 is a laptop panel
+(connector `eDP*`, `LVDS*`, `DSI*`), else side by side (`h[...]`). Screen 1
+is the left-most monitor of the first desk using the layout whose monitors
+are all connected, else the first monitor the first desk using it lists (a
+laptop panel is selected by its connector), else, when no desk uses it and
+as many monitors as it has screens are connected, the left-most of those;
+nothing known, it is side by side. A workspace with no trees of its own
+(`[5] = {}`) stays without any. So a new slot is in every tree at once, a removed one
 in none, and the editor never places or takes out a slot: an empty slot
 closes up (§6), so a workspace uses the slots it fills. The editor's edits
 (`set_tree`) still refuse a slot that is not global. A table config.lua
@@ -963,7 +973,7 @@ desk uses and edits the stored mappings, never the monitors themselves.
 |---|---|---|
 | a | pick a layout with as many screens as the desk has monitors, then `apply_layout {desk, layout}` | apply it to the active desk (`apply_layout {layout}`; refused on the message line when the screen counts differ) |
 | f | fork the desk's layout | fork this layout: a name (the next free `<name>-N` suggested), then `fork_layout {layout, to}`: the active desk uses the copy when its monitor count fits (the reply says) |
-| n | new layout: a name, a screen count (the active desk's suggested), then (d)efault trees or (e)mpty (`add_layout`) | the same |
+| n | new layout: a name, a screen count (the active desk's suggested), then (d)efault trees or (e)mpty (`add_layout`; an empty layout gets the default trees anyway, as no layout is treeless, §4) | the same |
 | r | rename (`rename_desk`) | rename (`rename_layout`; its desks follow) |
 | x | delete after y/n (`delete_desk`); the active one with a warning that its monitors then get a new desk | delete: when desks use it, pick a layout of as many screens to move them to (`delete_layout {layout, remap}`), else y/n (`delete_layout`); the engine's refusal shows on the message line |
 
