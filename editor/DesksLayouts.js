@@ -1,15 +1,15 @@
 .pragma library
 
 // The Desk view's model (docs/design.md §9), read off one api
-// `state` reply. A desk is a monitor setup: the monitors it is made of, the
-// layout it uses and its pinned screens; the desk whose monitors are exactly
+// `state` reply. A desk is a monitor setup: the monitors it is made of and the
+// layout it uses; the desk whose monitors are exactly
 // the connected ones is active. A layout is a logical arrangement for N
 // screens: several desks with N monitors may share one, and every edit goes
 // to the active desk's. Pure, so node can test it
 // (editor/tests/desks-layouts.test.mjs).
 //
 // A row is a desk { kind: "desk", key, name, active, auto, readOnly, layout,
-// screens (its monitor count), pinned[], monitors: [{ selector, connected,
+// screens (its monitor count), monitors: [{ selector, connected,
 // connector, description }] } or a layout { kind: "layout", key, name,
 // active, readOnly, screens, usedBy[] }; desks first, each by name.
 
@@ -48,7 +48,6 @@ function deskRow(state, name) {
     readOnly: !!d.read_only,
     layout: d.layout || "",
     screens: selectors.length,
-    pinned: Array.isArray(d.pinned) ? d.pinned.slice() : [],
     monitors: selectors.map(function(selector, i) {
       var on = connected[i] === true
       var m = on ? findMonitor(selector, list) : null
@@ -106,14 +105,13 @@ function deskCells(row) {
     name: nameCell(row),
     monitors: row.monitors.map(monitorText).join(" + "),
     layout: "→ " + row.layout,
-    pinned: row.pinned.length ? "pinned " + row.pinned.join(", ") : "",
   }
 }
 
 // The column titles over a section's rows ("desk" or "layout"), keyed as
 // deskCells / layoutCells are.
 function columnTitles(kind) {
-  if (kind === "desk") return { name: "Desk", monitors: "Monitors", layout: "Uses layout", pinned: "Pinned" }
+  if (kind === "desk") return { name: "Desk", monitors: "Monitors", layout: "Uses layout" }
   return { name: "Layout", screens: "Screens", usedBy: "Used by" }
 }
 
@@ -130,15 +128,13 @@ function layoutCells(row) {
 function actions(row) {
   if (!row) return [{ key: "n", label: "new layout" }]
   var desk = row.kind === "desk"
-  var out = [
+  return [
     { key: "a", label: desk ? "apply a layout" : "apply to the active desk" },
     { key: "f", label: desk ? "fork its layout" : "fork" },
     { key: "n", label: "new layout" },
     { key: "r", label: "rename" },
     { key: "x", label: "delete" },
   ]
-  if (desk) out.push({ key: "p", label: "pin a screen" })
-  return out
 }
 
 // The layouts a desk may use: those with as many screens as it has
@@ -230,37 +226,6 @@ function deleteLayoutPlan(state, row) {
   }
   return { question: "Layout '" + row.name + "' is used by " + who + ": move " + (row.usedBy.length === 1 ? "it" : "them")
     + " to", remap: others }
-}
-
-// The screens p offers on a desk, 1..N: on the active desk each is the
-// monitor at that position (left to right), else the selector stored there.
-function pinOptions(state, row) {
-  var d = state && state.desks ? state.desks[row.name] : null
-  var screens = d && Array.isArray(d.screens) ? d.screens : null
-  var list = monitorList(state)
-  var out = []
-  for (var i = 1; i <= row.screens; i++) {
-    var what
-    if (row.active && screens && screens[i - 1]) {
-      var connector = screens[i - 1]
-      var m = null
-      for (var j = 0; j < list.length; j++) if (list[j].name === connector) m = list[j]
-      what = connector + (m && m.description ? " (" + m.description + ")" : "")
-    } else {
-      what = row.monitors[i - 1] ? row.monitors[i - 1].selector : "?"
-    }
-    out.push({ key: i <= 9 ? String(i) : "", label: "screen " + i + ": " + what
-      + (row.pinned.indexOf(i) >= 0 ? " — pinned" : ""), value: i })
-  }
-  return out
-}
-
-function togglePinned(pinned, screen) {
-  var out = pinned.slice()
-  var at = out.indexOf(screen)
-  if (at >= 0) out.splice(at, 1)
-  else out.push(screen)
-  return out.sort(function(a, b) { return a - b })
 }
 
 // The desks other than `desk` that use `layout`: an edit to it changes it

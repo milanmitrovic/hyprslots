@@ -7,8 +7,8 @@ import "Prompts.js" as Prompts
 import "Help.js" as Help
 
 // The desks and the layouts (docs/design.md §9). A desk is a monitor setup:
-// the monitors it is made of (● connected), the layout it uses and its
-// pinned screens; the desk whose monitors are exactly the connected ones is
+// the monitors it is made of (● connected) and the layout it uses; the desk
+// whose monitors are exactly the connected ones is
 // active, and every edit in the other tabs goes to its layout. A layout is a
 // logical arrangement for N screens; any desk with N monitors may use it, and
 // several desks may share one. One selection runs through both lists (↑/↓,
@@ -16,8 +16,8 @@ import "Help.js" as Help
 // row: one picked among those with its screen count), f forks the selected
 // layout (or the desk's) under a new name and points the active desk at the
 // copy, n makes a layout (name, screen count, empty or the default trees), r
-// renames, x deletes (a layout desks use moves them to another first), p pins
-// or unpins a desk's screen. Edits stay in memory until Ctrl+S (the
+// renames, x deletes (a layout desks use moves them to another first). Edits
+// stay in memory until Ctrl+S (the
 // panel's). The model is DesksLayouts.js; the calls are the api's desk and
 // layout edits.
 Item {
@@ -263,27 +263,6 @@ Item {
     })
   }
 
-  // p: pin or unpin a screen of the selected desk (pinned screens keep their
-  // workspace when Super+N switches the others).
-  function startPin() {
-    if (!needRow(false)) return
-    var row = selectedRow
-    if (row.kind !== "desk") {
-      say("p pins a desk's screens: select a desk.", true)
-      return
-    }
-    if (!needRow(true)) return
-    ask(Prompts.choice("Pin or unpin which screen of '" + row.name + "'", DesksLayouts.pinOptions(state, row)), function(screen) {
-      var pinned = DesksLayouts.togglePinned(row.pinned, screen)
-      var unpinning = pinned.indexOf(screen) < 0
-      root.run("set_pinned", { desk: row.name, pinned: pinned }, function() {
-        return "Screen " + screen + " of '" + row.name + "' is " + (unpinning
-          ? "no longer pinned: workspace switches move it again." : "pinned: workspace switches leave it alone.")
-          + " Ctrl+S saves."
-      })
-    })
-  }
-
   function handlePrompt(key, text, modifiers) {
     var out = Prompts.key(prompt, Prompts.keyName(key, modifiers, Qt), Prompts.typed(text))
     var answer = _answer
@@ -304,7 +283,6 @@ Item {
     else if (text === "n") startNew(null)
     else if (text === "r") startRename()
     else if (text === "x") startDelete()
-    else if (text === "p") startPin()
     else return false
     return true
   }
@@ -396,8 +374,7 @@ Item {
             model: entry.desk
               ? [{ text: "", width: root.markWidth }, { text: parent.titles.name, width: root.nameWidth },
                 { text: parent.titles.monitors, width: root.width * 0.43 },
-                { text: parent.titles.layout, width: root.width * 0.16 },
-                { text: parent.titles.pinned, width: root.width - root.markWidth - root.nameWidth - root.width * 0.59 }]
+                { text: parent.titles.layout, width: root.width - root.markWidth - root.nameWidth - root.width * 0.43 }]
               : [{ text: "", width: root.markWidth }, { text: parent.titles.name, width: root.nameWidth },
                 { text: parent.titles.screens, width: root.width * 0.14 },
                 { text: parent.titles.usedBy, width: root.width - root.markWidth - root.nameWidth - root.width * 0.14 }]
@@ -457,7 +434,7 @@ Item {
               font.bold: true
               elide: Text.ElideRight
             }
-            // a desk: its monitors, its layout, its pinned screens; a
+            // a desk: its monitors and its layout; a
             // layout: its screen count and the desks using it
             Text {
               width: entry.desk ? root.width * 0.43 : root.width * 0.14
@@ -471,26 +448,13 @@ Item {
               elide: Text.ElideRight
             }
             Text {
-              width: entry.desk ? root.width * 0.16 : root.width - root.markWidth - root.nameWidth - root.width * 0.14
+              width: root.width - root.markWidth - root.nameWidth - root.width * (entry.desk ? 0.43 : 0.14)
               anchors.verticalCenter: parent.verticalCenter
               leftPadding: Style.spacing.md
               textFormat: Text.PlainText
               text: entry.desk ? entry.cells.layout : entry.cells.usedBy
               color: entry.ink
               opacity: entry.desk || entry.modelData.usedBy.length ? 1 : 0.55
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.body
-              elide: Text.ElideRight
-            }
-            Text {
-              visible: entry.desk
-              width: entry.desk ? root.width - root.markWidth - root.nameWidth - root.width * 0.59 : 0
-              anchors.verticalCenter: parent.verticalCenter
-              leftPadding: Style.spacing.md
-              textFormat: Text.PlainText
-              text: entry.desk ? entry.cells.pinned : ""
-              color: entry.ink
-              opacity: 0.75
               font.family: root.fontFamily
               font.pixelSize: Style.font.body
               elide: Text.ElideRight

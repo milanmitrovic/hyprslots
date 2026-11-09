@@ -16,16 +16,15 @@ function fixture() {
     desk: "docked",
     layout: "docked",
     screens: ["eDP-1", "DP-2"],
-    pinned: [1],
     monitors: [
       { name: "DP-2", description: SAMSUNG, serial: "HNTW700044", selector: SAMSUNG, x: 1920, y: 0 },
       { name: "eDP-1", description: "BOE 0x0BCA", serial: "", selector: "eDP-1", x: 0, y: 0, internal: true },
     ],
     desks: {
-      docked: { monitors: ["eDP-1", SAMSUNG], connected: [true, true], layout: "docked", pinned: [1], active: true,
+      docked: { monitors: ["eDP-1", SAMSUNG], connected: [true, true], layout: "docked", active: true,
         screens: ["eDP-1", "DP-2"], read_only: false },
-      laptop: { monitors: ["eDP-1"], connected: [true], layout: "laptop", pinned: [], active: false, read_only: false },
-      office: { monitors: ["eDP-1", "Dell U2723QE ABC"], connected: [true, false], layout: "docked", pinned: [],
+      laptop: { monitors: ["eDP-1"], connected: [true], layout: "laptop", active: false, read_only: false },
+      office: { monitors: ["eDP-1", "Dell U2723QE ABC"], connected: [true, false], layout: "docked",
         active: false, read_only: true },
     },
     layouts: {
@@ -51,11 +50,11 @@ test("rows are every desk by name, then every layout by name", () => {
   assert.deepEqual(plain(D.rows(null)), []);
 });
 
-test("a desk row has its monitors, whether each is connected and which monitor it is, its layout and pinned screens", () => {
+test("a desk row has its monitors, whether each is connected and which monitor it is, and its layout", () => {
   const rows = plain(D.rows(fixture()));
   assert.deepEqual(rows[0], {
     kind: "desk", key: "desk:docked", name: "docked", active: true, auto: false, readOnly: false, layout: "docked",
-    screens: 2, pinned: [1],
+    screens: 2,
     monitors: [
       { selector: "eDP-1", connected: true, connector: "eDP-1", description: "BOE 0x0BCA" },
       { selector: SAMSUNG, connected: true, connector: "DP-2", description: SAMSUNG },
@@ -72,21 +71,19 @@ test("a desk the engine just made is marked new and unsaved", () => {
   assert.match(D.deskCells(D.rows(state)[1]).name, /^laptop \(new, unsaved\)$/);
 });
 
-test("a desk row reads: name, monitors with ● when connected, → the layout it uses, the pinned screens", () => {
+test("a desk row reads: name, monitors with ● when connected, → the layout it uses", () => {
   const rows = D.rows(fixture());
   assert.deepEqual(plain(D.deskCells(rows[0])), {
     mark: "● active",
     name: "docked",
     monitors: "● eDP-1 (BOE 0x0BCA) + ● " + SAMSUNG + " (DP-2)",
     layout: "→ docked",
-    pinned: "pinned 1",
   });
   assert.deepEqual(plain(D.deskCells(rows[2])), {
     mark: "",
     name: "office (set in config.lua)",
     monitors: "● eDP-1 (BOE 0x0BCA) + ○ Dell U2723QE ABC",
     layout: "→ docked",
-    pinned: "",
   });
 });
 
@@ -101,14 +98,14 @@ test("a layout row has its screen count and the desks that use it", () => {
     usedBy: "unused" });
 });
 
-test("the keys that act on a row: a desk takes p, a layout does not", () => {
+test("the keys that act on a row: no pinning, no p", () => {
   const rows = D.rows(fixture());
-  assert.deepEqual(plain(D.actions(rows[0]).map((a) => a.key)), ["a", "f", "n", "r", "x", "p"]);
+  assert.deepEqual(plain(D.actions(rows[0]).map((a) => a.key)), ["a", "f", "n", "r", "x"]);
   assert.deepEqual(plain(D.actions(rows[3]).map((a) => a.key)), ["a", "f", "n", "r", "x"]);
   assert.deepEqual(plain(D.actions(rows[3]).map((a) => a.label)), ["apply to the active desk", "fork", "new layout",
     "rename", "delete"]);
   assert.deepEqual(plain(D.actions(rows[0]).map((a) => a.label)), ["apply a layout", "fork its layout", "new layout",
-    "rename", "delete", "pin a screen"]);
+    "rename", "delete"]);
   assert.deepEqual(plain(D.actions(null).map((a) => a.key)), ["n"]);
 });
 
@@ -183,25 +180,6 @@ test("deleting a used layout offers the layouts with as many screens to move its
     remap: [] });
 });
 
-test("the screens p offers: on the active desk the monitor at each position, else the selector", () => {
-  const state = fixture();
-  const rows = D.rows(state);
-  assert.deepEqual(plain(D.pinOptions(state, rows[0])), [
-    { key: "1", label: "screen 1: eDP-1 (BOE 0x0BCA) — pinned", value: 1 },
-    { key: "2", label: "screen 2: DP-2 (" + SAMSUNG + ")", value: 2 },
-  ]);
-  assert.deepEqual(plain(D.pinOptions(state, rows[2])), [
-    { key: "1", label: "screen 1: eDP-1", value: 1 },
-    { key: "2", label: "screen 2: Dell U2723QE ABC", value: 2 },
-  ]);
-});
-
-test("pinning toggles the screen in the desk's list", () => {
-  assert.deepEqual(plain(D.togglePinned([1], 2)), [1, 2]);
-  assert.deepEqual(plain(D.togglePinned([1, 2], 1)), [2]);
-  assert.deepEqual(plain(D.togglePinned([], 1)), [1]);
-});
-
 test("the panel's header names the desk, its layout and the other desks that share it", () => {
   const state = fixture();
   assert.equal(D.header(state), "Desk: docked · Layout: docked (also used by: office)");
@@ -230,6 +208,6 @@ test("a read-only row refuses edits, saying where it is set", () => {
 });
 
 test("each section's column titles say what the columns are: a desk's layout is the one it uses", () => {
-  assert.deepEqual(plain(D.columnTitles("desk")), { name: "Desk", monitors: "Monitors", layout: "Uses layout", pinned: "Pinned" });
+  assert.deepEqual(plain(D.columnTitles("desk")), { name: "Desk", monitors: "Monitors", layout: "Uses layout" });
   assert.deepEqual(plain(D.columnTitles("layout")), { name: "Layout", screens: "Screens", usedBy: "Used by" });
 });
