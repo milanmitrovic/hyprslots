@@ -10,7 +10,8 @@
 #   HEADLESS-4, 1920x1080 at 2400,0   Omarchy block 2
 #
 # The only configured desk is solo = { HEADLESS-2 }, layout solo (1 screen):
-# workspace 3 = h[left, main:2, right] -> 600 + 1200 + 600 px. With
+# workspace 3 = h[left, main:2, right] -> 600 + 1200 + 600 px (the shared
+# tree h[left, main, right], as every layout has one). With
 # HEADLESS-3 added, desk headless-2+headless-3 gets a new layout named for
 # what it arranges, 2-screen (not after the desk), whose default trees put left, main and right in three equal columns
 # (800 px each) on screen 1 (HEADLESS-2), screen 2 empty. Swapping
@@ -43,6 +44,7 @@ return {
   layouts = {
     solo = {
       screens = 1,
+      default = { [1] = "h[left, main, right]" },
       workspaces = { [3] = { [1] = "h[left, main:2, right]" } },
     },
   },
@@ -142,7 +144,7 @@ test_body() {
     "monitors=HEADLESS-2,HEADLESS-3 layout=$layout screens=2 default1=h[left, main, right] default2=nil" \
     "$(saved_desk "$name")"
   expect_eq "slots.lua keeps desk solo" \
-    "monitors=HEADLESS-2 layout=solo screens=1 default1=nil default2=nil" "$(saved_desk solo)"
+    "monitors=HEADLESS-2 layout=solo screens=1 default1=h[left, main, right] default2=nil" "$(saved_desk solo)"
   state=$(api state)
   expect_eq "saved" "false" "$(field .dirty <<<"$state")"
   expect_eq "no longer auto" "" "$(field ".desks[\"$name\"].auto // empty" <<<"$state")"
