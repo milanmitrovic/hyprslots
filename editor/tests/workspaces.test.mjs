@@ -83,3 +83,13 @@ test("the Layout header is one strip: All workspaces, a dot, the workspaces; the
   assert.equal(W.stripLine(W.strip(state, "solo", 3)), "All workspaces · 1 2 [3•] 4 5 6 7 8 9");
   assert.equal(W.stripLine(W.strip(state, "solo", 9)), "All workspaces · 1 2 3• 4 5 6 7 8 [9]");
 });
+
+test("the Assignment tab's switcher: the managed workspaces by their keys, no All workspaces, no dots", () => {
+  const state = { workspace_count: 9, layouts: { solo: { own: [3] } } };
+  const numbers = plain(W.numbers(state, 3));
+  assert.deepEqual(numbers.map((w) => w.label), ["1", "2", "3", "4", "5", "6", "7", "8", "9"]);
+  assert.deepEqual(numbers[2], { workspace: 3, label: "3", current: true, own: false, shared: false });
+  assert.equal(numbers.filter((w) => w.current).length, 1);
+  assert.equal(W.stripLine(W.numbers(state, 3)), "1 2 [3] 4 5 6 7 8 9");
+  assert.deepEqual(plain(W.numbers(null, 10)).map((w) => w.label).slice(-1), ["0"], "workspace 10's key is 0");
+});

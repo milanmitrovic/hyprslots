@@ -49,6 +49,18 @@ function strip(state, layout, current) {
   return out
 }
 
+// The Assignment tab's switcher: the managed workspaces by their keys, as
+// strip entries (no All workspaces; nothing own or shared: the tab shows
+// windows, not trees).
+function numbers(state, current) {
+  var out = []
+  var last = count(state)
+  for (var n = 1; n <= last; n++) {
+    out.push({ workspace: n, label: String(n % COUNT), current: n === current, own: false, shared: false })
+  }
+  return out
+}
+
 // A strip entry as it reads: its label, a dot after a workspace with trees
 // of its own.
 function stripText(entry) {
@@ -64,11 +76,11 @@ function jumpKeys(last) {
 }
 
 // The strip as one line of text, the current entry in brackets and a dot
-// between All workspaces and the workspaces (as the header draws it):
-// "All workspaces · 1 2 [3•] 4 …".
+// after All workspaces (as the switcher draws it):
+// "All workspaces · 1 2 [3•] 4 …"; the Assignment tab's "1 2 [3] 4 …".
 function stripLine(entries) {
   return entries.map(function(entry, i) {
     var text = entry.current ? "[" + stripText(entry) + "]" : stripText(entry)
-    return i === 1 ? "· " + text : text
+    return i > 0 && entries[i - 1].workspace === "default" ? "· " + text : text
   }).join(" ")
 }
