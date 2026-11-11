@@ -182,6 +182,11 @@ ShellRoot {
       return panel.deskColumnsText()
     }
 
+    // The Desk tab's desks with their monitors by display name.
+    function deskMonitors(): string {
+      return panel.deskMonitorsText()
+    }
+
     // How many lines the help row wraps to.
     function helpLines(): string {
       return String(panel.helpLines())

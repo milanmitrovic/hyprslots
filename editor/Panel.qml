@@ -230,7 +230,7 @@ Item {
     return layoutView.draftText()
   }
 
-  // The Layout view's pane titles ("Screen 1 · HEADLESS-2 (...)" joined by
+  // The Layout view's pane titles ("Screen 1 · Built-in" joined by
   // " | ") and its header line: for the e2e smoke.
   function layoutPanesText() {
     return layoutView.paneTitles()
@@ -254,6 +254,14 @@ Item {
   function deskColumnsText() {
     var t = DesksLayouts.columnTitles("desk")
     return Object.keys(t).map(function(k) { return t[k] }).join(" | ")
+  }
+
+  // The Desk tab's desks, "<name>: <monitors cell>" joined by "; ": for
+  // the e2e smoke.
+  function deskMonitorsText() {
+    return desksView.rows.filter(function(row) { return row.kind === "desk" }).map(function(row) {
+      return row.name + ": " + DesksLayouts.deskCells(row).monitors
+    }).join("; ")
   }
 
   // How many lines the help row takes (it should take one): for the e2e smoke.

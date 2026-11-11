@@ -16,7 +16,9 @@ import "Help.js" as Help
 // row: one picked among those with its screen count), f forks the selected
 // layout (or the desk's) under a new name and points the active desk at the
 // copy, n makes a layout (name, screen count; the default trees), r
-// renames, x deletes (a layout desks use moves them to another first). Edits
+// renames, x deletes (a layout desks use moves them to another first), m on
+// a desk names one of its monitors (the label the editor shows for it;
+// empty: back to its own name, Built-in or the model). Edits
 // stay in memory until Ctrl+S (the
 // panel's). The model is DesksLayouts.js; the calls are the api's desk and
 // layout edits.
@@ -226,6 +228,36 @@ Item {
     ask(Prompts.text(label, { required: true }), answer)
   }
 
+  // m: on a desk row, name one of its monitors (picked when it has more
+  // than one): the label shown for it everywhere in the editor; empty
+  // clears it. Desks keep matching by the monitor's selector.
+  function startName() {
+    if (!needRow(false)) return
+    var row = selectedRow
+    if (row.kind !== "desk") {
+      say("m names a monitor of a desk: select a desk.", true)
+      return
+    }
+    if (row.monitors.length === 1) {
+      askName(row.monitors[0])
+      return
+    }
+    ask(Prompts.choice(DesksLayouts.monitorQuestion(row), DesksLayouts.monitorOptions(row)), function(selector) {
+      for (var i = 0; i < row.monitors.length; i++) if (row.monitors[i].selector === selector) root.askName(row.monitors[i])
+    })
+  }
+
+  function askName(m) {
+    var label = DesksLayouts.nameQuestion(m)
+    var answer = function(name) {
+      name = name.trim()
+      root.run("set_monitor_name", { selector: m.selector, name: name }, function(reply) {
+        return DesksLayouts.nameMessage(reply, m)
+      }, Prompts.text(label, { value: name }), answer)
+    }
+    ask(Prompts.text(label, { value: m.label }), answer)
+  }
+
   // x: delete a desk after y/n; a layout desks use moves them to another of
   // the same screen count first (picked), else y/n (the engine says why it
   // will not, while desks use it).
@@ -275,6 +307,7 @@ Item {
     else if (key === Qt.Key_Down || text === "j") select(selected + 1)
     else if (text === "a") startApply()
     else if (text === "f") startFork()
+    else if (text === "m") startName()
     else if (text === "n") startNew(null)
     else if (text === "r") startRename()
     else if (text === "x") startDelete()

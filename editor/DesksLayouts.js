@@ -142,10 +142,35 @@ function actions(row) {
   return [
     { key: "a", label: desk ? "apply a layout" : "apply to the active desk" },
     { key: "f", label: desk ? "fork its layout" : "fork" },
+  ].concat(desk ? [{ key: "m", label: "monitor name" }] : [], [
     { key: "n", label: "new layout" },
     { key: "r", label: "rename" },
     { key: "x", label: "delete" },
-  ]
+  ])
+}
+
+// m on a desk: which of its monitors to name, numbered ([{ key, label: its
+// display name, value: its selector }]); asked only when it has more
+// than one.
+function monitorOptions(row) {
+  return row.monitors.map(function(m, i) {
+    return { key: i < 9 ? String(i + 1) : "", label: m.display, value: m.selector }
+  })
+}
+
+function monitorQuestion(row) {
+  return "Name a monitor of desk '" + row.name + "'"
+}
+
+// The text prompt's label for naming monitor `m` (a desk row's monitor).
+function nameQuestion(m) {
+  return "Name monitor '" + m.display + "' (empty: its own name) [Enter] save  [Esc] cancel: "
+}
+
+// What set_monitor_name's reply says, for monitor `m` as it was.
+function nameMessage(reply, m) {
+  if (reply.name === "") return "Monitor '" + m.display + "' is '" + reply.display + "' again, its own name. Ctrl+S saves."
+  return "Monitor '" + m.display + "' is '" + reply.name + "' now. Ctrl+S saves."
 }
 
 // The layouts a desk may use: those with as many screens as it has

@@ -511,6 +511,66 @@ desks_layouts() {
   shot 15-desks-layouts-edited
 }
 
+# m on desk away (HEADLESS-2 and a Dell not connected) picks a monitor and
+# labels it: the label shows in the Desk tab's monitors, the header and the
+# Layout tab's pane title; desks still match by connector. Saved by
+# save_and_check's Ctrl+S.
+name_monitor() {
+  press_keys Up Up Up Up Up Up Up Up
+  expect_eq "Up selects desk away" "desk:away" "$(smoke selection)"
+  local help
+  help=$(smoke help)
+  if [[ $help == *'">m</font></b>onitor name'* ]]; then
+    pass "the Desk help row offers m, its key highlighted"
+  else
+    fail "help row: $help"
+  fi
+  if [[ $(smoke deskMonitors) == *"solo: ● HEADLESS-2"* ]]; then
+    pass "monitors by display name: $(smoke deskMonitors)"
+  else
+    fail "desk monitors: $(smoke deskMonitors)"
+  fi
+  press_keys m
+  local asked
+  asked=$(smoke message)
+  if [[ $asked == "Name a monitor of desk 'away': (1) HEADLESS-2, (2) "* ]]; then
+    pass "m asks which of away's monitors: $asked"
+  else
+    fail "m asked: $asked"
+  fi
+  press_keys 1
+  expect_eq "then its name" "Name monitor 'HEADLESS-2' (empty: its own name) [Enter] save  [Esc] cancel: ▏" "$(smoke message)"
+  press_text "Main screen"
+  press_keys Return
+  if eventually 5 state_is '.monitor_names["HEADLESS-2"]' "Main screen"; then
+    pass "m labelled HEADLESS-2 Main screen"
+  else
+    fail "monitor_names: $(api_state | jq -c .monitor_names): $(smoke message)"
+  fi
+  eventually 5 smoke_idle || true
+  expect_eq "it says so" "Monitor 'HEADLESS-2' is 'Main screen' now. Ctrl+S saves." "$(smoke message)"
+  expect_eq "state names the monitor by it" "Main screen" "$(api_state | jq -r '.monitors[] | select(.name == "HEADLESS-2") | .display')"
+  expect_eq "desk solo still matches by connector" "solo" "$(api_state | jq -r .desk)"
+  if [[ $(smoke deskMonitors) == *"away: ● Main screen + ○ "*"solo: ● Main screen"* ]]; then
+    pass "the Desk tab shows the label: $(smoke deskMonitors)"
+  else
+    fail "desk monitors: $(smoke deskMonitors)"
+  fi
+  expect_eq "the header too" "Desk: solo (Main screen) · Layout: solo-2" "$(header)"
+  sleep 0.3
+  shot 15b-desk-monitor-named
+  press_keys Tab Tab
+  if [[ $(smoke panes) == "Screen 1 · Main screen" ]]; then
+    pass "the Layout tab's pane title shows the label"
+  else
+    fail "pane titles: $(smoke panes)"
+  fi
+  press_keys Tab
+  expect_eq "back on desk away" "desk:away" "$(smoke selection)"
+  press_keys Down Down Down Down
+  expect_eq "Down x4 selects extra again" "layout:extra" "$(smoke selection)"
+}
+
 save_and_check() {
   local file=$E2E_CONFIG_HOME/hyprslots/slots.lua
   expect_eq "w does nothing here" "ignored" "$(smoke press w)"
@@ -524,7 +584,7 @@ save_and_check() {
   saved=$(cat "$file")
   for want in 'aside = {},' 'description = "the editor",' 'aside = "t-right",' 'main = "t-main",' \
     '"h[main:2, v[aside, side:3]]"' '["solo-2"] = {' 'extra = {' 'projector = {' \
-    'layout = "solo-2"' '"h[main, aside, side]"'; do
+    'layout = "solo-2"' '"h[main, aside, side]"' 'monitor_names = {' '["HEADLESS-2"] = "Main screen",'; do
     if grep -qF "$want" <<<"$saved"; then
       pass "slots.lua holds $want"
     else
@@ -561,7 +621,7 @@ desks_layouts_edits() {
   fi
   eventually 5 smoke_idle || true
   expect_eq "projector uses solo-2 now" "solo-2" "$(api_state | jq -r '.desks.projector.layout')"
-  expect_eq "the header names the desk sharing it" "Desk: solo (HEADLESS-2) · Layout: solo-2 (also used by: projector)" "$(header)"
+  expect_eq "the header names the desk sharing it" "Desk: solo (Main screen) · Layout: solo-2 (also used by: projector)" "$(header)"
   expect_eq "the selection falls back to the active desk" "desk:solo" "$(smoke selection)"
 
   press_keys Down
@@ -631,7 +691,7 @@ bar_widget() {
   expect_eq "it shows the active layout, a dot for the unsaved edits" \
     "dirty 󰕰 solo-2 •" "$(smoke barLabel)"
   expect_eq "its tooltip says so, and names the layout and the desk sharing it" \
-    $'Hyprslots: desk solo, workspace 3 on HEADLESS-2 · unsaved edits\nLayout: solo-2 (also used by: projector)\nClick: editor · Right-click: menu' \
+    $'Hyprslots: desk solo, workspace 3 on Main screen · unsaved edits\nLayout: solo-2 (also used by: projector)\nClick: editor · Right-click: menu' \
     "$(smoke barTooltip)"
   sleep 0.3
   shot 19-bar-widget
@@ -1158,6 +1218,7 @@ test_body() {
   layout_slots
   layout_shared
   desks_layouts
+  name_monitor
   save_and_check
   desks_layouts_edits
 

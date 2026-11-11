@@ -124,12 +124,12 @@ test("a layout row has its screen count and the desks that use it", () => {
 
 test("the keys that act on a row: no pinning, no p", () => {
   const rows = D.rows(fixture());
-  assert.deepEqual(plain(D.actions(rows[0]).map((a) => a.key)), ["a", "f", "n", "r", "x"]);
+  assert.deepEqual(plain(D.actions(rows[0]).map((a) => a.key)), ["a", "f", "m", "n", "r", "x"]);
   assert.deepEqual(plain(D.actions(rows[3]).map((a) => a.key)), ["a", "f", "n", "r", "x"]);
   assert.deepEqual(plain(D.actions(rows[3]).map((a) => a.label)), ["apply to the active desk", "fork", "new layout",
     "rename", "delete"]);
   assert.deepEqual(plain(D.actions(rows[0]).map((a) => a.label)), ["apply a layout", "fork its layout",
-    "new layout", "rename", "delete"]);
+    "monitor name", "new layout", "rename", "delete"]);
   assert.deepEqual(plain(D.actions(null).map((a) => a.key)), ["n"]);
 });
 
@@ -246,3 +246,19 @@ test("each section's column titles say what the columns are: a desk's layout is 
   assert.deepEqual(plain(D.columnTitles("layout")), { name: "Layout", screens: "Screens", usedBy: "Used by" });
 });
 
+test("m names one of the desk's monitors: which (when it has more than one), then the name", () => {
+  const rows = D.rows(fixture());
+  assert.deepEqual(plain(D.monitorOptions(rows[0])), [
+    { key: "1", label: "Built-in", value: "eDP-1" },
+    { key: "2", label: "Odyssey G95NC", value: SAMSUNG },
+  ]);
+  assert.deepEqual(plain(D.monitorOptions(rows[1])), [{ key: "1", label: "Built-in", value: "eDP-1" }]);
+  assert.equal(D.monitorQuestion(rows[0]), "Name a monitor of desk 'docked'");
+  const samsung = rows[0].monitors[1];
+  assert.equal(D.nameQuestion(samsung),
+    "Name monitor 'Odyssey G95NC' (empty: its own name) [Enter] save  [Esc] cancel: ");
+  assert.equal(D.nameMessage({ name: "Samsung", display: "Samsung" }, samsung),
+    "Monitor 'Odyssey G95NC' is 'Samsung' now. Ctrl+S saves.");
+  assert.equal(D.nameMessage({ name: "", display: "Odyssey G95NC" }, { display: "Samsung", label: "Samsung" }),
+    "Monitor 'Samsung' is 'Odyssey G95NC' again, its own name. Ctrl+S saves.");
+});
