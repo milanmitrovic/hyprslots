@@ -399,7 +399,7 @@ return { slots = data.slots, specs = specs, desks = data.desks, layouts = data.l
       assert.are.same({}, state().layouts.dual.used_by, "the layout stays")
       hl.run_timers()
       local s = state()
-      assert.are.equal("abc123+headless-3", s.desk)
+      assert.are.equal("dell-u2723qe-abc123+headless-3", s.desk, "named by display name")
       assert.are.equal("dual", s.layout, "the 2-screen layout used last")
       assert.is_true(s.desks[s.desk].auto)
     end)

@@ -148,17 +148,22 @@ describe("a new desk for unknown monitors", function()
     assert.are.equal("eDP-1", desk.selector(monitor("eDP-1")))
   end)
 
-  it("is named after its monitors left to right: the laptop panel, a monitor's model, else its connector", function()
+  it("is named after its monitors' display names left to right: Built-in, a monitor's model, else its connector", function()
     local monitors = {
       monitor("DP-1", { description = ODYSSEY, serial = "H1AK500000", x = 1728 }),
       monitor("eDP-1", { x = 0 }),
     }
-    assert.are.equal("laptop+g95nc", desk.name_for(monitors, {}))
+    assert.are.equal("built-in+odyssey-g95nc", desk.name_for(monitors, {}))
     assert.are.equal("headless-2", desk.name_for({ monitor("HEADLESS-2") }, {}))
   end)
 
+  it("takes the user's label for a monitor", function()
+    local monitors = { monitor("eDP-1", { x = 0 }), monitor("DP-1", { description = ODYSSEY, serial = "H1AK500000", x = 1728 }) }
+    assert.are.equal("built-in+samsung", desk.name_for(monitors, {}, { [ODYSSEY] = "Samsung" }))
+  end)
+
   it("takes a free name", function()
-    assert.are.equal("laptop-3", desk.name_for({ monitor("eDP-1") }, { laptop = true, ["laptop-2"] = true }))
+    assert.are.equal("built-in-3", desk.name_for({ monitor("eDP-1") }, { ["built-in"] = true, ["built-in-2"] = true }))
   end)
 
   it("lays left, main and right side by side on screen 1, scrolling on a laptop panel", function()

@@ -9,6 +9,8 @@
 -- order. Its layout's screen i is the i-th monitor from the left (by x, then
 -- y, then connector name). Pure.
 
+local monitor_name = require("hyprslots.monitor_name")
+
 local M = {}
 
 local FIELDS = { "description", "serial", "name" }
@@ -106,8 +108,7 @@ end
 
 -- Whether a monitor is a laptop's own panel (by its connector).
 function M.internal(monitor)
-  local name = tostring(monitor and monitor.name or "")
-  return name:match("^eDP") ~= nil or name:match("^LVDS") ~= nil or name:match("^DSI") ~= nil
+  return monitor_name.internal_connector(monitor and monitor.name)
 end
 
 -- What a new desk selects a monitor by: its description, else its serial,
@@ -122,42 +123,16 @@ function M.selector(monitor)
   return monitor.name
 end
 
-local function slug(text)
-  local out = tostring(text):lower():gsub("[^%w]+", "-"):gsub("^%-+", ""):gsub("%-+$", "")
-  return out
-end
-
--- A short name for one monitor: `laptop` for the laptop's panel, else the
--- last word of its description that is not its serial (the model, as in
--- "Samsung Electric Company Odyssey G95NC HNTW700044" -> g95nc), else its
--- connector (headless-2).
-function M.short_name(monitor)
-  if M.internal(monitor) then
-    return "laptop"
-  end
-  local words = {}
-  for word in tostring(monitor.description or ""):gmatch("%S+") do
-    if word ~= monitor.serial then
-      words[#words + 1] = word
-    end
-  end
-  for i = #words, 1, -1 do
-    local name = slug(words[i])
-    if name ~= "" then
-      return name
-    end
-  end
-  local name = slug(monitor.name)
-  return name ~= "" and name or "screen"
-end
-
 -- A name for a desk of these monitors that is not in `taken` (name -> any):
--- their short names left to right, joined with "+" (laptop+g95nc), then
--- "-2", "-3"... when it is taken.
-function M.name_for(monitors, taken)
+-- their display names (monitor_name.lua: the user's `labels`, selector ->
+-- name, else Built-in, the model, the connector) left to right, lowercase
+-- with "-" between words, joined with "+" (built-in+odyssey-g95nc), then
+-- "-2", "-3"... when it is taken. `makes` defaults to the common ones.
+function M.name_for(monitors, taken, labels, makes)
   local parts = {}
-  for i, monitor in ipairs(M.order(monitors)) do
-    parts[i] = M.short_name(monitor)
+  for _, monitor in ipairs(M.order(monitors)) do
+    local part = monitor_name.slug(monitor_name.display(monitor, labels, makes))
+    parts[#parts + 1] = part ~= "" and part or "screen"
   end
   local base = table.concat(parts, "+")
   if base == "" then

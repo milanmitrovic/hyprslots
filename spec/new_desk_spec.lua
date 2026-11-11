@@ -76,7 +76,7 @@ return { slots = { left = {}, main = {}, right = {} }, desks = {}, layouts = {} 
 ]])
     hl.run_timers()
     local state = engine.state(hyprslots)
-    assert.are.equal("laptop", state.desk)
+    assert.are.equal("built-in", state.desk)
     assert.are.equal("scroll", state.layout)
     assert.are.equal("scroll[left, main, right]", state.layouts.scroll.default["1"].tree)
   end)

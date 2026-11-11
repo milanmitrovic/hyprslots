@@ -17,6 +17,7 @@ local workspaces = require("hyprslots.workspaces")
 local hotplug = require("hyprslots.hotplug")
 local layout = require("hyprslots.layout")
 local log = require("hyprslots.log")
+local monitor_name = require("hyprslots.monitor_name")
 local resize = require("hyprslots.resize")
 local router = require("hyprslots.router")
 local scroll = require("hyprslots.scroll")
@@ -200,7 +201,8 @@ function Engine:new_desk()
   end
   local data_desks = self.data and type(self.data.desks) == "table" and self.data.desks or nil
   local data_layouts = self.data and type(self.data.layouts) == "table" and self.data.layouts or nil
-  local name = free_name(desk.name_for(monitors), self.cfg.desks, data_desks)
+  local name = free_name(desk.name_for(monitors, nil, self.cfg.monitor_names, monitor_name.system_makes()),
+    self.cfg.desks, data_desks)
   local selectors = {}
   for i, monitor in ipairs(monitors) do
     selectors[i] = desk.selector(monitor)
