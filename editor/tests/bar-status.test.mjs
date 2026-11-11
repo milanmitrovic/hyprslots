@@ -160,3 +160,11 @@ test("each call's outcome in a sentence, a failure in the engine's words", () =>
   assert.equal(B.outcome("reload", 3, { ok: true }), "Reloaded the config; these monitors have no desk.");
   assert.equal(B.outcome("save", 3, { ok: false, error: "slots.lua: permission denied" }), "slots.lua: permission denied");
 });
+
+test("the tooltip names the monitor the workspace is on by its display name", () => {
+  const monitors = [{ name: "HEADLESS-2", display: "Built-in" }, { name: "DP-1", display: "Odyssey G95NC" }];
+  assert.equal(B.view(running({ monitors })).tooltip,
+    "Hyprslots: desk laptop, workspace 3 on Built-in\nLayout: solo (also used by: office)\n" + HINT);
+  assert.equal(B.view(running({ monitors }, 13)).tooltip,
+    "Hyprslots: desk laptop, workspace 3 on Odyssey G95NC has no tree on this screen\nLayout: solo (also used by: office)\n" + HINT);
+});

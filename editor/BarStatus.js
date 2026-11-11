@@ -28,10 +28,23 @@ function hasTree(state, entry) {
 
 var HINT = "Click: editor · Right-click: menu"
 
-// Where the bar's screen is, in words: "desk laptop, workspace 3".
-function where(desk, entry, tree, workspaceId) {
+// The display name of the monitor a workspace entry is on (" on Built-in"),
+// "" when the engine names none.
+function onMonitor(state, entry) {
+  var list = state && Array.isArray(state.monitors) ? state.monitors : []
+  for (var i = 0; i < list.length; i++) {
+    if (entry && list[i].name === entry.monitor && list[i].display) return " on " + list[i].display
+  }
+  return ""
+}
+
+// Where the bar's screen is, in words: "desk laptop, workspace 3 on Built-in".
+function where(desk, entry, tree, workspaceId, state) {
   if (!desk) return "no desk for these monitors"
-  if (entry) return "desk " + desk + ", workspace " + entry.workspace + (tree ? "" : " has no tree on this screen")
+  if (entry) {
+    return "desk " + desk + ", workspace " + entry.workspace + onMonitor(state, entry)
+      + (tree ? "" : " has no tree on this screen")
+  }
   if (workspaceId === undefined || workspaceId === null || workspaceId < 0) return "desk " + desk + ", no workspace"
   return "desk " + desk + ", workspace " + workspaceId + " has no tree"
 }
@@ -60,7 +73,7 @@ function view(input) {
   var dirty = !!(state && state.dirty === true)
   var label = GLYPH + " " + (state && state.layout ? String(state.layout) : "none") + (dirty ? " •" : "")
   var line = layoutLine(state)
-  var here = where(desk, entry, tree, input.workspaceId) + (dirty ? " · unsaved edits" : "") + (line ? "\n" + line : "")
+  var here = where(desk, entry, tree, input.workspaceId, state) + (dirty ? " · unsaved edits" : "") + (line ? "\n" + line : "")
   var out = { label: label, status: dirty ? "dirty" : "normal", tooltip: "", error: "", workspace: workspace,
     desk: desk, dirty: dirty }
 

@@ -17,16 +17,22 @@ function fixture() {
     layout: "docked",
     screens: ["eDP-1", "DP-2"],
     monitors: [
-      { name: "DP-2", description: SAMSUNG, serial: "HNTW700044", selector: SAMSUNG, x: 1920, y: 0 },
-      { name: "eDP-1", description: "BOE 0x0BCA", serial: "", selector: "eDP-1", x: 0, y: 0, internal: true },
+      { name: "DP-2", description: SAMSUNG, serial: "HNTW700044", selector: SAMSUNG, x: 1920, y: 0,
+        display: "Odyssey G95NC" },
+      { name: "eDP-1", description: "BOE 0x0BCA", serial: "", selector: "eDP-1", x: 0, y: 0, internal: true,
+        display: "Built-in" },
     ],
     desks: {
-      docked: { monitors: ["eDP-1", SAMSUNG], connected: [true, true], layout: "docked", active: true,
+      docked: { monitors: ["eDP-1", SAMSUNG], connected: [true, true], displays: ["Built-in", "Odyssey G95NC"],
+        layout: "docked", active: true,
         screens: ["eDP-1", "DP-2"], read_only: false },
-      laptop: { monitors: ["eDP-1"], connected: [true], layout: "laptop", active: false, read_only: false },
-      office: { monitors: ["eDP-1", "Dell U2723QE ABC"], connected: [true, false], layout: "docked",
+      laptop: { monitors: ["eDP-1"], connected: [true], displays: ["Built-in"], layout: "laptop", active: false,
+        read_only: false },
+      office: { monitors: ["eDP-1", "Dell U2723QE ABC"], connected: [true, false], displays: ["Built-in", "Dell U2723QE ABC"],
+        layout: "docked",
         active: false, read_only: true },
     },
+    monitor_names: {},
     layouts: {
       docked: { screens: 2, default: { 1: { tree: "main" } }, workspaces: {}, own: [3], used_by: ["docked", "office"],
         active: true, read_only: false },
@@ -56,11 +62,12 @@ test("a desk row has its monitors, whether each is connected and which monitor i
     kind: "desk", key: "desk:docked", name: "docked", active: true, auto: false, readOnly: false, layout: "docked",
     screens: 2,
     monitors: [
-      { selector: "eDP-1", connected: true, connector: "eDP-1", description: "BOE 0x0BCA" },
-      { selector: SAMSUNG, connected: true, connector: "DP-2", description: SAMSUNG },
+      { selector: "eDP-1", connected: true, connector: "eDP-1", description: "BOE 0x0BCA", display: "Built-in", label: "" },
+      { selector: SAMSUNG, connected: true, connector: "DP-2", description: SAMSUNG, display: "Odyssey G95NC", label: "" },
     ],
   });
-  assert.deepEqual(rows[2].monitors[1], { selector: "Dell U2723QE ABC", connected: false, connector: "", description: "" });
+  assert.deepEqual(rows[2].monitors[1], { selector: "Dell U2723QE ABC", connected: false, connector: "", description: "",
+    display: "Dell U2723QE ABC", label: "" });
   assert.equal(rows[2].readOnly, true);
 });
 
@@ -71,18 +78,30 @@ test("a desk the engine just made is marked new and unsaved", () => {
   assert.match(D.deskCells(D.rows(state)[1]).name, /^laptop \(new, unsaved\)$/);
 });
 
+test("a desk row's monitors carry the user's label and fall back to the selector without a display name", () => {
+  const state = fixture();
+  state.monitor_names = { [SAMSUNG]: "Samsung" };
+  state.desks.docked.displays = ["Built-in", "Samsung"];
+  assert.deepEqual(plain(D.rows(state)[0].monitors[1]).label, "Samsung");
+  assert.equal(D.deskCells(D.rows(state)[0]).monitors, "● Built-in + ● Samsung");
+  delete state.desks.office.displays;
+  assert.equal(D.deskCells(D.rows(state)[2]).monitors, "● Built-in + ○ Dell U2723QE ABC", "the connected monitor's");
+  state.monitors = [];
+  assert.equal(D.deskCells(D.rows(state)[2]).monitors, "● eDP-1 + ○ Dell U2723QE ABC", "else the selector");
+});
+
 test("a desk row reads: name, monitors with ● when connected, → the layout it uses", () => {
   const rows = D.rows(fixture());
   assert.deepEqual(plain(D.deskCells(rows[0])), {
     mark: "●",
     name: "docked",
-    monitors: "● eDP-1 (BOE 0x0BCA) + ● " + SAMSUNG + " (DP-2)",
+    monitors: "● Built-in + ● Odyssey G95NC",
     layout: "→ docked",
   });
   assert.deepEqual(plain(D.deskCells(rows[2])), {
     mark: "",
     name: "office (set in your config)",
-    monitors: "● eDP-1 (BOE 0x0BCA) + ○ Dell U2723QE ABC",
+    monitors: "● Built-in + ○ Dell U2723QE ABC",
     layout: "→ docked",
   });
 });
@@ -109,8 +128,8 @@ test("the keys that act on a row: no pinning, no p", () => {
   assert.deepEqual(plain(D.actions(rows[3]).map((a) => a.key)), ["a", "f", "n", "r", "x"]);
   assert.deepEqual(plain(D.actions(rows[3]).map((a) => a.label)), ["apply to the active desk", "fork", "new layout",
     "rename", "delete"]);
-  assert.deepEqual(plain(D.actions(rows[0]).map((a) => a.label)), ["apply a layout", "fork its layout", "new layout",
-    "rename", "delete"]);
+  assert.deepEqual(plain(D.actions(rows[0]).map((a) => a.label)), ["apply a layout", "fork its layout",
+    "new layout", "rename", "delete"]);
   assert.deepEqual(plain(D.actions(null).map((a) => a.key)), ["n"]);
 });
 
@@ -187,12 +206,15 @@ test("deleting a used layout offers the layouts with as many screens to move its
 
 test("the panel's header names the desk, its layout and the other desks that share it", () => {
   const state = fixture();
-  assert.equal(D.header(state), "Desk: docked · Layout: docked (also used by: office)");
+  assert.equal(D.header(state), "Desk: docked (Built-in + Odyssey G95NC) · Layout: docked (also used by: office)");
   state.layout = "laptop";
   state.desk = "laptop";
-  assert.equal(D.header(state), "Desk: laptop · Layout: laptop");
+  assert.equal(D.header(state), "Desk: laptop (Built-in) · Layout: laptop");
   state.desks.laptop.auto = true;
-  assert.equal(D.header(state), "Desk: laptop (new, unsaved) · Layout: laptop");
+  assert.equal(D.header(state), "Desk: laptop (Built-in; new, unsaved) · Layout: laptop");
+  delete state.desks.laptop.displays;
+  delete state.desks.laptop.auto;
+  assert.equal(D.header(state), "Desk: laptop · Layout: laptop", "an engine of before names no monitors");
   state.desk = null;
   state.layout = null;
   assert.equal(D.header(state), "Desk: none");
@@ -223,3 +245,4 @@ test("each section's column titles say what the columns are: a desk's layout is 
   assert.deepEqual(plain(D.columnTitles("desk")), { name: "Desk", monitors: "Monitors", layout: "Uses layout" });
   assert.deepEqual(plain(D.columnTitles("layout")), { name: "Layout", screens: "Screens", usedBy: "Used by" });
 });
+

@@ -6,7 +6,7 @@
 # in the live shell: e2e/editor/shell.qml loads the plugin's Engine.qml and
 # Panel.qml standalone, with WAYLAND_DISPLAY and HYPRLAND_INSTANCE_SIGNATURE
 # of the nested Hyprland and the harness's private XDG_RUNTIME_DIR. The panel
-# opens with its header naming the desk and the layout it shares, and a help
+# opens with its header naming the desk (its monitors by display name) and the layout it shares, and a help
 # row whose trigger keys are highlighted. A stray window is put into a slot
 # with real key presses (wtype, through the panel's keyboard handling), which
 # also makes its spec workspace 3's for that slot; u takes it out again with
@@ -391,7 +391,7 @@ layout_scope() {
 # Layout solo is shared with desk beamer: the Layout tab warns that an edit
 # changes it there too and sends a fork to the Desk tab; f is no key here.
 layout_shared() {
-  expect_eq "the header says beamer shares the layout" "Desk: solo · Layout: solo (also used by: beamer)" "$(header)"
+  expect_eq "the header says beamer shares the layout" "Desk: solo (HEADLESS-2) · Layout: solo (also used by: beamer)" "$(header)"
   expect_eq "the warning points to the Desk tab" \
     "Shared with desk beamer: edits here change it there too — fork it in the Desk tab." "$(smoke sharedNote)"
   local before
@@ -449,7 +449,7 @@ desks_layouts() {
   expect_eq "desk solo points at the copy" "solo-2" "$(api_state | jq -r '.desks.solo.layout')"
   expect_eq "beamer keeps solo" "solo" "$(api_state | jq -r '.desks.beamer.layout')"
   expect_eq "the reply says so" "Forked 'solo' as 'solo-2'; desk 'solo' uses it now. Ctrl+S saves." "$(smoke message)"
-  expect_eq "the header follows" "Desk: solo · Layout: solo-2" "$(header)"
+  expect_eq "the header follows" "Desk: solo (HEADLESS-2) · Layout: solo-2" "$(header)"
   expect_eq "the copy is selected" "layout:solo-2" "$(smoke selection)"
 
   # a on a layout row applies it to the active desk.
@@ -561,7 +561,7 @@ desks_layouts_edits() {
   fi
   eventually 5 smoke_idle || true
   expect_eq "projector uses solo-2 now" "solo-2" "$(api_state | jq -r '.desks.projector.layout')"
-  expect_eq "the header names the desk sharing it" "Desk: solo · Layout: solo-2 (also used by: projector)" "$(header)"
+  expect_eq "the header names the desk sharing it" "Desk: solo (HEADLESS-2) · Layout: solo-2 (also used by: projector)" "$(header)"
   expect_eq "the selection falls back to the active desk" "desk:solo" "$(smoke selection)"
 
   press_keys Down
@@ -631,7 +631,7 @@ bar_widget() {
   expect_eq "it shows the active layout, a dot for the unsaved edits" \
     "dirty 󰕰 solo-2 •" "$(smoke barLabel)"
   expect_eq "its tooltip says so, and names the layout and the desk sharing it" \
-    $'Hyprslots: desk solo, workspace 3 · unsaved edits\nLayout: solo-2 (also used by: projector)\nClick: editor · Right-click: menu' \
+    $'Hyprslots: desk solo, workspace 3 on HEADLESS-2 · unsaved edits\nLayout: solo-2 (also used by: projector)\nClick: editor · Right-click: menu' \
     "$(smoke barTooltip)"
   sleep 0.3
   shot 19-bar-widget
@@ -825,7 +825,7 @@ test_body() {
   sleep 0.5 # let the overlay reveal itself (it waits for the output's scale)
   shot 1-open
   expect_eq "the header names the desk, its layout and the desk sharing it" \
-    "Desk: solo · Layout: solo (also used by: beamer)" "$(header)"
+    "Desk: solo (HEADLESS-2) · Layout: solo (also used by: beamer)" "$(header)"
   local help
   help=$(smoke help)
   if [[ $help == *'<b><font color="#'*'">a</font></b>ssign  '* && $help == *'">u</font></b>nassign  '* && $help != *spec* \

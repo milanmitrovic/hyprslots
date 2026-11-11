@@ -843,14 +843,16 @@ function panes(state, layout, workspace) {
   return out
 }
 
-// A pane's title: the screen number and the active desk's monitor there.
+// A pane's title: the screen number and the display name of the active
+// desk's monitor there ("Screen 1 · Built-in"), its connector from an
+// engine that names none.
 function screenLabel(state, screen) {
   var connector = state && Array.isArray(state.screens) ? state.screens[screen - 1] : null
   if (!connector) return "Screen " + screen
   var list = state && Array.isArray(state.monitors) ? state.monitors : []
-  var description = ""
-  for (var i = 0; i < list.length; i++) if (list[i].name === connector) description = list[i].description || ""
-  return "Screen " + screen + " · " + connector + (description ? " (" + description + ")" : "")
+  var display = connector
+  for (var i = 0; i < list.length; i++) if (list[i].name === connector && list[i].display) display = list[i].display
+  return "Screen " + screen + " · " + display
 }
 
 // Whether a workspace has trees of its own in a layout (an override of the

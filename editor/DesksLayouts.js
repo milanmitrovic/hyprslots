@@ -10,7 +10,9 @@
 //
 // A row is a desk { kind: "desk", key, name, active, auto, readOnly, layout,
 // screens (its monitor count), monitors: [{ selector, connected,
-// connector, description }] } or a layout { kind: "layout", key, name,
+// connector, description, display (the name shown: the user's label, else
+// Built-in, the model...; the engine's), label (the user's, "" when none)
+// }] } or a layout { kind: "layout", key, name,
 // active, readOnly, screens, usedBy[] }; desks first, each by name.
 
 function sortedNames(object) {
@@ -39,6 +41,8 @@ function deskRow(state, name) {
   var selectors = Array.isArray(d.monitors) ? d.monitors : []
   var connected = Array.isArray(d.connected) ? d.connected : []
   var list = monitorList(state)
+  var displays = Array.isArray(d.displays) ? d.displays : []
+  var labels = state.monitor_names || {}
   return {
     kind: "desk",
     key: "desk:" + name,
@@ -51,7 +55,9 @@ function deskRow(state, name) {
     monitors: selectors.map(function(selector, i) {
       var on = connected[i] === true
       var m = on ? findMonitor(selector, list) : null
-      return { selector: selector, connected: on, connector: m ? m.name : "", description: m ? m.description || "" : "" }
+      return { selector: selector, connected: on, connector: m ? m.name : "", description: m ? m.description || "" : "",
+        display: displays[i] || (m && m.display) || selector,
+        label: Object.prototype.hasOwnProperty.call(labels, selector) ? String(labels[selector]) : "" }
     }),
   }
 }
@@ -85,13 +91,10 @@ function monitorsLabel(count) {
   return count === 1 ? "1 monitor" : count + " monitors"
 }
 
-// One monitor of a desk: "● eDP-1 (BOE 0x0BCA)" when connected (the
-// connector, or the description when the selector is the connector), "○
-// <selector>" when not.
+// One monitor of a desk by its display name: "● Built-in" when connected,
+// "○ Odyssey G95NC" when not.
 function monitorText(m) {
-  if (!m.connected) return "○ " + m.selector
-  var what = m.connector && m.connector !== m.selector ? m.connector : m.description
-  return "● " + m.selector + (what && what !== m.selector ? " (" + what + ")" : "")
+  return (m.connected ? "● " : "○ ") + m.display
 }
 
 function nameCell(row) {
@@ -252,11 +255,19 @@ function sharedNote(names) {
     + ": edits here change it there too — fork it in the Desk tab."
 }
 
+// The active desk's monitors by display name, left to right as its
+// selectors list them ("Built-in + Odyssey G95NC"), "" when the engine
+// names none.
+function deskMonitors(d) {
+  return d && Array.isArray(d.displays) ? d.displays.join(" + ") : ""
+}
+
 // The panel's header line, on every tab.
 function header(state) {
   if (!state || !state.desk) return "Desk: none"
   var d = state.desks ? state.desks[state.desk] : null
-  var text = "Desk: " + state.desk + (d && d.auto ? " (new, unsaved)" : "")
+  var notes = [deskMonitors(d), d && d.auto ? "new, unsaved" : ""].filter(function(n) { return n !== "" })
+  var text = "Desk: " + state.desk + (notes.length ? " (" + notes.join("; ") + ")" : "")
   if (state.layout) {
     var others = sharedWith(state, state.layout, state.desk)
     text += " · Layout: " + state.layout + (others.length ? " (also used by: " + others.join(", ") + ")" : "")

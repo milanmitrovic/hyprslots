@@ -475,9 +475,13 @@ test("the default trees are a workspace of their own to the panes", () => {
   assert.deepEqual(plain(L.panes(fixture(), "dual", "default")).map((p) => [p.screen, p.tree]), [[1, "main"], [2, null]]);
 });
 
-test("a pane is labelled with the active desk's monitor at its position", () => {
-  assert.equal(L.screenLabel(fixture(), 1), "Screen 1 · eDP-1 (BOE 0x0BCA)");
-  assert.equal(L.screenLabel(fixture(), 2), "Screen 2 · DP-2 (Samsung G95NC)");
+test("a pane is labelled with the display name of the active desk's monitor at its position", () => {
+  const state = fixture();
+  state.monitors[0].display = "Samsung";
+  state.monitors[1].display = "Built-in";
+  assert.equal(L.screenLabel(state, 1), "Screen 1 · Built-in");
+  assert.equal(L.screenLabel(state, 2), "Screen 2 · Samsung");
+  assert.equal(L.screenLabel(fixture(), 1), "Screen 1 · eDP-1", "an engine of before: the connector");
   assert.equal(L.screenLabel(fixture(), 3), "Screen 3");
   assert.equal(L.screenLabel(null, 1), "Screen 1");
 });
