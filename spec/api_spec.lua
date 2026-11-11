@@ -128,8 +128,8 @@ describe("hyprslots editor api", function()
       assert.are.equal("solo", s.desk)
       assert.are.equal("solo", s.layout)
       assert.are.same({ "HEADLESS-2" }, s.screens)
-      assert.are.same({ monitors = { "HEADLESS-2" }, connected = { true }, layout = "solo", active = true,
-        screens = { "HEADLESS-2" }, read_only = false }, s.desks.solo)
+      assert.are.same({ monitors = { "HEADLESS-2" }, connected = { true }, displays = { "HEADLESS-2" }, layout = "solo",
+        active = true, screens = { "HEADLESS-2" }, read_only = false }, s.desks.solo)
       local solo = s.layouts.solo
       assert.are.equal(1, solo.screens)
       assert.are.same({ tree = "h[a, b:2, c]", ratio = "1:2:1", slots = { "a", "b", "c" } }, solo.workspaces["3"]["1"])

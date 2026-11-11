@@ -22,6 +22,7 @@ local workspaces = require("hyprslots.workspaces")
 local workspace_count = workspaces.count -- snapshot shadows `workspaces`
 local edit = require("hyprslots.edit")
 local migrate = require("hyprslots.migrate")
+local monitor_name = require("hyprslots.monitor_name")
 local ratio = require("hyprslots.ratio")
 local record = require("hyprslots.record")
 local resize = require("hyprslots.resize")
@@ -154,9 +155,15 @@ local function layouts_info(engine, read_only)
   return out
 end
 
+-- The user's labels for monitors (selector -> name), never nil.
+local function labels_of(engine)
+  return engine.cfg and engine.cfg.monitor_names or {}
+end
+
 -- name -> { monitors[] (selectors), connected[] (whether each is),
--- layout, active, screens[] (the active desk's connectors, left
--- to right), auto (made for these monitors, not saved yet), read_only }.
+-- displays[] (each one's display name, monitor_name.lua), layout, active,
+-- screens[] (the active desk's connectors, left to right), auto (made for
+-- these monitors, not saved yet), read_only }.
 local function desks_info(engine, read_only, monitors)
   local out = object()
   local cfg = engine.cfg
@@ -165,14 +172,17 @@ local function desks_info(engine, read_only, monitors)
   end
   for _, name in ipairs(cfg.desk_names) do
     local entry = cfg.desks[name]
-    local connected = array()
+    local connected, displays = array(), array()
     for i, selector in ipairs(entry.monitors) do
-      connected[i] = desk.find(selector, monitors) ~= nil
+      local found = desk.find(selector, monitors)
+      connected[i] = found ~= nil
+      displays[i] = monitor_name.of_selector(selector, found, labels_of(engine), monitor_name.system_makes())
     end
     local active = engine.active ~= nil and engine.active.desk == name
     out[name] = object({
       monitors = array(shallow(entry.monitors)),
       connected = connected,
+      displays = displays,
       layout = entry.layout,
       active = active,
       screens = active and array(shallow(engine.active.monitors)) or nil,
@@ -208,8 +218,9 @@ local function specs_info(engine)
 end
 
 -- The connected monitors, by connector: what a desk's monitors can be
--- selected by, and where they are.
-local function monitors_info(monitors)
+-- selected by, where they are, and what the editor calls them (`display`:
+-- the user's `label`, else the automatic name).
+local function monitors_info(monitors, labels)
   local out = array()
   local sorted = {}
   for i, monitor in ipairs(monitors) do
@@ -220,7 +231,8 @@ local function monitors_info(monitors)
     out[#out + 1] = object({ name = monitor.name, description = monitor.description or "",
       serial = monitor.serial or "", focused = monitor.focused == true, x = monitor.x, y = monitor.y,
       width = monitor.width, height = monitor.height, internal = desk.internal(monitor),
-      selector = desk.selector(monitor) })
+      selector = desk.selector(monitor), label = monitor_name.label(monitor, labels),
+      display = monitor_name.display(monitor, labels, monitor_name.system_makes()) })
   end
   return out
 end
@@ -340,7 +352,8 @@ function M.snapshot(engine)
     layouts = layouts_info(engine, read_only),
     slots = slots_info(engine),
     specs = specs_info(engine),
-    monitors = monitors_info(monitors),
+    monitors = monitors_info(monitors, labels_of(engine)),
+    monitor_names = object(shallow(labels_of(engine))),
     used_workspaces = used_workspaces(engine),
     windows = windows_info(engine),
     dirty = engine.dirty == true or next(engine.resized or {}) ~= nil,
@@ -1141,6 +1154,53 @@ local function took_desk(name, want)
       return not_taken("desk '" .. name .. "'")
     end
   end
+end
+
+-- Whether `selector` names a monitor: one a desk lists, or a connected
+-- one's description, serial or connector.
+local function known_monitor(engine, selector)
+  for _, name in ipairs(engine.cfg and engine.cfg.desk_names or {}) do
+    for _, listed in ipairs(engine.cfg.desks[name].monitors) do
+      if listed == selector then
+        return true
+      end
+    end
+  end
+  local ok, monitors = pcall(adapter.monitors)
+  return ok and desk.find(selector, desk.usable(monitors)) ~= nil
+end
+
+-- set_monitor_name { selector, name }: the user's label for a monitor, the
+-- name the editor shows for it ("" clears it, back to the automatic name).
+-- Display only: desks keep matching by the selector.
+function handlers.set_monitor_name(engine, args)
+  if not engine.data then
+    return fail(NO_DATA)
+  end
+  local selector = args.selector
+  if type(selector) == "string" and selector ~= "" and not known_monitor(engine, selector) then
+    return fail("no monitor '" .. selector .. "': name one a desk lists or one that is connected")
+  end
+  if type(selector) == "string" and not edit.editable(read_only_paths(engine.cfg), "monitor_names", selector) then
+    return fail("the monitor names are set by code in your config; edit them there")
+  end
+  local data, edit_err = edit.set_monitor_name(engine.data, selector, args.name)
+  if not data then
+    return fail(edit_err)
+  end
+  local want = data.monitor_names and data.monitor_names[selector] or nil
+  local cfg, apply_err = apply_edit(engine, data, function(c)
+    if c.monitor_names[selector] ~= want then
+      return not_taken("the monitor names")
+    end
+  end)
+  if not cfg then
+    return fail(apply_err)
+  end
+  local ok, monitors = pcall(adapter.monitors)
+  local found = ok and desk.find(selector, desk.usable(monitors)) or nil
+  return { selector = selector, name = want or "", seq = engine.seq,
+    display = monitor_name.of_selector(selector, found, cfg.monitor_names, monitor_name.system_makes()) }
 end
 
 -- add_desk { name, monitors[], layout }: a desk for these monitor selectors.

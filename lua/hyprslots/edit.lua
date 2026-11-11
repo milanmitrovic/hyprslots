@@ -395,6 +395,28 @@ function M.describe_slot(data, name, text)
   return out
 end
 
+-- The data with the user's label for a monitor (`selector`: a description,
+-- serial or connector, as desks name monitors) set, trimmed; "" (or nil)
+-- removes it, and an empty `monitor_names` goes with its last label.
+-- Display only: desks never match by it.
+function M.set_monitor_name(data, selector, name)
+  if type(selector) ~= "string" or selector == "" then
+    return nil, "name the monitor by its selector (a description, serial or connector)"
+  end
+  if name ~= nil and type(name) ~= "string" then
+    return nil, "a monitor's name must be text"
+  end
+  name = name and name:gsub("^%s+", ""):gsub("%s+$", "") or ""
+  if name:find("[\r\n]") then
+    return nil, "a monitor's name must be one line"
+  end
+  local out = M.copy(data)
+  local names = type(out.monitor_names) == "table" and out.monitor_names or {}
+  names[selector] = name ~= "" and name or nil
+  out.monitor_names = next(names) ~= nil and names or nil
+  return out
+end
+
 -- The data with the app that fills slot `slot` on workspace `workspace` set (spec
 -- text, normalized), replacing the workspace's spec for it if it had one.
 function M.set_spec(data, workspace, slot, text)

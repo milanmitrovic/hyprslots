@@ -17,7 +17,7 @@ end
 local vec2 -- defined below
 
 -- Connected monitors that show workspaces of their own (mirrors excluded):
--- { name, description, serial, id, focused, x, y, width, height } (the
+-- { name, description, serial, make?, model?, id, focused, x, y, width, height } (the
 -- position orders a desk's screens left to right, desk.lua).
 function M.monitors()
   local out = {}
@@ -28,6 +28,8 @@ function M.monitors()
         name = monitor.name,
         description = monitor.description or "",
         serial = monitor.serial or "",
+        make = monitor.make, -- not in HL.Monitor today; taken when Hyprland adds them
+        model = monitor.model,
         id = monitor.id,
         focused = monitor.focused,
         x = monitor.x or px or 0,

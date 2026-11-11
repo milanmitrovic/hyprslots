@@ -68,9 +68,9 @@ describe("the Slots and Desk view' api", function()
     it("lists the connected monitors with what selects each", function()
       assert.are.same({
         { name = "HEADLESS-2", description = "Dell U2723QE ABC123", serial = "", focused = true, x = 0, y = 0,
-          internal = false, selector = "Dell U2723QE ABC123" },
+          internal = false, selector = "Dell U2723QE ABC123", display = "Dell U2723QE ABC123" },
         { name = "HEADLESS-3", description = "", serial = "SER-3", focused = false, x = 2400, y = 0,
-          internal = false, selector = "SER-3" },
+          internal = false, selector = "SER-3", display = "HEADLESS-3" },
       }, state().monitors)
     end)
 
@@ -339,7 +339,8 @@ return { slots = data.slots, specs = specs, desks = data.desks, layouts = data.l
       assert.are.same({ ok = true, desk = "office", monitors = { "DP-1", "DP-2" }, layout = "dual", active = "dual",
         seq = state().seq }, reply)
       local s = state()
-      assert.are.same({ monitors = { "DP-1", "DP-2" }, connected = { false, false }, layout = "dual",
+      assert.are.same({ monitors = { "DP-1", "DP-2" }, connected = { false, false }, displays = { "DP-1", "DP-2" },
+        layout = "dual",
         active = false, read_only = false }, s.desks.office)
       assert.are.same({ "dual", "office" }, s.layouts.dual.used_by)
       assert.are.equal("dual", s.desk)
