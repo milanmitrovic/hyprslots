@@ -129,7 +129,7 @@ function layoutCells(row) {
 // lists.
 function sectionHeader(kind) {
   if (kind === "desk") return { title: "Desks", hint: "monitor setups · ● connected  ○ not" }
-  return { title: "Layouts", hint: "arrangements for N screens" }
+  return { title: "Layouts", hint: "a desk can use a layout with the same number of screens" }
 }
 
 // The keys that act on the selected row, for the help row: [{ key, label }].
@@ -167,7 +167,7 @@ function applyBlock(state, layout) {
   var count = Array.isArray(d.monitors) ? d.monitors.length : 0
   if (l.screens !== count) {
     return "Layout '" + layout + "' has " + screensLabel(l.screens) + "; desk '" + state.desk + "' has "
-      + monitorsLabel(count) + "."
+      + monitorsLabel(count) + " — pick a layout with " + screensLabel(count) + "."
   }
   return ""
 }

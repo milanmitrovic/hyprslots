@@ -10,12 +10,12 @@ import "Help.js" as Help
 // the monitors it is made of (● connected) and the layout it uses; the desk
 // whose monitors are exactly the connected ones is
 // active, and every edit in the other tabs goes to its layout. A layout is a
-// logical arrangement for N screens; any desk with N monitors may use it, and
+// set of trees for some number of screens; a desk can use a layout with the same number of screens, and
 // several desks may share one. One selection runs through both lists (↑/↓,
 // k/j). a applies a layout (on a layout row: to the active desk; on a desk
 // row: one picked among those with its screen count), f forks the selected
 // layout (or the desk's) under a new name and points the active desk at the
-// copy, n makes a layout (name, screen count, empty or the default trees), r
+// copy, n makes a layout (name, screen count; the default trees), r
 // renames, x deletes (a layout desks use moves them to another first). Edits
 // stay in memory until Ctrl+S (the
 // panel's). The model is DesksLayouts.js; the calls are the api's desk and
@@ -178,7 +178,7 @@ Item {
   }
 
   // n: a new layout: its name, its screen count (the active desk's
-  // suggested), then empty or the default trees.
+  // suggested); it starts with the default trees.
   function startNew(values) {
     values = values || { name: "", screens: "", error: "" }
     ask(Prompts.withError(Prompts.text("Name the new layout [Enter] next  [Esc] cancel: ",
@@ -196,19 +196,14 @@ Item {
         root.askScreens(name, text, parsed.error)
         return
       }
-      root.ask(Prompts.choice("Start '" + name + "'", [
-        { key: "d", label: "default trees", value: true },
-        { key: "e", label: "empty", value: false },
-      ]), function(withDefault) {
-        root.engine.call("add_layout", { name: name, screens: parsed.screens, default: withDefault }, function(reply) {
-          if (!reply.ok) {
-            root.startNew({ name: name, screens: String(parsed.screens), error: reply.error })
-            return
-          }
-          root.cursor = "layout:" + reply.layout
-          root.say("Created layout '" + reply.layout + "' (" + reply.screens + (reply.screens === 1 ? " screen" : " screens")
-            + ", the default trees). a applies it to the active desk. Ctrl+S saves.", false)
-        })
+      root.engine.call("add_layout", { name: name, screens: parsed.screens, default: true }, function(reply) {
+        if (!reply.ok) {
+          root.startNew({ name: name, screens: String(parsed.screens), error: reply.error })
+          return
+        }
+        root.cursor = "layout:" + reply.layout
+        root.say("Created layout '" + reply.layout + "' (" + reply.screens + (reply.screens === 1 ? " screen" : " screens")
+          + ", the default trees). a applies it to the active desk. Ctrl+S saves.", false)
       })
     })
   }
@@ -315,7 +310,7 @@ Item {
       rightPadding: Style.spacing.md
       textFormat: Text.PlainText
       wrapMode: Text.WordWrap
-      text: "A desk is a monitor setup; it uses a layout with as many screens, and desks may share one."
+      text: "A desk is a monitor setup; it uses a layout with the same number of screens, and desks may share one."
         + " The other tabs edit the layout of the active desk (●)."
       color: Commons.Color.muted
       font.family: root.fontFamily

@@ -89,7 +89,7 @@ test("a desk row reads: name, monitors with ● when connected, → the layout i
 
 test("each section has a quiet header: its title and what it lists", () => {
   assert.deepEqual(plain(D.sectionHeader("desk")), { title: "Desks", hint: "monitor setups · ● connected  ○ not" });
-  assert.deepEqual(plain(D.sectionHeader("layout")), { title: "Layouts", hint: "arrangements for N screens" });
+  assert.deepEqual(plain(D.sectionHeader("layout")), { title: "Layouts", hint: "a desk can use a layout with the same number of screens" });
 });
 
 test("a layout row has its screen count and the desks that use it", () => {
@@ -124,7 +124,7 @@ test("a desk may use the layouts with as many screens as it has monitors", () =>
 test("applying a layout to the active desk is refused when the screen counts differ, or there is no active desk", () => {
   const state = fixture();
   assert.equal(D.applyBlock(state, "docked-2"), "");
-  assert.equal(D.applyBlock(state, "laptop"), "Layout 'laptop' has 1 screen; desk 'docked' has 2 monitors.");
+  assert.equal(D.applyBlock(state, "laptop"), "Layout 'laptop' has 1 screen; desk 'docked' has 2 monitors — pick a layout with 2 screens.");
   state.desk = null;
   assert.equal(D.applyBlock(state, "docked-2"), "No desk is active: these monitors have none yet.");
 });

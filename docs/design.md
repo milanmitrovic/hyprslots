@@ -980,7 +980,7 @@ desk uses and edits the stored mappings, never the monitors themselves.
 |---|---|---|
 | a | pick a layout with as many screens as the desk has monitors, then `apply_layout {desk, layout}` | apply it to the active desk (`apply_layout {layout}`; refused on the message line when the screen counts differ) |
 | f | fork the desk's layout | fork this layout: a name (the next free `<name>-N` suggested), then `fork_layout {layout, to}`: the active desk uses the copy when its monitor count fits (the reply says) |
-| n | new layout: a name, a screen count (the active desk's suggested), then (d)efault trees or (e)mpty (`add_layout`; an empty layout gets the default trees anyway, as no layout is treeless, §4) | the same |
+| n | new layout: a name, a screen count (the active desk's suggested), then it is made with the default trees (`add_layout`, §4) | the same |
 | r | rename (`rename_desk`) | rename (`rename_layout`; its desks follow) |
 | x | delete after y/n (`delete_desk`); the active one with a warning that its monitors then get a new desk | delete: when desks use it, pick a layout of as many screens to move them to (`delete_layout {layout, remap}`), else y/n (`delete_layout`); the engine's refusal shows on the message line |
 

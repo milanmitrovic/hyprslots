@@ -480,7 +480,7 @@ desks_layouts() {
 
   # a on a layout of another screen count is refused.
   press_keys Down a
-  expect_eq "dual has 2 screens" "Layout 'dual' has 2 screens; desk 'solo' has 1 monitor." "$(smoke message)"
+  expect_eq "dual has 2 screens" "Layout 'dual' has 2 screens; desk 'solo' has 1 monitor — pick a layout with 1 screen." "$(smoke message)"
   expect_eq "nothing changed" "solo-2" "$(api_state | jq -r .layout)"
 
   # r renames desk beamer and layout spare.
@@ -595,7 +595,7 @@ desks_layouts_edits() {
   expect_eq "the selection is the active desk" "desk:solo" "$(smoke selection)"
 
   # n makes a layout: a name, a screen count (the desk's suggested; 0 is
-  # refused in place), then the default trees or none.
+  # refused in place); it starts with the default trees.
   press_keys n
   expect_eq "n asks for a name" "Name the new layout [Enter] next  [Esc] cancel: ▏" "$(smoke message)"
   press_text wide
@@ -605,8 +605,6 @@ desks_layouts_edits() {
   expect_eq "0 screens is refused in its prompt" \
     "Screens of 'wide' [Enter] next  [Esc] cancel: 0▏ | The screen count is a whole number from 1." "$(smoke message)"
   press_keys BackSpace 2 Return
-  expect_eq "then how it starts" "Start 'wide': (d)efault trees, (e)mpty? [Esc] cancel   → default trees" "$(smoke message)"
-  press_keys d
   if eventually 5 state_is '.layouts.wide.screens' 2; then
     pass "n made the 2-screen layout wide"
   else
