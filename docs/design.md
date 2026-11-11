@@ -1489,7 +1489,14 @@ Parked:
   state while the `hyprslots` global is gone), and writes screenshots to
   `.e2e-tmp/editor-smoke-*.png` (the Layout tab on tiles, scroll half and
   scroll full: `8a-layout-tiles`, `8b-layout-scroll-half`,
-  `8c-layout-scroll-full`).
+  `8c-layout-scroll-full`). `make e2e-editor-multimon`
+  (`e2e/editor_multimon.sh`, opt-in, the same tools) looks rather than
+  tests: the editor on a 2-screen desk (HEADLESS-2 and a 2560x1440
+  HEADLESS-3, layout `dual` with slots on both screens, foot windows in
+  them), screenshotting the Assignment tab, the Layout tab (All
+  workspaces, tiles with either pane active, scroll half and full) and the
+  Desk tab into `$MULTIMON_SHOTS` (default `.e2e-tmp/multimon/latest`);
+  nothing is applied or saved.
 
 ### Completion test
 
