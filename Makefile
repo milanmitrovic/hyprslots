@@ -5,7 +5,7 @@ BUSTED ?= $(shell command -v busted 2>/dev/null || echo $(HOME)/.luarocks/bin/bu
 # test runner; `make test` skips it, saying so, where node is missing.
 NODE ?= $(shell command -v node 2>/dev/null)
 
-.PHONY: test lua-test editor-test editor-lint e2e e2e-editor
+.PHONY: test lua-test editor-test editor-lint e2e e2e-editor e2e-editor-multimon
 test: lua-test editor-test
 
 lua-test:
@@ -38,3 +38,8 @@ e2e:
 # `make e2e`); needs qs, grim and wtype. Screenshots: .e2e-tmp/editor-smoke-*.png
 e2e-editor:
 	./e2e/run.sh e2e/editor_smoke.sh
+
+# The editor on a 2-screen desk, screenshots only (opt-in, like e2e-editor):
+# into $MULTIMON_SHOTS (default .e2e-tmp/multimon/latest).
+e2e-editor-multimon:
+	./e2e/run.sh e2e/editor_multimon.sh
