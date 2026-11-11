@@ -164,6 +164,22 @@ count; `workspaces[n][i]` is workspace n's tree on screen i, and
 (an entry replaces the default trees whole, so `workspaces = { [5] = {} }`
 leaves workspace 5 empty). Desk and layout names hold no `/`.
 
+**Monitor names.** The editor shows each monitor by a short display name
+(`monitor_name.lua`), never used to match: desks keep selecting monitors by
+description, serial or connector. The automatic name is `Built-in` for a
+laptop's own panel (connector `eDP*`, `LVDS*`, `DSI*`), else the model,
+else the make, else the connector. `HL.Monitor` has no make or model
+(§2), only the description `<make> <model> <serial>`, so the model is the
+description less its serial and the longest PNP vendor name that starts it
+(hwdata's `pnp.ids`, the table libdisplay-info names makes from; a short
+built-in list where it cannot be read): "Samsung Electric Company Odyssey
+G95NC HNTW700044" is `Odyssey G95NC`. A monitor a desk lists that is not
+connected is named from its selector (its serial cannot be told apart
+then). The user's label comes first: slots.lua's `monitor_names`
+(selector -> name, keyed by any selector a desk could use; absent = none),
+set by the Desk tab's `m`. config.lua need not pass it on: where it
+returns no `monitor_names`, the data file's are used.
+
 `workspaces` (top level, optional, an integer 1 to 10, default 10) is how
 many workspaces hyprslots manages: 1 to N. Specs and trees for a workspace
 past it are config errors (`specs[10]: a workspace must be an integer from
@@ -689,12 +705,12 @@ goes from laptop + monitor through the monitor alone, or the other way, as
 hyprmoncfg applies a profile). Until then no desk is active and windows stay
 where they are. The desk (`Engine:new_desk`):
 
-- is named after its monitors left to right, joined with `+`: `laptop` for
-  a laptop panel (connector `eDP*`, `LVDS*`, `DSI*`), else the last word of
-  the monitor's description that is not its serial, lowercased (the model:
-  "Samsung Electric Company Odyssey G95NC HNTW700044" is `g95nc`), else its
-  connector lowercased (`headless-2`): `laptop+g95nc`; `-2`, `-3`... when
-  the name is taken;
+- is named after its monitors' display names (§4) left to right,
+  lowercased with `-` between words, joined with `+`: `built-in` for a
+  laptop panel, `odyssey-g95nc` for "Samsung Electric Company Odyssey G95NC
+  HNTW700044" (`samsung` once labelled so), `headless-2` for a bare
+  connector: `built-in+odyssey-g95nc`; `-2`, `-3`... when the name is
+  taken;
 - selects each monitor by its description, else its serial, else its
   connector;
 - uses the most recently used layout for as many screens (the layouts the
@@ -755,8 +771,9 @@ the card's recessed one. Their top corners, the card's, the page's and
 the message band's are the theme's radius (`Style.cornerRadius`, which
 follows Hyprland's `decoration:rounding`): square when it is 0. Beside them, in
 every tab and quietly (muted, small), what the edits go to: `Desk:
-home · Layout: ultrawide (also used by: office)` (`Desk: none` with no
-active desk, `(new, unsaved)` after a desk the engine made for new
+home (Built-in + Odyssey G95NC) · Layout: ultrawide (also used by: office)`
+(the desk's monitors by display name; `Desk: none` with no
+active desk, `; new, unsaved` in the brackets after a desk the engine made for new
 monitors), then `● unsaved (Ctrl+S)` in the urgent colour while
 there are any. Every edit outside the Desk view goes to the
 active desk's layout, and so to every desk that shares it. Each view's own
@@ -838,7 +855,7 @@ dropped, and the message says so). When other desks use the layout too, a
 quiet line under the header says so: `Shared with desk beamer: edits here
 change it there too — fork it in the Desk tab.` (forking is the Desk
 tab's alone). A pane per screen, side by side, titled `Screen 1
-· HEADLESS-2 (<description>)`, the active desk's monitor at that position,
+· Built-in`, the display name (§4) of the active desk's monitor at that position,
 each a scale model of its monitor (its aspect from Hyprland, else 16:9): leaves are boxes
 proportional to their weights (tree.lua's integer arithmetic) with the slot
 name, `×n` for a share other than 1, and the title of the window in the
@@ -958,8 +975,9 @@ layouts are two lists and a desk points at a layout). A line says what the
 two are; then two sections, each under its column titles (Desk, Monitors,
 Uses layout; Layout, Screens, Used by):
 
-- **Desks** (monitor setups): each stored desk by name, its monitors (`●`
-  connected, `○` not; a connected one by connector and description), the
+- **Desks** (monitor setups): each stored desk by name, its monitors by
+  display name (§4; `●` connected, `○` not: `● Built-in + ● Odyssey
+  G95NC`), the
   layout it uses as a mapping (`→ dual`, so a desk and a layout of one
   name do not read as the name twice); the active desk marked quietly: a
   small `●` in the accent colour and its text at full strength where the
@@ -981,6 +999,7 @@ desk uses and edits the stored mappings, never the monitors themselves.
 | a | pick a layout with as many screens as the desk has monitors, then `apply_layout {desk, layout}` | apply it to the active desk (`apply_layout {layout}`; refused on the message line when the screen counts differ) |
 | f | fork the desk's layout | fork this layout: a name (the next free `<name>-N` suggested), then `fork_layout {layout, to}`: the active desk uses the copy when its monitor count fits (the reply says) |
 | n | new layout: a name, a screen count (the active desk's suggested), then it is made with the default trees (`add_layout`, §4) | the same |
+| m | name one of its monitors: which (numbered, when it has more than one), then the name, its current label filled in (`set_monitor_name`; empty clears it, back to the automatic name) | — |
 | r | rename (`rename_desk`) | rename (`rename_layout`; its desks follow) |
 | x | delete after y/n (`delete_desk`); the active one with a warning that its monitors then get a new desk | delete: when desks use it, pick a layout of as many screens to move them to (`delete_layout {layout, remap}`), else y/n (`delete_layout`); the engine's refusal shows on the message line |
 
@@ -991,7 +1010,7 @@ An entry config.lua builds in code (`read_only`) refuses every edit with
 the active layout's name (`none` when no desk is active), nothing else: no
 desk or workspace (Omarchy's workspace switcher shows those); the tooltip
 names the desk, the workspace its bar's monitor shows (`state.workspaces`)
-and the layout (`Layout: ultrawide`, and `also used by: office` when
+and that monitor's display name (`workspace 3 on Built-in`), and the layout (`Layout: ultrawide`, and `also used by: office` when
 shared). It reads the
 plugin's service and calls its `watch()` so the service follows change
 events while the panel is closed: one poller for the panel and every widget
@@ -1094,6 +1113,7 @@ left-most; as an object key, `"1"`).
 | `fork_layout` | `layout?`, `to`, `desk?` | `layout, to, desk` (the desk now using the copy, when its monitor count fits), `active` (layout), `seq`: a copy, keyboard-resized trees included |
 | `rename_layout` | `layout`, `to` | `layout, to, active, seq`; the desks using it follow |
 | `delete_layout` | `layout`, `remap?` | `layout, remap, desks[]` (those remapped), `active, seq`; refused while desks use it, unless `remap` names a layout for as many screens |
+| `set_monitor_name` | `selector` (one a desk lists, or a connected monitor's description, serial or connector), `name` (`""` clears it) | `selector, name` (trimmed), `display` (the name shown now), `seq` |
 | `save` | — | `path, seq` |
 | `reload` | — | `desk, layout, seq` |
 | `arrange` | — | `swaps, widened[]` (workspace ids): the scroll pass now, every column of the focused scroll workspace widened (Super+L entering slots) |
@@ -1109,14 +1129,16 @@ right), `workspaces` (id -> `workspace, screen, monitor, layout`:
 that slot's spec while every slot it matches is taken, laid out in that
 workspace's overflow leaf), `unassigned[]` (addresses taken out of their
 slot by `unassign`), `desks` (name -> `monitors[]` (selectors),
-`connected[]` (one per selector), `layout`, `active`,
+`connected[]` and `displays[]` (one per selector: the display name, §4), `layout`, `active`,
 `screens[]` (the active one's connectors), `auto` (made for new monitors,
 unsaved), `read_only`), `layouts` (name -> `screens` (count), `default`
 ("1" -> `{tree, ratio, slots[], resized?}`), `workspaces` ("3" -> "1" ->
 the same: the trees each workspace shows, its own or the default ones),
 `own[]` (the workspaces with trees of their own), `used_by[]` (desks),
 `active`, `read_only`), `monitors[]` (`name, description, serial, focused,
-x, y, width, height, internal, selector`: what a desk can select them by),
+x, y, width, height, internal, selector`: what a desk can select them by,
+`display`: the name the editor shows, `label`: the user's, when set),
+`monitor_names` (selector -> label),
 `resized` (`"<layout>/<workspace>/<screen>"` -> `layout, workspace, screen,
 tree, ratio` for every unsaved keyboard-resized tree), `scroll[]` (one per
 scroll branch on a hyprslots workspace: `workspace_id, workspace, screen,
@@ -1293,6 +1315,7 @@ Under `lua/hyprslots/`:
 | pure | `migrate` | slots.lua's shapes of before (per-workspace slots; arrangements), read as global slots, desks and layouts |
 | pure | `edit` | edits to the `slots.lua` data (trees, slots, specs, desks, layouts); which fields code owns |
 | pure | `desk` | pick the desk matching the monitor set, number its screens left to right; name and default trees of a new desk |
+| pure | `monitor_name` | a monitor's display name: the user's label, Built-in, the model (PNP vendor names read once) |
 | pure | `assign` | windows → slots |
 | pure | `serialize` | write `slots.lua` and tree text deterministically |
 | pure | `dkjson` | vendored JSON |
@@ -1350,6 +1373,7 @@ with Omarchy's gaps (5/10, border 2).
 | Editor polish | the Assignment view lists every global slot (unplaced ones looking like the rest, `a` placing one: `take_spec` `place`); config `workspaces` (how many hyprslots manages); `-` for the default trees (All workspaces since, see Shared trees); the third tab named Desk, its desks reading `→ <layout>` under column titles; new layouts named for what they arrange (`scroll`, `<N>-screen`) | done 2026-11-09 |
 | Shared trees | one shared tree per layout and screen ("All workspaces", the default trees) instead of the cutover's per-workspace copies cut down to each workspace's slots (empty slots close up anyway): `edit.redundant_with_default`, api `fold_trees` and `drop_override`, `take_spec` `place` into the shared trees for a workspace without its own; the Layout view opening on All workspaces, first in the strip, overrides dotted, the first edit of a workspace on the shared tree asking all or only this one, `u` dropping an override; the user's layouts folded (only `wide` and `dual` workspace 3 keep their own) | done 2026-11-09 |
 | One set of slots | every tree holds every global slot (`migrate.normalize` on load and every edit; an empty slot closes up), so nothing places or takes out a slot: the Layout tab's `a` / `x`, `take_spec` `place` and `edit.place_slot` go, a new slot is in every tree; a scroll branch's own column width (`scroll:0.5[...]`, config.lua's `scroll.width` migrated into the trees), the Layout tab's `t` cycling tiles, scroll half and scroll full, scroll branches drawn as a filmstrip, `r` on tiles only; `d` reverts; fork only in the Desk tab; pinned screens removed (migrated away); the Layout header one strip and its help one line; no file names in the editor's text | done 2026-11-09 |
+| Monitor names | display names for monitors (Built-in, the model from the description less make and serial, the user's label in slots.lua `monitor_names`) everywhere the editor shows one; the Desk tab's `m`; api `set_monitor_name`, `display` / `displays[]`; new desks named after them (`built-in+odyssey-g95nc`) | done 2026-11-11 |
 
 Slices 2 to 6 were built in parallel on top of slices 1 and 2 and
 integrated on `feature/engine`; the cross-slice behaviour (keyboard-resized

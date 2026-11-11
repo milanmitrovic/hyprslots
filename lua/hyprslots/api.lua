@@ -9,7 +9,7 @@
 -- Layout tab's global slots) add_slot, remove_slot, rename_slot, describe_slot; for the
 -- Assignment view (each workspace's specs) take_spec, set_spec, clear_spec; for
 -- the Layout view's shared trees fold_trees, drop_override; for
--- the Desk view add_desk, rename_desk, delete_desk, apply_layout,
+-- the Desk view add_desk, rename_desk, delete_desk, apply_layout, set_monitor_name,
 -- add_layout, fork_layout, rename_layout, delete_layout (the
 -- contract is in docs/design.md §9). Every change bumps `seq` and emits hl.dsp.event("hyprslots changed
 -- <seq>").
