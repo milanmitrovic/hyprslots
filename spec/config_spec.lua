@@ -657,3 +657,48 @@ return { slots = data.slots, specs = data.specs, desks = data.desks, layouts = d
     assert.are.equal(dir, assert(config.load(dir)).dir)
   end)
 end)
+
+describe("monitor_names: the user's labels for monitors", function()
+  local dir
+  after_each(function()
+    if dir then remove_dir(dir) end
+    dir = nil
+  end)
+
+  local ODYSSEY = "Samsung Electric Company Odyssey G95NC HNTW700044"
+  local LABELLED = SLOTS_LUA:gsub("^return {", "return {\n  monitor_names = { [\"" .. ODYSSEY .. "\"] = \"Samsung\" },")
+
+  it("are none when absent", function()
+    assert.are.same({}, assert(config.validate({})).monitor_names)
+  end)
+
+  it("come from the data file even where config.lua does not pass them on", function()
+    dir = config_dir({ ["config.lua"] = CONFIG_LUA, ["slots.lua"] = LABELLED })
+    local cfg = assert(config.load(dir))
+    assert.are.same({ [ODYSSEY] = "Samsung" }, cfg.monitor_names)
+  end)
+
+  it("are config.lua's own when it returns them", function()
+    dir = config_dir({
+      ["config.lua"] = 'local d = load_data("slots.lua"); return { slots = d.slots, specs = d.specs, desks = d.desks,'
+        .. ' layouts = d.layouts, monitor_names = { ["eDP-1"] = "Panel" } }',
+      ["slots.lua"] = LABELLED,
+    })
+    assert.are.same({ ["eDP-1"] = "Panel" }, assert(config.load(dir)).monitor_names)
+  end)
+
+  it("map a selector to a name, each non-empty text", function()
+    local function rejects(names, pattern)
+      local cfg, err = config.validate({ monitor_names = names })
+      assert.is_nil(cfg)
+      assert.matches(pattern, err)
+    end
+    rejects("Samsung", "monitor_names: must be a table")
+    rejects({ "Samsung" }, "monitor_names%[1%]: must be keyed by a monitor")
+    rejects({ [""] = "Samsung" }, "must be keyed by a monitor")
+    rejects({ ["eDP-1"] = 3 }, "monitor_names%[eDP%-1%]: must be a name")
+    rejects({ ["eDP-1"] = "  " }, "monitor_names%[eDP%-1%]: must be a name")
+    rejects({ ["eDP-1"] = "two\nlines" }, "one line")
+    assert.are.same({ ["eDP-1"] = "Panel" }, assert(config.validate({ monitor_names = { ["eDP-1"] = " Panel " } })).monitor_names)
+  end)
+end)

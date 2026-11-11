@@ -458,7 +458,36 @@ local function validate_scroll(raw, fail)
 end
 
 local KNOWN = { slots = true, specs = true, desks = true, layouts = true, title_matching = true,
-  scroll = true, workspaces = true }
+  scroll = true, workspaces = true, monitor_names = true }
+
+-- The user's labels for monitors: selector (a description, serial or
+-- connector, as a desk names a monitor) -> a short name the editor shows
+-- (monitor_name.lua). Display only, never used to match. Returns selector ->
+-- name, trimmed.
+local function validate_monitor_names(raw, fail)
+  local out = {}
+  if raw == nil then
+    return out
+  end
+  if type(raw) ~= "table" then
+    fail("monitor_names", "must be a table of monitor (description, serial or connector) -> name")
+    return out
+  end
+  for _, key in ipairs(sorted_keys(raw)) do
+    local path = "monitor_names[" .. tostring(key) .. "]"
+    local name = raw[key]
+    if type(key) ~= "string" or key == "" then
+      fail(path, "must be keyed by a monitor's description, serial or connector")
+    elseif type(name) ~= "string" or name:match("^%s*$") then
+      fail(path, "must be a name (text)")
+    elseif name:find("[\r\n]") then
+      fail(path, "must be one line")
+    else
+      out[key] = name:gsub("^%s+", ""):gsub("%s+$", "")
+    end
+  end
+  return out
+end
 
 -- How many workspaces hyprslots manages (1 to N: Super+N, the editor's
 -- workspace keys, the workspace rules), default all ten of Omarchy's.
@@ -509,6 +538,7 @@ function M.validate(raw, monitors)
     desk_names = {},
     layouts = {},
     layout_names = {},
+    monitor_names = validate_monitor_names(raw.monitor_names, fail),
   }
   validate_scroll(raw.scroll, fail) -- of before: config.load wrote it into the trees
 
@@ -596,6 +626,16 @@ function M.load(dir, opts)
       and raw.desks == nil and raw.layouts == nil then
       return nil, path .. ": " .. name .. " holds desks and layouts (the arrangements of before) that config.lua "
         .. "does not return: add `desks = data.desks, layouts = data.layouts` (in place of `arrangements`)"
+    end
+  end
+
+  -- The monitors' labels are the data file's where config.lua (written
+  -- before there were any) does not return its own.
+  if raw.monitor_names == nil then
+    for _, file in pairs(loaded) do
+      if type(file.given) == "table" and file.given.monitor_names ~= nil then
+        raw.monitor_names = file.given.monitor_names
+      end
     end
   end
 
