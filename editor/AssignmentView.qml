@@ -6,6 +6,7 @@ import "Assignment.js" as Assignment
 import "Workspaces.js" as Workspaces
 import "Prompts.js" as Prompts
 import "Help.js" as Help
+import "ui"
 
 // Which live window fills which slot (aerolayout's AssignmentView). A table
 // of the windows on a workspace with the screen, slot, app and title of each,
@@ -238,52 +239,30 @@ Item {
     return true
   }
 
-  // Columns: [Screen] Slot App Title, sized by share of the width.
+  // Columns: the selection's stripe, then [Screen] Slot App Title, sized
+  // by share of the width.
   readonly property real screenWidth: showScreen ? width * 0.1 : 0
   readonly property real slotWidth: width * 0.18
   readonly property real appWidth: width * 0.18
-  readonly property real titleWidth: width - screenWidth - slotWidth - appWidth
-  readonly property int rowHeight: Math.max(Style.space(26), Style.font.body + Style.spacing.md * 2)
+  readonly property real titleWidth: width - Tokens.stripeWidth - screenWidth - slotWidth - appWidth
 
   Column {
     anchors.fill: parent
     spacing: Style.spacing.md
 
-    // Header: what this page is, a quiet line over the rows; the page's
-    // number among them in the accent colour.
-    Item {
+    // Header: the workspace switcher (the Layout tab's, without All
+    // workspaces), the page's workspace lit.
+    WorkspaceSwitcher {
       id: headerBox
-      width: parent.width
-      height: headerText.implicitHeight
-      Text {
-        id: headerText
-        anchors.left: parent.left
-        anchors.leftMargin: Style.spacing.md
-        textFormat: Text.PlainText
-        text: root.currentPage.label
-        color: Commons.Color.muted
-        font.family: root.fontFamily
-        font.pixelSize: Style.font.body
-      }
-      Text {
-        anchors.right: parent.right
-        anchors.rightMargin: Style.spacing.md
-        anchors.verticalCenter: headerText.verticalCenter
-        textFormat: Text.StyledText
-        text: '<font color="' + root.accent + '">' + (root.page + 1) + "</font> / " + root.pageList.length
-        color: Commons.Color.muted
-        font.family: root.fontFamily
-        font.pixelSize: Style.font.bodySmall
-      }
+      x: Tokens.textInset
+      entries: Workspaces.numbers(root.state, root.currentPage.workspace)
+      onPicked: function(workspace) { root.goWorkspace(workspace) }
     }
 
     // Why the editor cannot see the engine, or why the engine is off.
-    Text {
+    ProblemText {
       id: problem
       width: parent.width
-      visible: text !== ""
-      textFormat: Text.PlainText
-      wrapMode: Text.WordWrap
       text: {
         if (!root.engine) return "No engine service."
         if (root.engine.error !== "") return root.engine.error
@@ -292,37 +271,19 @@ Item {
         if (s && s.config_error) return "config error: " + s.config_error
         return ""
       }
-      color: Commons.Color.urgent
-      font.family: root.fontFamily
-      font.pixelSize: Style.font.body
     }
 
     // Column titles.
-    Row {
+    TableHeader {
       id: titles
       width: parent.width
-      Repeater {
-        model: [
-          { text: "Screen", width: root.screenWidth },
-          { text: "Slot", width: root.slotWidth },
-          { text: "App", width: root.appWidth },
-          { text: "Title", width: root.titleWidth },
-        ]
-        delegate: Text {
-          required property var modelData
-          width: modelData.width
-          visible: modelData.width > 0
-          leftPadding: Style.spacing.md
-          textFormat: Text.PlainText
-          text: modelData.text
-          color: root.foreground
-          opacity: 0.55
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.bodySmall
-          font.bold: true
-          elide: Text.ElideRight
-        }
-      }
+      columns: [
+        { text: "", width: Tokens.stripeWidth },
+        { text: "Screen", width: root.screenWidth },
+        { text: "Slot", width: root.slotWidth },
+        { text: "App", width: root.appWidth },
+        { text: "Title", width: root.titleWidth },
+      ]
     }
 
     ListView {
@@ -335,7 +296,7 @@ Item {
       boundsBehavior: Flickable.StopAtBounds
       currentIndex: root.selected
 
-      delegate: Rectangle {
+      delegate: TableRow {
         id: rowItem
         required property var modelData
         required property int index
@@ -346,84 +307,50 @@ Item {
         readonly property bool empty: modelData.kind === "empty"
         readonly property color ink: current ? root.selectedText : root.foreground
         width: ListView.view.width
-        height: root.rowHeight
-        radius: Style.cornerRadius
-        color: current ? root.selectedBackground : "transparent"
-
-        MouseArea {
-          anchors.fill: parent
-          onClicked: root.select(rowItem.index)
-        }
+        selected: current
+        onClicked: root.select(rowItem.index)
 
         Row {
           anchors.fill: parent
-          Text {
+          TableCell {
             width: root.screenWidth
             visible: root.showScreen
-            anchors.verticalCenter: parent.verticalCenter
-            leftPadding: Style.spacing.md
-            textFormat: Text.PlainText
             text: Assignment.screenText(root.state, rowItem.modelData)
             color: rowItem.ink
             opacity: 0.7
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.body
-            elide: Text.ElideRight
           }
-          Text {
+          TableCell {
             width: root.slotWidth
-            anchors.verticalCenter: parent.verticalCenter
-            leftPadding: Style.spacing.md
-            textFormat: Text.PlainText
             text: Assignment.slotText(rowItem.modelData)
             color: rowItem.current ? root.selectedText
               : rowItem.modelData.status === "overflow" || rowItem.modelData.status === "unassigned" ? Commons.Color.urgent
               : Commons.Color.accent
-            opacity: rowItem.empty ? 0.4 : rowItem.missing || rowItem.modelData.status === "none" ? 0.55 : 1
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.body
+            opacity: rowItem.empty ? Tokens.faint : rowItem.missing || rowItem.modelData.status === "none" ? Tokens.dim : 1
             font.bold: !rowItem.missing
-            elide: Text.ElideRight
           }
-          Text {
+          TableCell {
             width: root.appWidth
-            anchors.verticalCenter: parent.verticalCenter
-            leftPadding: Style.spacing.md
-            textFormat: Text.PlainText
             text: rowItem.missing ? Assignment.specText(rowItem.modelData) : (rowItem.modelData.cls || "Unknown")
             color: rowItem.ink
-            opacity: rowItem.missing ? 0.55 : 1
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.body
+            opacity: rowItem.missing ? Tokens.dim : 1
             font.bold: rowItem.modelData.status === "slot" || rowItem.modelData.status === "manual"
-            elide: Text.ElideRight
           }
-          Text {
+          TableCell {
             width: root.titleWidth
-            anchors.verticalCenter: parent.verticalCenter
-            leftPadding: Style.spacing.md
-            rightPadding: Style.spacing.md
-            textFormat: Text.PlainText
+            rightPadding: Tokens.cellPadding
             text: Assignment.titleText(rowItem.modelData)
             color: rowItem.missing && !rowItem.empty && !rowItem.current ? Commons.Color.urgent : rowItem.ink
-            opacity: rowItem.empty ? 0.4 : 1
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.body
+            opacity: rowItem.empty ? Tokens.faint : 1
             font.italic: rowItem.missing
-            elide: Text.ElideRight
           }
         }
       }
 
-      Text {
+      Placeholder {
         anchors.centerIn: parent
+        width: parent.width
         visible: root.rows.length === 0
-        textFormat: Text.PlainText
         text: root.state ? "No windows" : (root.engine && root.engine.error === "" ? "Reading hyprslots…" : "")
-        color: root.foreground
-        opacity: 0.55
-        font.family: root.fontFamily
-        font.pixelSize: Style.font.body
       }
     }
   }

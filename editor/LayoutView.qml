@@ -9,6 +9,7 @@ import "Prompts.js" as Prompts
 import "Slots.js" as Slots
 import "DesksLayouts.js" as DesksLayouts
 import "Help.js" as Help
+import "ui"
 
 // One workspace's trees in the active desk's layout, edited (aerolayout's
 // LayoutView). A pane per screen 1..N of the layout, labelled with the
@@ -884,129 +885,63 @@ Item {
     anchors.fill: parent
     spacing: Style.spacing.md
 
-    // Header: one quiet strip, "All workspaces · 1 2 3• ...", the one
-    // edited in the accent colour and underlined (All workspaces: the
-    // layout's shared trees, -; the workspaces by their keys, [ ] step, the
-    // digits jump; a dot on one with trees of its own, the ones using the
-    // shared trees dimmer); a note on a workspace that uses them; at the
-    // right, edits the engine does not run yet.
+    // Header: the workspace switcher, "WORKSPACE  All workspaces · 1 2
+    // 3• ..." (All workspaces: the layout's shared trees, -; the workspaces
+    // by their keys, [ ] step, the digits jump; a dot on one with trees of
+    // its own, the ones using the shared trees dimmer); a note on a
+    // workspace that uses them; at the right, edits the engine does not run
+    // yet.
     Item {
       id: headerBox
       width: parent.width
       height: workspaceStrip.height
-      Row {
+      WorkspaceSwitcher {
         id: workspaceStrip
-        anchors.left: parent.left
-        anchors.leftMargin: Style.spacing.md - Style.spacing.sm
+        x: Tokens.textInset
         anchors.verticalCenter: parent.verticalCenter
-        spacing: Style.spacing.xxs
-        Repeater {
-          model: Workspaces.strip(root.state, root.layout, root.workspace)
-          delegate: Row {
-            id: stripItem
-            required property var modelData
-            required property int index
-            readonly property bool lit: modelData.current
-            readonly property bool strong: modelData.own || modelData.workspace === "default"
-            spacing: Style.spacing.xxs
-            Text {
-              visible: stripItem.index === 1
-              anchors.verticalCenter: parent.verticalCenter
-              textFormat: Text.PlainText
-              text: "·"
-              color: Commons.Color.muted
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.body
-            }
-            Item {
-              width: workspaceKey.implicitWidth + Style.spacing.sm * 2
-              height: workspaceKey.implicitHeight + Style.spacing.xs * 2
-              Text {
-                id: workspaceKey
-                anchors.centerIn: parent
-                textFormat: Text.PlainText
-                text: Workspaces.stripText(stripItem.modelData)
-                color: stripItem.lit ? Commons.Color.accent : stripItem.strong ? root.foreground : Commons.Color.muted
-                opacity: stripItem.lit || stripItem.strong ? 1 : 0.75
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.body
-                font.bold: stripItem.lit
-                font.italic: stripItem.modelData.shared
-              }
-              Rectangle {
-                visible: stripItem.lit
-                anchors.bottom: parent.bottom
-                anchors.horizontalCenter: parent.horizontalCenter
-                width: workspaceKey.implicitWidth
-                height: Math.max(1, Style.spacing.xxs)
-                radius: height / 2
-                color: Commons.Color.accent
-              }
-              MouseArea {
-                anchors.fill: parent
-                onClicked: root.goWorkspace(stripItem.modelData.workspace)
-              }
-            }
-          }
-        }
+        entries: Workspaces.strip(root.state, root.layout, root.workspace)
+        onPicked: function(workspace) { root.goWorkspace(workspace) }
       }
-      Text {
+      InfoText {
         anchors.left: workspaceStrip.right
         anchors.leftMargin: Style.spacing.lg
         anchors.right: editedMark.left
         anchors.rightMargin: Style.spacing.md
         anchors.verticalCenter: parent.verticalCenter
-        textFormat: Text.PlainText
         elide: Text.ElideRight
         text: Layout.defaultNote(root.state, root.layout, root.workspace, root.scope)
-        color: Commons.Color.muted
-        font.family: root.fontFamily
-        font.pixelSize: Style.font.bodySmall
       }
-      Text {
+      InfoText {
         id: editedMark
         anchors.right: parent.right
-        anchors.rightMargin: Style.spacing.md
+        anchors.rightMargin: Tokens.cellPadding
         anchors.verticalCenter: parent.verticalCenter
         visible: root.editedScreens().length > 0
-        textFormat: Text.PlainText
+        urgent: true
         text: visible ? "edited, not applied (w)" : ""
-        color: Commons.Color.urgent
-        font.family: root.fontFamily
-        font.pixelSize: Style.font.bodySmall
       }
     }
 
     // Other desks share this layout: an edit here changes it for them too.
-    Text {
+    InfoText {
       id: sharedNote
       width: parent.width
-      leftPadding: Style.spacing.md
+      leftPadding: Tokens.textInset
       visible: root.sharedWith.length > 0
-      textFormat: Text.PlainText
       wrapMode: Text.WordWrap
       text: DesksLayouts.sharedNote(root.sharedWith)
-      color: Commons.Color.muted
-      font.family: root.fontFamily
-      font.pixelSize: Style.font.bodySmall
     }
 
     // Why the trees cannot be edited, or the engine cannot be reached.
-    Text {
+    ProblemText {
       id: problem
       width: parent.width
-      visible: text !== ""
-      textFormat: Text.PlainText
-      wrapMode: Text.WordWrap
       text: {
         if (!root.engine) return "No engine service."
         if (root.engine.error !== "") return root.engine.error
         if (root.state && root.state.config_error) return "config error: " + root.state.config_error
         return root.state && root.block !== "" ? "Read only: " + root.block + "." : ""
       }
-      color: Commons.Color.urgent
-      font.family: root.fontFamily
-      font.pixelSize: Style.font.body
     }
 
     // The panes, side by side (a scale model of each screen), and the slot
@@ -1039,18 +974,14 @@ Item {
             height: paneRow.height
             spacing: Style.spacing.sm
 
-            Text {
+            PaneTitle {
               id: paneTitle
               width: parent.width
-              textFormat: Text.PlainText
-              elide: Text.ElideRight
+              leftPadding: Tokens.textInset
+              // the keys' pane: not while the slot list has them
+              active: pane.active && !root.slotFocus
               text: Layout.screenLabel(root.state, pane.modelData.screen)
                 + (pane.changed ? "   edited" : "") + (pane.modelData.resized && !pane.changed ? "   keyboard-resized" : "")
-              color: pane.active ? Commons.Color.accent : root.foreground
-              opacity: pane.active ? 1 : 0.7
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.subtitle
-              font.bold: pane.active
             }
 
             // The picture, fitted to the screen's aspect.
@@ -1080,18 +1011,13 @@ Item {
                 border.color: pane.active ? Commons.Util.alpha(Commons.Color.accent, root.slotFocus ? 0.5 : 1)
                   : Commons.Util.alpha(root.foreground, 0.35)
 
-                Text {
+                Placeholder {
                   anchors.centerIn: parent
+                  width: parent.width - Style.spacing.md * 2
                   visible: pane.node === null
-                  textFormat: Text.PlainText
                   text: root.workspace === "default" || !Layout.hasOwn(root.state, root.layout, root.workspace)
                     ? "No shared tree on this screen"
                     : "No tree for workspace " + root.workspace + " here"
-                  color: root.foreground
-                  opacity: 0.5
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.body
-                  font.italic: true
                 }
 
                 Repeater {
@@ -1204,15 +1130,11 @@ Item {
                   : null
 
                 // what it is, quietly, over the screen: "scroll · half"
-                Text {
+                InfoText {
                   id: filmLabel
                   x: film.strip ? film.strip.viewport.x : 0
                   y: film.strip ? Math.max(0, film.strip.viewport.y - implicitHeight - Style.spacing.sm) : 0
-                  textFormat: Text.PlainText
                   text: film.strip ? film.strip.label : ""
-                  color: Commons.Color.muted
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.bodySmall
                   font.italic: true
                 }
 
@@ -1321,26 +1243,16 @@ Item {
             id: slotTitle
             width: parent.width
             height: slotTitleText.implicitHeight
-            Text {
+            PaneTitle {
               id: slotTitleText
               anchors.left: parent.left
-              textFormat: Text.PlainText
+              active: root.slotFocus
               text: "Slots"
-              color: root.slotFocus ? Commons.Color.accent : root.foreground
-              opacity: root.slotFocus ? 1 : 0.7
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.subtitle
-              font.bold: root.slotFocus
             }
-            Text {
+            InfoText {
               anchors.right: parent.right
               anchors.verticalCenter: parent.verticalCenter
-              textFormat: Text.PlainText
               text: root.slotFocus ? "s / Esc: back" : "s: edit"
-              color: root.foreground
-              opacity: 0.5
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.bodySmall
             }
           }
 
@@ -1354,7 +1266,7 @@ Item {
             boundsBehavior: Flickable.StopAtBounds
             currentIndex: root.slotIndex
 
-            delegate: Rectangle {
+            delegate: TableRow {
               id: slotItem
               required property var modelData
               required property int index
@@ -1362,18 +1274,20 @@ Item {
               readonly property bool lit: current && root.slotFocus
               width: ListView.view.width
               height: slotLines.implicitHeight + Style.spacing.sm * 2
-              radius: Style.cornerRadius
-              color: lit ? root.selectedBackground : "transparent"
-              border.width: current && !root.slotFocus ? 1 : 0
-              border.color: Commons.Util.alpha(root.foreground, 0.3)
+              selected: lit
+              marked: current && !root.slotFocus
+              onClicked: {
+                root.selectedSlot = slotItem.modelData.slot
+                root.focusSlots(true)
+              }
 
               Column {
                 id: slotLines
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
-                anchors.leftMargin: Style.spacing.md
-                anchors.rightMargin: Style.spacing.md
+                anchors.leftMargin: Tokens.cellPadding
+                anchors.rightMargin: Tokens.cellPadding
                 Text {
                   width: parent.width
                   textFormat: Text.PlainText
@@ -1398,28 +1312,13 @@ Item {
                   font.pixelSize: Style.font.bodySmall
                 }
               }
-
-              MouseArea {
-                anchors.fill: parent
-                onClicked: {
-                  root.selectedSlot = slotItem.modelData.slot
-                  root.focusSlots(true)
-                }
-              }
             }
 
-            Text {
+            Placeholder {
               anchors.centerIn: parent
               width: parent.width
               visible: root.slotRows.length === 0
-              horizontalAlignment: Text.AlignHCenter
-              wrapMode: Text.WordWrap
-              textFormat: Text.PlainText
               text: root.state ? "No slots yet — s, then a, makes one (left, main, right…)" : ""
-              color: root.foreground
-              opacity: 0.55
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.bodySmall
             }
           }
         }

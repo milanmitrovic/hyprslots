@@ -4,6 +4,7 @@ import qs.Commons
 import qs.Commons as Commons
 import "Prompts.js" as Prompts
 import "Messages.js" as Messages
+import "ui"
 
 // The message band at the foot of the editor's page (Messages.js): the
 // prompt being answered, as an input with its question in the accent colour
@@ -33,7 +34,7 @@ Item {
   readonly property int hairline: Math.max(1, Style.spacing.hairline)
   readonly property int padX: Style.spacing.xl
   readonly property int padY: Style.spacing.sm + Style.spacing.xxs
-  readonly property int stripe: look === "prompt" ? 0 : Math.max(2, Style.spacing.xxs + 1)
+  readonly property int stripe: look === "prompt" ? 0 : Tokens.stripeWidth
   readonly property color tone: look === "error" ? Commons.Color.urgent : Commons.Color.accent
 
   readonly property var parts: Messages.promptParts(prompt, Prompts.display(prompt))
@@ -48,7 +49,7 @@ Item {
     anchors.right: parent.right
     anchors.bottom: parent.bottom
     height: Math.max(root.height, content.implicitHeight + root.padY * 2)
-    radius: Style.cornerRadius
+    radius: Tokens.radius
     clip: true
     opacity: root.shown ? 1 : 0
     visible: opacity > 0

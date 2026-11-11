@@ -10,6 +10,7 @@ import "Prompts.js" as Prompts
 import "DesksLayouts.js" as DesksLayouts
 import "Assignment.js" as Assignment
 import "Messages.js" as Messages
+import "ui"
 
 // The hyprslots editor panel (docs/design.md §9): aerolayout's `edit` TUI as
 // an Omarchy shell panel. Three tabs, cycled with Tab / Shift+Tab as in the
@@ -464,24 +465,17 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             anchors.verticalCenterOffset: Style.spacing.xs / 2
             spacing: Style.spacing.lg
-            Text {
+            InfoText {
               width: Math.min(implicitWidth, tabBar.width - tabRow.x - tabRow.width - Style.spacing.lg * 3
                 - (dirtyMark.visible ? dirtyMark.implicitWidth + parent.spacing : 0))
               elide: Text.ElideRight
-              textFormat: Text.PlainText
               text: DesksLayouts.header(root.engine ? root.engine.state : null)
-              color: Commons.Color.muted
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.bodySmall
             }
-            Text {
+            InfoText {
               id: dirtyMark
               visible: !!(root.engine && root.engine.state && root.engine.state.dirty)
-              textFormat: Text.PlainText
+              urgent: true
               text: "● unsaved (Ctrl+S)"
-              color: Commons.Color.urgent
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.bodySmall
             }
           }
         }

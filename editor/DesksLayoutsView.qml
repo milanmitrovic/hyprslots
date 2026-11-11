@@ -5,6 +5,7 @@ import qs.Commons as Commons
 import "DesksLayouts.js" as DesksLayouts
 import "Prompts.js" as Prompts
 import "Help.js" as Help
+import "ui"
 
 // The desks and the layouts (docs/design.md §9). A desk is a monitor setup:
 // the monitors it is made of (● connected) and the layout it uses; the desk
@@ -315,47 +316,35 @@ Item {
     return true
   }
 
-  readonly property int rowHeight: Math.max(Style.space(26), Style.font.body + Style.spacing.md * 2)
   // The columns: the selection's stripe, the active mark, the name, then
   // two of the section's own (a desk: monitors, layout; a layout: screens,
   // the desks using it). Titles and cells share them, so they line up.
-  readonly property int stripeWidth: Math.max(2, Style.spacing.xxs + 1)
   readonly property real markWidth: Style.font.body + Style.spacing.md * 2
   readonly property real nameWidth: width * 0.22
   function secondWidth(desk) { return width * (desk ? 0.43 : 0.14) }
-  function thirdWidth(desk) { return width - stripeWidth - markWidth - nameWidth - secondWidth(desk) }
-  // The selection is the strongest thing on the page: the accent's
-  // selected fill, a stripe of the accent down its left, its name in the
-  // selected text colour. The active desk and layout are quiet beside it:
-  // a small ● and full-strength text where the rest is a little dimmer.
-  readonly property color selectionFill: Style.selectedAccentFill
-  readonly property color restText: Commons.Util.alpha(root.foreground, 0.78)
+  function thirdWidth(desk) { return width - Tokens.stripeWidth - markWidth - nameWidth - secondWidth(desk) }
+  // The selection is the strongest thing on the page (TableRow). The
+  // active desk and layout are quiet beside it: a small ● and
+  // full-strength text where the rest is a little dimmer.
 
   Column {
     anchors.fill: parent
     spacing: Style.spacing.md
 
-    // What this tab is about, a quiet line over the lists.
-    Text {
+    // What this tab is about, over the lists.
+    InfoText {
       id: headerBox
       width: parent.width
-      leftPadding: root.stripeWidth + Style.spacing.md
-      rightPadding: Style.spacing.md
-      textFormat: Text.PlainText
+      leftPadding: Tokens.textInset
+      rightPadding: Tokens.cellPadding
       wrapMode: Text.WordWrap
       text: "A desk is a monitor setup; it uses a layout with the same number of screens, and desks may share one."
         + " The other tabs edit the layout of the active desk (●)."
-      color: Commons.Color.muted
-      font.family: root.fontFamily
-      font.pixelSize: Style.font.bodySmall
     }
 
-    Text {
+    ProblemText {
       id: problem
       width: parent.width
-      visible: text !== ""
-      textFormat: Text.PlainText
-      wrapMode: Text.WordWrap
       text: {
         if (!root.engine) return "No engine service."
         if (root.engine.error !== "") return root.engine.error
@@ -363,9 +352,6 @@ Item {
         if (s && s.config_error) return "config error: " + s.config_error
         return ""
       }
-      color: Commons.Color.urgent
-      font.family: root.fontFamily
-      font.pixelSize: Style.font.body
     }
 
     ListView {
@@ -388,152 +374,85 @@ Item {
         // the first row of its kind opens its section
         readonly property bool first: index === 0 || root.rows[index - 1].kind !== modelData.kind
         readonly property var cells: desk ? DesksLayouts.deskCells(modelData) : DesksLayouts.layoutCells(modelData)
-        readonly property color ink: current || active ? root.foreground : root.restText
+        readonly property color ink: current || active ? root.foreground : Tokens.restText
         width: ListView.view.width
 
-        // The section's header, a quiet label: "DESKS  monitor setups ...".
-        Row {
+        // The section's header: "DESKS  monitor setups ...".
+        Item {
           visible: entry.first
-          x: root.stripeWidth + Style.spacing.md
-          topPadding: entry.index === 0 ? Style.spacing.sm : Style.spacing.xxl
-          bottomPadding: Style.spacing.sm
-          spacing: Style.spacing.lg
-          readonly property var header: DesksLayouts.sectionHeader(entry.modelData.kind)
-          Text {
-            textFormat: Text.PlainText
-            text: parent.header.title
-            color: Commons.Color.muted
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.bodySmall
-            font.weight: Font.DemiBold
-            font.capitalization: Font.AllUppercase
-            font.letterSpacing: Math.max(1, Style.spacing.xxs / 2)
-          }
-          Text {
-            textFormat: Text.PlainText
-            text: parent.header.hint
-            color: Commons.Color.muted
-            opacity: 0.7
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.bodySmall
+          width: parent.width
+          height: visible ? sectionHeader.height + sectionHeader.y + Style.spacing.sm : 0
+          SectionHeader {
+            id: sectionHeader
+            x: Tokens.textInset
+            y: entry.index === 0 ? Style.spacing.sm : Style.spacing.xxl
+            readonly property var header: DesksLayouts.sectionHeader(entry.modelData.kind)
+            title: header.title
+            hint: header.hint
           }
         }
 
-        // The section's column titles, muted, over the cells they name (a
-        // desk's layout column is the one it uses: "Uses layout", each cell
+        // The section's column titles over the cells they name (a desk's
+        // layout column is the one it uses: "Uses layout", each cell
         // "→ <layout>").
-        Row {
+        TableHeader {
+          id: columnTitles
           visible: entry.first
           width: parent.width
           readonly property var titles: DesksLayouts.columnTitles(entry.modelData.kind)
-          Repeater {
-            model: entry.desk
-              ? [{ text: "", width: root.stripeWidth + root.markWidth }, { text: parent.titles.name, width: root.nameWidth },
-                { text: parent.titles.monitors, width: root.secondWidth(true) },
-                { text: parent.titles.layout, width: root.thirdWidth(true) }]
-              : [{ text: "", width: root.stripeWidth + root.markWidth }, { text: parent.titles.name, width: root.nameWidth },
-                { text: parent.titles.screens, width: root.secondWidth(false) },
-                { text: parent.titles.usedBy, width: root.thirdWidth(false) }]
-            delegate: Text {
-              required property var modelData
-              width: modelData.width
-              leftPadding: Style.spacing.md
-              bottomPadding: Style.spacing.xs
-              textFormat: Text.PlainText
-              text: modelData.text
-              color: Commons.Color.muted
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.bodySmall
-              elide: Text.ElideRight
-            }
-          }
+          columns: entry.desk
+            ? [{ text: "", width: Tokens.stripeWidth + root.markWidth }, { text: columnTitles.titles.name, width: root.nameWidth },
+              { text: columnTitles.titles.monitors, width: root.secondWidth(true) },
+              { text: columnTitles.titles.layout, width: root.thirdWidth(true) }]
+            : [{ text: "", width: Tokens.stripeWidth + root.markWidth }, { text: columnTitles.titles.name, width: root.nameWidth },
+              { text: columnTitles.titles.screens, width: root.secondWidth(false) },
+              { text: columnTitles.titles.usedBy, width: root.thirdWidth(false) }]
         }
 
-        Rectangle {
+        TableRow {
           width: parent.width
-          height: root.rowHeight
-          radius: Style.cornerRadius
-          color: entry.current ? root.selectionFill : "transparent"
-
-          MouseArea {
-            anchors.fill: parent
-            onClicked: root.select(entry.index)
-          }
-
-          // the selection's stripe, down the left edge
-          Rectangle {
-            visible: entry.current
-            width: root.stripeWidth
-            height: parent.height
-            topLeftRadius: parent.radius
-            bottomLeftRadius: parent.radius
-            color: Commons.Color.accent
-          }
+          selected: entry.current
+          onClicked: root.select(entry.index)
 
           Row {
-            x: root.stripeWidth
             height: parent.height
-            Text {
+            TableCell {
               width: root.markWidth
-              anchors.verticalCenter: parent.verticalCenter
+              leftPadding: 0
               horizontalAlignment: Text.AlignHCenter
-              textFormat: Text.PlainText
               text: entry.cells.mark
               color: Commons.Color.accent
               opacity: entry.current ? 1 : 0.8
-              font.family: root.fontFamily
               font.pixelSize: Style.font.bodySmall
             }
-            Text {
+            TableCell {
               width: root.nameWidth
-              anchors.verticalCenter: parent.verticalCenter
-              leftPadding: Style.spacing.md
-              textFormat: Text.PlainText
               text: entry.cells.name
               color: entry.current ? root.selectedText : entry.ink
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.body
               font.bold: entry.current || entry.active
-              elide: Text.ElideRight
             }
             // a desk: its monitors and its layout; a
             // layout: its screen count and the desks using it
-            Text {
+            TableCell {
               width: root.secondWidth(entry.desk)
-              anchors.verticalCenter: parent.verticalCenter
-              leftPadding: Style.spacing.md
-              textFormat: Text.PlainText
               text: entry.desk ? entry.cells.monitors : entry.cells.screens
               color: entry.ink
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.body
-              elide: Text.ElideRight
             }
-            Text {
+            TableCell {
               width: root.thirdWidth(entry.desk)
-              anchors.verticalCenter: parent.verticalCenter
-              leftPadding: Style.spacing.md
-              textFormat: Text.PlainText
               text: entry.desk ? entry.cells.layout : entry.cells.usedBy
-              color: entry.desk || entry.modelData.usedBy.length ? entry.ink : Commons.Color.muted
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.body
-              elide: Text.ElideRight
+              color: entry.desk || entry.modelData.usedBy.length ? entry.ink : Tokens.info
             }
           }
         }
       }
 
-      Text {
+      Placeholder {
         anchors.centerIn: parent
+        width: parent.width
         visible: root.rows.length === 0
-        textFormat: Text.PlainText
         text: root.state ? "No desks or layouts yet — n makes a layout"
           : (root.engine && root.engine.error === "" ? "Reading hyprslots…" : "")
-        color: root.foreground
-        opacity: 0.55
-        font.family: root.fontFamily
-        font.pixelSize: Style.font.body
       }
     }
   }
