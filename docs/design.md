@@ -174,8 +174,8 @@ description less its serial and the longest PNP vendor name that starts it
 (hwdata's `pnp.ids`, the table libdisplay-info names makes from; a short
 built-in list where it cannot be read): "Samsung Electric Company Odyssey
 G95NC HNTW700044" is `Odyssey G95NC`. A monitor a desk lists that is not
-connected is named from its selector (its serial cannot be told apart
-then). The user's label comes first: slots.lua's `monitor_names`
+connected is named from its selector, less a last word that looks like a
+serial (six or more capitals and digits, or hex): `Odyssey G95NC` again. The user's label comes first: slots.lua's `monitor_names`
 (selector -> name, keyed by any selector a desk could use; absent = none),
 set by the Desk tab's `m`. config.lua need not pass it on: where it
 returns no `monitor_names`, the data file's are used.

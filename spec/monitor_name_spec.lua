@@ -72,9 +72,13 @@ describe("a monitor's display name", function()
     assert.are.equal("Samsung", monitor_name.of_selector("Samsung Electric Company Odyssey G95NC HNTW700044", nil,
       { ["Samsung Electric Company Odyssey G95NC HNTW700044"] = "Samsung" }))
     assert.are.equal("Built-in", monitor_name.of_selector("eDP-1", nil, {}))
-    assert.are.equal("Odyssey G95NC HNTW700044",
+    assert.are.equal("Odyssey G95NC",
       monitor_name.of_selector("Samsung Electric Company Odyssey G95NC HNTW700044", nil, {}),
-      "the make goes; which word is the serial is not known")
+      "the make goes, and a last word that looks like a serial")
+    assert.are.equal("DELL U2720Q 1ABC", monitor_name.of_selector("Dell Inc. DELL U2720Q 1ABC", nil, {}),
+      "a short last word may be the model's: kept")
+    assert.are.equal("VG27AQ1A12", monitor_name.of_selector("ASUSTek COMPUTER INC VG27AQ1A12", nil, {}),
+      "the model's only word is never taken for a serial")
     assert.are.equal("Odyssey G95NC", monitor_name.of_selector("Samsung Electric Company Odyssey G95NC HNTW700044",
       ODYSSEY, {}), "a connected one is named as it is")
   end)

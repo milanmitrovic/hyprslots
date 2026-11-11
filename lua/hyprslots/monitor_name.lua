@@ -154,7 +154,7 @@ end
 -- The display name of a desk's selector: the monitor it finds when
 -- connected (`monitor`, or nil), else its label, else what the selector
 -- itself says: Built-in for a laptop panel's connector, else the selector
--- less a make it starts with (its serial, if any, is not known apart).
+-- less a make it starts with and a last word that looks like a serial.
 function M.of_selector(selector, monitor, labels, makes)
   if monitor then
     return M.display(monitor, labels, makes)
@@ -166,6 +166,13 @@ function M.of_selector(selector, monitor, labels, makes)
     return M.BUILT_IN
   end
   local make, rest = split(selector, "", "", makes)
+  -- Its serial is not known apart: a last word that looks like one (six or
+  -- more capitals and digits, a digit among them, or hex) goes, never the
+  -- model's only word.
+  local head, last = rest:match("^(.-%S)%s+(%S+)$")
+  if last and #last >= 6 and last:find("%d") and (last:match("^[%u%d]+$") or last:match("^0x%x+$")) then
+    rest = head
+  end
   if rest ~= "" then
     return rest
   end
