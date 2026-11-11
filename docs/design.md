@@ -760,6 +760,7 @@ the running engine only through Hyprland:
 | `BarWidget.qml` | the bar widget (below): glyph and active layout; left click toggles the panel, right click a menu |
 | `Services.js` | where the service registers itself, for a bar widget whose bar hands it no `serviceFor` |
 | `AssignmentView.qml`, `LayoutView.qml`, `DesksLayoutsView.qml` | aerolayout's Assignment, Layout (with its logical slots as a list beside the screens) and monitors views (below) |
+| `ui/` (`qmldir`) | the editor's design system, one component per kind of element, all from the theme (below): `Tokens` (a singleton), `SectionHeader`, `WorkspaceSwitcher`, `InfoText`, `ProblemText`, `Placeholder`, `TableHeader`, `TableRow`, `TableCell`, `PaneTitle` |
 | `Protocol.js`, `Assignment.js`, `Layout.js`, `Slots.js`, `DesksLayouts.js`, `Prompts.js`, `Workspaces.js`, `BarStatus.js`, `Help.js`, `Messages.js` | pure logic, tested under node (`editor/tests/`); `Slots.js` is the slot list's, `Workspaces.js` the workspace keys', `DesksLayouts.js` the Desk view's and the panel header's, `Help.js` the help rows', `Messages.js` the message band's |
 
 **Every view.** The panel's keys come first: Tab / Shift+Tab cycle the
@@ -776,10 +777,30 @@ home (Built-in + Odyssey G95NC) · Layout: ultrawide (also used by: office)`
 active desk, `; new, unsaved` in the brackets after a desk the engine made for new
 monitors), then `● unsaved (Ctrl+S)` in the urgent colour while
 there are any. Every edit outside the Desk view goes to the
-active desk's layout, and so to every desk that shares it. Each view's own
-header (the Assignment page's workspace, the Layout view's workspace strip,
-the Desk tab's note) is a quiet line too: the content is the focus. Edits go
+active desk's layout, and so to every desk that shares it. Edits go
 to the engine as they are made and stay in memory until saved.
+
+**One look per kind of element** (`editor/ui/`, theme tokens only):
+section headers are the accent colour in small letter-spaced capitals
+(`SectionHeader`: the Desk tab's `DESKS` and `LAYOUTS`, and the workspace
+switcher's `WORKSPACE`), a hint after them as information. The Assignment
+and Layout tabs open with the same `WorkspaceSwitcher`: the workspaces by
+their keys, the current one in the accent colour, bold and underlined
+(`Workspaces.numbers` on the Assignment tab; the Layout tab's
+`Workspaces.strip` leads with All workspaces and dots its overrides).
+Information is muted and small (`InfoText`): the desk line beside the tabs,
+the Desk tab's opening line, a section's hint, the Layout tab's notes on
+its header line; a warning that something is not in force yet the same in
+the urgent colour (`● unsaved`, `edited, not applied`). Tables share column
+titles (`TableHeader`, muted and small), cells (`TableCell`) and rows
+(`TableRow`): the selection is the strongest thing on a page, the accent's
+selected fill with an accent stripe down its left, in the Assignment and
+Desk tables and the slot list alike (the slot list's current row while the
+keys are in the picture: an outline). Pane titles (`PaneTitle`: the Layout
+tab's screens and its slot list) are the accent colour on the pane that has
+the keys. What stands in an empty list or picture is a muted `Placeholder`;
+why a tab cannot work, an urgent `ProblemText`. Headers, notes and cells
+start at one inset (`Tokens.textInset`).
 
 **Message band** (`MessageBand.qml`, `Messages.js`): the outcome of every
 call shows in a band of its own at the foot of the page, just above the
@@ -881,7 +902,7 @@ empty one closes up, and a new slot is in every tree at once (an edited
 draft takes it too, on the screen the engine put it on: `Layout.followNewSlot`).
 Edits go to a **draft**
 per pane (`edited` on the pane, `edited, not applied (w)` in the header).
-The header is one strip (`Workspaces.stripLine`): `All workspaces · 1 2 3•
+The header is the workspace switcher, one strip (`Workspaces.stripLine`): `All workspaces · 1 2 3•
 … 9`, the layout's shared (default) trees first, then the managed
 workspaces (config `workspaces`, 1 to 10 by default) by their keys, a dot
 after each with trees of its own (`3•`: an override); the current one in

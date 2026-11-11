@@ -21,13 +21,15 @@ endif
 # qmllint (Qt 6's; /usr/bin/qmllint is Qt 5's) over the plugin, with qs.Commons
 # and qs.Ui resolved against Omarchy's shell. qmllint cannot see into
 # Style's nested QtObjects, so its "not found on type QObject" warnings are
-# filtered out.
+# filtered out, as is its claim that editor/ui/Tokens.qml is no singleton
+# (ui/qmldir declares it one; qmllint misreads it when linting the file
+# itself).
 QMLLINT ?= /usr/lib/qt6/bin/qmllint
 OMARCHY_PATH ?= /usr/share/omarchy
 editor-lint:
 	@mkdir -p .e2e-tmp/lint-imports && ln -sfn $(OMARCHY_PATH)/shell .e2e-tmp/lint-imports/qs
-	@$(QMLLINT) -I .e2e-tmp/lint-imports editor/*.qml 2>&1 \
-	  | grep -E '^(Warning|Error)' | grep -v 'not found on type "QObject"' || true
+	@$(QMLLINT) -I .e2e-tmp/lint-imports editor/*.qml editor/ui/*.qml 2>&1 \
+	  | grep -E '^(Warning|Error)' | grep -v -e 'not found on type "QObject"' -e 'Type Tokens not declared as singleton' || true
 
 # Nested Hyprland on a headless sway host; needs sway, foot, jq, gcc.
 # One test: make e2e TESTS=e2e/smoke_test.sh
