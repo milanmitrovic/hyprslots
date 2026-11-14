@@ -1051,25 +1051,43 @@ function workspaceHelp(jumpKeys) {
 
 // The picture's keys. opts: { node (the selected pane's draft: t names
 // what it makes of it, / and r show on tiles only), hasOwn (the workspace
-// has trees of its own: u), jumpKeys (Workspaces.jumpKeys) }.
+// has trees of its own: u), jumpKeys (Workspaces.jumpKeys), readOnly (the
+// layout takes no edit), edited (a pane has unapplied edits: w), workspace
+// ("default": R records a workspace, not the shared trees) }. A key the
+// picture would refuse now is marked `enabled: false` (the toolbar dims it).
 function pictureHelp(opts) {
   var tiles = scrollMode(opts.node) === "tiles"
-  var tree = [{ key: "←↑↓→", label: "select" }, { key: "hjkl/HJKL", label: "move" }]
-  if (tiles) tree.push({ key: "/", label: "flip" })
-  tree.push({ key: "t", label: cycleLabel(opts.node), before: true })
-  if (tiles) tree.push({ key: "r", label: "ratios" })
+  var ro = !!opts.readOnly
+  var edits = !ro && !!opts.node
+  var off = function(item, on) {
+    if (!on) item.enabled = false
+    return item
+  }
+  var tree = [{ key: "←↑↓→", label: "select" }, off({ key: "hjkl/HJKL", label: "move" }, edits)]
+  if (tiles) tree.push(off({ key: "/", label: "flip" }, edits))
+  tree.push(off({ key: "t", label: cycleLabel(opts.node), before: true }, edits))
+  if (tiles) tree.push(off({ key: "r", label: "ratios" }, edits))
   tree.push({ key: "o", label: "other windows" })
-  var layout = [{ key: "w", label: "apply" }, { key: "d", label: "revert" }, { key: "R", label: "record" }]
-  if (opts.hasOwn) layout.push({ key: "u", label: "use shared" })
+  var layout = [off({ key: "w", label: "apply" }, !ro && opts.edited !== false), off({ key: "d", label: "revert" }, !ro),
+    off({ key: "R", label: "record" }, !ro && opts.workspace !== "default")]
+  if (opts.hasOwn) layout.push(off({ key: "u", label: "use shared" }, !ro))
   return [tree, layout, [{ key: "s", label: "slots" }]].concat(workspaceHelp(opts.jumpKeys))
 }
 
-// The slot list's keys. opts: { jumpKeys }.
+// The slot list's keys. opts: { jumpKeys, readOnly (the slots are code's),
+// hasSlot (there is a slot to act on) }; what it would refuse is marked
+// `enabled: false`.
 function slotListHelp(opts) {
+  var ro = !!opts.readOnly
+  var one = opts.hasSlot !== false
+  var off = function(item, on) {
+    if (!on) item.enabled = false
+    return item
+  }
   return [
-    [{ key: "↑/↓", label: "select" }, { key: "a", label: "add" }, { key: "r", label: "rename" },
-      { key: "e", label: "describe" }, { key: "K", label: "key" }, { key: "d", label: "delete" },
-      { key: "Return", label: "show in the picture" }],
+    [{ key: "↑/↓", label: "select" }, off({ key: "a", label: "add" }, !ro), off({ key: "r", label: "rename" }, !ro && one),
+      off({ key: "e", label: "describe" }, !ro && one), off({ key: "K", label: "key" }, !ro && one),
+      off({ key: "d", label: "delete" }, !ro && one), off({ key: "Return", label: "show in the picture" }, one)],
     [{ key: "s/Esc", label: "back" }],
   ].concat(workspaceHelp(opts.jumpKeys))
 }

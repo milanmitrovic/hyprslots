@@ -724,3 +724,21 @@ test("d reverts a tree to how it was last saved, asking first, in words with no 
   assert.equal(L.revertedText(3, "1", "h[a, b]"), "Reverted workspace 3's tree on screen 1: h[a, b].");
   assert.equal(L.revertedText("default", "1", null), "Reverted the shared tree on screen 1: no tree.");
 });
+
+test("the help row marks what the picture would refuse: edits when read only or with no tree, w with nothing edited, R on all workspaces", () => {
+  const off = (opts) => plain(L.pictureHelp({ node: tree("h[a, b]"), hasOwn: true, jumpKeys: "1–9", edited: true,
+    workspace: 3, ...opts }).flatMap((g) => g).filter((i) => i.enabled === false).map((i) => i.key));
+  assert.deepEqual(off({}), []);
+  assert.deepEqual(off({ edited: false }), ["w"]);
+  assert.deepEqual(off({ workspace: "default" }), ["R"]);
+  assert.deepEqual(off({ node: null }), ["hjkl/HJKL", "/", "t", "r"]);
+  assert.deepEqual(off({ readOnly: true }), ["hjkl/HJKL", "/", "t", "r", "w", "d", "R", "u"]);
+});
+
+test("the slot list's help row marks what it would refuse: edits when read only, a slot's keys with none", () => {
+  const off = (opts) => plain(L.slotListHelp({ jumpKeys: "1–9", hasSlot: true, ...opts }).flatMap((g) => g)
+    .filter((i) => i.enabled === false).map((i) => i.key));
+  assert.deepEqual(off({}), []);
+  assert.deepEqual(off({ hasSlot: false }), ["r", "e", "K", "d", "Return"]);
+  assert.deepEqual(off({ readOnly: true }), ["a", "r", "e", "K", "d"]);
+});

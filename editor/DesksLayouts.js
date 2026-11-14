@@ -139,13 +139,19 @@ function sectionHeader(kind) {
 function actions(row) {
   if (!row) return [{ key: "n", label: "new layout" }]
   var desk = row.kind === "desk"
+  // what a row config.lua builds refuses (readOnlyError): a desk's
+  // layout, name and existence; a layout's name and existence
+  var off = function(item, refused) {
+    if (refused && row.readOnly) item.enabled = false
+    return item
+  }
   return [
-    { key: "a", label: desk ? "apply a layout" : "apply to the active desk" },
+    off({ key: "a", label: desk ? "apply a layout" : "apply to the active desk" }, desk),
     { key: "f", label: desk ? "fork its layout" : "fork" },
   ].concat(desk ? [{ key: "m", label: "monitor name" }] : [], [
     { key: "n", label: "new layout" },
-    { key: "r", label: "rename" },
-    { key: "x", label: "delete" },
+    off({ key: "r", label: "rename" }, true),
+    off({ key: "x", label: "delete" }, true),
   ])
 }
 

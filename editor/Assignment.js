@@ -336,3 +336,21 @@ function assignedText(state, cls, reply) {
   }
   return text + ". Ctrl+S saves."
 }
+
+// The help row (Help.row groups) on `row`, the selected row of a page:
+// a puts a window into a slot (not on an empty or Missing row), u takes out
+// what unassignPlan can; what the view would refuse now is marked
+// `enabled: false` (the toolbar dims it). `jumpKeys` is Workspaces.jumpKeys.
+function helpGroups(state, row, jumpKeys) {
+  var assign = { key: "a", label: "assign" }
+  if (!row || row.kind !== "window") assign.enabled = false
+  var unassign = { key: "u", label: "unassign" }
+  if (unassignPlan(state, row).error) unassign.enabled = false
+  return [
+    [{ key: "↑/↓", label: "select" }],
+    { title: "Workspace", items: [{ key: "←/→ [ ]", label: "prev/next" }, { key: jumpKeys, label: "jump" }] },
+    [assign, unassign],
+    [{ key: "Ctrl+S", label: "save" }],
+    [{ key: "Tab", label: "switch view" }, { key: "q", label: "close" }],
+  ]
+}

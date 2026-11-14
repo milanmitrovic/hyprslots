@@ -262,3 +262,12 @@ test("m names one of the desk's monitors: which (when it has more than one), the
   assert.equal(D.nameMessage({ name: "", display: "Odyssey G95NC" }, { display: "Samsung", label: "Samsung" }),
     "Monitor 'Samsung' is 'Odyssey G95NC' again, its own name. Ctrl+S saves.");
 });
+
+test("an action a read-only row refuses looks unavailable: a desk's a, r, x; a layout's r, x", () => {
+  const rows = D.rows(fixture());
+  const off = (row) => plain(D.actions(row).filter((a) => a.enabled === false).map((a) => a.key));
+  assert.deepEqual(off(rows[0]), [], "an editable desk");
+  const desk = { ...rows[0], readOnly: true };
+  assert.deepEqual(off(desk), ["a", "r", "x"]);
+  assert.deepEqual(off(rows[6]), ["r", "x"], "layout wide is set in the config; it may still go on the active desk");
+});

@@ -251,3 +251,16 @@ test("the message after a says which slot the window took, whom it replaced and 
   assert.equal(A.placeNote, undefined);
   assert.equal(A.placedText, undefined);
 });
+
+test("the help row: a only on a window, u only where there is something to unassign", () => {
+  const state = fixture();
+  const rows = A.rows(state, 3);
+  const off = (row) => plain(A.helpGroups(state, row, "1–9 0").flatMap((g) => (Array.isArray(g) ? g : g.items))
+    .filter((i) => i.enabled === false).map((i) => i.key));
+  assert.deepEqual(off(rows[0]), [], "a window in its slot");
+  const empty = rows.find((r) => r.kind === "empty");
+  assert.deepEqual(off(empty), ["a", "u"]);
+  assert.deepEqual(off(null), ["a", "u"]);
+  const keys = plain(A.helpGroups(state, rows[0], "1–9 0").flatMap((g) => (Array.isArray(g) ? g : g.items)).map((i) => i.key));
+  assert.deepEqual(keys, ["↑/↓", "←/→ [ ]", "1–9 0", "a", "u", "Ctrl+S", "Tab", "q"]);
+});

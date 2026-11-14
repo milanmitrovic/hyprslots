@@ -65,3 +65,59 @@ test("an item with `before` puts even a one-letter key before its label", () => 
   assert.equal(H.item({ key: "o", label: "show/hide other windows", before: true }, ACCENT), k("o") + " show/hide other windows");
   assert.equal(H.item({ key: "o", label: "show/hide other windows" }, ACCENT), "sh" + k("o") + "w/hide other windows");
 });
+
+// --- the toolbar: the same rows as buttons ---------------------------------
+
+const plain = (value) => JSON.parse(JSON.stringify(value));
+
+test("a key names the key presses a click feeds the panel, as Panel.press names them", () => {
+  assert.deepEqual(plain(H.presses("a")), [{ glyph: "a", press: "a" }]);
+  assert.deepEqual(plain(H.presses("R")), [{ glyph: "R", press: "R" }]);
+  assert.deepEqual(plain(H.presses("Ctrl+S")), [{ glyph: "Ctrl+S", press: "Ctrl+s" }]);
+  assert.deepEqual(plain(H.presses("Tab")), [{ glyph: "Tab", press: "Tab" }]);
+  assert.deepEqual(plain(H.presses("Return")), [{ glyph: "Return", press: "Return" }]);
+  assert.deepEqual(plain(H.presses("/")), [{ glyph: "/", press: "/" }]);
+  assert.deepEqual(plain(H.presses("s/Esc")), [{ glyph: "s", press: "s" }, { glyph: "Esc", press: "Escape" }]);
+  assert.deepEqual(plain(H.presses("↑/↓")), [{ glyph: "↑", press: "Up" }, { glyph: "↓", press: "Down" }]);
+  assert.deepEqual(plain(H.presses("←↑↓→")).map((p) => p.press), ["Left", "Up", "Down", "Right"]);
+  assert.deepEqual(plain(H.presses("←/→ [ ]")).map((p) => p.press), ["Left", "Right", "[", "]"]);
+  assert.deepEqual(plain(H.presses("hjkl/HJKL")).map((p) => p.press), ["h", "j", "k", "l", "H", "J", "K", "L"]);
+});
+
+test("the digits are the workspace switcher's to click: a range and its digits feed nothing", () => {
+  assert.deepEqual(plain(H.presses("[ ] 1–9 0 -")), [
+    { glyph: "[", press: "[" }, { glyph: "]", press: "]" }, { glyph: "1–9", press: null }, { glyph: "0", press: null },
+    { glyph: "-", press: "-" },
+  ]);
+  assert.deepEqual(plain(H.presses("1–4")), [{ glyph: "1–4", press: null }]);
+});
+
+test("the toolbar is the help row as cells: a button per one-key action, keys then a label for several", () => {
+  const cells = plain(H.buttons([
+    [{ key: "↑/↓", label: "select" }],
+    { title: "Workspace", items: [{ key: "←/→ [ ]", label: "prev/next" }, { key: "1–9", label: "jump" }] },
+    [{ key: "a", label: "assign" }, { key: "u", label: "unassign", enabled: false }],
+    [],
+    [{ key: "Tab", label: "switch view" }],
+  ], ACCENT));
+  assert.deepEqual(cells.map((c) => [c.kind, c.group, c.styled || c.text || c.label]), [
+    ["keys", 0, "select"],
+    ["title", 1, "Workspace"],
+    ["keys", 1, "prev/next"],
+    ["keys", 1, "jump"],
+    ["button", 2, k("a") + "ssign"],
+    ["button", 2, k("u") + "nassign"],
+    ["button", 3, k("Tab") + " switch view"],
+  ]);
+  assert.deepEqual(cells[0].keys, [{ glyph: "↑", press: "Up" }, { glyph: "↓", press: "Down" }]);
+  assert.deepEqual([cells[4].press, cells[4].available], ["a", true]);
+  assert.deepEqual([cells[5].press, cells[5].available], ["u", false], "an action the view would refuse looks it");
+  assert.deepEqual(cells.map((c) => c.first), [true, true, false, false, true, false, true], "where a group starts");
+});
+
+test("plain text in a row is a cell of its own, and the toolbar reads as the row does", () => {
+  const groups = [[{ key: "w", label: "apply" }, { text: "or" }, { key: "Ctrl+S", label: "save" }]];
+  const cells = plain(H.buttons(groups, ACCENT));
+  assert.deepEqual(cells.map((c) => c.kind), ["button", "text", "button"]);
+  assert.equal(H.plain(H.row(groups, ACCENT)), "w apply  or  Ctrl+S save");
+});
