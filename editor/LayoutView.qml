@@ -1110,7 +1110,10 @@ Item {
                 selected: pane.active ? root.selectedKey : "", titles: frame.titles })
               readonly property var boxes: picture && !scrolls ? Layout.rects(picture, area, boxOpts) : []
               readonly property var dividers: picture && !scrolls ? Layout.dividers(picture, area, boxOpts) : []
-              readonly property bool dragHere: !!root.dragging && root.dragging.screen === pane.modelData.key
+              // the drag on this pane, else null: every binding below reads
+              // this one, so none sees a drag the others have let go
+              readonly property var drag: root.dragging && root.dragging.screen === pane.modelData.key ? root.dragging : null
+              readonly property bool dragHere: drag !== null
 
               // Tiles: boxes in a scale model of the screen.
               Rectangle {
@@ -1227,7 +1230,7 @@ Item {
                     id: band
                     required property var modelData
                     readonly property bool across: modelData.axis === "h"
-                    readonly property bool held: frame.dragHere && root.dragging.divider.id === modelData.id
+                    readonly property bool held: !!frame.drag && frame.drag.divider.id === modelData.id
                     readonly property bool lit: held || (!frame.dragHere && dividerMouse.enabled && dividerMouse.hoveredId === modelData.id)
                     objectName: "divider:" + pane.modelData.key + ":" + modelData.id
                     x: 4 + (across ? modelData.at - Tokens.dividerHit / 2 : modelData.x)
@@ -1258,7 +1261,7 @@ Item {
                   property string hoveredId: ""
                   property string hoveredAxis: ""
                   property bool overLeaf: false
-                  readonly property string axis: frame.dragHere ? root.dragging.divider.axis : hoveredAxis
+                  readonly property string axis: frame.drag ? frame.drag.divider.axis : hoveredAxis
                   cursorShape: axis === "h" ? Qt.SplitHCursor : axis === "v" ? Qt.SplitVCursor
                     : overLeaf ? Qt.PointingHandCursor : Qt.ArrowCursor
 
@@ -1281,11 +1284,11 @@ Item {
                   }
 
                   onPositionChanged: (mouse) => {
-                    if (!frame.dragHere) {
+                    if (!frame.drag) {
                       hover(mouse.x, mouse.y)
                       return
                     }
-                    var d = root.dragging.divider
+                    var d = frame.drag.divider
                     root.dragTo(Layout.dividerFraction(d, (d.axis === "h" ? mouse.x : mouse.y) - 4), mouse.x, mouse.y)
                   }
                   onPressed: (mouse) => {
@@ -1313,9 +1316,9 @@ Item {
                 Rectangle {
                   id: ratioTip
                   objectName: "dragRatio:" + pane.modelData.key
-                  visible: frame.dragHere && root.dragging.x >= 0
-                  readonly property real px: frame.dragHere ? root.dragging.x : 0
-                  readonly property real py: frame.dragHere ? root.dragging.y : 0
+                  visible: !!frame.drag && frame.drag.x >= 0
+                  readonly property real px: frame.drag ? frame.drag.x : 0
+                  readonly property real py: frame.drag ? frame.drag.y : 0
                   x: Math.max(0, Math.min(screenBox.width - width, px + Style.spacing.md))
                   y: Math.max(0, Math.min(screenBox.height - height, py + Style.spacing.md))
                   width: tipText.implicitWidth + Style.spacing.md * 2
@@ -1328,7 +1331,7 @@ Item {
                     id: tipText
                     anchors.centerIn: parent
                     textFormat: Text.PlainText
-                    text: frame.dragHere ? root.dragging.label : ""
+                    text: frame.drag ? frame.drag.label : ""
                     color: Tokens.tipText
                     font.family: Tokens.fontFamily
                     font.pixelSize: Style.font.bodySmall
