@@ -52,9 +52,9 @@ desks, then arrangements; a desk was always the physical setup you sit at.)
 
 ## 3. Vocabulary
 
-- **Workspace N** (1 to 10): workspace N in each monitor's Omarchy block
-  (§5). One workspace spans all screens; Super+N switches it on all of
-  them.
+- **Workspace N** (1 to 10): workspace N in each screen's block (§5):
+  workspace id N on screen 1, 10+N on screen 2, and so on. One workspace
+  spans all screens; Super+N switches it on all of them.
 - **Desk**: a monitor setup, the set of monitors you have when you sit at
   one place (`laptop`, `docked`, `office`): each monitor named by its
   description, serial or connector. Exactly one desk is active at a time,
@@ -274,9 +274,55 @@ physical monitor its own block of ten workspaces: block 0 is 1–10, block 1 is
   monitor.
 - `o.workspaces.focus(slot, monitor_name)` — returns an action (a function for
   `hl.dispatch` / `hl.bind`) that focuses slot N on that monitor.
+- `o.workspaces.reconcile(added, gone)` — puts every workspace on the monitor
+  owning its block and every monitor on a workspace of its own; its handlers
+  run it on `hyprland.start`, `config.reloaded`, `monitor.added` (inside the
+  event) and `monitor.removed` (from a oneshot timer). A workspace whose
+  monitor is gone joins the block of the one it landed on, appended after
+  that monitor's own (13 becomes 4), and remembers where it came from.
 
-hyprslots does not renumber workspaces; workspace N on a screen is exactly
-`o.workspaces.workspace_id(monitor, N)`.
+Workspace N on a screen is exactly `o.workspaces.workspace_id(monitor, N)`.
+
+**Blocks follow the desk** (module `blocks`). Omarchy's assignment is for
+good: the monitor seen first keeps block 0 even while it is turned off. On
+the laptop with hyprmoncfg's Odyssey profile, which disables the panel
+(eDP-1), the Odyssey alone sat on 11–20 and the bar showed 11–19; worse, when
+the panel was turned off while it was the only monitor on, Hyprland had no
+monitor to move its workspaces to, so they stayed on the disabled panel, out
+of sight. hyprslots therefore owns the assignment while a desk is active:
+**screen i of the active desk holds block i-1**, so screen 1 always shows
+1–10, screen 2 11–20; a monitor that is off or unplugged holds no block.
+
+It drives Omarchy's module rather than replacing it:
+
+- **The block table.** `monitor-workspaces.lua` keeps its blocks (identity →
+  block) in a local table; `hl_adapter.set_omarchy_blocks` reaches it through
+  the upvalues of `o.workspaces.workspace_id` (`assign`, and `assign`'s
+  `blocks`, `identities_of`, `save`), rewrites it to the desk's screens and
+  writes the state file with Omarchy's own `save`. So Omarchy's Super+N,
+  move-workspace-to-monitor and reconcile, and the bar (which maps its
+  connector to a block from the state file and watches it), all see the
+  desk's blocks. Should a later Omarchy change that shape, the numbering
+  stays Omarchy's and hyprslots logs why once.
+- **Renumbering** (`blocks.plan`, pure). Every workspace holding windows goes
+  into its screen's block under its own number: 13 becomes 3 on screen 1,
+  a workspace whose number is taken there has its windows moved into the
+  one that has it, and a workspace on a monitor that is no screen (turned
+  off, unplugged) goes to the screen of its block (screen 1 when that block
+  has none). Renumbering (`hl.dsp.workspace.change_id`) keeps the workspace,
+  so what a screen shows stays in view; two screens trading blocks (a
+  monitor moved in hyprmoncfg) pass through ids 100000+ so their windows do
+  not mix. Slot assignments are by window address and are not touched; the
+  re-route after a hotplug (§8) puts assigned windows in their slots.
+- **When.** Ahead of every Omarchy reconcile (`blocks.attach` replaces
+  `o.workspaces.reconcile` with a wrapper; Omarchy's handlers call it
+  through the table), so Omarchy finds every workspace in its block already
+  and only puts each screen on a workspace of its own; and in
+  `Engine:reselect` once hyprslots has started (hotplug, a new desk, an
+  edit), followed by Omarchy's reconcile when anything moved.
+- **Off.** While hyprslots is refused, no desk is the connected monitors
+  (until a new desk is made, §8), or Omarchy's internals are out of reach,
+  Omarchy numbers as it always did, from the table as hyprslots last left it.
 
 **Workspace switch** (the Super+N path). Public entry points:
 
@@ -386,7 +432,7 @@ a workspace where no target has a slot, tiles its targets in equal
 columns.
 
 Workspace rules apply when a workspace is created, so `setup()` gives
-`lua:slots` to workspace N in every Omarchy block (N, 10+N, ... 90+N)
+`lua:slots` to workspace N in every block (N, 10+N, ... 90+N)
 for each workspace some layout has a tree for (every workspace, when a
 layout has default trees), rather than tracking which blocks are
 connected.
@@ -439,7 +485,7 @@ Omarchy has no saved mode for it (`$XDG_STATE_HOME/omarchy/workspace-layouts/<id
 any Super+L stop saves one, and hyprslots then leaves the workspace's
 columns alone until Super+L brings slots back, which removes it.
 
-**Layout rules.** At load, workspace N in every Omarchy block gets
+**Layout rules.** At load, workspace N in every block gets
 `scrolling` where the desk's layout selected then has a scroll branch and
 `lua:slots` everywhere else; Omarchy's saved modes load afterwards and
 win. When the desk, its layout or a tree changes later (hotplug, an edit, the
@@ -675,7 +721,12 @@ placeholder output does not count; ties go to the first name), and with it
 the layout it uses. Screen N is the N-th connected monitor from the left
 (x, then y, then connector name), so the same layout drives any desk of as
 many monitors, and a monitor moved in hyprmoncfg changes which screen it
-is. The recomputation is deferred with a oneshot timer, as Omarchy does for
+is. A monitor turned off in the config (hyprmoncfg's profiles disable the
+laptop panel) is not connected: `hl.get_monitors()` leaves it out, and
+Hyprland reports turning it off and on as `monitor.removed` and
+`monitor.added`, as for an unplug (checked on 0.56.2, both through a config
+reload and through `hl.monitor` at runtime). Each screen holds the block of
+its number (§5). The recomputation is deferred with a oneshot timer, as Omarchy does for
 `monitor.removed`, because Hyprland reports removal from inside the
 monitor's teardown. Afterwards each workspace's windows are re-placed under
 the new trees.
@@ -685,12 +736,17 @@ re-selects the desk, and a second hop, created inside the first,
 re-routes every assigned window (assignments are kept by window address) to
 its slot's workspace under the new layout, the same way the router
 places a new window. Omarchy reconciles on `monitor.added` inside the event
-and on `monitor.removed` from a oneshot timer created in the same event, which
-merges an unplugged screen's workspaces into the block of the screen they
-landed on (13 becomes 4). The second hop is created after that timer has come
-due, so it always sees the workspaces as Omarchy left them. When the
+and on `monitor.removed` from a oneshot timer created in the same event, and
+hyprslots' wrapper first gives the screens of the desk for what is connected
+their blocks and renumbers the workspaces into them (§5: an unplugged
+screen's 13 joins screen 1's 3). The first hop syncs the blocks again before
+it re-selects (nothing to do when Omarchy's timer came first), and the
+second hop is created after that timer has come due, so it always sees the
+workspaces renumbered. When the
 re-route is done it asks for the scroll pass (§6), so scroll columns are
-put in order on the workspaces the windows now sit on. Keyboard-resized
+put in order on the workspaces the windows now sit on, and every workspace
+of the desk is laid out again (a window merged into a workspace before the
+desk changed was placed under the old desk's trees). Keyboard-resized
 trees are kept per layout, so returning to a desk using that layout brings
 its nudges back. Hotplug never changes a connected screen's view, with one
 exception: a **screen that is plugged (back) in shows the active
@@ -1346,6 +1402,7 @@ Under `lua/hyprslots/`:
 | adapter | `router` | window events → assignment and moves |
 | adapter | `workspaces` | workspace switching on top of `o.workspaces` |
 | adapter | `hotplug` | monitor events → desk selection, then re-route |
+| adapter | `blocks` | the active desk's screens own Omarchy's workspace blocks (screen i: block i-1); pure `plan` renumbers workspaces into them |
 | adapter | `scroll` | scroll branches on Hyprland's scrolling layout (pure `plan` / `order`, deferred pass, `describe`) |
 | adapter | `resize` | keyboard resize via `layout_msg`; the tree in force |
 | adapter | `api` | `state()` / `call(name, json)` for the editor |
@@ -1518,6 +1575,15 @@ classes `t-left`, `t-main`, `t-right`.
 Desks and layouts besides: `e2e/shared_layout_test.sh` (two desks of one
 monitor each on one layout: an edit made on one shows on the other after
 the monitors swap, and the set the swap passes through gets no desk) and
+`e2e/disabled_screen_test.sh` (hyprmoncfg-style: the left screen turned off
+by a config reload leaves the right one block 0, every window under its own
+number in 1–9 and the slot assignments kept; turned on again, left shows
+1–9 and right 11–19 once more), `e2e/stranded_screen_test.sh` (the only
+monitor turned off keeps its workspaces out of sight; the monitor that
+comes up next gets them under their numbers), `spec/blocks_spec.lua` (S3,
+the renumbering plan) and `spec/omarchy_blocks_spec.lua` (S2, against
+Omarchy's real `monitor-workspaces.lua`: the live case, the panel off and
+on, hyprslots refused, no desk),
 `e2e/new_desk_test.sh` (a monitor set no desk knows gets a desk and a
 default layout, saved to slots.lua by `save`; the next unknown set of as
 many monitors reuses that layout, the most recently used, not the first by
