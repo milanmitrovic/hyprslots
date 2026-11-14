@@ -3,7 +3,8 @@
 #
 # Monitors (desks select them by connector):
 #   HEADLESS-2, 2400x1350 at 0,0      Omarchy block 0: workspace N = workspace id N
-#   HEADLESS-3, 1920x1080 at 2400,0   Omarchy block 1: workspace N = workspace id 10+N
+#   HEADLESS-3, 1920x1080 at 2400,0   seeded as Omarchy block 1, but alone it
+#                                     is screen 1, so block 0 (docs/design.md §5)
 #
 # Desks two = { HEADLESS-2 } and three = { HEADLESS-3 } both use layout solo
 # (1 screen): workspace 3, screen 1 = h[left, main].
@@ -13,7 +14,7 @@
 # plugged, HEADLESS-2 unplugged right after: the two-monitor set in between
 # is gone long before a new desk would be made for it) selects desk three,
 # which shows the edited tree on HEADLESS-3: main | left, 960 + 960 px on
-# workspace id 13, where both windows are re-routed. The edit is still
+# workspace id 3 (screen 1's), where both windows are re-routed. The edit is still
 # unsaved: it is the same layout.
 
 test_setup() {
@@ -109,7 +110,7 @@ test_body() {
   output_remove HEADLESS-2
   eventually 10 is_desk three || fail "desk never became three: $(active_desk)"
   for class in t-main t-left; do
-    eventually 10 on_workspace "$class" 13 || true
+    eventually 10 on_workspace "$class" 3 || true
   done
 
   # Then desk three uses the same, edited, still unsaved layout.
@@ -124,9 +125,9 @@ test_body() {
   # And workspace 3 on HEADLESS-3 holds both windows, in the edited tree.
   log "workspace 3 -> $(api workspace '{"workspace": 3}')"
   settle
-  expect_monitor_workspace HEADLESS-3 13
-  expect_client t-main 13 2400 0 960 1080
-  expect_client t-left 13 3360 0 960 1080
+  expect_monitor_workspace HEADLESS-3 3
+  expect_client t-main 3 2400 0 960 1080
+  expect_client t-left 3 3360 0 960 1080
 
   # And the two-monitor set the swap passed through got no desk of its own.
   sleep 1.5
