@@ -23,7 +23,7 @@ function fixture() {
     layout: "dual",
     screens: ["HEADLESS-2", "HEADLESS-3"],
     used_workspaces: [3, 4],
-    slots: [{ name: "left" }, { name: "mail" }, { name: "main" }, { name: "right" }],
+    slots: [{ name: "left", key: "l" }, { name: "mail", key: "a" }, { name: "main", key: "m" }, { name: "right", key: "r" }],
     specs: { 3: { left: "t-left", main: "t-main", right: "t-right" }, 4: { mail: "thunderbird" } },
     layouts: {
       dual: {
@@ -150,16 +150,22 @@ test("assign offers every global slot on the workspace: its own in tree order fi
     ["m", 3, "main", "t-main", "0xa"],
     ["r", 3, "right", "t-right", "0xe"],
     ["l", 3, "left", "t-left", null],
-    ["1", 3, "mail", "", null],
+    ["a", 3, "mail", "", null],
   ]);
 });
 
-test("a first letter already taken falls back to the first free digit", () => {
+test("each slot is picked by its own stored key, the same on every workspace's page", () => {
+  const keys = (workspace) => Object.fromEntries(plain(A.slotOptions(fixture(), workspace)).map((o) => [o.slot, o.key]));
+  assert.deepEqual(keys(3), { main: "m", right: "r", left: "l", mail: "a" });
+  assert.deepEqual(keys(4), keys(3), "workspace 4 lists mail first; its key stays a");
+});
+
+test("a slot with no stored key is picked with the arrows only: no digit, the digits jump workspaces", () => {
   const state = fixture();
-  state.slots = [{ name: "main" }, { name: "menu" }, { name: "mail" }];
+  state.slots = [{ name: "main", key: "m" }, { name: "menu" }, { name: "mail", key: "x" }];
   state.specs[3] = { main: "a", menu: "b", mail: "c" };
   state.layouts.dual.workspaces[3] = { 1: { slots: ["main", "menu", "mail"] } };
-  assert.deepEqual(plain(A.slotOptions(state, 3)).map((o) => o.key), ["m", "1", "2"]);
+  assert.deepEqual(plain(A.slotOptions(state, 3)).map((o) => o.key), ["m", "", "x"]);
 });
 
 test("assign offers the page's workspace's slots, none without one", () => {
@@ -172,7 +178,7 @@ test("assign offers the page's workspace's slots, none without one", () => {
 test("the prompt names the workspace and each option the way aerolayout's does", () => {
   const ask = (state, workspace, row) =>
     P.display(P.choice(A.assignTitle(workspace, "kitty"), A.promptOptions(A.slotOptions(state, workspace))));
-  assert.equal(ask(fixture(), 3, null), "Assign kitty to a slot on workspace 3: (m)ain, (r)ight, (l)eft, (1) mail? [Esc] cancel   → main");
+  assert.equal(ask(fixture(), 3, null), "Assign kitty to a slot on workspace 3: (m)ain, (r)ight, (l)eft, m(a)il? [Esc] cancel   → main");
   const picked = A.promptOptions(A.slotOptions(fixture(), 3))[1].value;
   assert.deepEqual([picked.workspace, picked.slot], [3, "right"], "an option's value is the slot option itself");
 });

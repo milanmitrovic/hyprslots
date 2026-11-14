@@ -8,7 +8,8 @@
 // it, which a delete names. Which app fills a slot on a workspace is set from
 // the Assignment view. Pure, so node can test it (editor/tests/slots.test.mjs).
 //
-// A row is { slot, description, places: ["dual/3/1", "dual/default/1", ...]
+// A row is { slot, key (its stored key, docs/design.md §4; "" for none),
+//   description, places: ["dual/3/1", "dual/default/1", ...]
 //   (layout/workspace/screen of every tree that places it, as remove_slot
 //   names them; a workspace showing the default trees has none of its own),
 //   specs: [{ workspace, spec }, ...] }.
@@ -52,6 +53,7 @@ function rows(state) {
     }
     return {
       slot: slot,
+      key: entry.key ? String(entry.key) : "",
       description: entry.description ? String(entry.description) : "",
       places: places,
       specs: filled,
@@ -97,4 +99,27 @@ function newSlotLabel() {
 
 function addedText(slot) {
   return "Added slot '" + slot + "' to every tree. Ctrl+S saves."
+}
+
+// The slot list's K: the slot's key, the letter that picks it in every
+// slot-choice prompt (api set_slot_key). The prompt for it, its answer read
+// (trimmed, lower case) and checked here as the engine checks it, so a
+// refusal shows before anything is sent: { key } or { error }; and what the
+// list says once it is set.
+function keyLabel(row) {
+  return "Key for '" + row.slot + "' (one letter a-z; " + (row.key ? "now " + row.key : "none now")
+    + ") [Enter] set  [Esc] cancel: "
+}
+
+function keyAnswer(rows, slot, text) {
+  var key = String(text).trim().toLowerCase()
+  if (!/^[a-z]$/.test(key)) return { error: "A slot's key is one letter a-z (the digits jump workspaces)." }
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i].slot !== slot && rows[i].key === key) return { error: key + " is the key of slot '" + rows[i].slot + "' already." }
+  }
+  return { key: key }
+}
+
+function keyedText(slot, key) {
+  return "Slot '" + slot + "' is picked with " + key + " now. Ctrl+S saves."
 }

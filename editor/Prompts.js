@@ -142,13 +142,19 @@ function key(prompt, name, typed) {
   return stay(prompt)
 }
 
-// "(m)ain" when the key is the label's first letter, else "(1) menu"; a
-// label with no key stands alone.
+// The key where the label starts with it ("(m)ain", "(3)"), a letter key
+// where the label has it ("m(a)il"), else before it ("(z) right", "(1)
+// menu"); a label with no key stands alone.
 function optionText(option) {
   var label = String(option.label)
-  if (option.key === "") return label
-  if (option.key === label.charAt(0).toLowerCase() && option.key === label.charAt(0)) return "(" + option.key + ")" + label.slice(1)
-  return "(" + option.key + ") " + label
+  var key = String(option.key)
+  if (key === "") return label
+  if (label.charAt(0) === key) return "(" + key + ")" + label.slice(1)
+  if (/^[a-z]$/.test(key)) {
+    var at = label.indexOf(key)
+    if (at >= 0) return label.slice(0, at) + "(" + key + ")" + label.slice(at + 1)
+  }
+  return "(" + key + ") " + label
 }
 
 // The prompt as one line: the text with a cursor mark, the options with the

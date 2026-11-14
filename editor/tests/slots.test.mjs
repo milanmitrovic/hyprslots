@@ -12,7 +12,8 @@ function fixture() {
   return {
     layout: "dual",
     used_workspaces: [3, 4, 5],
-    slots: [{ name: "left" }, { name: "main", description: "the editor" }, { name: "right" }, { name: "spare" }],
+    slots: [{ name: "left", key: "l" }, { name: "main", key: "m", description: "the editor" }, { name: "right", key: "r" },
+      { name: "spare" }],
     specs: { 3: { main: "t-main", right: "t-right", left: "t-left" }, 4: { main: "thunderbird" } },
     layouts: {
       dual: {
@@ -84,4 +85,29 @@ test("a new slot is in every tree at once: the editor asks nothing about placing
   assert.equal(S.newSlotLabel(), "New slot name (every tree gets it; an empty slot takes no room) [Enter] next  [Esc] cancel: ");
   assert.equal(S.addedText("notes"), "Added slot 'notes' to every tree. Ctrl+S saves.");
   assert.doesNotMatch(S.addedText("notes"), /\?|y\/n|Put it/);
+});
+
+test("each row carries the slot's key, \"\" for a slot with none", () => {
+  assert.deepEqual(plain(S.rows(fixture())).map((r) => [r.slot, r.key]),
+    [["left", "l"], ["main", "m"], ["right", "r"], ["spare", ""]]);
+});
+
+test("K asks for one letter, naming the slot and its key now", () => {
+  const rows = S.rows(fixture());
+  assert.equal(S.keyLabel(rows[1]), "Key for 'main' (one letter a-z; now m) [Enter] set  [Esc] cancel: ");
+  assert.equal(S.keyLabel(rows[3]), "Key for 'spare' (one letter a-z; none now) [Enter] set  [Esc] cancel: ");
+});
+
+test("a key answer is one letter a-z no other slot has; upper case reads as its lower case", () => {
+  const rows = S.rows(fixture());
+  assert.deepEqual(plain(S.keyAnswer(rows, "main", " Q ")), { key: "q" });
+  assert.deepEqual(plain(S.keyAnswer(rows, "main", "m")), { key: "m" }, "its own key again");
+  assert.deepEqual(plain(S.keyAnswer(rows, "main", "l")), { error: "l is the key of slot 'left' already." });
+  for (const bad of ["1", "mm", "", "-", "é"]) {
+    assert.deepEqual(plain(S.keyAnswer(rows, "main", bad)), { error: "A slot's key is one letter a-z (the digits jump workspaces)." }, bad);
+  }
+});
+
+test("the slot list says what a key change did", () => {
+  assert.equal(S.keyedText("main", "q"), "Slot 'main' is picked with q now. Ctrl+S saves.");
 });

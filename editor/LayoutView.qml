@@ -37,7 +37,8 @@ import "ui"
 // too), where a makes a slot (name, then an optional description; api
 // add_slot: every tree gets it), Return selects the selected one in the
 // picture, r renames it everywhere (rename_slot), e describes it
-// (describe_slot), d deletes it after y/n naming the trees and workspaces it
+// (describe_slot), K sets its key, the letter that picks it in every
+// slot-choice prompt (set_slot_key), d deletes it after y/n naming the trees and workspaces it
 // goes from (remove_slot). The models are Layout.js and Slots.js; the calls
 // are in docs/design.md §9.
 Item {
@@ -453,6 +454,7 @@ Item {
     else if (key === Qt.Key_Return || key === Qt.Key_Enter) showSelectedSlot()
     else if (text === "r") startRenameSlot()
     else if (text === "e") startDescribeSlot()
+    else if (text === "K") startSlotKey(null)
     else if (text === "d") startDeleteSlot()
     else if (text === "s" || key === Qt.Key_Escape) focusSlots(false)
     else return false
@@ -580,6 +582,30 @@ Item {
       root.engine.call("describe_slot", { slot: slot, description: text }, function(reply) {
         if (!reply.ok) root.say(reply.error, true)
         else root.say(text === "" ? "Cleared the description of '" + slot + "'." : "Described '" + slot + "'.", false)
+      })
+    })
+  }
+
+  // K: the slot's key, the letter that picks it in every slot-choice prompt
+  // (set_slot_key). A letter that is taken or no letter is refused in the
+  // prompt (Slots.keyAnswer), as is the engine's refusal: the answer kept.
+  function startSlotKey(again) {
+    if (!needSlot() || !slotsEditable()) return
+    var row = slotRow
+    var p = Prompts.text(Slots.keyLabel(row), { value: again ? again.value : row.key, required: true })
+    ask(again ? Prompts.withError(p, again.error) : p, function(text) {
+      var answer = Slots.keyAnswer(root.slotRows, row.slot, text)
+      if (answer.error) {
+        root.startSlotKey({ value: text, error: answer.error })
+        return
+      }
+      if (answer.key === row.key) {
+        root.say("Slot '" + row.slot + "' is picked with " + row.key + " already.", false)
+        return
+      }
+      root.engine.call("set_slot_key", { slot: row.slot, key: answer.key }, function(reply) {
+        if (!reply.ok) root.startSlotKey({ value: text, error: reply.error })
+        else root.say(Slots.keyedText(reply.slot, reply.key), false)
       })
     })
   }
@@ -1288,15 +1314,33 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 anchors.leftMargin: Tokens.cellPadding
                 anchors.rightMargin: Tokens.cellPadding
-                Text {
+                // the name, and at the right the key that picks it in
+                // every slot-choice prompt (K changes it)
+                Item {
                   width: parent.width
-                  textFormat: Text.PlainText
-                  elide: Text.ElideRight
-                  text: slotItem.modelData.slot
-                  color: slotItem.lit ? root.selectedText : Commons.Color.accent
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.body
-                  font.bold: true
+                  height: Math.max(slotName.implicitHeight, slotKey.height)
+                  Text {
+                    id: slotName
+                    anchors.left: parent.left
+                    anchors.right: slotKey.left
+                    anchors.rightMargin: Style.spacing.sm
+                    anchors.verticalCenter: parent.verticalCenter
+                    textFormat: Text.PlainText
+                    elide: Text.ElideRight
+                    text: slotItem.modelData.slot
+                    color: slotItem.lit ? root.selectedText : Commons.Color.accent
+                    font.family: root.fontFamily
+                    font.pixelSize: Style.font.body
+                    font.bold: true
+                  }
+                  KeyCap {
+                    id: slotKey
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: slotItem.modelData.key !== ""
+                    text: slotItem.modelData.key
+                    ink: slotItem.lit ? root.selectedText : Commons.Color.accent
+                  }
                 }
                 Text {
                   width: parent.width

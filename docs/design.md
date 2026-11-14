@@ -834,7 +834,7 @@ the running engine only through Hyprland:
 | `BarWidget.qml` | the bar widget (below): glyph and active layout; left click toggles the panel, right click a menu |
 | `Services.js` | where the service registers itself, for a bar widget whose bar hands it no `serviceFor` |
 | `AssignmentView.qml`, `LayoutView.qml`, `DesksLayoutsView.qml` | aerolayout's Assignment, Layout (with its logical slots as a list beside the screens) and monitors views (below) |
-| `ui/` (`qmldir`) | the editor's design system, one component per kind of element, all from the theme (below): `Tokens` (a singleton), `SectionHeader`, `WorkspaceSwitcher`, `InfoText`, `ProblemText`, `Placeholder`, `TableHeader`, `TableRow`, `TableCell`, `PaneTitle` |
+| `ui/` (`qmldir`) | the editor's design system, one component per kind of element, all from the theme (below): `Tokens` (a singleton), `SectionHeader`, `WorkspaceSwitcher`, `InfoText`, `ProblemText`, `Placeholder`, `TableHeader`, `TableRow`, `TableCell`, `PaneTitle`, `KeyCap`, `ActionButton` |
 | `Protocol.js`, `Assignment.js`, `Layout.js`, `Slots.js`, `DesksLayouts.js`, `Prompts.js`, `Workspaces.js`, `BarStatus.js`, `Help.js`, `Messages.js` | pure logic, tested under node (`editor/tests/`); `Slots.js` is the slot list's, `Workspaces.js` the workspace keys', `DesksLayouts.js` the Desk view's and the panel header's, `Help.js` the help rows', `Messages.js` the message band's |
 
 **Every view.** The panel's keys come first: Tab / Shift+Tab cycle the
@@ -902,7 +902,12 @@ the card's recessed surface.
 **Prompts** (`Prompts.js`, one implementation for every view): a line of
 text typed in place (←/→ Home End move, Backspace Delete, Ctrl+U clears,
 ↑/↓ step through suggestions, Return answers), a pick among keyed options
-(first letter, else the first free digit; ↑/↓ and Return), or y/n. While
+(↑/↓ and Return too), or y/n. A pick among slots (the Assignment view's
+`a`) keys each slot by its own stored key (§4), the same in every prompt
+and on every workspace's page, shown where the name has it (`(m)ain`,
+`m(a)il`, else `(z) right`); a slot with none is picked with the arrows. A
+pick among anything else (layouts, desks, monitors) keys each option by its
+first letter, else the first free digit, computed per prompt. While
 one is open every key is its own (Tab, q, Esc and Ctrl+S included); Esc
 cancels. When an answer is refused (by the engine: the spec grammar,
 config.lua's validation, a field config.lua owns; or, for a Layout ratio,
@@ -933,7 +938,7 @@ workspace × slot table.
 | ↑/↓, k/j | select |
 | ←/→, h/l (p), [ / ] | previous / next workspace's page (1 to N, round) |
 | 1–9, 0 | workspace 1–9, 10's page (0 only when ten are managed) |
-| a | `Assign kitty to a slot on workspace 3: (m)ain, (r)ight, (1) more? [Esc] cancel`: every global slot, the workspace's own first; then `take_spec`: the window takes the slot and its spec (`spec.from_window`) becomes the workspace's for it, replacing the one it had, and the message says so (`Assigned kitty to main on workspace 3 (instead of foot)`); the slot is in the trees already, so nothing is placed |
+| a | `Assign kitty to a slot on workspace 3: (m)ain, (r)ight, m(o)re? [Esc] cancel`: every global slot, the workspace's own first, each by its key (§4); then `take_spec`: the window takes the slot and its spec (`spec.from_window`) becomes the workspace's for it, replacing the one it had, and the message says so (`Assigned kitty to main on workspace 3 (instead of foot)`); the slot is in the trees already, so nothing is placed |
 | u | on a window in a slot: `Unassign kitty from main on workspace 3? The slot is left empty. (y/n)`, then `unassign` with `clear_spec`: the window leaves the slot and the workspace no longer says what fills it, so the row is empty, not Missing that window; on an overflowing window, or one in a slot the workspace has no spec for, `unassign` alone; on a red Missing row (a window assigned but not open): `Unassign kitty/deltaf from main on workspace 3? It is not open; the slot is left empty. (y/n)`, then `clear_spec`. The editor's words are assign and unassign; "spec" is the api's |
 
 As aerolayout's `a` did, `a` writes the window's spec into the slot, and
@@ -992,7 +997,7 @@ override). The question comes again after a workspace switch. `u`, on a
 workspace with trees of its own (the help row then shows it), asks `Drop
 workspace N's own trees and use the shared tree? (y/n)` and calls
 `drop_override`. Beside the panes, the **slot list**: the global slots by name,
-each with its description and nothing else (below).
+each with its key and its description and nothing else (below).
 
 | Key | Does |
 |---|---|
@@ -1044,8 +1049,9 @@ moved onto a screen whose tree is one becomes its column at the near edge.
 
 **The slot list** (in the Layout view; aerolayout `views.py` LogicalView,
 which was a tab of its own). The global slots, one list for every workspace, by
-name (the order windows claim them in): each slot's name and its optional
-description, nothing more. Which app fills a slot on a workspace is the
+name (the order windows claim them in): each slot's name, its key (a key cap
+at the right: the letter that picks it in every slot-choice prompt, §4) and
+its optional description, nothing more. Which app fills a slot on a workspace is the
 Assignment view's `a`; every tree holds it, where it sits is the picture's.
 `s` gives it the keys (the help line says so), and back:
 
@@ -1056,6 +1062,7 @@ Assignment view's `a`; every tree holds it, where it sits is the picture's.
 | Return | select the slot where it sits in the picture, keys back to the picture |
 | r | rename it everywhere: every tree of every layout, every workspace's spec, keyboard-resized trees and assignments, as aerolayout's rename_slot_everywhere (`rename_slot`); edited drafts follow |
 | e | describe it (`describe_slot`; empty removes the description) |
+| K | its key: `Key for 'main' (one letter a-z; now m)`, one letter (upper case read as lower), refused in the prompt when it is no letter or another slot's (`l is the key of slot 'left' already.`), then `set_slot_key` (`k` stays select: K, shifted, is the key's) |
 | d | delete it, after y/n: `Delete slot 'main'? It goes from every tree and from the assignments of workspaces 3, 4.` (`remove_slot`, with `force` when workspaces fill it); edited drafts lose it too |
 | [ ] 1–9 0 | the workspace, as in the picture |
 | s, Esc | back to the picture |

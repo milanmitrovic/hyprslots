@@ -79,6 +79,17 @@ test("a choice prompt reads like aerolayout's, with the highlighted option shown
   assert.equal(P.display(P.choice("Assign to slot", options)), "Assign to slot: (m)ain, (1) menu? [Esc] cancel   → main");
 });
 
+test("an option's letter key shows where it is in the label, else before it", () => {
+  const options = [
+    { key: "m", label: "main", value: 1 },
+    { key: "a", label: "mail", value: 2 },
+    { key: "z", label: "right", value: 3 },
+    { key: "", label: "spare", value: 4 },
+  ];
+  assert.equal(P.display(P.choice("Slot", options)), "Slot: (m)ain, m(a)il, (z) right, spare? [Esc] cancel   → main");
+  assert.equal(P.optionText({ key: "1", label: "DP-1" }), "(1) DP-1", "a digit always goes before the label");
+});
+
 test("a confirm prompt takes y or n", () => {
   assert.deepEqual(feed(P.confirm("Delete?"), "y").result, { value: true });
   assert.deepEqual(feed(P.confirm("Delete?"), "n").result, { value: false });

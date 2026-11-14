@@ -711,9 +711,9 @@ test("the trigger keys are highlighted in the help row", () => {
   }
 });
 
-test("the slot list's help row: add, rename, describe, delete, Return shows it in the picture, one line", () => {
+test("the slot list's help row: add, rename, describe, Key, delete, Return shows it in the picture, one line", () => {
   const line = helpLine(L.slotListHelp({ jumpKeys: "1–9 0" }));
-  assert.equal(line, "↑/↓ select add rename describe delete Return show in the picture · s/Esc back · [ ] 1–9 0 - workspace · Tab view");
+  assert.equal(line, "↑/↓ select add rename describe Key delete Return show in the picture · s/Esc back · [ ] 1–9 0 - workspace · Tab view");
   assert.ok(line.length <= ONE_LINE);
 });
 

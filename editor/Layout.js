@@ -1068,7 +1068,8 @@ function pictureHelp(opts) {
 function slotListHelp(opts) {
   return [
     [{ key: "↑/↓", label: "select" }, { key: "a", label: "add" }, { key: "r", label: "rename" },
-      { key: "e", label: "describe" }, { key: "d", label: "delete" }, { key: "Return", label: "show in the picture" }],
+      { key: "e", label: "describe" }, { key: "K", label: "key" }, { key: "d", label: "delete" },
+      { key: "Return", label: "show in the picture" }],
     [{ key: "s/Esc", label: "back" }],
   ].concat(workspaceHelp(opts.jumpKeys))
 }

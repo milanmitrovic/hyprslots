@@ -66,6 +66,14 @@ function slotNames(state) {
   return list.map(function(s) { return s.name })
 }
 
+// slot name -> its stored key (state.slots[].key), "" for a slot with none.
+function slotKeys(state) {
+  var out = {}
+  var list = state && Array.isArray(state.slots) ? state.slots : []
+  list.forEach(function(s) { out[s.name] = s.key ? String(s.key) : "" })
+  return out
+}
+
 // The slots of a workspace as [{ slot, screen }]: those the active layout's
 // trees for it place (its own, else the default ones; every tree has every
 // global slot), in tree order, screen by screen, then any other global slot
@@ -268,14 +276,15 @@ function assignTitle(workspace, cls) {
 // the workspace's own in tree order
 // first, then the rest by name. Each option is { key, workspace, slot, spec
 // (the workspace's spec for it, "" for none), holder } where holder is the
-// address in the slot (or null) and key the letter that picks it: the slot's
-// first letter, or the first digit still free when that letter is taken
-// (aerolayout's rule); "" when there is none left (pick it with the arrows).
+// address in the slot (or null) and key the slot's own, stored with it
+// (docs/design.md §4: the same on every page and in every prompt); "" for a
+// slot with none (pick it with the arrows).
 function slotOptions(state, workspace) {
   var on = workspace
   if (on === null || on === undefined) return []
   var held = holders(state)
   var specs = workspaceSpecs(state, on)
+  var keys = slotKeys(state)
   var names = slotOrder(state, on).map(function(o) { return o.slot })
   var listed = {}
   names.forEach(function(n) { listed[n] = true })
@@ -285,26 +294,11 @@ function slotOptions(state, workspace) {
       names.push(n)
     }
   })
-  var used = {}
-  var out = []
-  for (var s = 0; s < names.length; s++) {
-    var name = names[s]
-    var key = name.charAt(0).toLowerCase()
-    if (used[key]) {
-      key = ""
-      for (var n = 1; n <= 9; n++) {
-        if (!used[String(n)]) {
-          key = String(n)
-          break
-        }
-      }
-    }
-    if (key !== "") used[key] = true
+  return names.map(function(name) {
     var holder = held[on + "/" + name]
-    out.push({ key: key, workspace: on, slot: name, spec: specs[name] !== undefined ? String(specs[name]) : "",
-      holder: holder ? holder.address : null })
-  }
-  return out
+    return { key: keys[name] || "", workspace: on, slot: name, spec: specs[name] !== undefined ? String(specs[name]) : "",
+      holder: holder ? holder.address : null }
+  })
 }
 
 // The slot options as Prompts.js choice options ({ key, label, value });
