@@ -99,13 +99,14 @@ describe("migrate.data", function()
       arrangements = { solo = { screens = { big = "HEADLESS-2" }, desks = { [3] = { big = "main" } } } },
     })
     assert.is_true(changed)
-    assert.are.same({ main = {} }, out.slots)
+    assert.are.same({ main = { key = "m" } }, out.slots, "keyed, too")
     assert.are.same({ [3] = { main = "t-main" } }, out.specs)
     assert.are.same({ monitors = { "HEADLESS-2" }, layout = "solo" }, out.desks.solo)
   end)
 
   it("says when nothing had to change", function()
-    local _, changed = migrate.data({ slots = { main = {} }, layouts = { x = { screens = 1, default = { [1] = "main" } } } })
+    local _, changed = migrate.data({ slots = { main = { key = "m" } },
+      layouts = { x = { screens = 1, default = { [1] = "main" } } } })
     assert.is_false(changed)
   end)
 end)

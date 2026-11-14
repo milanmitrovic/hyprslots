@@ -13,6 +13,7 @@
 -- no `hl`, no I/O.
 
 local serialize = require("hyprslots.serialize")
+local slot_key = require("hyprslots.slot_key")
 local spec = require("hyprslots.spec")
 local tree = require("hyprslots.tree")
 
@@ -322,8 +323,25 @@ function M.slot_uses(data, name)
   return { trees = trees, specs = specs }
 end
 
--- The data with a new global slot (description optional).
-function M.add_slot(data, name, description)
+-- Why `key` cannot be slot `name`'s in `data`, nil when it can: one letter
+-- a-z (slot_key.check) no other slot has.
+local function key_refusal(data, name, key)
+  local bad = slot_key.check(key)
+  if bad then
+    return bad
+  end
+  for other, entry in pairs(global_slots(data)) do
+    if other ~= name and type(entry) == "table" and entry.key == key then
+      return string.format("'%s' is slot '%s''s key already", key, other)
+    end
+  end
+  return nil
+end
+
+-- The data with a new global slot (description optional), keyed by `key`
+-- when given, else by slot_key.pick (the first letter of its name no other
+-- slot has, ...).
+function M.add_slot(data, name, description, key)
   local ok, name_err = check_name(name, "slot")
   if not ok then
     return nil, name_err
@@ -334,9 +352,41 @@ function M.add_slot(data, name, description)
   if description ~= nil and type(description) ~= "string" then
     return nil, "a description must be text"
   end
+  if key ~= nil then
+    local refused = key_refusal(data, name, key)
+    if refused then
+      return nil, refused
+    end
+  else
+    local used = {}
+    for _, entry in pairs(global_slots(data)) do
+      if type(entry) == "table" and entry.key ~= nil then
+        used[entry.key] = true
+      end
+    end
+    key = slot_key.pick(name, used)
+  end
   local out = M.copy(data or {})
   out.slots = type(out.slots) == "table" and out.slots or {}
-  out.slots[name] = (description ~= nil and description ~= "") and { description = description } or {}
+  out.slots[name] = { key = key, description = (description ~= nil and description ~= "") and description or nil }
+  return out
+end
+
+-- The data with slot `name`'s key set to `key`: one letter a-z no other
+-- slot has.
+function M.set_slot_key(data, name, key)
+  local ok, err = existing_slot(data, name)
+  if not ok then
+    return nil, err
+  end
+  local refused = key_refusal(data, name, key)
+  if refused then
+    return nil, refused
+  end
+  local out = M.copy(data)
+  local entry = type(out.slots[name]) == "table" and out.slots[name] or {}
+  entry.key = key
+  out.slots[name] = entry
   return out
 end
 

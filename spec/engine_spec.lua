@@ -5,7 +5,7 @@ local json = require("hyprslots.dkjson")
 
 local SLOTS = [[
 return {
-  slots = { a = {}, b = {}, c = {} },
+  slots = { a = { key = "a" }, b = { key = "b" }, c = { key = "c" } },
   specs = { [3] = { a = "t-a", b = "t-b", c = "t-c" } },
   desks = { solo = { monitors = { "HEADLESS-2" }, layout = "solo" } },
   layouts = { solo = { screens = 1, default = { [1] = "h[a, b, c]" }, workspaces = { [3] = { [1] = "h[a:1, b:2, c:1]" } } } },
@@ -130,7 +130,7 @@ describe("hyprslots engine", function()
   describe("a slots.lua of arrangements (the shape of before)", function()
     local OLD = [[
 return {
-  slots = { a = {}, b = {}, c = {} },
+  slots = { a = { key = "a" }, b = { key = "b" }, c = { key = "c" } },
   specs = { [3] = { a = "t-a", b = "t-b", c = "t-c" } },
   arrangements = {
     solo = {

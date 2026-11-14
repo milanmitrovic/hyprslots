@@ -77,7 +77,8 @@ describe("the Slots and Desk view' api", function()
     it("lists the global slots with their descriptions, and each workspace's specs", function()
       ok("describe_slot", { slot = "main", description = "the editor" })
       local s = state()
-      assert.are.same({ { name = "left" }, { name = "main", description = "the editor" }, { name = "right" } }, s.slots)
+      assert.are.same({ { name = "left", key = "l" }, { name = "main", key = "m", description = "the editor" },
+        { name = "right", key = "r" } }, s.slots)
       assert.are.same({ ["3"] = { left = "t-left", main = "t-main", right = "t-right" } }, s.specs)
       assert.is_nil(s.descriptions)
     end)
@@ -88,9 +89,23 @@ describe("the Slots and Desk view' api", function()
       local reply = ok("add_slot", { slot = "chat", description = "team chat" })
       assert.are.equal("chat", reply.slot)
       local s = state()
-      assert.are.same({ name = "chat", description = "team chat" }, s.slots[1])
+      assert.are.same({ name = "chat", key = "c", description = "team chat" }, s.slots[1])
       assert.is_true(s.dirty)
       ok("set_tree", { layout = "single", workspace = 5, screen = 1, tree = "chat" })
+    end)
+
+    it("keys it by its name's first letter no other slot has, else the next, else the first free a-z", function()
+      assert.are.equal("c", ok("add_slot", { slot = "chat" }).key)
+      assert.are.equal("a", ok("add_slot", { slot = "mail" }).key, "m is main's")
+      assert.are.equal("b", ok("add_slot", { slot = "rl" }).key, "r and l are taken, a is mail's")
+    end)
+
+    it("takes the key it is given, and refuses one another slot has or that is no letter", function()
+      assert.are.equal("z", ok("add_slot", { slot = "chat", key = "z" }).key)
+      assert.are.equal("z", state().slots[1].key)
+      assert.matches("'m' is slot 'main''s key already", call("add_slot", { slot = "mail", key = "m" }).error)
+      assert.matches("one letter a%-z", call("add_slot", { slot = "mail", key = "1" }).error)
+      assert.are.equal(4, #state().slots, "nothing added")
     end)
 
     it("refuses a taken or malformed name", function()
@@ -125,7 +140,7 @@ return { slots = slots, specs = data.specs, desks = data.desks, layouts = data.l
       assert.are.same({ "dual/default/1", "dual/3/1", "single/default/1", "single/3/1" }, reply.trees)
       assert.are.same({ 3 }, reply.specs)
       local s = state()
-      assert.are.same({ { name = "left" }, { name = "main" } }, s.slots)
+      assert.are.same({ { name = "left", key = "l" }, { name = "main", key = "m" } }, s.slots)
       assert.is_nil(s.specs["3"].right)
       assert.are.equal("main", tree_of(s, "dual", 3, 1))
       assert.are.equal("h[left, main]", tree_of(s, "single", 3, 1))
@@ -148,7 +163,7 @@ return { slots = slots, specs = data.specs, desks = data.desks, layouts = data.l
       assert.are.equal(4, reply.trees, "each layout's shared tree and workspace 3's own")
       assert.are.same({ 3, 5 }, reply.specs)
       local s = state()
-      assert.are.same({ name = "editor", description = "the editor" }, s.slots[1])
+      assert.are.same({ name = "editor", key = "m", description = "the editor" }, s.slots[1], "its key stays")
       assert.are.equal("t-main", s.specs["3"].editor)
       assert.are.equal("kitty", s.specs["5"].editor)
       assert.is_nil(s.specs["3"].main)
@@ -190,20 +205,76 @@ return { slots = slots, specs = data.specs, desks = data.desks, layouts = data.l
       ok("rename_slot", { slot = "main", to = "editor" })
       local path = ok("save").path
       local saved = read(path)
-      assert.matches("slots = {\n    editor = {},\n    left = {},\n    right = {},\n  },", saved)
+      assert.matches('slots = {\n    editor = {\n      key = "m",\n    },\n    left = {\n      key = "l",\n    },\n'
+        .. '    right = {\n      key = "r",\n    },\n  },', saved, "a renamed slot keeps its key")
       assert.matches('editor = "t%-main"', saved)
       assert.matches('%[1%] = "h%[editor:2, right%]"', saved)
       assert.is_false(state().dirty)
     end)
   end)
 
+  describe("set_slot_key", function()
+    it("sets a slot's key in memory, which save writes", function()
+      local reply = ok("set_slot_key", { slot = "main", key = "e" })
+      assert.are.same({ "main", "e" }, { reply.slot, reply.key })
+      local s = state()
+      assert.are.same({ name = "main", key = "e" }, s.slots[2])
+      assert.is_true(s.dirty)
+      assert.matches('main = {\n      key = "e",\n    },', read(ok("save").path))
+      assert.is_false(state().dirty)
+    end)
+
+    it("refuses a key another slot has, saying whose, and one that is no letter a-z", function()
+      assert.matches("'l' is slot 'left''s key already", call("set_slot_key", { slot = "main", key = "l" }).error)
+      for _, bad in ipairs({ "1", "M", "mm", "" }) do
+        assert.matches("one letter a%-z", call("set_slot_key", { slot = "main", key = bad }).error)
+      end
+      assert.are.equal("m", state().slots[2].key)
+      assert.is_false(state().dirty)
+    end)
+
+    it("refuses a slot that is not defined", function()
+      assert.matches("no slot 'zz'", call("set_slot_key", { slot = "zz", key = "z" }).error)
+    end)
+
+    it("refuses a slot list config.lua builds in code", function()
+      setup(engine.TWO_SCREENS, [[
+local data = load_data("slots.lua")
+local slots = { left = {}, main = {}, right = {} }
+return { slots = slots, specs = data.specs, desks = data.desks, layouts = data.layouts }
+]])
+      assert.matches("slots are set by code in your config", call("set_slot_key", { slot = "main", key = "e" }).error)
+    end)
+  end)
+
+  describe("slots.lua whose slots have no key", function()
+    local KEYLESS = engine.TWO_SCREENS:gsub(' key = "%a" ', "")
+
+    it("keys the user's left, main and right as l, m and r, dirty until saved", function()
+      assert.matches("left = {}, main = {}", KEYLESS, "the fixture has no keys")
+      setup(KEYLESS)
+      local s = state()
+      assert.are.same({ { name = "left", key = "l" }, { name = "main", key = "m" }, { name = "right", key = "r" } },
+        s.slots)
+      assert.is_true(s.dirty)
+      assert.is_true(s.config.migrated)
+      local saved = read(ok("save").path)
+      assert.matches('left = {\n      key = "l",\n    },', saved)
+      assert.matches('right = {\n      key = "r",\n    },', saved)
+      ok("reload")
+      s = state()
+      assert.is_false(s.dirty)
+      assert.are.same({ "l", "m", "r" }, { s.slots[1].key, s.slots[2].key, s.slots[3].key })
+    end)
+  end)
+
   describe("describe_slot", function()
     it("sets a slot's description in memory; empty clears it", function()
       ok("describe_slot", { slot = "left", description = "notes" })
-      assert.are.same({ name = "left", description = "notes" }, state().slots[1])
+      assert.are.same({ name = "left", key = "l", description = "notes" }, state().slots[1])
       assert.is_true(state().dirty)
       ok("describe_slot", { slot = "left", description = "" })
-      assert.are.same({ name = "left" }, state().slots[1])
+      assert.are.same({ name = "left", key = "l" }, state().slots[1])
     end)
 
     it("refuses a slot that is not defined", function()
@@ -685,9 +756,9 @@ return { slots = data.slots, specs = data.specs, desks = desks, layouts = data.l
 return { slots = { main = {} }, specs = { [3] = { main = "t-main" } }, desks = {}, layouts = {} }
 ]])
       for _, name in ipairs({ "set_spec", "clear_spec", "add_slot", "rename_slot", "remove_slot", "describe_slot",
-        "add_desk", "add_layout" }) do
+        "set_slot_key", "add_desk", "add_layout" }) do
         local reply = call(name, { workspace = 3, slot = "main", spec = "x", to = "y", name = "n", monitors = { "X" },
-          layout = "x", screens = 1 })
+          layout = "x", screens = 1, key = "z" })
         assert.is_false(reply.ok, name)
         assert.matches("loads no editor data", reply.error, nil, name)
       end

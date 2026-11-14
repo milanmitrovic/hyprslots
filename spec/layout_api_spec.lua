@@ -7,7 +7,7 @@ local json = require("hyprslots.dkjson")
 
 local SLOTS = [[
 return {
-  slots = { a = {}, b = {}, c = {} },
+  slots = { a = { key = "a" }, b = { key = "b" }, c = { key = "c" } },
   specs = { [3] = { a = "t-a", b = "t-b", c = "t-c" } },
   desks = {
     dual = { monitors = { "HEADLESS-2", "HEADLESS-3" }, layout = "dual" },
@@ -257,7 +257,7 @@ return { slots = data.slots, specs = data.specs, desks = data.desks, layouts = l
   -- to its slots, and workspace 3 a real override (b twice as wide).
   local FOLDING = [[
 return {
-  slots = { a = {}, b = {}, c = {} },
+  slots = { a = { key = "a" }, b = { key = "b" }, c = { key = "c" } },
   specs = { [3] = { a = "t-a", b = "t-b", c = "t-c" }, [5] = { a = "t-a" } },
   desks = {
     dual = { monitors = { "HEADLESS-2", "HEADLESS-3" }, layout = "dual" },

@@ -100,6 +100,12 @@ describe("serialize.dump", function()
     assert.matches("config%.lua", serialize.dump(DATA))
   end)
 
+  it("writes a slot's key before its description", function()
+    local text = serialize.dump({ slots = { main = { description = "the editor", key = "m" } } })
+    assert.matches('main = {\n      key = "m",\n      description = "the editor",\n    },', text)
+    assert.are.same({ slots = { main = { description = "the editor", key = "m" } } }, load_text(text))
+  end)
+
   it("writes a readable, fixed layout", function()
     local expected = [[
 return {

@@ -11,7 +11,7 @@ local BLOCKS = { ["eDP-1"] = 0, ["DP-1"] = 1 }
 
 local DOCKED = [[
 return {
-  slots = { left = {}, main = {}, right = {} },
+  slots = { left = { key = "l" }, main = { key = "m" }, right = { key = "r" } },
   desks = {
     docked = { monitors = { "eDP-1", "]] .. ODYSSEY .. [[" }, layout = "dual" },
     office = { monitors = { "eDP-1", "Dell Inc. DELL U2720Q 1ABC" }, layout = "dual" },

@@ -22,6 +22,7 @@
 local desk = require("hyprslots.desk")
 local edit = require("hyprslots.edit")
 local serialize = require("hyprslots.serialize")
+local slot_key = require("hyprslots.slot_key")
 local tree = require("hyprslots.tree")
 
 local M = {}
@@ -268,11 +269,14 @@ end
 -- (full width) when screen 1 is a laptop panel (first_screen above), else
 -- side by side. A workspace with no trees of its own stays without any (it
 -- uses the layout's). `monitors` (the connected ones, or nil) tell which
--- monitor screen 1 is. Returns the data (a copy) and whether it changed.
+-- monitor screen 1 is. Every slot has a key, too: one with none gets one
+-- (slot_key.fill: in slot name order, so left, main and right are l, m and
+-- r). Returns the data (a copy) and whether it changed.
 function M.normalize(data, monitors)
   local out = copy(data)
+  local keyed = type(out) == "table" and slot_key.fill(out.slots)
   if type(out) ~= "table" or type(out.slots) ~= "table" or type(out.layouts) ~= "table" then
-    return out, false
+    return out, keyed or false
   end
   local names = {}
   for name in pairs(out.slots) do
@@ -282,7 +286,7 @@ function M.normalize(data, monitors)
   end
   table.sort(names)
   local global = set_of(names)
-  local changed = false
+  local changed = keyed
   for _, name in ipairs(sorted(out.layouts)) do
     local layout = out.layouts[name]
     if type(layout) == "table" then

@@ -19,7 +19,7 @@ return { slots = data.slots, specs = data.specs, desks = data.desks, layouts = d
 -- The completion test's config (docs/design.md §12).
 M.TWO_SCREENS = [[
 return {
-  slots = { left = {}, main = {}, right = {} },
+  slots = { left = { key = "l" }, main = { key = "m" }, right = { key = "r" } },
   specs = { [3] = { left = "t-left", main = "t-main", right = "t-right" } },
   desks = {
     dual = { monitors = { "HEADLESS-2", "HEADLESS-3" }, layout = "dual" },

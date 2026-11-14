@@ -118,7 +118,7 @@ Sketch:
 -- config.lua
 local data = load_data("slots.lua")   -- sandbox helper
 return {
-  slots = data.slots,                 -- slot name -> { description? }
+  slots = data.slots,                 -- slot name -> { key?, description? }
   specs = data.specs,                 -- workspace -> slot name -> spec
   desks = data.desks,                 -- name -> { monitors, layout }
   layouts = data.layouts,             -- name -> { screens, default?, workspaces? }
@@ -130,7 +130,7 @@ return {
 ```lua
 -- slots.lua (data only)
 return {
-  slots = { left = {}, main = { description = "the editor" }, right = {} },
+  slots = { left = { key = "l" }, main = { key = "m", description = "the editor" }, right = { key = "r" } },
   specs = {
     [3] = { left = "t-left", main = "t-main", right = "t-right" },
   },
@@ -221,6 +221,23 @@ shape of before. A slot placed on two screens of one workspace is an
 error. A slot's `description` is the editor's note (aerolayout's logical
 slot description); the engine does not use it.
 
+**Slot keys.** Each global slot has a `key`, one lower-case letter a to z
+(`slot_key.lua`), no two slots the same (a config error otherwise:
+`slots.main.key: 'm' is slot 'mail''s key already`): the letter that picks
+it in every slot-choice prompt of the editor (§9), so a slot is picked by
+the same key from prompt to prompt, whatever other slots there are. Letters
+only, never digits (the digits jump workspaces). A slot made in the editor
+gets its name's first letter no other slot has, else the next unused
+letter of its name, else the first unused letter a to z (`slot_key.pick`;
+none once all 26 are taken: the arrows pick it); `set_slot_key` changes it.
+A slot with no key (slots.lua from before there were keys, a table
+config.lua builds in code) gets one on load (`migrate.normalize`,
+`slot_key.fill`): in slot name order, around the keys other slots have, by
+the same rule, so `left`, `main` and `right` are `l`, `m` and `r`; for a
+data file that counts as a shape of before (`dirty` until saved). Any
+letter is free to be one, the panel's own keys (`a`, `q`, `s`...)
+included: a prompt owns every key while it is open (§9).
+
 **Shapes of before** are still read (`migrate.lua`, pure), both in a data
 file `load_data` hands config.lua and in the table config.lua returns; the
 engine runs the result as an unsaved edit (`dirty`, the editor's Ctrl+S
@@ -249,6 +266,7 @@ writes the new shape):
   (`migrate.unpin`); a workspace switch shows the workspace on every screen.
 - Trees that leave a global slot out, or name one that is not: filled and
   trimmed as above (`migrate.normalize`).
+- Slots with no `key`: keyed as above (`migrate.normalize`).
 - config.lua's `scroll = { width = w }` (one column width for every scroll
   branch): written into every scroll tree that says no width of its own
   (`scroll[a, b]` becomes `scroll:w[a, b]`, slots.lua's data included, so
@@ -1175,10 +1193,11 @@ left-most; as an object key, `"1"`).
 | `record` | `workspace_id?` (default focused), `apply?` | `layout, workspace, screen, workspace_id, tree, ratio, missing[], applied, seq` |
 | `assign` | `address`, `workspace`, `slot` | `address, workspace, slot, displaced?, seq` |
 | `unassign` | `address`, `clear_spec?` | `address, workspace?, slot?, spec?` (the spec cleared), `seq` |
-| `add_slot` | `slot`, `description?` | `slot, description?, seq` |
+| `add_slot` | `slot`, `description?`, `key?` (else picked from the name, §4) | `slot, key, description?, seq` |
 | `remove_slot` | `slot`, `force?` | `slot, trees[]` (`layout/workspace/screen`, workspace `default` for the default trees), `specs[]` (workspaces), `seq`; refused, saying which, while workspaces fill it (every tree holds it anyway), unless `force` |
 | `rename_slot` | `slot`, `to` | `slot, to, trees` (how many were rewritten), `specs[]` (workspaces whose spec moved), `seq` |
 | `describe_slot` | `slot`, `description` (`""` removes it) | `slot, description, seq` |
+| `set_slot_key` | `slot`, `key` (one letter a-z no other slot has, §4) | `slot, key, seq` |
 | `set_spec` | `workspace`, `slot`, `spec` | `workspace, slot, spec` (normalized), `seq` |
 | `clear_spec` | `workspace`, `slot` | `workspace, slot, spec` (the one cleared), `seq` |
 | `take_spec` | `workspace`, `slot`, `address` | `workspace, slot, spec, replaced?, address, displaced?, seq`: the window takes the slot and its spec becomes the workspace's (every tree holds the slot already) |
@@ -1221,7 +1240,7 @@ tree, ratio` for every unsaved keyboard-resized tree), `scroll[]` (one per
 scroll branch on a hyprslots workspace: `workspace_id, workspace, screen,
 slots[], width` (its columns', a fraction of the screen: 0.99 full), `layout` (its tiled layout), `managed` (scrolling, no saved Omarchy
 mode), `columns[]` (window addresses in column order), `members` (slot ->
-address), `in_order`), `slots[]` (the global slots by name: `name,
+address), `in_order`), `slots[]` (the global slots by name: `name, key?,
 description?`), `specs` ("3" -> slot -> spec text), `used_workspaces[]`
 (workspaces with specs or trees),
 `windows[]` (`address, class, title, workspace_id, floating, box{x,y,w,h},
@@ -1395,6 +1414,7 @@ Under `lua/hyprslots/`:
 | pure | `monitor_name` | a monitor's display name: the user's label, Built-in, the model (PNP vendor names read once) |
 | pure | `assign` | windows → slots |
 | pure | `serialize` | write `slots.lua` and tree text deterministically |
+| pure | `slot_key` | each global slot's key: check one, pick a new slot's, fill the ones missing (§4) |
 | pure | `dkjson` | vendored JSON |
 | adapter | `init` | `setup()`, wrapped in `pcall`, never takes Hyprland down |
 | adapter | `hl_adapter` | the only module that touches `hl` |

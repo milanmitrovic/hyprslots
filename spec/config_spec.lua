@@ -20,7 +20,7 @@ end
 
 local SLOTS_LUA = [[
 return {
-  slots = { left = {}, main = { description = "the editor" }, right = {} },
+  slots = { left = { key = "l" }, main = { key = "m", description = "the editor" }, right = { key = "r" } },
   specs = {
     [3] = { left = "t-left", main = "t-main", right = "t-right" },
   },
@@ -57,7 +57,7 @@ describe("config.load", function()
   describe("with config.lua's scroll width of before", function()
     local SCROLLING = [[
 return {
-  slots = { left = {}, main = {} },
+  slots = { left = { key = "l" }, main = { key = "m" } },
   desks = { solo = { monitors = { "HEADLESS-2" }, layout = "solo" } },
   layouts = { solo = { screens = 1, default = { [1] = "scroll[left, main]" },
     workspaces = { [3] = { [1] = "scroll:0.25[main, left]" }, [4] = { [1] = "h[left, main]" } } } },
@@ -106,6 +106,19 @@ return { slots = data.slots, desks = data.desks, layouts = data.layouts, scroll 
     assert.are.equal(2, cfg.layouts.dual.screens)
     assert.are.same({ "main", "right" }, require("hyprslots.tree").slots(cfg.layouts.dual.workspaces[3][1]))
     assert.is_falsy(cfg.migrated)
+  end)
+
+  it("keys the slots of a slots.lua whose slots have no key (left, main, right: l, m, r), and says it changed", function()
+    dir = config_dir({ ["config.lua"] = CONFIG_LUA, ["slots.lua"] = SLOTS_LUA:gsub(' key = "%a",?', "") })
+    local cfg = assert(config.load(dir))
+    assert.is_true(cfg.data_files["slots.lua"].migrated, "the file differs from what runs until it is saved")
+    local slots = cfg.data_files["slots.lua"].data.slots
+    assert.are.same({ left = { key = "l" }, main = { key = "m", description = "the editor" }, right = { key = "r" } },
+      slots)
+    assert.are.equal("r", cfg.slots.right.key)
+    for _, path in ipairs(require("hyprslots.edit").read_only(cfg.raw, cfg.data_files["slots.lua"].given)) do
+      assert.are_not.equal("slots", path, "the slots are still slots.lua's")
+    end
   end)
 
   it("reports a missing config.lua as missing", function()
@@ -332,7 +345,32 @@ describe("config.validate", function()
     raw.slots.main = { descripton = "x" }
     rejects(raw, "slots%.main: unknown key 'descripton'")
     raw.slots.main = "t-main"
-    rejects(raw, "slots%.main: must be a table { description = \"%.%.%.\" }")
+    rejects(raw, "slots%.main: must be a table { key = \"m\", description = \"%.%.%.\" }")
+  end)
+
+  it("keeps each global slot's key, and keys the slots that have none (left, main: l, m)", function()
+    local raw = valid()
+    raw.slots.main = { key = "x" }
+    local cfg = assert(config.validate(raw))
+    assert.are.equal("x", cfg.slots.main.key)
+    assert.are.equal("l", cfg.slots.left.key)
+    assert.are.equal("l", assert(config.validate(valid())).slots.left.key)
+    assert.are.equal("m", assert(config.validate(valid())).slots.main.key)
+  end)
+
+  it("rejects a slot key that is not one letter a-z", function()
+    local raw = valid()
+    for _, bad in ipairs({ "M", "1", "mm", "" }) do
+      raw.slots.main = { key = bad }
+      rejects(raw, "slots%.main%.key: a slot's key is one letter a%-z")
+    end
+  end)
+
+  it("rejects a slot key another slot has", function()
+    local raw = valid()
+    raw.slots.left = { key = "m" }
+    raw.slots.main = { key = "m" }
+    rejects(raw, "slots%.main%.key: 'm' is slot 'left''s key already")
   end)
 
   it("still reads the per-workspace shape of before (slots = workspace -> slot -> spec, descriptions per workspace)", function()

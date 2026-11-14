@@ -6,7 +6,7 @@ local migrate = require("hyprslots.migrate")
 
 local function data(layouts, slots)
   return {
-    slots = slots or { left = {}, main = {}, right = {} },
+    slots = slots or { left = { key = "l" }, main = { key = "m" }, right = { key = "r" } },
     specs = { [3] = { main = "kitty" } },
     desks = { solo = { monitors = { "HEADLESS-2" }, layout = "solo" } },
     layouts = layouts,
@@ -59,6 +59,22 @@ describe("migrate.normalize", function()
     }))
     assert.is_false(changed)
     assert.are.same({}, out.layouts.solo.workspaces[5])
+  end)
+
+  it("gives every slot with no key one, in slot name order, and says it changed", function()
+    local given = data({ solo = { screens = 1, default = { [1] = "h[left, main, right]" } } },
+      { left = {}, main = { description = "the editor" }, right = { key = "x" } })
+    local out, changed = migrate.normalize(given)
+    assert.is_true(changed)
+    assert.are.same({ left = { key = "l" }, main = { key = "m", description = "the editor" }, right = { key = "x" } },
+      out.slots)
+    assert.is_nil(given.slots.left.key, "the table given is never changed")
+  end)
+
+  it("keys the slots of data with no layouts too", function()
+    local out, changed = migrate.normalize({ slots = { main = {} } })
+    assert.is_true(changed)
+    assert.are.same({ main = { key = "m" } }, out.slots)
   end)
 
   describe("a layout with no tree", function()

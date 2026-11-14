@@ -8,7 +8,7 @@ local json = require("hyprslots.dkjson")
 
 local SLOTS = [[
 return {
-  slots = { a = {}, b = {}, c = {} },
+  slots = { a = { key = "a" }, b = { key = "b" }, c = { key = "c" } },
   specs = { [3] = { a = "t-a", b = "t-b", c = "t-c" } },
   desks = { solo = { monitors = { "HEADLESS-2" }, layout = "solo" } },
   layouts = { solo = { screens = 1, default = { [1] = "h[a, b, c]" }, workspaces = { [3] = { [1] = "h[a:1, b:2, c:1]" } } } },
@@ -140,9 +140,9 @@ describe("hyprslots editor api", function()
       assert.is_false(solo.read_only)
     end)
 
-    it("reports the global slots, and each workspace's specs", function()
+    it("reports the global slots with their keys, and each workspace's specs", function()
       setup()
-      assert.are.same({ { name = "a" }, { name = "b" }, { name = "c" } }, state().slots)
+      assert.are.same({ { name = "a", key = "a" }, { name = "b", key = "b" }, { name = "c", key = "c" } }, state().slots)
       assert.are.same({ ["3"] = { a = "t-a", b = "t-b", c = "t-c" } }, state().specs)
     end)
 

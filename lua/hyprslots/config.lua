@@ -20,6 +20,7 @@
 -- file and in what config.lua returns.
 
 local migrate = require("hyprslots.migrate")
+local slot_key = require("hyprslots.slot_key")
 local spec = require("hyprslots.spec")
 local tree = require("hyprslots.tree")
 
@@ -173,34 +174,51 @@ local function key_path(prefix, key)
   return prefix .. "[" .. tostring(key) .. "]"
 end
 
--- The global slots: name -> { description? }. Returns name -> { description }
--- and the names, sorted.
+-- The global slots: name -> { key?, description? }. Returns name -> { name,
+-- key, description } and the names, sorted. A key is one letter a-z, no two
+-- slots' the same (slot_key; migrate.normalize gave one to every slot that
+-- had none).
 local function validate_slots(raw, fail)
   local slots, names = {}, {}
   if raw == nil then
     return slots, names
   end
   if type(raw) ~= "table" then
-    fail("slots", "must be a table of slot name -> { description = \"...\" }")
+    fail("slots", "must be a table of slot name -> { key = \"m\", description = \"...\" }")
     return slots, names
   end
+  local keyed = {}
   for _, name in ipairs(sorted_keys(raw)) do
     local path = key_path("slots", name)
     local entry = raw[name]
     if type(name) ~= "string" or not name:match(SLOT_NAME) then
       fail(path, "a slot name must be letters, digits, '_' or '-', got '" .. tostring(name) .. "'")
     elseif type(entry) ~= "table" then
-      fail(path, "must be a table { description = \"...\" } (or {}), got " .. type(entry))
+      fail(path, "must be a table { key = \"m\", description = \"...\" } (or {}), got " .. type(entry))
     else
       for key in pairs(entry) do
-        if key ~= "description" then
+        if key ~= "description" and key ~= "key" then
           fail(path, "unknown key '" .. tostring(key) .. "'")
         end
       end
       if entry.description ~= nil and type(entry.description) ~= "string" then
         fail(path .. ".description", "must be text")
       end
-      slots[name] = { name = name, description = type(entry.description) == "string" and entry.description or nil }
+      local key = entry.key
+      if key ~= nil then
+        local bad = slot_key.check(key)
+        if bad then
+          fail(path .. ".key", bad)
+          key = nil
+        elseif keyed[key] then
+          fail(path .. ".key", string.format("'%s' is slot '%s''s key already", key, keyed[key]))
+          key = nil
+        else
+          keyed[key] = name
+        end
+      end
+      slots[name] = { name = name, key = key,
+        description = type(entry.description) == "string" and entry.description or nil }
       names[#names + 1] = name
     end
   end

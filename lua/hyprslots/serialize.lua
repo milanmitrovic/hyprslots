@@ -57,7 +57,7 @@ M.HEADER = [[
 ]]
 
 -- Keys that come first, in this order, wherever they appear.
-local KEY_ORDER = { slots = 1, specs = 2, desks = 3, layouts = 4, monitors = 5, layout = 6, screens = 8,
+local KEY_ORDER = { slots = 1, specs = 2, desks = 3, layouts = 4, monitors = 5, layout = 6, key = 7, screens = 8,
   default = 9, workspaces = 10 }
 
 -- Keys whose list of scalars is written on one line.

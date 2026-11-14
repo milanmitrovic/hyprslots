@@ -6,7 +6,7 @@
 -- Every reply is a JSON string: { "ok": true, ... } or { "ok": false, "error": "..." }.
 -- Nothing here raises into Hyprland. Calls: state, workspace, set_tree, set_ratio,
 -- record, assign, unassign, save, reload, arrange; for the slot list (the
--- Layout tab's global slots) add_slot, remove_slot, rename_slot, describe_slot; for the
+-- Layout tab's global slots) add_slot, remove_slot, rename_slot, describe_slot, set_slot_key; for the
 -- Assignment view (each workspace's specs) take_spec, set_spec, clear_spec; for
 -- the Layout view's shared trees fold_trees, drop_override; for
 -- the Desk view add_desk, rename_desk, delete_desk, apply_layout, set_monitor_name,
@@ -193,12 +193,12 @@ local function desks_info(engine, read_only, monitors)
   return out
 end
 
--- The global slots, by name: [{ name, description? }].
+-- The global slots, by name: [{ name, key?, description? }].
 local function slots_info(engine)
   local out = array()
   local cfg = engine.cfg
   for _, name in ipairs(cfg and cfg.slot_names or {}) do
-    out[#out + 1] = object({ name = name, description = cfg.slots[name].description })
+    out[#out + 1] = object({ name = name, key = cfg.slots[name].key, description = cfg.slots[name].description })
   end
   return out
 end
@@ -878,13 +878,14 @@ local function list(items, last)
   return table.concat(items, ", ", 1, #items - 1) .. (last or " and ") .. items[#items]
 end
 
--- add_slot { slot, description? }: a global slot every workspace's trees may place.
+-- add_slot { slot, description?, key? }: a global slot every workspace's
+-- trees may place, keyed by `key` or else by its name (slot_key.pick).
 function handlers.add_slot(engine, args)
   local ok, err = editable_slots(engine)
   if not ok then
     return fail(err)
   end
-  local data, edit_err = edit.add_slot(engine.data, args.slot, args.description)
+  local data, edit_err = edit.add_slot(engine.data, args.slot, args.description, args.key)
   if not data then
     return fail(edit_err)
   end
@@ -896,7 +897,8 @@ function handlers.add_slot(engine, args)
   if not cfg then
     return fail(apply_err)
   end
-  return { slot = args.slot, description = cfg.slots[args.slot].description, seq = engine.seq }
+  return { slot = args.slot, key = cfg.slots[args.slot].key, description = cfg.slots[args.slot].description,
+    seq = engine.seq }
 end
 
 -- remove_slot { slot, force? }: refused while workspaces have specs for it
@@ -989,6 +991,28 @@ function handlers.rename_slot(engine, args)
   end
   remember(engine, "rename_slot", old, new)
   return { slot = old, to = new, trees = trees, specs = array(uses.specs), seq = engine.seq }
+end
+
+-- set_slot_key { slot, key }: the letter that picks the slot in the
+-- editor's slot-choice prompts; one letter a-z no other slot has.
+function handlers.set_slot_key(engine, args)
+  local ok, err = editable_slots(engine)
+  if not ok then
+    return fail(err)
+  end
+  local data, edit_err = edit.set_slot_key(engine.data, args.slot, args.key)
+  if not data then
+    return fail(edit_err)
+  end
+  local cfg, apply_err = apply_edit(engine, data, function(c)
+    if not c.slots[args.slot] or c.slots[args.slot].key ~= args.key then
+      return not_taken("the slots")
+    end
+  end)
+  if not cfg then
+    return fail(apply_err)
+  end
+  return { slot = args.slot, key = args.key, seq = engine.seq }
 end
 
 -- describe_slot { slot, description }: "" removes it.

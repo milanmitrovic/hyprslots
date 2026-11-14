@@ -78,7 +78,7 @@ end)
 -- (solo and laptop share one).
 local function two()
   return {
-    slots = { a = {}, b = { description = "middle" }, c = {}, mail = {} },
+    slots = { a = { key = "a" }, b = { key = "b", description = "middle" }, c = { key = "c" }, mail = { key = "m" } },
     specs = { [3] = { a = "t-a", b = "t-b", c = "t-c" }, [4] = { mail = "thunderbird", b = "t-b4" } },
     desks = {
       solo = { monitors = { "HEADLESS-2" }, layout = "solo" },
@@ -370,9 +370,20 @@ end)
 describe("edit.add_slot", function()
   it("defines a global slot, with a description when given one", function()
     local after = assert(edit.add_slot(two(), "notes", "scratch"))
-    assert.are.same({ description = "scratch" }, after.slots.notes)
-    assert.are.same({}, assert(edit.add_slot(two(), "x")).slots.x)
-    assert.are.same({ x = {} }, assert(edit.add_slot({}, "x")).slots, "data with no slots yet")
+    assert.are.same({ key = "n", description = "scratch" }, after.slots.notes)
+    assert.are.same({ key = "x" }, assert(edit.add_slot(two(), "x")).slots.x)
+    assert.are.same({ x = { key = "x" } }, assert(edit.add_slot({}, "x")).slots, "data with no slots yet")
+  end)
+
+  it("keys it by the first letter of its name no other slot has, else the next, else the first free a-z", function()
+    assert.are.equal("o", assert(edit.add_slot(two(), "mob")).slots.mob.key, "m is mail's")
+    assert.are.equal("d", assert(edit.add_slot(two(), "abc")).slots.abc.key, "a, b and c are taken")
+  end)
+
+  it("takes the key it is given, one letter a-z no other slot has", function()
+    assert.are.equal("z", assert(edit.add_slot(two(), "notes", nil, "z")).slots.notes.key)
+    assert.matches("'m' is slot 'mail''s key already", select(2, edit.add_slot(two(), "notes", nil, "m")))
+    assert.matches("one letter a%-z", select(2, edit.add_slot(two(), "notes", nil, "1")))
   end)
 
   it("refuses a name that is taken or malformed", function()
@@ -384,6 +395,33 @@ describe("edit.add_slot", function()
     local before = two()
     edit.add_slot(before, "notes")
     assert.are.same(two(), before)
+  end)
+end)
+
+describe("edit.set_slot_key", function()
+  it("sets the slot's key, its description kept", function()
+    local before = two()
+    local after = assert(edit.set_slot_key(before, "b", "x"))
+    assert.are.same({ key = "x", description = "middle" }, after.slots.b)
+    assert.are.equal("b", before.slots.b.key, "the original is untouched")
+  end)
+
+  it("takes the key the slot has already", function()
+    assert.are.equal("m", assert(edit.set_slot_key(two(), "mail", "m")).slots.mail.key)
+  end)
+
+  it("refuses a key another slot has, saying whose", function()
+    assert.matches("'a' is slot 'a''s key already", select(2, edit.set_slot_key(two(), "b", "a")))
+  end)
+
+  it("refuses what is no letter a-z: the digits jump workspaces", function()
+    for _, bad in ipairs({ "1", "A", "ab", "", 4 }) do
+      assert.matches("one letter a%-z", select(2, edit.set_slot_key(two(), "b", bad)), tostring(bad))
+    end
+  end)
+
+  it("refuses a slot that does not exist", function()
+    assert.matches("no slot 'zz'", select(2, edit.set_slot_key(two(), "zz", "z")))
   end)
 end)
 
@@ -428,7 +466,7 @@ describe("edit.rename_slot", function()
   it("renames the slot, every tree of every workspace and layout, and every workspace's spec for it", function()
     local after = assert(edit.rename_slot(two(), "b", "middle"))
     assert.is_nil(after.slots.b)
-    assert.are.same({ description = "middle" }, after.slots.middle, "its description follows")
+    assert.are.same({ key = "b", description = "middle" }, after.slots.middle, "its key and description follow")
     assert.are.equal("h[a, middle:2, c]", after.layouts.solo.workspaces[3][1])
     assert.are.equal("h[mail, middle]", after.layouts.solo.workspaces[4][1])
     assert.are.equal("h[a:2, v[middle, *]]", after.layouts.dual.workspaces[3][1])
@@ -451,9 +489,9 @@ end)
 describe("edit.describe_slot", function()
   it("sets a slot's description, and an empty one removes it", function()
     local after = assert(edit.describe_slot(two(), "a", "the editor"))
-    assert.are.same({ description = "the editor" }, after.slots.a)
+    assert.are.same({ key = "a", description = "the editor" }, after.slots.a)
     local cleared = assert(edit.describe_slot(after, "a", ""))
-    assert.are.same({}, cleared.slots.a)
+    assert.are.same({ key = "a" }, cleared.slots.a)
   end)
 
   it("refuses a slot that is not defined, and a description that is no text", function()
@@ -495,7 +533,7 @@ describe("edit.clear_spec", function()
     assert.are.same({ mail = "thunderbird" }, after.specs[4])
     after = assert(edit.clear_spec(after, 4, "mail"))
     assert.is_nil(after.specs[4])
-    assert.are.same({ description = "middle" }, after.slots.b, "the global slot stays")
+    assert.are.same({ key = "b", description = "middle" }, after.slots.b, "the global slot stays")
     assert.are.equal("h[mail, b]", after.layouts.solo.workspaces[4][1], "and so do the trees")
   end)
 
