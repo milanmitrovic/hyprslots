@@ -36,7 +36,9 @@
 # its menu (Save, Re-apply, Record), left clicks toggling the panel, and the
 # error state while the hyprslots global is gone. Last, workspace 8 lists
 # every global slot (every tree has them all), and a puts a window into left
-# with no question of placing it, which Ctrl+S saves.
+# with no question of placing it, which Ctrl+S saves. Then the same by mouse
+# alone, with real pointer clicks: tabs, the workspace switcher, rows,
+# the toolbar, a prompt's chips, Yes, OK and Cancel, double-clicks.
 # Screenshots of the nested compositor go to .e2e-tmp/editor-smoke-*.png.
 #
 # Screen: HEADLESS-2, 1920x1080, Omarchy block 0 (workspace N = workspace id N).
@@ -819,6 +821,136 @@ assignment_assign() {
   expect_eq "Escape" "ok" "$(smoke press Escape)"
 }
 
+# The mouse alone, with real pointer clicks (smoke_click: the nested
+# compositor's virtual pointer, so the panel's own MouseAreas take them).
+# The tabs and a workspace switcher are clicked; on workspace 8 a click
+# selects t-left's row, the toolbar's a opens the slot choice, whose chip
+# for side assigns it there; the toolbar's u asks y/n and Yes unassigns it;
+# a dim toolbar button (a on an empty row) does nothing; a double-click on
+# a row opens a (the view's primary action) and Cancel closes it. In the
+# Layout tab a click on a slot selects it, the toolbar's e asks for its
+# description and OK keeps it, a double-click shows it in the picture and a
+# click on a tile selects that; in the Desk tab a double-click on a desk row
+# opens its layout choice, which Cancel closes. The toolbar's Ctrl+S saves
+# and its q closes the panel. Screenshots of the toolbar, the chips, Yes /
+# No and OK / Cancel.
+row_index() {
+  smoke rows | awk -v RS='; ' -v want="$1" '$0 ~ want { print NR - 1; exit }'
+}
+
+mouse_flows() {
+  local watch="qs ipc --pid $SMOKE_QS_PID call smoke" left row
+  left=$(address_of t-left)
+  expect_eq "panel opens" "ok" "$(smoke open)"
+  eventually 10 smoke_ready || fail "the panel never read state: $(smoke errors)"
+
+  smoke_click tab:Desk
+  if eventually 3 bash -c "[[ \$($watch tabs) == *'| Desk' ]]"; then pass "a click on the Desk tab shows it"
+  else fail "after the click on Desk: $(smoke tabs)"; fi
+  smoke_click tab:Assignment
+  if eventually 3 bash -c "[[ \$($watch tabs) == *'| Assignment' ]]"; then pass "a click on the Assignment tab shows it"
+  else fail "after the click on Assignment: $(smoke tabs)"; fi
+  smoke_click workspace:8
+  if eventually 3 bash -c "[[ \$($watch assignmentPage) == 'Workspace 8' ]]"; then pass "a click on 8 in the switcher pages there"
+  else fail "after the click on 8: $(smoke assignmentPage)"; fi
+
+  row=$(row_index '[|]t-left[|]window')
+  smoke_click "row:$row"
+  if eventually 3 bash -c "[[ \$($watch selection) == *' t-left' ]]"; then pass "a click selects t-left's row"
+  else fail "after the click on row $row: $(smoke selection)"; fi
+  smoke_click toolbar:a move
+  sleep 0.3
+  shot 26-mouse-toolbar-hover
+  smoke_click toolbar:a
+  if eventually 3 bash -c "[[ \$($watch message) == 'Assign t-left to a slot on workspace 8: '* ]]"; then
+    pass "the toolbar's a opens the slot choice: $(smoke message)"
+  else
+    fail "after the toolbar's a: $(smoke message)"
+  fi
+  sleep 0.3
+  shot 27-mouse-chips
+  smoke_click chip:s
+  if eventually 5 bash -c "[[ \$($watch message) == Assigned* ]]"; then pass "the chip for side assigned it"
+  else fail "after the chip: $(smoke message)"; fi
+  eventually 5 smoke_idle || true
+  expect_eq "t-left is in side" '{"slot":"side","workspace":8}' "$(assignment_of "$left")"
+
+  smoke_click toolbar:u
+  if eventually 3 bash -c "[[ \$($watch message) == 'Unassign t-left from side on workspace 8? '* ]]"; then
+    pass "the toolbar's u asks first: $(smoke message)"
+  else
+    fail "after the toolbar's u: $(smoke message)"
+  fi
+  sleep 0.3
+  shot 28-mouse-yes-no
+  smoke_click prompt:yes
+  if eventually 5 bash -c "[[ \$($watch message) == Unassigned* ]]"; then pass "Yes unassigned it"
+  else fail "after Yes: $(smoke message)"; fi
+  eventually 5 smoke_idle || true
+  expect_eq "workspace 8 no longer says what fills side" "null" "$(api_state | jq -c '.specs["8"].side')"
+
+  row=$(row_index '^side[|]')
+  smoke_click "row:$row"
+  eventually 3 bash -c "[[ \$($watch selection) == *' side '* ]]" || fail "the empty side row was not selected: $(smoke selection)"
+  smoke_click toolbar:a
+  sleep 0.3
+  if [[ $(smoke message) != Assign* ]]; then pass "a dim toolbar button (a on an empty row) does nothing"
+  else fail "a on an empty row opened: $(smoke message)"; fi
+
+  row=$(row_index '[|]t-left[|]window')
+  smoke_click "row:$row" double
+  if eventually 3 bash -c "[[ \$($watch message) == 'Assign t-left to a slot on workspace 8: '* ]]"; then
+    pass "a double-click on a row runs a"
+  else
+    fail "after the double-click: $(smoke message) ($(smoke selection))"
+  fi
+  smoke_click prompt:cancel
+  if eventually 3 bash -c "[[ \$($watch message) == Cancelled. ]]"; then pass "Cancel cancels, as Esc"
+  else fail "after Cancel: $(smoke message)"; fi
+
+  smoke_click tab:Layout
+  eventually 3 bash -c "[[ \$($watch tabs) == *'| Layout' ]]" || fail "after the click on Layout: $(smoke tabs)"
+  smoke_click slot:main
+  if eventually 3 bash -c "[[ \$($watch selection) == 'slots main' ]]"; then pass "a click on main in the slot list selects it"
+  else fail "after the click on main: $(smoke selection)"; fi
+  sleep 0.3
+  shot 29-mouse-slot-list-toolbar
+  smoke_click toolbar:e
+  if eventually 3 bash -c "[[ \$($watch message) == \"Description for 'main'\"* ]]"; then pass "the toolbar's e asks for the description"
+  else fail "after the toolbar's e: $(smoke message)"; fi
+  sleep 0.3
+  shot 30-mouse-ok-cancel
+  smoke_click prompt:ok
+  if eventually 3 bash -c "[[ \$($watch message) == \"Described 'main'.\" ]]"; then pass "OK answers, as Return"
+  else fail "after OK: $(smoke message)"; fi
+  smoke_click slot:main double
+  if eventually 3 bash -c "[[ \$($watch selection) == '1 main' ]]"; then pass "a double-click on a slot shows it in the picture"
+  else fail "after the double-click on main: $(smoke selection) $(smoke message)"; fi
+  smoke_click tile:1:aside
+  if eventually 3 bash -c "[[ \$($watch selection) == '1 aside' ]]"; then pass "a click on a tile selects it"
+  else fail "after the click on aside: $(smoke selection)"; fi
+
+  smoke_click tab:Desk
+  eventually 3 bash -c "[[ \$($watch tabs) == *'| Desk' ]]" || fail "after the click on Desk: $(smoke tabs)"
+  smoke_click row:0 double
+  if eventually 3 bash -c "[[ \$($watch message) == 'Layout for desk '* ]]"; then
+    pass "a double-click on a desk row asks for its layout: $(smoke message)"
+  else
+    fail "after the double-click on the first desk: $(smoke message)"
+  fi
+  sleep 0.3
+  shot 31-mouse-desk-chips
+  smoke_click prompt:cancel
+  eventually 3 bash -c "[[ \$($watch message) == Cancelled. ]]" || fail "after Cancel: $(smoke message)"
+
+  smoke_click toolbar:Ctrl+s
+  if eventually 5 saved; then pass "the toolbar's Ctrl+S saves"
+  else fail "still dirty after the toolbar's Ctrl+S: $(smoke message) $(smoke errors)"; fi
+  smoke_click toolbar:q
+  if eventually 3 bash -c "[[ \$($watch ready) == no ]]"; then pass "the toolbar's q closes the panel"
+  else fail "the panel stayed open"; fi
+}
+
 test_body() {
   for tool in qs grim wtype; do
     command -v "$tool" >/dev/null || harness_fail "the editor smoke needs $tool"
@@ -1195,6 +1327,7 @@ test_body() {
   expect_eq "no editor errors but the refused delete" " | $SMOKE_REFUSAL" "$(smoke errors)"
   bar_widget
   assignment_assign
+  mouse_flows
 
   log "assign round trip takes $(time_ms repl "return hyprslots.api.call(\"assign\", \"{\\\"address\\\":\\\"$stray\\\",\\\"workspace\\\":3,\\\"slot\\\":\\\"side\\\"}\")") ms"
 

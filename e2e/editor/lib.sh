@@ -4,7 +4,7 @@
 # Quickshell on the TEST instance (e2e/editor/shell.qml), never in the live
 # shell, and is driven through its `smoke` IPC target.
 
-SMOKE_QS_DIR='' SMOKE_QS_PID=''
+SMOKE_QS_DIR='' SMOKE_QS_PID='' SMOKE_VPOINTER=''
 
 # qs ipc against the smoke's own Quickshell instance (by pid: the instance
 # lives in the harness's private XDG_RUNTIME_DIR).
@@ -25,6 +25,11 @@ smoke_theme_look() {
 
 start_editor() {
   local omarchy=${OMARCHY_PATH:-/usr/share/omarchy}
+  # The pointer the mouse flows click with (e2e/shim/vpointer.c).
+  SMOKE_VPOINTER=$E2E_DIR/vpointer
+  # shellcheck disable=SC2046
+  gcc -O2 -Wall -o "$SMOKE_VPOINTER" "$E2E_ROOT/e2e/shim/vpointer.c" $(pkg-config --cflags --libs wayland-client) ||
+    harness_fail "could not build e2e/shim/vpointer.c"
   SMOKE_QS_DIR=$E2E_DIR/qs
   mkdir -p "$SMOKE_QS_DIR"
   cp "$E2E_ROOT/e2e/editor/shell.qml" "$SMOKE_QS_DIR/shell.qml"
@@ -54,3 +59,20 @@ start_editor() {
     harness_fail "Quickshell never answered ipc (alive: $(kill -0 "$SMOKE_QS_PID" 2>/dev/null && echo yes || echo no)); see $E2E_DIR/qs.log"
 }
 
+# A real pointer click (or "double", or "move") on the panel's control named
+# $1 (its objectName, Panel.clickPoint: "toolbar:a", "chip:m",
+# "prompt:yes", "tab:Layout", "row:2"...), through the nested compositor's
+# virtual pointer, so it reaches the same MouseArea a mouse does. Fails
+# (the test, not the harness) when no such control shows.
+smoke_click() {
+  local name=$1 action=${2:-click} point size
+  point=$(smoke point "$name")
+  if [[ ! $point =~ ^-?[0-9]+\ -?[0-9]+$ ]]; then
+    fail "no control '$name' to click (got '$point')"
+    return 1
+  fi
+  size=$(hc monitors -j | jq -r '.[0] | "\(.width) \(.height)"')
+  # shellcheck disable=SC2086
+  WAYLAND_DISPLAY=$E2E_WAYLAND_DISPLAY "$SMOKE_VPOINTER" $point $size "$action" >>"$E2E_DIR/vpointer.log" 2>&1 ||
+    harness_fail "vpointer failed (see $E2E_DIR/vpointer.log)"
+}

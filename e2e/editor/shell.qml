@@ -200,6 +200,12 @@ ShellRoot {
       return panel.press(key)
     }
 
+    // Where the control named `name` shows, "<x> <y>" on the screen ("" for
+    // none): the smoke's pointer clicks there (smoke_click).
+    function point(name: string): string {
+      return panel.clickPoint(name)
+    }
+
     // The engine's last error (state read or call), "" when fine.
     function errors(): string {
       return engine.error + (engine.lastError !== "" ? " | " + engine.lastError : "")

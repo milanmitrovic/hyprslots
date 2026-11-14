@@ -1567,7 +1567,13 @@ Parked:
   qmllint. `make e2e-editor` (`e2e/editor_smoke.sh`, opt-in, needs qs, grim
   and wtype) runs the plugin in Quickshell on the nested Hyprland through
   `e2e/editor/shell.qml` (which stands in for the Omarchy shell: it injects
-  the service and adds an IPC target), drives the panel with real keys from
+  the service and adds an IPC target), drives the panel with real pointer
+  clicks (`e2e/shim/vpointer.c`, built by the smoke: a
+  wlr-virtual-pointer client that moves to a point in two steps, waits for
+  the surface under it to take pointer focus, then clicks or double-clicks;
+  `smoke_click` clicks the control a `Panel.clickPoint` names by its
+  objectName: `toolbar:a`, `chip:s`, `prompt:yes`, `tab:Desk`, `row:3`,
+  `slot:main`, `tile:1:aside`, `workspace:8`) and with real keys from
   one wtype session (a fresh virtual keyboard loses its first key, and a
   second wtype's keys did not arrive, so the sequence is one session starting
   with an ignored F13) and with `press()`, asserts through api `state`, the
@@ -1603,7 +1609,14 @@ Parked:
   `serviceFor`): its label and the
   unsaved dot, the menu's Save and Re-apply, left clicks opening and
   closing the panel, Record opening the record preview, and the error
-  state while the `hyprslots` global is gone), and writes screenshots to
+  state while the `hyprslots` global is gone; then by mouse alone: the
+  tabs and a workspace clicked, a row clicked, the toolbar's `a`, a chip
+  assigning, the toolbar's `u` and Yes unassigning, a dim toolbar button
+  doing nothing, a double-click on a row opening `a` and Cancel closing it,
+  a slot clicked in the slot list, the toolbar's `e` and OK, a double-click
+  showing the slot in the picture, a tile clicked, a double-click on a desk
+  row asking for its layout, the toolbar's Ctrl+S saving and `q` closing;
+  screenshots `26-mouse-toolbar-hover` to `31-mouse-desk-chips`), and writes screenshots to
   `.e2e-tmp/editor-smoke-*.png` (the Layout tab on tiles, scroll half and
   scroll full: `8a-layout-tiles`, `8b-layout-scroll-half`,
   `8c-layout-scroll-full`). `make e2e-editor-multimon`
