@@ -38,7 +38,8 @@
 # every global slot (every tree has them all), and a puts a window into left
 # with no question of placing it, which Ctrl+S saves. Then the same by mouse
 # alone, with real pointer clicks: tabs, the workspace switcher, rows,
-# the toolbar, a prompt's chips, Yes, OK and Cancel, double-clicks.
+# the toolbar, a prompt's chips, Yes, OK and Cancel, double-clicks; and
+# the Layout picture's dividers dragged to new ratios (mouse_ratios).
 # Screenshots of the nested compositor go to .e2e-tmp/editor-smoke-*.png.
 #
 # Screen: HEADLESS-2, 1920x1080, Omarchy block 0 (workspace N = workspace id N).
@@ -951,6 +952,124 @@ mouse_flows() {
   else fail "the panel stayed open"; fi
 }
 
+# The Layout picture's dividers, dragged with the real pointer (smoke_drag).
+# Workspace 3's tree, set to h[main:2, v[aside, side:3, left]] through the
+# api: its main|aside divider, let go about the middle of the two, makes
+# h[main, v[aside, side:3, left]] (while held the pane draws it and the
+# label by the pointer says 1 : 1: screenshot); the nested v split's
+# aside|side divider about its middle makes v[aside:2, side:2, left] (left
+# keeps its fifth). Both are drafts until the toolbar's w applies them, and
+# the windows follow (api state's boxes): t-main and t-right (in aside) half
+# the tree each. Ctrl+S saves. On workspace 4, which uses the shared tree, a
+# drag asks first whom the edit is for: Esc cancels it (the tree as it
+# was), o makes it workspace 4's own draft.
+mouse_ratios() {
+  local watch="qs ipc --pid $SMOKE_QS_PID call smoke" dx dy mx aw ax ay ah sy sh x y tree l1 l2
+  log "set_tree -> $(repl 'return hyprslots.api.call("set_tree", "{\"workspace\": 3, \"screen\": 1, \"tree\": \"h[main:2, v[aside, side:3, left]]\"}")')"
+  log "save -> $(repl 'return hyprslots.api.call("save", "{}")')"
+  expect_eq "panel opens" "ok" "$(smoke open)"
+  eventually 10 smoke_ready || fail "the panel never read state: $(smoke errors)"
+  smoke_click tab:Layout
+  eventually 3 bash -c "[[ \$($watch tabs) == *'| Layout' ]]" || fail "after the click on Layout: $(smoke tabs)"
+  press_keys 3
+  expect_eq "workspace 3's tree" "1: h[main:2, v[aside, side:3, left]]" "$(smoke layout)"
+
+  smoke_click 'divider:1:main|aside' move
+  sleep 0.3
+  shot 32-mouse-divider-hover
+
+  # main's left edge to aside's right edge is the two neighbours (a tile
+  # is inset 2 px in its cell; aside 5 more, the v box's padding)
+  read -r dx dy <<<"$(smoke point 'divider:1:main|aside')"
+  read -r mx _ _ _ <<<"$(smoke bounds tile:1:main)"
+  read -r ax _ aw _ <<<"$(smoke bounds tile:1:aside)"
+  x=$(((mx - 2 + ax + aw + 7) / 2))
+  log "drag main|aside from $dx,$dy to $x,$dy"
+  smoke_drag 'divider:1:main|aside' "$x" "$dy" 2500
+  if eventually 3 bash -c "[[ \$($watch dragging) == '1 h[main, v[aside, side:3, left]] | 1 : 1' ]]"; then
+    pass "held about the middle, the pane draws h[main, v[aside, side:3, left]] and says 1 : 1"
+  else
+    fail "mid-drag: '$(smoke dragging)'"
+  fi
+  sleep 0.3
+  shot 33-mouse-ratio-drag
+  wait "$SMOKE_DRAG_PID" 2>/dev/null
+  if eventually 3 bash -c "[[ \$($watch layout) == '1: h[main, v[aside, side:3, left]] *' ]]"; then
+    pass "let go, h[main:2, ...] became h[main, ...] in the draft"
+  else
+    fail "after the drag the draft is $(smoke layout): $(smoke message)"
+  fi
+  if [[ $(smoke message) == 'Set ratios 1:1[1:3:1]. Not applied: w applies, Ctrl+S applies and saves.'* ]]; then
+    pass "it says so, as r does"
+  else
+    fail "message: $(smoke message)"
+  fi
+  expect_eq "nothing is applied yet" "h[main:2, v[aside, side:3, left]]" "$(tree_in_force)"
+  expect_eq "no drag is held" "" "$(smoke dragging)"
+
+  read -r dx dy <<<"$(smoke point 'divider:1:aside|side')"
+  read -r _ ay _ ah <<<"$(smoke bounds tile:1:aside)"
+  read -r _ sy _ sh <<<"$(smoke bounds tile:1:side)"
+  y=$(((ay - 2 + sy + sh + 2) / 2))
+  log "drag aside|side from $dx,$dy to $dx,$y"
+  smoke_drag 'divider:1:aside|side' "$dx" "$y"
+  wait "$SMOKE_DRAG_PID" 2>/dev/null
+  if eventually 3 bash -c "[[ \$($watch layout) == '1: h[main, v[aside:2, side:2, left]] *' ]]"; then
+    pass "the nested v split's divider, let go about its middle, made v[aside:2, side:2, left]"
+  else
+    fail "after the nested drag the draft is $(smoke layout): $(smoke message)"
+  fi
+
+  smoke_click toolbar:w
+  if eventually 5 tree_in_force_is 'h[main, v[aside:2, side:2, left]]'; then pass "w applied the dragged tree"
+  else fail "the tree in force is $(tree_in_force): $(smoke message) $(smoke errors)"; fi
+  eventually 5 smoke_idle || true
+  settle
+  local boxes
+  boxes=$(api_state | jq -r '[.windows[] | select(.class == "t-main" or .class == "t-right") | "\(.class) \(.box.x) \(.box.w)"] | join(", ")')
+  log "after apply: $boxes"
+  if api_state | jq -e '[.windows[] | select(.class == "t-main" or .class == "t-right")] as $w
+      | ($w | length) == 2 and ($w[0].box.w - $w[1].box.w | fabs) <= 2
+      and ([$w[] | select(.class == "t-main")][0].box.x < [$w[] | select(.class == "t-right")][0].box.x)' >/dev/null; then
+    pass "the windows follow: t-main and t-right half the tree each ($boxes)"
+  else
+    fail "window boxes after apply: $boxes"
+  fi
+  expect_eq "Ctrl+S" "ok" "$(smoke press Ctrl+s)"
+  if eventually 5 saved; then pass "Ctrl+S saved the dragged tree"
+  else fail "still dirty after Ctrl+S: $(smoke message) $(smoke errors)"; fi
+
+  # On a workspace using the shared tree a drag asks first.
+  press_keys 4
+  tree=$(smoke layout)
+  tree=${tree#1: }
+  read -r l1 l2 _ <<<"$(grep -oE '[A-Za-z_][A-Za-z0-9_.-]*' <<<"$tree" | grep -vxE 'h|v' | tr '\n' ' ')"
+  log "workspace 4 shows the shared tree $tree; dragging $l1|$l2"
+  read -r x y <<<"$(smoke point "tile:1:$l1")"
+  smoke_drag "divider:1:$l1|$l2" "$x" "$y"
+  wait "$SMOKE_DRAG_PID" 2>/dev/null
+  if eventually 3 bash -c "[[ \$($watch message) == 'Apply to (a)ll workspaces or (o)nly workspace 4? [Esc] cancel' ]]"; then
+    pass "a drag on a workspace using the shared tree asks whom it is for"
+  else
+    fail "after the drag on workspace 4: $(smoke message)"
+  fi
+  sleep 0.3
+  shot 34-mouse-ratio-scope
+  press_keys Escape
+  expect_eq "Esc cancels it" "Cancelled." "$(smoke message)"
+  expect_eq "the tree as it was" "1: $tree" "$(smoke layout)"
+  smoke_drag "divider:1:$l1|$l2" "$x" "$y"
+  wait "$SMOKE_DRAG_PID" 2>/dev/null
+  eventually 3 bash -c "[[ \$($watch message) == 'Apply to (a)ll'* ]]" || fail "the second drag asked nothing: $(smoke message)"
+  press_keys o
+  if eventually 3 bash -c "[[ \$($watch layout) == *' *' && \$($watch layout) != '1: $tree' ]]"; then
+    pass "o makes the drag workspace 4's own draft: $(smoke layout)"
+  else
+    fail "after o: $(smoke layout): $(smoke message)"
+  fi
+  expect_eq "Escape" "ok" "$(smoke press Escape)"
+}
+
 test_body() {
   for tool in qs grim wtype; do
     command -v "$tool" >/dev/null || harness_fail "the editor smoke needs $tool"
@@ -1328,6 +1447,7 @@ test_body() {
   bar_widget
   assignment_assign
   mouse_flows
+  mouse_ratios
 
   log "assign round trip takes $(time_ms repl "return hyprslots.api.call(\"assign\", \"{\\\"address\\\":\\\"$stray\\\",\\\"workspace\\\":3,\\\"slot\\\":\\\"side\\\"}\")") ms"
 

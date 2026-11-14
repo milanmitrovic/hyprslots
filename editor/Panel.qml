@@ -8,6 +8,7 @@ import qs.Commons as Commons
 import qs.Ui
 import "Prompts.js" as Prompts
 import "DesksLayouts.js" as DesksLayouts
+import "Layout.js" as Layout
 import "Assignment.js" as Assignment
 import "Messages.js" as Messages
 import "Help.js" as Help
@@ -237,6 +238,14 @@ Item {
     return layoutView.draftText()
   }
 
+  // A divider being dragged in the Layout view: "<screen> <tree as it
+  // would be let go> | <its split's ratio>", "" when none is: for the e2e
+  // smoke.
+  function layoutDragText() {
+    var d = layoutView.dragging
+    return d ? d.screen + " " + Layout.format(d.node) + " | " + d.label : ""
+  }
+
   // The Layout view's pane titles ("Screen 1 · Built-in" joined by
   // " | ") and its header line: for the e2e smoke.
   function layoutPanesText() {
@@ -294,6 +303,18 @@ Item {
     var p = found.mapToItem(null, found.width / 2, found.height / 2)
     var screen = window.screen
     return Math.round(p.x + (screen ? screen.x : 0)) + " " + Math.round(p.y + (screen ? screen.y : 0))
+  }
+
+  // Where the control named `name` shows, "<x> <y> <width> <height>" on
+  // the screen; "" when none shows. For the e2e smoke, which drags the
+  // Layout picture's dividers to a point measured from the tiles.
+  function clickBounds(name) {
+    var found = root.findShown(window.contentItem, String(name))
+    if (!found) return ""
+    var p = found.mapToItem(null, 0, 0)
+    var screen = window.screen
+    return Math.round(p.x + (screen ? screen.x : 0)) + " " + Math.round(p.y + (screen ? screen.y : 0)) + " "
+      + Math.round(found.width) + " " + Math.round(found.height)
   }
 
   function findShown(item, name) {

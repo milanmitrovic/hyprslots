@@ -192,6 +192,11 @@ ShellRoot {
       return String(panel.helpLines())
     }
 
+    // A divider being dragged: "1 h[main, right] | 1 : 1", "" for none.
+    function dragging(): string {
+      return panel.layoutDragText()
+    }
+
     function layoutMode(): string {
       return panel.layoutModeText()
     }
@@ -204,6 +209,12 @@ ShellRoot {
     // none): the smoke's pointer clicks there (smoke_click).
     function point(name: string): string {
       return panel.clickPoint(name)
+    }
+
+    // Where the control named `name` shows, "<x> <y> <width> <height>" on
+    // the screen ("" for none).
+    function bounds(name: string): string {
+      return panel.clickBounds(name)
     }
 
     // The engine's last error (state read or call), "" when fine.
