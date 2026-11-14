@@ -144,6 +144,112 @@ function M.omarchy_disabled()
   return workspaces ~= nil and workspaces.enabled == false
 end
 
+-- One of a function's upvalues, by name, or nil.
+local function upvalue(fn, name)
+  if type(fn) ~= "function" or type(debug) ~= "table" or type(debug.getupvalue) ~= "function" then
+    return nil
+  end
+  for i = 1, 255 do
+    local key, value = debug.getupvalue(fn, i)
+    if key == nil then
+      return nil
+    end
+    if key == name then
+      return value
+    end
+  end
+  return nil
+end
+
+-- Give the monitors `connectors` (in order) Omarchy's blocks 0, 1, 2...,
+-- and no other monitor a block, in Omarchy's own block table, written to its
+-- state file (the bar reads it). monitor-workspaces.lua keeps the table
+-- local, so it is reached through o.workspaces.workspace_id's upvalues:
+-- assign, and assign's blocks, identities_of and save. Returns whether the
+-- blocks changed, or nil and why they cannot be reached.
+function M.set_omarchy_blocks(connectors)
+  local workspaces = M.omarchy_workspaces()
+  local assign = workspaces and upvalue(workspaces.workspace_id, "assign")
+  local blocks, identities_of, save = upvalue(assign, "blocks"), upvalue(assign, "identities_of"), upvalue(assign, "save")
+  if type(blocks) ~= "table" or type(identities_of) ~= "function" or type(save) ~= "function" then
+    return nil, "Omarchy's workspace blocks are out of reach (o.workspaces.workspace_id has no assign with "
+      .. "blocks, identities_of and save)"
+  end
+  local monitors = {}
+  for i, name in ipairs(connectors) do
+    monitors[i] = hl().get_monitor(name)
+    if not monitors[i] then
+      return nil, "no monitor " .. tostring(name)
+    end
+  end
+  local identities = identities_of(monitors)
+  local want = {}
+  for i, name in ipairs(connectors) do
+    want[identities[name]] = i - 1
+  end
+  local changed = false
+  for identity, block in pairs(blocks) do
+    changed = changed or want[identity] ~= block
+  end
+  for identity, block in pairs(want) do
+    changed = changed or blocks[identity] ~= block
+  end
+  if changed then
+    for identity in pairs(blocks) do
+      blocks[identity] = nil
+    end
+    for identity, block in pairs(want) do
+      blocks[identity] = block
+    end
+  end
+  save(monitors, identities)
+  return changed
+end
+
+-- Run `before(added, gone)` ahead of every Omarchy reconcile: its event
+-- handlers call o.workspaces.reconcile through the table, so replacing the
+-- field reaches them. Returns false when there is no reconcile to wrap.
+function M.before_omarchy_reconcile(before)
+  local workspaces = M.omarchy_workspaces()
+  if not workspaces or type(workspaces.reconcile) ~= "function" then
+    return false
+  end
+  local reconcile = workspaces.reconcile
+  workspaces.reconcile = function(added, gone)
+    before(added, gone)
+    return reconcile(added, gone)
+  end
+  return true
+end
+
+-- Omarchy's reconcile: every monitor back on a workspace of its own block.
+function M.omarchy_reconcile()
+  local workspaces = M.omarchy_workspaces()
+  if workspaces and type(workspaces.reconcile) == "function" then
+    workspaces.reconcile()
+  end
+end
+
+-- Every regular workspace: { id, monitor (connector, or nil), windows }.
+function M.workspaces()
+  local out = {}
+  for _, workspace in ipairs(hl().get_workspaces() or {}) do
+    if not workspace.special and type(workspace.id) == "number" and workspace.id > 0 then
+      out[#out + 1] = {
+        id = workspace.id,
+        monitor = workspace.monitor and workspace.monitor.name or nil,
+        windows = workspace.windows or 0,
+      }
+    end
+  end
+  return out
+end
+
+-- Give a workspace another id.
+function M.rename_workspace(id, to)
+  return hl().dispatch(hl().dsp.workspace.change_id({ workspace = tostring(id), id = to }))
+end
+
 -- Workspace id of workspace N on a monitor (by connector name).
 function M.workspace_id(monitor_name, workspace)
   return M.omarchy_workspaces().workspace_id({ name = monitor_name }, workspace)
