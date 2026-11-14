@@ -834,7 +834,7 @@ the running engine only through Hyprland:
 | `BarWidget.qml` | the bar widget (below): glyph and active layout; left click toggles the panel, right click a menu |
 | `Services.js` | where the service registers itself, for a bar widget whose bar hands it no `serviceFor` |
 | `AssignmentView.qml`, `LayoutView.qml`, `DesksLayoutsView.qml` | aerolayout's Assignment, Layout (with its logical slots as a list beside the screens) and monitors views (below) |
-| `ui/` (`qmldir`) | the editor's design system, one component per kind of element, all from the theme (below): `Tokens` (a singleton), `SectionHeader`, `WorkspaceSwitcher`, `InfoText`, `ProblemText`, `Placeholder`, `TableHeader`, `TableRow`, `TableCell`, `PaneTitle`, `KeyCap`, `ActionButton`, `Toolbar` |
+| `ui/` (`qmldir`) | the editor's design system, one component per kind of element, all from the theme (below): `Tokens` (a singleton: colours, spacing, the Layout picture's divider band and line, the ratio label by the pointer), `SectionHeader`, `WorkspaceSwitcher`, `InfoText`, `ProblemText`, `Placeholder`, `TableHeader`, `TableRow`, `TableCell`, `PaneTitle`, `KeyCap`, `ActionButton`, `Toolbar` |
 | `Protocol.js`, `Assignment.js`, `Layout.js`, `Slots.js`, `DesksLayouts.js`, `Prompts.js`, `Workspaces.js`, `BarStatus.js`, `Help.js`, `Messages.js` | pure logic, tested under node (`editor/tests/`); `Slots.js` is the slot list's, `Workspaces.js` the workspace keys', `DesksLayouts.js` the Desk view's and the panel header's, `Help.js` the help rows', `Messages.js` the message band's |
 
 **Every view.** The panel's keys come first: Tab / Shift+Tab cycle the
@@ -866,7 +866,9 @@ Return, show the slot in the picture); the folder tabs, the workspace
 switcher's entries, a row (select), a tile or filmstrip column of the
 Layout picture (select it, the keys back to the picture) and a slot of the
 slot list (select it, the keys to the list) are clicked as they are. Hover
-and press looks come from the theme's control tokens.
+and press looks come from the theme's control tokens. One thing the mouse
+does that no key press spells: dragging a divider of the Layout picture to
+a new ratio (below), an edit of the same draft `r` writes.
 
 **One look per kind of element** (`editor/ui/`, theme tokens only):
 section headers are the accent colour in small letter-spaced capitals
@@ -933,7 +935,9 @@ text typed in place (←/→ Home End move, Backspace Delete, Ctrl+U clears,
 and on every workspace's page, shown where the name has it (`(m)ain`,
 `m(a)il`, else `(z) right`); a slot with none is picked with the arrows. A
 pick among anything else (layouts, desks, monitors) keys each option by its
-first letter, else the first free digit, computed per prompt. The message
+first letter, else the first free digit, computed per prompt; the help
+under a choice says `letter pick`, `letter/digit pick` only where an
+option is keyed by a digit. The message
 band draws a prompt's controls after its question (`Prompts.controls`): a
 choice's options as chips, each with its key cap (the one the arrows are on
 selected, except in an inline choice, which takes keys only) and a Cancel;
@@ -1002,6 +1006,31 @@ column, and the columns beyond it faded, labelled in the part that shows; a quie
 is the whole story: no tree text, ratio string or order line under it (a
 tiled tree's ratios are the `×n` shares and the split titles; a scroll
 branch has none).
+**Dividers: ratios by mouse** (`Layout.dividers`, `Layout.dragDivider`,
+node-tested). Every boundary between two children of a tiled split, at
+any depth, is a divider: a band of at least 8 px along it
+(`Tokens.dividerHit`), a resize cursor over it (`SplitHCursor` across an
+`h` split, `SplitVCursor` down a `v`), its line lit in the accent colour
+on hover and full accent while dragged. Dragging it moves that boundary
+only, between its two neighbours (the split's other children keep their
+size), and the pane draws the tree as it would be let go, a small label by
+the pointer saying the split's ratio (`2 : 1`, `1 : 2 : 1`; the theme's
+tooltip surface). The two neighbours snap to the smallest whole pair
+a : b (a + b up to 12) within 2% of where the pointer is, measured as a
+share of the two, else to the nearest such pair (record.lua's snap, in its
+spirit: simple ratios first); neither drops below 5% of the split
+(tree.lua's nudge minimum), and the split's weights are then divided by
+their gcd: `h[main:2, right]` let go about the middle is `h[main, right]`.
+Let go, it is an edit like `r`'s: into the draft (`edited, not applied`,
+`w` applies, Ctrl+S saves, `d` reverts), asking first on a workspace using
+the shared trees (a drag that snaps to the ratio there already changes
+nothing and asks nothing). A divider names its neighbours by their leaves,
+so a hidden place for other windows keeps its size, and one next to that
+place where the engine puts it (`o`) writes its `*` into the tree, as
+moving it does. No dividers on a scroll tree, a read-only layout, or while
+a prompt is open; a press anywhere but on a divider goes on to the tile.
+A node test checks a dragged tree is the whole tree's ratio as ratio.lua
+writes it in.
 **Other windows** (windows assigned to no slot) always have a place in
 every tree: its `*` leaf, else where the engine puts them (a column at the
 right, `h[tree:3, *:1]`; after a scroll branch's columns). `o` shows or
@@ -1039,7 +1068,7 @@ each with its key and its description and nothing else (below).
 | H J K L | along its container: pair it with its neighbour in a new container across; across: move it out beside its container |
 | / | on a tiled tree: flip every split of the tree; on a scroll branch refused (its columns always stand in a row), and the help row leaves it out |
 | t | cycle tiles → scroll half → scroll full → tiles: a tiled tree becomes `scroll:0.5[...]` of its leaves in reading order (other windows' place, `*`, as the column they take), that becomes `scroll[...]` (any other width too), and that goes back to the tree it was made from while its columns are as they were, else its columns side by side; the slot order is kept |
-| r | on a tiled tree: prompt for the whole tree's ratio (grammar below; the current one shown, empty clears all); on a scroll branch refused (ratios are for tiles), and the help row leaves it out |
+| r | on a tiled tree: prompt for the whole tree's ratio (grammar below; the current one shown, empty clears all); on a scroll branch refused (ratios are for tiles), and the help row leaves it out; by mouse, drag a divider (above) |
 | o | show/hide other windows: where windows assigned to no slot go, in the picture (it changes no tree; moving it with hjkl writes its `*`) |
 | w | apply the edited panes (`set_trees`) |
 | Ctrl+S | apply the edited panes, then `save` (the panel's key) |

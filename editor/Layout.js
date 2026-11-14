@@ -1034,6 +1034,7 @@ var DIVIDER_GONE = "That divider is not in the tree any more."
 // next to other windows' place where the engine puts it (o) writes that
 // place into the tree, as moving it does. { node, changed, label (the
 // split's ratio, "2 : 1") } or { error }; the draft given is never changed.
+// A null `fraction` (held, not moved yet) changes nothing.
 function dragDivider(draft, divider, fraction) {
   var keys = divider.before.concat(divider.after)
   var own = leaves(draft)
@@ -1061,7 +1062,7 @@ function dragDivider(draft, divider, fraction) {
     return list.map(function(w) { return w / common })
   }
   var label = function(list) { return reduced(list).join(" : ") }
-  var snap = snapPair(fraction, gl + gr, total)
+  var snap = fraction === null || fraction === undefined ? null : snapPair(fraction, gl + gr, total)
   if (!snap) return { node: draft, changed: false, label: label(old) }
   // everything over a common denominator: the pair's two groups come to
   // a : b of their total, the rest keeps its share

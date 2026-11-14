@@ -12,6 +12,10 @@ import qs.Commons as Commons
 //   problems          the urgent colour (ProblemText, InfoText.urgent)
 //   the selection     an accent fill and an accent stripe down its left
 //                     (TableRow), the strongest thing on a page
+//   dividers          the Layout picture's split boundaries: a hit band
+//                     wide enough to grab, an accent line on hover, the
+//                     full accent while dragged; the ratio by the pointer
+//                     on the theme's tooltip surface
 //   actions           buttons (ActionButton: the help row's toolbar, a prompt's
 //                     chips and answers), keys as key caps (KeyCap); hover
 //                     and press from the theme's control tokens
@@ -37,6 +41,16 @@ QtObject {
   readonly property color outline: Commons.Util.alpha(text, 0.3)
   // a button at rest (ActionButton): there, but quieter than its hover fill
   readonly property color restFill: Commons.Util.alpha(text, 0.05)
+  // the Layout picture's dividers: the band the pointer grabs (at least
+  // 8 px), the line drawn on hover and while dragged
+  readonly property int dividerHit: Math.max(8, Style.space(10))
+  readonly property int dividerLine: Math.max(2, Style.spacing.xxs + 1)
+  readonly property color dividerHover: Commons.Util.alpha(Commons.Color.accent, 0.6)
+  readonly property color dividerActive: Commons.Color.accent
+  // a small label by the pointer (the dragged split's ratio)
+  readonly property color tipFill: Commons.Color.tooltip.background
+  readonly property color tipText: Commons.Color.tooltip.text
+  readonly property color tipBorder: Commons.Util.alpha(Commons.Color.accent, 0.7)
   // where a page's text starts: past a row's stripe and its cell padding,
   // so headers, notes and cells line up on every tab
   readonly property int textInset: stripeWidth + cellPadding

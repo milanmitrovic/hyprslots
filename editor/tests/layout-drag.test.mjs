@@ -176,3 +176,12 @@ end`;
     assert.equal(line, results[i] + " | " + results[i], `${cases[i].join(" ")}`);
   });
 });
+
+test("a divider held where it is (no fraction yet) changes nothing and names its split's ratio", () => {
+  const draft = tree("h[main:4, v[right, side:3]:2]");
+  const [outer, inner] = L.dividers(L.picture(draft, false), AREA, { pad: 5, title: 10 });
+  assert.deepEqual(plain(L.dragDivider(draft, outer, null)).label, "2 : 1");
+  assert.deepEqual(plain(L.dragDivider(draft, inner, null)).label, "1 : 3");
+  assert.equal(L.dragDivider(draft, inner, null).changed, false);
+  assert.equal(L.dragDivider(draft, inner, null).node, draft);
+});

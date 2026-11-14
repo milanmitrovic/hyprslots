@@ -20,7 +20,10 @@ import "ui"
 // Every tree has every global slot (the engine sees to it; an empty slot
 // takes no room), so there is nothing to add to a tree or take out of it. t
 // cycles a tree through tiles, scroll half and scroll full; r sets a tiled
-// tree's ratios. Edits go to a draft; `w` applies it (api set_trees), Ctrl+S
+// tree's ratios, and so does the mouse: every boundary between two
+// children of a tiled split is a divider, dragged to a new ratio of the two
+// (Layout.dividers, Layout.dragDivider: snapped to simple whole weights, the
+// split's ratio shown by the pointer meanwhile). Edits go to a draft; `w` applies it (api set_trees), Ctrl+S
 // (the panel's) applies it and saves (api save), `d` reverts a screen's tree
 // to how it was last saved (api reset), `R` records the windows on screen
 // (api record, previewed). It opens on "All workspaces" (`-`): the layout's
@@ -96,6 +99,11 @@ Item {
   // no slot) go. Every tree has that place (Layout.withOther); o only shows
   // or hides it, and while it shows, hjkl move it like a slot.
   property bool showOther: false
+  // A divider being dragged: { screen, divider (as the picture had it when
+  // pressed), base (the draft then), node (the tree as it would be let go
+  // now), label (its split's ratio), changed, x, y (the pointer, in the
+  // pane's picture) }; the pane draws `node` meanwhile. null otherwise.
+  property var dragging: null
 
   readonly property var activeDraft: drafts[screen] || null
   readonly property var activeNode: activeDraft ? activeDraft.node : null
@@ -157,6 +165,7 @@ Item {
 
   // Back to the opening target: the focused workspace's number and screen.
   function reset() {
+    dragging = null
     prompt = null
     _answer = null
     message = ""
@@ -644,6 +653,62 @@ Item {
     if (slotFocus) slotFocus = false
   }
 
+  // --- dividers: the mouse's ratios ------------------------------------------
+
+  // Whether the dividers of screen `k`'s picture take the mouse: an editable
+  // layout, no prompt open, a tiled tree there.
+  function dividersLive(k) {
+    var d = drafts[k]
+    return block === "" && !prompting && !!d && !!d.node && d.node.kind !== "scroll"
+  }
+
+  // A press on `divider` of screen `k`'s picture: the drag starts there
+  // (false when it may not), the keys back to the picture on that screen.
+  function dragStart(k, divider) {
+    if (!dividersLive(k)) return false
+    screen = k
+    if (slotFocus) slotFocus = false
+    var base = drafts[k].node
+    dragging = { screen: k, divider: divider, base: base, node: base, changed: false,
+      label: Layout.dragDivider(base, divider, null).label || "", x: -1, y: -1 }
+    return true
+  }
+
+  // The pointer at `fraction` of the two neighbours (Layout.dividerFraction),
+  // at x, y in the picture.
+  function dragTo(fraction, x, y) {
+    if (!dragging) return
+    var result = Layout.dragDivider(dragging.base, dragging.divider, fraction)
+    if (result.error) return
+    dragging = { screen: dragging.screen, divider: dragging.divider, base: dragging.base, node: result.node,
+      changed: result.changed, label: result.label, x: x, y: y }
+  }
+
+  // Let go: the new ratio is an edit like r's, into the draft (asking first,
+  // on a workspace on the shared trees, whom it is for).
+  function dragEnd() {
+    var done = dragging
+    dragging = null
+    if (!done || !done.changed) return
+    scoped(function() {
+      if (!root.drafts[done.screen]) return
+      root.setDraft(done.screen, done.node)
+      root.say("Set ratios " + Layout.ratio(done.node) + "." + root.draftNote(), false)
+      root.keepSelection()
+    }, true)
+  }
+
+  function dragCancel() {
+    dragging = null
+  }
+
+  // The tree screen `k`'s pane draws: the dragged one while a divider of it
+  // is held, else its draft's.
+  function shownNode(k, draft) {
+    if (dragging && dragging.screen === k) return dragging.node
+    return draft ? draft.node : null
+  }
+
   // o: show or hide where other windows go. It changes no tree.
   function toggleOther() {
     showOther = !showOther
@@ -705,6 +770,7 @@ Item {
       return
     }
     var dropped = editedScreens()
+    dragging = null
     workspace = n
     scope = ""
     drafts = ({})
@@ -1008,7 +1074,8 @@ Item {
             required property var modelData
             required property int index
             readonly property var draft: root.drafts[modelData.key] || null
-            readonly property var node: draft ? draft.node : null
+            // the draft's tree, or the dragged one while a divider is held
+            readonly property var node: root.shownNode(modelData.key, draft)
             readonly property bool active: modelData.key === root.screen
             readonly property bool changed: root.edited(modelData.key)
             width: (paneRow.width - root.gap * (root.paneList.length - 1)) / Math.max(1, root.paneList.length)
@@ -1037,6 +1104,13 @@ Item {
               readonly property var picture: pane.node ? Layout.picture(pane.node, root.showOther) : null
               readonly property bool scrolls: !!picture && picture.kind === "scroll"
               readonly property var titles: Layout.titles(root.state, root.workspace, pane.modelData.screen)
+              // the tiles' layout, inside the screen box's 4 px margin
+              readonly property var area: ({ x: 0, y: 0, w: screenBox.width - 8, h: screenBox.height - 8 })
+              readonly property var boxOpts: ({ pad: 5, title: Style.font.bodySmall + 6,
+                selected: pane.active ? root.selectedKey : "", titles: frame.titles })
+              readonly property var boxes: picture && !scrolls ? Layout.rects(picture, area, boxOpts) : []
+              readonly property var dividers: picture && !scrolls ? Layout.dividers(picture, area, boxOpts) : []
+              readonly property bool dragHere: !!root.dragging && root.dragging.screen === pane.modelData.key
 
               // Tiles: boxes in a scale model of the screen.
               Rectangle {
@@ -1062,12 +1136,7 @@ Item {
                 }
 
                 Repeater {
-                  model: frame.picture && !frame.scrolls ? Layout.rects(frame.picture, { x: 0, y: 0, w: screenBox.width - 8, h: screenBox.height - 8 }, {
-                    pad: 5,
-                    title: Style.font.bodySmall + 6,
-                    selected: pane.active ? root.selectedKey : "",
-                    titles: frame.titles,
-                  }) : []
+                  model: frame.boxes
                   delegate: Rectangle {
                     id: cell
                     required property var modelData
@@ -1144,6 +1213,126 @@ Item {
                       cursorShape: Qt.PointingHandCursor
                       onClicked: root.pickLeaf(pane.modelData.key, cell.modelData.key)
                     }
+                  }
+                }
+
+                // The dividers: every boundary between two children of a
+                // tiled split, a band the pointer grabs, its line lit on
+                // hover and while dragged. (Drawn only; dividerMouse below
+                // takes the pointer, so a drag survives the picture being
+                // laid out anew at every step.)
+                Repeater {
+                  model: frame.dividers
+                  delegate: Item {
+                    id: band
+                    required property var modelData
+                    readonly property bool across: modelData.axis === "h"
+                    readonly property bool held: frame.dragHere && root.dragging.divider.id === modelData.id
+                    readonly property bool lit: held || (!frame.dragHere && dividerMouse.enabled && dividerMouse.hoveredId === modelData.id)
+                    objectName: "divider:" + pane.modelData.key + ":" + modelData.id
+                    x: 4 + (across ? modelData.at - Tokens.dividerHit / 2 : modelData.x)
+                    y: 4 + (across ? modelData.y : modelData.at - Tokens.dividerHit / 2)
+                    width: across ? Tokens.dividerHit : modelData.length
+                    height: across ? modelData.length : Tokens.dividerHit
+                    Rectangle {
+                      anchors.centerIn: parent
+                      width: band.across ? Tokens.dividerLine : parent.width - 8
+                      height: band.across ? parent.height - 8 : Tokens.dividerLine
+                      radius: Tokens.dividerLine / 2
+                      color: band.held ? Tokens.dividerActive : band.lit ? Tokens.dividerHover : "transparent"
+                    }
+                  }
+                }
+
+                // The pointer on the picture: on a divider a resize cursor,
+                // and a press there drags it (Layout.dragDivider: the two
+                // neighbours' new ratio, snapped); anywhere else the press
+                // goes on to the tile under it.
+                MouseArea {
+                  id: dividerMouse
+                  objectName: "dividers:" + pane.modelData.key
+                  anchors.fill: parent
+                  enabled: root.dividersLive(pane.modelData.key)
+                  hoverEnabled: true
+                  preventStealing: true
+                  property string hoveredId: ""
+                  property string hoveredAxis: ""
+                  property bool overLeaf: false
+                  readonly property string axis: frame.dragHere ? root.dragging.divider.axis : hoveredAxis
+                  cursorShape: axis === "h" ? Qt.SplitHCursor : axis === "v" ? Qt.SplitVCursor
+                    : overLeaf ? Qt.PointingHandCursor : Qt.ArrowCursor
+
+                  // the divider under the pointer (picture coordinates are
+                  // the screen box's less its 4 px margin)
+                  function hit(mx, my) {
+                    return Layout.dividerAt(frame.dividers, mx - 4, my - 4, Tokens.dividerHit / 2)
+                  }
+                  function onLeaf(mx, my) {
+                    return frame.boxes.some(function(b) {
+                      return (b.kind === "slot" || b.kind === "overflow") && mx - 4 >= b.x && mx - 4 < b.x + b.w
+                        && my - 4 >= b.y && my - 4 < b.y + b.h
+                    })
+                  }
+                  function hover(mx, my) {
+                    var d = hit(mx, my)
+                    hoveredId = d ? d.id : ""
+                    hoveredAxis = d ? d.axis : ""
+                    overLeaf = !d && onLeaf(mx, my)
+                  }
+
+                  onPositionChanged: (mouse) => {
+                    if (!frame.dragHere) {
+                      hover(mouse.x, mouse.y)
+                      return
+                    }
+                    var d = root.dragging.divider
+                    root.dragTo(Layout.dividerFraction(d, (d.axis === "h" ? mouse.x : mouse.y) - 4), mouse.x, mouse.y)
+                  }
+                  onPressed: (mouse) => {
+                    var d = hit(mouse.x, mouse.y)
+                    if (!d || !root.dragStart(pane.modelData.key, d)) {
+                      mouse.accepted = false
+                      return
+                    }
+                    root.dragTo(null, mouse.x, mouse.y)
+                  }
+                  onReleased: (mouse) => {
+                    if (!frame.dragHere) return
+                    root.dragEnd()
+                    hover(mouse.x, mouse.y)
+                  }
+                  onCanceled: if (frame.dragHere) root.dragCancel()
+                  onExited: {
+                    hoveredId = ""
+                    hoveredAxis = ""
+                    overLeaf = false
+                  }
+                }
+
+                // The dragged split's ratio, by the pointer.
+                Rectangle {
+                  id: ratioTip
+                  objectName: "dragRatio:" + pane.modelData.key
+                  visible: frame.dragHere && root.dragging.x >= 0
+                  readonly property real px: frame.dragHere ? root.dragging.x : 0
+                  readonly property real py: frame.dragHere ? root.dragging.y : 0
+                  x: Math.max(0, Math.min(screenBox.width - width, px + Style.spacing.md))
+                  y: Math.max(0, Math.min(screenBox.height - height, py + Style.spacing.md))
+                  width: tipText.implicitWidth + Style.spacing.md * 2
+                  height: tipText.implicitHeight + Style.spacing.xs * 2
+                  radius: Tokens.radius
+                  color: Tokens.tipFill
+                  border.width: 1
+                  border.color: Tokens.tipBorder
+                  Text {
+                    id: tipText
+                    anchors.centerIn: parent
+                    textFormat: Text.PlainText
+                    text: frame.dragHere ? root.dragging.label : ""
+                    color: Tokens.tipText
+                    font.family: Tokens.fontFamily
+                    font.pixelSize: Style.font.bodySmall
+                    font.bold: true
                   }
                 }
               }
