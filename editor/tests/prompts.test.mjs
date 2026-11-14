@@ -143,3 +143,59 @@ test("an inline choice says its options in its own words", () => {
   assert.deepEqual(feed(prompt, "o").result, { value: "only" });
   assert.equal(P.help(prompt), "letter pick   ·   Esc cancel");
 });
+
+// --- the prompt by mouse: its controls, each a key press -------------------
+
+// Feed presses by Panel.press names ("m", "Down", "Return", "Escape").
+function pressAll(prompt, names) {
+  const keys = names.map((n) => (n.length === 1 ? n : [n]));
+  return feed(prompt, ...keys);
+}
+
+test("a choice prompt's controls: a chip per option with its key, the one the arrows are on selected, and Cancel", () => {
+  const options = [
+    { key: "m", label: "main", value: 1 },
+    { key: "", label: "spare", value: 2 },
+  ];
+  const controls = plain(P.controls(P.choice("Slot", options)));
+  assert.deepEqual(controls, [
+    { kind: "chip", name: "chip:m", key: "m", label: "main", index: 0, selected: true },
+    { kind: "chip", name: "chip:#1", key: "", label: "spare", index: 1, selected: false },
+    { kind: "answer", name: "prompt:cancel", key: "Esc", label: "Cancel", press: "Escape", accented: false },
+  ]);
+});
+
+test("an inline choice's chips select nothing: its options are picked by key only", () => {
+  const prompt = P.choice("Apply to (a)ll or (o)nly?", [{ key: "a", label: "all", value: "all" }, { key: "o", label: "only", value: "only" }],
+    { inline: true });
+  assert.deepEqual(plain(P.controls(prompt)).filter((c) => c.kind === "chip").map((c) => c.selected), [false, false]);
+});
+
+test("a y/n prompt's controls are Yes and No; a text prompt's OK and Cancel", () => {
+  assert.deepEqual(plain(P.controls(P.confirm("Delete?"))), [
+    { kind: "answer", name: "prompt:yes", key: "y", label: "Yes", press: "y", accented: true },
+    { kind: "answer", name: "prompt:no", key: "n", label: "No", press: "n", accented: false },
+  ]);
+  assert.deepEqual(plain(P.controls(P.text("Name: "))), [
+    { kind: "answer", name: "prompt:ok", key: "Return", label: "OK", press: "Return", accented: true },
+    { kind: "answer", name: "prompt:cancel", key: "Esc", label: "Cancel", press: "Escape", accented: false },
+  ]);
+  assert.deepEqual(plain(P.controls(null)), []);
+});
+
+test("a chip picks its option by the keys that pick it: its key, else the arrows to it and Return", () => {
+  const options = [
+    { key: "m", label: "main", value: "main" },
+    { key: "", label: "x", value: "x" },
+    { key: "", label: "y", value: "y" },
+  ];
+  const prompt = P.choice("Slot", options);
+  assert.deepEqual(plain(P.pickPresses(prompt, 0)), ["m"]);
+  assert.deepEqual(plain(P.pickPresses(prompt, 2)), ["Down", "Down", "Return"]);
+  assert.deepEqual(pressAll(prompt, P.pickPresses(prompt, 2)).result, { value: "y" });
+  const moved = feed(prompt, ["Down"], ["Down"]).prompt;
+  assert.deepEqual(plain(P.pickPresses(moved, 1)), ["Up", "Return"]);
+  assert.deepEqual(pressAll(moved, P.pickPresses(moved, 1)).result, { value: "x" });
+  assert.deepEqual(plain(P.pickPresses(prompt, 7)), [], "no such option");
+  assert.deepEqual(plain(P.pickPresses(P.confirm("?"), 0)), [], "no choice prompt");
+});

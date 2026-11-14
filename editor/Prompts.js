@@ -242,3 +242,42 @@ function typed(text) {
   for (var i = 0; i < text.length; i++) if (text.charCodeAt(i) < 32 || text.charCodeAt(i) === 127) return ""
   return text
 }
+
+// --- the prompt by mouse ------------------------------------------------------
+//
+// The message band draws a prompt's controls (MessageBand.qml): a choice's
+// options as chips, each with its key (the one the arrows are on
+// selected, but not in an inline choice, which takes keys only), and
+// Cancel; y/n's Yes and No; a text prompt's OK and Cancel. Each is a key
+// press: a click feeds the panel the same key (Panel.press), so it does
+// what the key does. `name` is the control's objectName (the e2e smoke
+// clicks by it).
+function controls(prompt) {
+  if (!prompt) return []
+  var answer = function(name, key, label, press, accented) {
+    return { kind: "answer", name: "prompt:" + name, key: key, label: label, press: press, accented: accented }
+  }
+  var cancel = answer("cancel", "Esc", "Cancel", "Escape", false)
+  if (prompt.kind === "confirm") return [answer("yes", "y", "Yes", "y", true), answer("no", "n", "No", "n", false)]
+  if (prompt.kind === "text") return [answer("ok", "Return", "OK", "Return", true), cancel]
+  var chips = prompt.options.map(function(option, i) {
+    var key = String(option.key)
+    return { kind: "chip", name: "chip:" + (key !== "" ? key : "#" + i), key: key, label: String(option.label), index: i,
+      selected: !prompt.inline && i === prompt.index }
+  })
+  return chips.concat([cancel])
+}
+
+// The key presses (Panel.press names) that pick option `index` of a choice
+// prompt: its key, else the arrows from the one selected to it and Return;
+// [] for no such option.
+function pickPresses(prompt, index) {
+  if (!prompt || prompt.kind !== "choice" || index < 0 || index >= prompt.options.length) return []
+  var key = String(prompt.options[index].key)
+  if (key !== "") return [key]
+  var out = []
+  var step = index > prompt.index ? "Down" : "Up"
+  for (var i = 0; i < Math.abs(index - prompt.index); i++) out.push(step)
+  out.push("Return")
+  return out
+}
