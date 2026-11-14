@@ -1,6 +1,8 @@
 -- Workspace switching on top of Omarchy's per-monitor workspaces (docs/design.md §5).
 --
--- Workspace N on a screen is o.workspaces.focus(N, <its connector>). A
+-- Workspace N on a screen is o.workspaces.focus(N, <its connector>), in the
+-- screen's block (screen i holds block i-1 while a desk is active,
+-- blocks.lua). A
 -- workspace switch shows workspace N on every screen of the active
 -- desk, the focused screen (the origin) last, then refocuses the origin.
 -- With no desk it switches the focused screen alone, as Omarchy's Super+N

@@ -563,7 +563,8 @@ return { slots = data.slots, specs = data.specs, desks = desks, layouts = data.l
       assert.are.equal("single", s.layout)
       assert.are.same({ "HEADLESS-3" }, s.screens)
       assert.are.equal("v[left, main, right]", tree_of(s, "single", 3, 1))
-      assert.are.same({ workspace = 3, screen = 1, monitor = "HEADLESS-3", layout = "lua:slots" }, s.workspaces["13"])
+      -- HEADLESS-3 alone is screen 1, so its workspace 3 is id 3 (blocks.lua).
+      assert.are.same({ workspace = 3, screen = 1, monitor = "HEADLESS-3", layout = "lua:slots" }, s.workspaces["3"])
     end)
   end)
 

@@ -17,6 +17,9 @@
 -- no desk for the monitors, or Omarchy's internals out of reach) Omarchy
 -- numbers as it always did.
 
+local adapter = require("hyprslots.hl_adapter")
+local desk = require("hyprslots.desk")
+
 local M = {}
 
 local SLOTS = 10
@@ -123,6 +126,96 @@ function M.plan(workspaces, screens)
     end
   end
   return ops
+end
+
+local function describe_op(op)
+  if op.op == "move" then
+    return string.format("%d to %s", op.id, op.monitor)
+  elseif op.op == "rename" then
+    return string.format("%d -> %d", op.id, op.to)
+  end
+  return string.format("%d into %d", op.id, op.into)
+end
+
+local function run(op)
+  if op.op == "move" then
+    adapter.move_workspace(op.id, op.monitor)
+  elseif op.op == "rename" then
+    adapter.rename_workspace(op.id, op.to)
+  else
+    for _, window in ipairs(adapter.windows()) do
+      if window.workspace_id == op.id and window.address then
+        adapter.move_window(window.address, op.into)
+      end
+    end
+  end
+end
+
+-- Give the active desk's screens their blocks in Omarchy's table and bring
+-- the workspaces there (plan). `gone` names a monitor Hyprland still lists
+-- while it reports its removal. Does nothing while hyprslots is off or no
+-- desk is the connected monitors. Returns whether anything changed.
+function M.sync(engine, gone)
+  if not engine or engine.refused or not engine.cfg or adapter.omarchy_workspaces() == nil
+    or adapter.omarchy_disabled() then
+    return false
+  end
+  local monitors = {}
+  for _, monitor in ipairs(adapter.monitors()) do
+    if monitor.name ~= gone then
+      monitors[#monitors + 1] = monitor
+    end
+  end
+  local active = desk.select(engine.cfg, monitors)
+  if not active then
+    return false
+  end
+
+  local changed, err = adapter.set_omarchy_blocks(active.monitors)
+  if changed == nil then
+    if not engine.blocks_unreachable then
+      engine.blocks_unreachable = err
+      engine.log:warn("workspace numbers stay Omarchy's: %s", tostring(err))
+    end
+    return false
+  end
+  engine.blocks_unreachable = nil
+  if changed then
+    local parts = {}
+    for i, name in ipairs(active.monitors) do
+      parts[i] = string.format("%s %d-%d", name, (i - 1) * SLOTS + 1, i * SLOTS)
+    end
+    engine.log:info("workspace blocks: %s", table.concat(parts, ", "))
+  end
+
+  local ops = M.plan(adapter.workspaces(), active.monitors)
+  local done = {}
+  for _, op in ipairs(ops) do
+    run(op)
+    done[#done + 1] = describe_op(op)
+  end
+  if #done > 0 then
+    engine.log:info("workspaces into their screen's block: %s", table.concat(done, ", "))
+  end
+  return changed or #ops > 0
+end
+
+-- Sync ahead of every Omarchy reconcile (monitor added or removed, config
+-- loaded, Hyprland started), so Omarchy finds the workspaces in their
+-- blocks already and only puts each screen on one of its own.
+function M.attach(engine)
+  return adapter.before_omarchy_reconcile(function(_, gone)
+    engine:guard("workspace blocks", M.sync, engine, gone)
+  end)
+end
+
+-- Sync, then let Omarchy put every screen on a workspace of its own when
+-- that moved anything (a screen may show a workspace whose windows went to
+-- another).
+function M.sync_and_settle(engine)
+  if M.sync(engine) then
+    adapter.omarchy_reconcile()
+  end
 end
 
 return M

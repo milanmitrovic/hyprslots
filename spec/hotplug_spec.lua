@@ -219,7 +219,10 @@ return {
     assert.are.equal("headless-3", state.desk)
     assert.are.equal("single", state.layout, "the first 1-screen layout by name (none ran yet)")
     assert.are.same({ "HEADLESS-3" }, state.screens)
-    assert.are.equal(13, workspace_of("t-left"), "left is on screen 1 of single, HEADLESS-3's workspace 3")
-    assert.are.same({}, hl.dispatched_of("window.move"))
+    -- HEADLESS-3 is screen 1 now, so it holds workspaces 1-10 (blocks.lua):
+    -- its workspace 13 joins workspace 3 (the stub keeps HEADLESS-2's empty
+    -- one, which comes over to HEADLESS-3 for it).
+    assert.are.equal(3, workspace_of("t-left"), "left is on screen 1 of single, workspace 3")
+    assert.are.equal("HEADLESS-3", hl.get_workspace(3).monitor.name)
   end)
 end)

@@ -10,10 +10,14 @@
 --
 -- Omarchy's monitor-workspaces reconciles on monitor.removed from a oneshot
 -- timer it creates in the same event (and on monitor.added inside the event),
--- renumbering an unplugged screen's workspaces into the block of the screen
--- they landed on (13 becomes 4). Hop 2 is created while hop 1 runs, so it
--- runs after that timer whichever order same-timeout timers fire in, and sees
--- the workspaces as Omarchy left them. Nothing here focuses a monitor or
+-- and blocks.lua runs ahead of that reconcile: the screens of the desk for
+-- what is connected take their blocks and the workspaces are renumbered into
+-- them (an unplugged screen 2's 13 joins screen 1's 3). Hop 1 re-selects
+-- (Engine:reselect syncs the blocks again first, a no-op once Omarchy's timer
+-- has run); hop 2 is created while hop 1 runs, so it runs after that timer
+-- whichever order same-timeout timers fire in, and sees the workspaces
+-- renumbered. A monitor turned off in the config is reported the same way,
+-- as monitor.removed / monitor.added. Nothing here focuses a monitor or
 -- changes what a screen shows, with one exception: a screen that was just
 -- plugged in shows the active workspace (the last one switched to), and
 -- focus goes back where it was.

@@ -11,6 +11,7 @@
 local adapter = require("hyprslots.hl_adapter")
 local api = require("hyprslots.api")
 local assign = require("hyprslots.assign")
+local blocks = require("hyprslots.blocks")
 local config = require("hyprslots.config")
 local desk = require("hyprslots.desk")
 local workspaces = require("hyprslots.workspaces")
@@ -90,6 +91,13 @@ function Engine:reselect()
   self.workspaces = {}
   if not self.cfg or self.refused then
     return
+  end
+
+  -- Workspace ids follow the desk (blocks.lua): renumber before the map
+  -- below is built from them. Not while the config loads: Omarchy's
+  -- reconcile on hyprland.start / config.reloaded runs it first.
+  if self.started then
+    self:guard("workspace blocks", blocks.sync_and_settle, self)
   end
 
   local monitors = adapter.monitors()
@@ -402,6 +410,7 @@ local function start(self, opts)
   end
 
   load_config(self, opts.config_dir)
+  blocks.attach(self)
   if self.cfg then
     self:reselect()
     workspace_rules(self, false)
