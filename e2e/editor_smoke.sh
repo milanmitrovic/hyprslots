@@ -541,7 +541,7 @@ save_and_check() {
   fi
   local saved
   saved=$(cat "$file")
-  for want in 'aside = {},' 'description = "the editor",' 'aside = "t-right",' 'main = "t-main",' \
+  for want in 'aside = {' 'key = "r",' 'description = "the editor",' 'aside = "t-right",' 'main = "t-main",' \
     '"h[main:2, v[aside, side:3]]"' '["solo-2"] = {' 'extra = {' 'projector = {' \
     'layout = "solo-2"' '"h[main, aside, side]"' 'monitor_names = {' '["HEADLESS-2"] = "Main screen",'; do
     if grep -qF "$want" <<<"$saved"; then
