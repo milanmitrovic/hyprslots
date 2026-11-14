@@ -945,10 +945,147 @@ function containerLabel(node) {
 // `title` more at the top). For tiles: a scroll tree is a filmstrip.
 // opts: { pad, title, selected, titles }.
 function rects(root, area, opts) {
+  return laidOut(root, area, opts).rects
+}
+
+// The boundaries between neighbouring children of the tiled splits of the
+// picture `rects` draws (same area and opts), each a divider the mouse
+// drags (dragDivider):
+//   { id ("<last leaf before>|<first leaf after>"), axis (the split's kind:
+//     "h" parts left from right), x, y, length (the boundary as a line from
+//     x, y, down for "h", across for "v"), at (where it is along the axis),
+//     start, end (the two neighbours' extent along the axis), before, after
+//     (the leaves of the two neighbours), depth (1: the root's) }
+// None on a scroll tree or a single window.
+function dividers(root, area, opts) {
+  return laidOut(root, area, opts).dividers
+}
+
+// The divider under the pointer at x, y: within `slop` pixels of its line,
+// along its length; the nearest, a deeper one on a tie. null for none.
+function dividerAt(list, x, y, slop) {
+  var best = null
+  var bestOff = Infinity
+  for (var i = 0; i < list.length; i++) {
+    var d = list[i]
+    var along = d.axis === "h" ? y - d.y : x - d.x
+    if (along < 0 || along > d.length) continue
+    var off = Math.abs((d.axis === "h" ? x : y) - d.at)
+    if (off > slop) continue
+    if (off < bestOff || (off === bestOff && d.depth > best.depth)) {
+      best = d
+      bestOff = off
+    }
+  }
+  return best
+}
+
+// Where `pos` (along the divider's axis) puts it: the share of the two
+// neighbours' extent before it, 0 to 1.
+function dividerFraction(divider, pos) {
+  var span = divider.end - divider.start
+  if (span <= 0) return 0.5
+  return Math.max(0, Math.min(1, (pos - divider.start) / span))
+}
+
+// --- dragging a divider -------------------------------------------------------
+
+// A dragged divider snaps to the smallest whole pair a : b (a + b up to 12)
+// within 2% of where it was let go, measured as a share of the two
+// neighbours; else to the nearest such pair (record.lua's snap, in its
+// spirit: simple ratios first). Neither neighbour drops below 1/MIN_SHARE of
+// the split (tree.lua's nudge minimum, 5%).
+var SNAP_TOLERANCE = 0.02
+var SNAP_DENOMINATOR = 12
+var MIN_SHARE = 20
+
+// { a, b } for neighbours `pair` of a split's `total` weight, let go at
+// `fraction` of them; null when no pair keeps both above the minimum.
+function snapPair(fraction, pair, total) {
+  var within = null
+  var nearest = null
+  var nearestOff = Infinity
+  for (var s = 2; s <= SNAP_DENOMINATOR; s++) {
+    for (var a = 1; a < s; a++) {
+      var b = s - a
+      if (MIN_SHARE * a * pair < s * total || MIN_SHARE * b * pair < s * total) continue
+      var off = Math.abs(a / s - fraction)
+      if (!within && off <= SNAP_TOLERANCE + 1e-9) within = { a: a, b: b }
+      if (off < nearestOff - 1e-9) {
+        nearest = { a: a, b: b }
+        nearestOff = off
+      }
+    }
+  }
+  var found = within || nearest
+  if (!found) return null
+  var common = gcd(found.a, found.b)
+  return { a: found.a / common, b: found.b / common }
+}
+
+var DIVIDER_GONE = "That divider is not in the tree any more."
+
+// A divider of the picture (dividers) let go at `fraction` of its two
+// neighbours (dividerFraction), on the draft it was drawn from: only those
+// two change (snapPair), the split's other children keep their size, and
+// the split's weights are divided by their gcd. The divider names its
+// neighbours by their leaves, so it finds them in the draft whatever the
+// picture left out (other windows' hidden place keeps its size); a divider
+// next to other windows' place where the engine puts it (o) writes that
+// place into the tree, as moving it does. { node, changed, label (the
+// split's ratio, "2 : 1") } or { error }; the draft given is never changed.
+function dragDivider(draft, divider, fraction) {
+  var keys = divider.before.concat(divider.after)
+  var own = leaves(draft)
+  var base = keys.every(function(k) { return own.indexOf(k) >= 0 }) ? draft : withOther(draft)
+  var paths = keys.map(function(k) { return pathTo(base, k) })
+  if (paths.some(function(p) { return !p })) return { error: DIVIDER_GONE }
+  // the split: the deepest node every neighbour's leaf is under
+  var depth = 0
+  while (paths.every(function(p) { return p.length > depth + 1 && p[depth + 1].node === paths[0][depth + 1].node })) depth++
+  var split = paths[0][depth].node
+  if (isLeaf(split) || split.kind !== divider.axis) return { error: DIVIDER_GONE }
+  var side = split.children.map(function() { return 0 })
+  paths.forEach(function(p, i) { side[p[depth + 1].index] |= i < divider.before.length ? 1 : 2 })
+  if (side.indexOf(3) >= 0 || side.indexOf(1) < 0 || side.indexOf(2) < 0) return { error: DIVIDER_GONE }
+
+  var old = split.children.map(function(c) { return c.weight })
+  var sum = function(which) {
+    return old.reduce(function(t, w, i) { return t + (which === 0 || side[i] === which ? w : 0) }, 0)
+  }
+  var gl = sum(1)
+  var gr = sum(2)
+  var total = sum(0)
+  var reduced = function(list) {
+    var common = list.reduce(function(g, w) { return gcd(g, w) }, 0)
+    return list.map(function(w) { return w / common })
+  }
+  var label = function(list) { return reduced(list).join(" : ") }
+  var snap = snapPair(fraction, gl + gr, total)
+  if (!snap) return { node: draft, changed: false, label: label(old) }
+  // everything over a common denominator: the pair's two groups come to
+  // a : b of their total, the rest keeps its share
+  var weights = reduced(old.map(function(w, i) {
+    if (side[i] === 1) return w * snap.a * (gl + gr) * gr
+    if (side[i] === 2) return w * snap.b * (gl + gr) * gl
+    return w * (snap.a + snap.b) * gl * gr
+  }))
+  var before = reduced(old)
+  if (weights.every(function(w, i) { return w === before[i] })) return { node: draft, changed: false, label: label(old) }
+
+  var out = copy(base)
+  var target = out
+  for (var k = 1; k <= depth; k++) target = target.children[paths[0][k].index]
+  target.children.forEach(function(c, i) { c.weight = weights[i] })
+  return { node: out, changed: true, label: weights.join(" : ") }
+}
+
+function laidOut(root, area, opts) {
   opts = opts || {}
   var pad = opts.pad || 0
   var titleHeight = opts.title || 0
   var out = []
+  var bounds = []
 
   function leaf(node, box, depth, cell) {
     var key = keyOf(node)
@@ -963,14 +1100,32 @@ function rects(root, area, opts) {
   function inside(node, box, depth) {
     var total = node.children.reduce(function(s, c) { return s + c.weight }, 0)
     var cells = integers(node.children.map(function(c) { return c.weight }))
-    var extent = node.kind === "h" ? box.w : box.h
+    var across = node.kind === "h"
+    var extent = across ? box.w : box.h
+    var origin = across ? box.x : box.y
     var offset2 = 0
-    node.children.forEach(function(child, i) {
+    var spans = node.children.map(function(child, i) {
       var size = i === node.children.length - 1 ? extent - offset2 : Math.floor(extent * child.weight / total)
-      var childBox = node.kind === "h"
-        ? { x: box.x + offset2, y: box.y, w: size, h: box.h }
-        : { x: box.x, y: box.y + offset2, w: box.w, h: size }
+      var span = { start: origin + offset2, end: origin + offset2 + size }
       offset2 += size
+      return span
+    })
+    // a split's own dividers before those inside its children
+    if (node.kind === "h" || node.kind === "v") {
+      for (var i = 0; i + 1 < node.children.length; i++) {
+        var before = leaves(node.children[i])
+        var after = leaves(node.children[i + 1])
+        var at = spans[i + 1].start
+        bounds.push({ id: before[before.length - 1] + "|" + after[0], axis: node.kind,
+          x: across ? at : box.x, y: across ? box.y : at, length: across ? box.h : box.w, at: at,
+          start: spans[i].start, end: spans[i + 1].end, before: before, after: after, depth: depth })
+      }
+    }
+    node.children.forEach(function(child, i) {
+      var size = spans[i].end - spans[i].start
+      var childBox = across
+        ? { x: spans[i].start, y: box.y, w: size, h: box.h }
+        : { x: box.x, y: spans[i].start, w: box.w, h: size }
       place(child, childBox, depth, cells[i])
     })
   }
@@ -988,7 +1143,7 @@ function rects(root, area, opts) {
 
   if (isLeaf(root)) leaf(root, area, 0)
   else inside(root, area, 1)
-  return out
+  return { rects: out, dividers: bounds }
 }
 
 // The picture of a scroll tree: a filmstrip. Its columns stand in slot
