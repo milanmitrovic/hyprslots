@@ -27,7 +27,7 @@ return { slots = data.slots, specs = data.specs, desks = data.desks, layouts = d
 LUA
   cat >"$E2E_CONFIG_HOME/hyprslots/slots.lua" <<'LUA'
 return {
-  slots = { left = {}, main = {}, right = {} },
+  slots = { left = { key = "l" }, main = { key = "m" }, right = { key = "r" } },
   specs = {
     [3] = { left = "t-left", main = "t-main", right = "t-right" },
   },
