@@ -17,6 +17,15 @@ Flow {
   property string accent: String(Commons.Color.accent)
   signal pressed(string key)
 
+  // The cells drawn: `cells` only when its content changes. The view
+  // recomputes its help at every state read, and a new array would make
+  // every button anew, losing a click in flight; equal content keeps them.
+  property var shown: []
+  onCellsChanged: {
+    if (JSON.stringify(root.cells) !== JSON.stringify(root.shown)) root.shown = root.cells
+  }
+  Component.onCompleted: root.shown = root.cells
+
   spacing: Style.spacing.xxs
 
   // How many lines the toolbar takes (it should take one).
@@ -41,7 +50,7 @@ Flow {
   }
 
   Repeater {
-    model: root.cells
+    model: root.shown
     delegate: Row {
       id: cell
       required property var modelData

@@ -1022,7 +1022,7 @@ mouse_ratios() {
 
   smoke_click toolbar:w
   if eventually 5 tree_in_force_is 'h[main, v[aside:2, side:2, left]]'; then pass "w applied the dragged tree"
-  else fail "the tree in force is $(tree_in_force): $(smoke message) $(smoke errors)"; fi
+  else fail "the tree in force is $(tree_in_force): $(smoke message) $(smoke errors) (help: $(smoke help))"; fi
   eventually 5 smoke_idle || true
   settle
   local boxes
