@@ -219,6 +219,21 @@ describe_omarchy("Omarchy's workspace blocks under the active desk", function()
       assert.are.equal(before, assignments())
     end)
 
+    it("lays the workspaces out again under the new desk's layout once windows have merged", function()
+      -- t-side joins workspace 3 while the old desk's trees are in force;
+      -- Hyprland lays a lua layout out again only when asked.
+      panel_off()
+      local nudged = {}
+      for _, args in ipairs(hl.dispatched_of("window.resize")) do
+        nudged[args.window] = true
+      end
+      local three = false
+      for _, window in ipairs(hl.windows) do
+        three = three or (window.workspace.id == 3 and nudged["address:" .. window.address])
+      end
+      assert.is_true(three, "workspace 3 laid out again")
+    end)
+
     it("gives the screens their order back when the panel is on again: eDP-1 1-10, DP-2 11-20", function()
       local before = assignments()
       panel_off()

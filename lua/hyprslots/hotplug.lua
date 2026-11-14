@@ -51,6 +51,9 @@ function M.monitors_changed(engine, event)
     engine:guard(event .. ": window rules", window_rules.sync, engine)
     adapter.defer(function()
       engine:guard(event .. ": re-route", router.reroute_all, engine)
+      -- Windows merged into a workspace (blocks.lua) before the desk changed
+      -- were laid out under the old desk's trees; nothing else moves them now.
+      engine:guard(event .. ": relayout", engine.relayout, engine)
       engine:guard(event .. ": active workspace", workspaces.show_active, engine, added)
     end)
   end)
