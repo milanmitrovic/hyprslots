@@ -954,11 +954,13 @@ mouse_flows() {
 
 # The Layout picture's dividers, dragged with the real pointer (smoke_drag).
 # Workspace 3's tree, set to h[main:2, v[aside, side:3, left]] through the
-# api: its main|aside divider, let go about the middle of the two, makes
-# h[main, v[aside, side:3, left]] (while held the pane draws it and the
-# label by the pointer says 1 : 1: screenshot); the nested v split's
+# api: its main|aside divider, dragged past aside's right edge, stops at
+# h[main:5, ...] (no weight past 5); let go about the middle of the two, it
+# makes h[main, v[aside, side:3, left]] (while held the pane draws it and
+# the label by the pointer says 1 : 1: screenshot); the nested v split's
 # aside|side divider about its middle makes v[aside:2, side:2, left] (left
-# keeps its fifth). Both are drafts until the toolbar's w applies them, and
+# keeps its fifth; held, the label says the whole split's 2 : 2 : 1:
+# screenshot). Both are drafts until the toolbar's w applies them, and
 # the windows follow (api state's boxes): t-main and t-right (in aside) half
 # the tree each. Ctrl+S saves. On workspace 4, which uses the shared tree, a
 # drag asks first whom the edit is for: Esc cancels it (the tree as it
@@ -978,6 +980,24 @@ mouse_ratios() {
   sleep 0.3
   shot 32-mouse-divider-hover
 
+  # dragged past aside's right edge the split goes no further than 5 : 1
+  read -r dx dy <<<"$(smoke point 'divider:1:main|aside')"
+  read -r ax _ aw _ <<<"$(smoke bounds tile:1:aside)"
+  x=$((ax + aw + 40))
+  log "drag main|aside from $dx,$dy to $x,$dy"
+  smoke_drag 'divider:1:main|aside' "$x" "$dy" 1500
+  if eventually 3 bash -c "[[ \$($watch dragging) == '1 h[main:5, v[aside, side:3, left]] | 5 : 1' ]]"; then
+    pass "held past the edge, the split stops at 5 : 1"
+  else
+    fail "mid-drag past the edge: '$(smoke dragging)'"
+  fi
+  wait "$SMOKE_DRAG_PID" 2>/dev/null
+  if eventually 3 bash -c "[[ \$($watch layout) == '1: h[main:5, v[aside, side:3, left]] *' ]]"; then
+    pass "let go there, the draft is h[main:5, ...]"
+  else
+    fail "after the drag past the edge the draft is $(smoke layout): $(smoke message)"
+  fi
+
   # main's left edge to aside's right edge is the two neighbours (a tile
   # is inset 2 px in its cell; aside 5 more, the v box's padding)
   read -r dx dy <<<"$(smoke point 'divider:1:main|aside')"
@@ -995,7 +1015,7 @@ mouse_ratios() {
   shot 33-mouse-ratio-drag
   wait "$SMOKE_DRAG_PID" 2>/dev/null
   if eventually 3 bash -c "[[ \$($watch layout) == '1: h[main, v[aside, side:3, left]] *' ]]"; then
-    pass "let go, h[main:2, ...] became h[main, ...] in the draft"
+    pass "let go, h[main:5, ...] became h[main, ...] in the draft"
   else
     fail "after the drag the draft is $(smoke layout): $(smoke message)"
   fi
@@ -1012,7 +1032,14 @@ mouse_ratios() {
   read -r _ sy _ sh <<<"$(smoke bounds tile:1:side)"
   y=$(((ay - 2 + sy + sh + 2) / 2))
   log "drag aside|side from $dx,$dy to $dx,$y"
-  smoke_drag 'divider:1:aside|side' "$dx" "$y"
+  smoke_drag 'divider:1:aside|side' "$dx" "$y" 2500
+  if eventually 3 bash -c "[[ \$($watch dragging) == '1 h[main, v[aside:2, side:2, left]] | 2 : 2 : 1' ]]"; then
+    pass "held about the middle of aside and side, the label says the whole split's 2 : 2 : 1"
+  else
+    fail "mid nested drag: '$(smoke dragging)'"
+  fi
+  sleep 0.3
+  shot 33b-mouse-ratio-drag-split
   wait "$SMOKE_DRAG_PID" 2>/dev/null
   if eventually 3 bash -c "[[ \$($watch layout) == '1: h[main, v[aside:2, side:2, left]] *' ]]"; then
     pass "the nested v split's divider, let go about its middle, made v[aside:2, side:2, left]"
