@@ -1011,21 +1011,39 @@ node-tested). Every boundary between two children of a tiled split, at
 any depth, is a divider: a band of at least 8 px along it
 (`Tokens.dividerHit`), a resize cursor over it (`SplitHCursor` across an
 `h` split, `SplitVCursor` down a `v`), its line lit in the accent colour
-on hover and full accent while dragged. Dragging it moves that boundary
-only, between its two neighbours (the split's other children keep their
-size), and the pane draws the tree as it would be let go, a small label by
-the pointer saying the split's ratio (`2 : 1`, `1 : 2 : 1`; the theme's
-tooltip surface). The two neighbours snap to the smallest whole pair
-a : b (a + b up to 12) within 2% of where the pointer is, measured as a
-share of the two, else to the nearest such pair (record.lua's snap, in its
-spirit: simple ratios first); neither drops below 5% of the split
-(tree.lua's nudge minimum), and the split's weights are then divided by
-their gcd: `h[main:2, right]` let go about the middle is `h[main, right]`.
+on hover and full accent while dragged. Dragging it snaps the whole split
+to an allowed arrangement, and the pane draws the tree as it would be let
+go, a small label by the pointer saying the split's ratio (`2 : 1`,
+`2 : 1 : 1`; the theme's tooltip surface). An allowed arrangement has every
+child a whole weight 1 to 5, divided by their gcd (`Layout.arrangements`:
+19 for two children, 115 for three, 607 for four, computed once per
+count). The snap is anchored to where the split's dividers were when the
+drag started (never where the drag has had them since), the pointer's
+place measured as a share of the split: of the arrangements keeping every
+other divider exactly where it started, the one putting the dragged
+divider nearest the pointer, if within 3% of the split; else the one
+minimising 3 × the dragged divider's distance from the pointer plus every
+other divider's from its start. So dragging the first divider of
+`h[a, b, c]` keeps the second at 2/3 while it can (`1 : 3 : 2` at a sixth),
+weights never climb past 5 however the pointer wanders, and the pointer
+back where it started is the ratio it started as. A ratio typed with `r`
+may be any whole one; dragging such a split moves it to the nearest
+allowed arrangement (`h[a:6, b, c:6]`'s first divider let go mid a and b
+is `3 : 3 : 5`). No child drops below 5% of the split (tree.lua's nudge
+minimum): every arrangement of up to four keeps it (the least share is
+1/16), and those of five or six that would not are left out. A split of
+more than six children (whose arrangements grow past 5^7) snaps only the
+dragged divider's two neighbours, as a pair 1 to 5 the same way, neither
+below 5% of the split, the others keeping their size. The split's weights
+are then divided by their gcd: `h[main:2, right]` let go about the middle
+is `h[main, right]`.
 Let go, it is an edit like `r`'s: into the draft (`edited, not applied`,
 `w` applies, Ctrl+S saves, `d` reverts), asking first on a workspace using
 the shared trees (a drag that snaps to the ratio there already changes
 nothing and asks nothing). A divider names its neighbours by their leaves,
-so a hidden place for other windows keeps its size, and one next to that
+so a hidden place for other windows keeps its size (out of the
+arrangement; a divider lists the leaves of its whole split, so the drag
+knows what the picture drew), and one next to that
 place where the engine puts it (`o`) writes its `*` into the tree, as
 moving it does. No dividers on a scroll tree, a read-only layout, or while
 a prompt is open; a press anywhere but on a divider goes on to the tile.
