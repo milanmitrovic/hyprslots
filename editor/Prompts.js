@@ -179,7 +179,11 @@ function help(prompt) {
       + (prompt.suggestions.length ? "   ·   ↑/↓ suggestions" : "") + "   ·   Return ok   ·   Esc cancel"
   }
   if (prompt.kind === "choice" && prompt.inline) return "letter pick   ·   Esc cancel"
-  if (prompt.kind === "choice") return "letter/digit pick   ·   ↑/↓ Return pick   ·   Esc cancel"
+  if (prompt.kind === "choice") {
+    // slot keys are letters (§4); digits only where an option has one
+    var digits = prompt.options.some(function(o) { return /^[0-9]$/.test(o.key) })
+    return (digits ? "letter/digit" : "letter") + " pick   ·   ↑/↓ Return pick   ·   Esc cancel"
+  }
   return "y yes   ·   n / Esc no"
 }
 

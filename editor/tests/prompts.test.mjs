@@ -144,6 +144,15 @@ test("an inline choice says its options in its own words", () => {
   assert.equal(P.help(prompt), "letter pick   ·   Esc cancel");
 });
 
+test("a choice's help names digits only when an option is keyed by one", () => {
+  const slots = P.choice("Assign kitty to a slot on workspace 3",
+    [{ key: "m", label: "main", value: "main" }, { key: "", label: "right", value: "right" }]);
+  assert.equal(P.help(slots), "letter pick   ·   ↑/↓ Return pick   ·   Esc cancel", "slot keys are letters only");
+  const monitors = P.choice("Which monitor", P.options([{ label: "DP-1", value: 1 }, { label: "DP-2", value: 2 }]));
+  assert.ok(monitors.options.some((o) => /^[0-9]$/.test(o.key)), "the second DP gets a digit");
+  assert.equal(P.help(monitors), "letter/digit pick   ·   ↑/↓ Return pick   ·   Esc cancel");
+});
+
 // --- the prompt by mouse: its controls, each a key press -------------------
 
 // Feed presses by Panel.press names ("m", "Down", "Return", "Escape").
