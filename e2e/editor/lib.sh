@@ -76,3 +76,24 @@ smoke_click() {
   WAYLAND_DISPLAY=$E2E_WAYLAND_DISPLAY "$SMOKE_VPOINTER" $point $size "$action" >>"$E2E_DIR/vpointer.log" 2>&1 ||
     harness_fail "vpointer failed (see $E2E_DIR/vpointer.log)"
 }
+
+# A real pointer drag (e2e/shim/vpointer.c) from the panel's control named
+# $1 (a Layout divider: "divider:1:main|right") to the screen point $2 $3,
+# held there $4 ms (default 300) before letting go. It runs in the
+# background, so the smoke can look at the panel mid-drag: wait for it with
+# `wait "$SMOKE_DRAG_PID"`. Fails (the test) when no such control shows.
+SMOKE_DRAG_PID=''
+smoke_drag() {
+  local name=$1 x2=$2 y2=$3 hold=${4:-300} point size
+  point=$(smoke point "$name")
+  if [[ ! $point =~ ^-?[0-9]+\ -?[0-9]+$ ]]; then
+    fail "no control '$name' to drag (got '$point')"
+    SMOKE_DRAG_PID=''
+    return 1
+  fi
+  size=$(hc monitors -j | jq -r '.[0] | "\(.width) \(.height)"')
+  # shellcheck disable=SC2086
+  WAYLAND_DISPLAY=$E2E_WAYLAND_DISPLAY "$SMOKE_VPOINTER" $point $size drag "$x2" "$y2" "$hold" >>"$E2E_DIR/vpointer.log" 2>&1 &
+  SMOKE_DRAG_PID=$!
+  E2E_CLIENT_PIDS+=("$SMOKE_DRAG_PID")
+}

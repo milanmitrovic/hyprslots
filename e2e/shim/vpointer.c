@@ -1,9 +1,14 @@
 // A pointer for the nested e2e Hyprland: moves to a point and clicks there,
-// through wlr-virtual-pointer-unstable-v1, so the editor smoke drives the
-// panel with real pointer events (the same MouseArea handlers a mouse
-// reaches), as wtype drives it with real keys.
+// or drags from it, through wlr-virtual-pointer-unstable-v1, so the editor
+// smoke drives the panel with real pointer events (the same MouseArea
+// handlers a mouse reaches), as wtype drives it with real keys.
 //
 //   vpointer <x> <y> <width> <height> [move|click|double]
+//   vpointer <x> <y> <width> <height> drag <x2> <y2> [hold-ms]
+//
+// drag presses the left button at x, y, moves to x2, y2 in small steps,
+// holds the button there hold-ms (default 300: time for a screenshot
+// mid-drag), then lets go.
 //
 // x and y are in the layout's pixels; width and height its extent (one
 // output here, at 0,0). The protocol's interfaces are spelled out below as
@@ -92,6 +97,31 @@ static void button(struct wl_display *display, struct wl_proxy *pointer, uint32_
     wl_display_roundtrip(display);
 }
 
+static void move_to(struct wl_display *display, struct wl_proxy *pointer, uint32_t x, uint32_t y,
+                    uint32_t width, uint32_t height) {
+    wl_proxy_marshal_flags(pointer, MOTION_ABSOLUTE, NULL, 1, 0, now_ms(), x, y, width, height);
+    wl_proxy_marshal_flags(pointer, FRAME, NULL, 1, 0);
+    wl_display_roundtrip(display);
+}
+
+// Press at x, y; to x2, y2 in steps of about 8 px (at least 8 of them),
+// 20 ms apart, as a hand drags; hold there `hold` ms; let go.
+static void drag(struct wl_display *display, struct wl_proxy *pointer, uint32_t x, uint32_t y, uint32_t x2,
+                 uint32_t y2, uint32_t width, uint32_t height, long hold) {
+    button(display, pointer, 1);
+    pause_ms(80);
+    long dx = (long)x2 - (long)x, dy = (long)y2 - (long)y;
+    long far = labs(dx) > labs(dy) ? labs(dx) : labs(dy);
+    long steps = far / 8 < 8 ? 8 : far / 8;
+    for (long i = 1; i <= steps; i++) {
+        move_to(display, pointer, (uint32_t)((long)x + dx * i / steps), (uint32_t)((long)y + dy * i / steps), width,
+                height);
+        pause_ms(20);
+    }
+    pause_ms(hold);
+    button(display, pointer, 0);
+}
+
 static void click(struct wl_display *display, struct wl_proxy *pointer) {
     button(display, pointer, 1);
     pause_ms(50);
@@ -100,12 +130,17 @@ static void click(struct wl_display *display, struct wl_proxy *pointer) {
 
 int main(int argc, char **argv) {
     if (argc < 5) {
-        fprintf(stderr, "usage: %s <x> <y> <width> <height> [move|click|double]\n", argv[0]);
+        fprintf(stderr, "usage: %s <x> <y> <width> <height> [move|click|double]\n"
+                        "       %s <x> <y> <width> <height> drag <x2> <y2> [hold-ms]\n", argv[0], argv[0]);
         return 2;
     }
     uint32_t x = (uint32_t)atoi(argv[1]), y = (uint32_t)atoi(argv[2]);
     uint32_t width = (uint32_t)atoi(argv[3]), height = (uint32_t)atoi(argv[4]);
     const char *action = argc > 5 ? argv[5] : "click";
+    if (strcmp(action, "drag") == 0 && argc < 8) {
+        fprintf(stderr, "vpointer: drag needs <x2> <y2>\n");
+        return 2;
+    }
 
     struct wl_display *display = wl_display_connect(NULL);
     if (!display) {
@@ -126,16 +161,15 @@ int main(int argc, char **argv) {
 
     // Up to the point in two steps, then a pause: the compositor gives the
     // surface under it pointer focus before the button comes.
-    wl_proxy_marshal_flags(pointer, MOTION_ABSOLUTE, NULL, 1, 0, now_ms(), x > 0 ? x - 1 : x + 1, y, width, height);
-    wl_proxy_marshal_flags(pointer, FRAME, NULL, 1, 0);
-    wl_display_roundtrip(display);
+    move_to(display, pointer, x > 0 ? x - 1 : x + 1, y, width, height);
     pause_ms(40);
-    wl_proxy_marshal_flags(pointer, MOTION_ABSOLUTE, NULL, 1, 0, now_ms(), x, y, width, height);
-    wl_proxy_marshal_flags(pointer, FRAME, NULL, 1, 0);
-    wl_display_roundtrip(display);
+    move_to(display, pointer, x, y, width, height);
     pause_ms(200);
 
-    if (strcmp(action, "click") == 0) {
+    if (strcmp(action, "drag") == 0) {
+        long hold = argc > 8 ? atol(argv[8]) : 300;
+        drag(display, pointer, x, y, (uint32_t)atoi(argv[6]), (uint32_t)atoi(argv[7]), width, height, hold);
+    } else if (strcmp(action, "click") == 0) {
         click(display, pointer);
     } else if (strcmp(action, "double") == 0) {
         click(display, pointer);
