@@ -8,3 +8,5 @@ TableHeader 1.0 TableHeader.qml
 TableRow 1.0 TableRow.qml
 TableCell 1.0 TableCell.qml
 PaneTitle 1.0 PaneTitle.qml
+KeyCap 1.0 KeyCap.qml
+ActionButton 1.0 ActionButton.qml
