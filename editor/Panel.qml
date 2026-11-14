@@ -10,6 +10,7 @@ import "Prompts.js" as Prompts
 import "DesksLayouts.js" as DesksLayouts
 import "Assignment.js" as Assignment
 import "Messages.js" as Messages
+import "Help.js" as Help
 import "ui"
 
 // The hyprslots editor panel (docs/design.md §9): aerolayout's `edit` TUI as
@@ -22,6 +23,11 @@ import "ui"
 // is the prompt's; in the Layout tab's slot list Esc goes back to the
 // picture). Ctrl+S saves in every tab; in the Layout tab it applies the
 // edited panes first.
+//
+// Everything the keys do the mouse does too, through the same handler: the
+// help row is a toolbar whose buttons feed their keys (press), a prompt's
+// chips and answers are keys, a double-click on a row is its view's
+// primary action's key; the tabs and the workspace switchers are clicked.
 //
 //   omarchy-shell shell toggle milan.hyprslots
 //   omarchy-shell shell call milan.hyprslots press a   (a key, for scripts and tests)
@@ -267,7 +273,42 @@ Item {
 
   // How many lines the help row takes (it should take one): for the e2e smoke.
   function helpLines() {
-    return help.lineCount
+    return root.currentView && root.currentView.prompting ? help.lineCount : toolbar.lineCount()
+  }
+
+  // A click on option `index` of the current view's choice prompt: the keys
+  // that pick it (Prompts.pickPresses), fed as if pressed.
+  function pickOption(index) {
+    var presses = Prompts.pickPresses(root.currentView ? root.currentView.prompt : null, index)
+    for (var i = 0; i < presses.length; i++) root.press(presses[i])
+  }
+
+  // Where to click the control named `name` (its objectName: "toolbar:a",
+  // "chip:m", "prompt:yes", "tab:Layout", "row:2", "slot:main",
+  // "workspace:3", "tile:1:main"), as "<x> <y>" on the screen, its centre;
+  // "" when none shows. For the e2e smoke, which clicks there with a real
+  // pointer.
+  function clickPoint(name) {
+    var found = root.findShown(window.contentItem, String(name))
+    if (!found) return ""
+    var p = found.mapToItem(null, found.width / 2, found.height / 2)
+    var screen = window.screen
+    return Math.round(p.x + (screen ? screen.x : 0)) + " " + Math.round(p.y + (screen ? screen.y : 0))
+  }
+
+  function findShown(item, name) {
+    if (!item || !item.visible) return null
+    if (item.objectName === name && item.width > 0 && item.height > 0) return item
+    var kids = item.children || []
+    for (var i = 0; i < kids.length; i++) {
+      var hit = root.findShown(kids[i], name)
+      if (hit) return hit
+    }
+    // a ListView's rows sit in its contentItem
+    if (item.contentItem && item.contentItem !== item && kids.indexOf(item.contentItem) < 0) {
+      return root.findShown(item.contentItem, name)
+    }
+    return null
   }
 
   // What each pane's tree is, "1: scroll · half".
@@ -449,6 +490,7 @@ Item {
                   font.bold: tabItem.current
                 }
                 MouseArea {
+                  objectName: "tab:" + tabItem.modelData
                   anchors.fill: parent
                   cursorShape: Qt.PointingHandCursor
                   onClicked: root.tab = tabItem.index
@@ -498,6 +540,7 @@ Item {
               id: assignmentView
               anchors.fill: parent
               visible: root.tab === 0
+              onPressKey: function(name) { root.press(name) }
               engine: root.engine
               foreground: root.foreground
               selectedBackground: root.selectedBackground
@@ -509,6 +552,7 @@ Item {
               id: layoutView
               anchors.fill: parent
               visible: root.tab === 1
+              onPressKey: function(name) { root.press(name) }
               engine: root.engine
               foreground: root.foreground
               selectedBackground: root.selectedBackground
@@ -520,6 +564,7 @@ Item {
               id: desksView
               anchors.fill: parent
               visible: root.tab === 2
+              onPressKey: function(name) { root.press(name) }
               engine: root.engine
               foreground: root.foreground
               selectedBackground: root.selectedBackground
@@ -543,18 +588,24 @@ Item {
             foreground: root.foreground
             background: root.background
             fontFamily: root.fontFamily
+            onPress: function(name) { root.press(name) }
+            onChoose: function(index) { root.pickOption(index) }
           }
         }
 
-        // The controls strip, under the page's bottom edge on the desk: what
-        // the keys of the current view do, each trigger key in the accent
-        // colour.
+        // The controls strip, under the page's bottom edge on the desk: a
+        // toolbar of what the current view's keys do (Help.buttons), each
+        // button its label with the trigger key in the accent colour, a
+        // click feeding the key (press); while a prompt is open, its keys
+        // as plain text (its controls are in the message band).
         Item {
           id: helpArea
+          readonly property bool prompting: !!(root.currentView && root.currentView.prompting)
           width: parent.width
-          height: help.implicitHeight + Style.spacing.lg + Style.spacing.xs
+          height: (prompting ? help.implicitHeight : toolbar.implicitHeight) + Style.spacing.lg + Style.spacing.xs
           Text {
             id: help
+            visible: helpArea.prompting
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.leftMargin: root.pagePadding
@@ -563,10 +614,22 @@ Item {
             textFormat: Text.StyledText
             wrapMode: Text.WordWrap
             lineHeight: 1.15
-            text: root.helpText
+            text: helpArea.prompting ? root.helpText : ""
             color: Commons.Util.alpha(root.foreground, 0.7)
             font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall
+          }
+          Toolbar {
+            id: toolbar
+            visible: !helpArea.prompting
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.leftMargin: root.pagePadding - Style.spacing.md
+            anchors.rightMargin: root.pagePadding
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: -Style.spacing.xxs
+            cells: root.currentView ? Help.buttons(root.currentView.helpGroups, String(Commons.Color.accent)) : []
+            onPressed: function(key) { root.press(key) }
           }
         }
       }

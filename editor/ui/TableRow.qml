@@ -6,7 +6,8 @@ import qs.Commons as Commons
 // list). Selected: the accent's selected fill and an accent stripe down its
 // left, the strongest thing on the page; `marked`: the current row while
 // the keys are elsewhere, an outline. Its content goes past the stripe;
-// a click selects it (clicked()).
+// a click selects it (clicked()), a double-click runs the view's primary
+// action on it (doubleClicked(), after the click).
 Rectangle {
   id: root
 
@@ -14,6 +15,7 @@ Rectangle {
   property bool marked: false
   default property alias content: inner.data
   signal clicked()
+  signal doubleClicked()
 
   height: Tokens.rowHeight
   radius: Tokens.radius
@@ -24,6 +26,7 @@ Rectangle {
   MouseArea {
     anchors.fill: parent
     onClicked: root.clicked()
+    onDoubleClicked: root.doubleClicked()
   }
 
   // the selection's stripe, down the left edge

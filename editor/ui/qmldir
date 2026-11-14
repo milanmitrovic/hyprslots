@@ -10,3 +10,4 @@ TableCell 1.0 TableCell.qml
 PaneTitle 1.0 PaneTitle.qml
 KeyCap 1.0 KeyCap.qml
 ActionButton 1.0 ActionButton.qml
+Toolbar 1.0 Toolbar.qml

@@ -51,12 +51,20 @@ Item {
   property int messageSeq: 0
 
   readonly property string accent: String(Commons.Color.accent)
-  readonly property string helpText: prompting ? Help.escape(Prompts.help(prompt)) : Help.row([
+  // The controls strip's groups (the panel's toolbar; DesksLayouts.actions
+  // dims what a read-only row refuses) and the same as StyledText.
+  readonly property var helpGroups: [
     [{ key: "↑/↓", label: "select" }],
     { title: selectedRow ? (selectedRow.kind === "desk" ? "Desk" : "Layout") : "", items: DesksLayouts.actions(selectedRow) },
     [{ key: "Ctrl+S", label: "save" }],
     [{ key: "Tab", label: "switch view" }, { key: "q", label: "close" }],
-  ], accent)
+  ]
+  readonly property string helpText: prompting ? Help.escape(Prompts.help(prompt)) : Help.row(helpGroups, accent)
+
+  // A key by name, for the panel to feed as if pressed (Panel.press): a
+  // double-click on a row runs its primary action, a (a desk: pick a layout
+  // for it; a layout: apply it to the active desk).
+  signal pressKey(string name)
 
   function indexOfKey(key) {
     for (var i = 0; i < rows.length; i++) if (rows[i].key === key) return i
@@ -411,8 +419,13 @@ Item {
 
         TableRow {
           width: parent.width
+          objectName: "row:" + entry.index
           selected: entry.current
           onClicked: root.select(entry.index)
+          onDoubleClicked: {
+            root.select(entry.index)
+            root.pressKey("a")
+          }
 
           Row {
             height: parent.height

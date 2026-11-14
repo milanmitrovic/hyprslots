@@ -109,15 +109,22 @@ Item {
   readonly property var slotRow: slotIndex >= 0 && slotIndex < slotRows.length ? slotRows[slotIndex] : null
   readonly property string slotsReadOnly: Slots.readOnlyReason(state)
 
-  // The controls strip (StyledText: each trigger key highlighted, Help.js).
+  // The controls strip: its groups (the panel draws them as a toolbar,
+  // what the picture or the slot list would refuse now dimmed) and the
+  // same as StyledText (each trigger key highlighted, Help.js).
   readonly property string accent: String(Commons.Color.accent)
-  readonly property string helpText: {
-    if (prompting) return Help.escape(Prompts.help(prompt))
+  readonly property var helpGroups: {
     var jump = Workspaces.jumpKeys(Workspaces.count(state))
-    if (slotFocus) return Help.row(Layout.slotListHelp({ jumpKeys: jump }), accent)
-    return Help.row(Layout.pictureHelp({ node: activeNode, hasOwn: Layout.hasOwn(state, layout, workspace), jumpKeys: jump }),
-      accent)
+    if (slotFocus) return Layout.slotListHelp({ jumpKeys: jump, readOnly: slotsReadOnly !== "", hasSlot: !!slotRow })
+    return Layout.pictureHelp({ node: activeNode, hasOwn: Layout.hasOwn(state, layout, workspace), jumpKeys: jump,
+      readOnly: block !== "", edited: editedScreens().length > 0, workspace: workspace })
   }
+  readonly property string helpText: prompting ? Help.escape(Prompts.help(prompt)) : Help.row(helpGroups, accent)
+
+  // A key by name, for the panel to feed as if pressed (Panel.press): a
+  // double-click on a slot of the slot list shows it in the picture
+  // (Return).
+  signal pressKey(string name)
 
   function say(text, isError) {
     message = text
@@ -629,6 +636,14 @@ Item {
     })
   }
 
+  // A click on a tile or a filmstrip column: it is the selection, and the
+  // keys go back to the picture (from the slot list) to act on it.
+  function pickLeaf(screenKey, leafKey) {
+    screen = screenKey
+    selectedKey = leafKey
+    if (slotFocus) slotFocus = false
+  }
+
   // o: show or hide where other windows go. It changes no tree.
   function toggleOther() {
     showOther = !showOther
@@ -1121,13 +1136,13 @@ Item {
                       }
                     }
 
+                    // a click selects the tile, the keys back to the picture
                     MouseArea {
+                      objectName: cell.isContainer ? "" : "tile:" + pane.modelData.key + ":" + cell.modelData.key
                       anchors.fill: parent
                       enabled: !cell.isContainer
-                      onClicked: {
-                        root.screen = pane.modelData.key
-                        root.selectedKey = cell.modelData.key
-                      }
+                      cursorShape: Qt.PointingHandCursor
+                      onClicked: root.pickLeaf(pane.modelData.key, cell.modelData.key)
                     }
                   }
                 }
@@ -1220,12 +1235,12 @@ Item {
                       }
                     }
 
+                    // a click selects the column, the keys back to the picture
                     MouseArea {
+                      objectName: "tile:" + pane.modelData.key + ":" + column.modelData.key
                       anchors.fill: parent
-                      onClicked: {
-                        root.screen = pane.modelData.key
-                        root.selectedKey = column.modelData.key
-                      }
+                      cursorShape: Qt.PointingHandCursor
+                      onClicked: root.pickLeaf(pane.modelData.key, column.modelData.key)
                     }
                   }
                 }
@@ -1300,11 +1315,17 @@ Item {
               readonly property bool lit: current && root.slotFocus
               width: ListView.view.width
               height: slotLines.implicitHeight + Style.spacing.sm * 2
+              objectName: "slot:" + slotItem.modelData.slot
               selected: lit
               marked: current && !root.slotFocus
               onClicked: {
                 root.selectedSlot = slotItem.modelData.slot
                 root.focusSlots(true)
+              }
+              // its primary action, as its key: show it in the picture
+              onDoubleClicked: {
+                root.selectedSlot = slotItem.modelData.slot
+                root.pressKey("Return")
               }
 
               Column {

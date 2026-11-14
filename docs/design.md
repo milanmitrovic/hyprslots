@@ -834,7 +834,7 @@ the running engine only through Hyprland:
 | `BarWidget.qml` | the bar widget (below): glyph and active layout; left click toggles the panel, right click a menu |
 | `Services.js` | where the service registers itself, for a bar widget whose bar hands it no `serviceFor` |
 | `AssignmentView.qml`, `LayoutView.qml`, `DesksLayoutsView.qml` | aerolayout's Assignment, Layout (with its logical slots as a list beside the screens) and monitors views (below) |
-| `ui/` (`qmldir`) | the editor's design system, one component per kind of element, all from the theme (below): `Tokens` (a singleton), `SectionHeader`, `WorkspaceSwitcher`, `InfoText`, `ProblemText`, `Placeholder`, `TableHeader`, `TableRow`, `TableCell`, `PaneTitle`, `KeyCap`, `ActionButton` |
+| `ui/` (`qmldir`) | the editor's design system, one component per kind of element, all from the theme (below): `Tokens` (a singleton), `SectionHeader`, `WorkspaceSwitcher`, `InfoText`, `ProblemText`, `Placeholder`, `TableHeader`, `TableRow`, `TableCell`, `PaneTitle`, `KeyCap`, `ActionButton`, `Toolbar` |
 | `Protocol.js`, `Assignment.js`, `Layout.js`, `Slots.js`, `DesksLayouts.js`, `Prompts.js`, `Workspaces.js`, `BarStatus.js`, `Help.js`, `Messages.js` | pure logic, tested under node (`editor/tests/`); `Slots.js` is the slot list's, `Workspaces.js` the workspace keys', `DesksLayouts.js` the Desk view's and the panel header's, `Help.js` the help rows', `Messages.js` the message band's |
 
 **Every view.** The panel's keys come first: Tab / Shift+Tab cycle the
@@ -853,6 +853,20 @@ monitors), then `● unsaved (Ctrl+S)` in the urgent colour while
 there are any. Every edit outside the Desk view goes to the
 active desk's layout, and so to every desk that shares it. Edits go
 to the engine as they are made and stay in memory until saved.
+
+**By mouse, the same handlers.** The keyboard works as it always has, and
+everything it does the mouse does too, through the very same handler: a
+click feeds the panel the key (`Panel.press`), so there is one code path.
+The help row is a toolbar (below) whose every button is its key; a
+prompt's chips, Yes / No and OK / Cancel are its keys (Prompts below); a
+double-click on a row is its view's primary action's key, after the click
+selected it (Assignment: `a`, assign; Desk: `a`, on a desk row pick a
+layout for it, on a layout row apply it to the active desk; the slot list:
+Return, show the slot in the picture); the folder tabs, the workspace
+switcher's entries, a row (select), a tile or filmstrip column of the
+Layout picture (select it, the keys back to the picture) and a slot of the
+slot list (select it, the keys to the list) are clicked as they are. Hover
+and press looks come from the theme's control tokens.
 
 **One look per kind of element** (`editor/ui/`, theme tokens only):
 section headers are the accent colour in small letter-spaced capitals
@@ -895,9 +909,21 @@ bold, inside its label where the label has that letter (**a**dd,
 **f**ork, **u**nassign, **R**ecord), else before it (**x** delete); keys of
 more than one character go before their label (**Ctrl+S** save, **[ ]**
 prev/next, **Tab** switch view), as does the key of an item marked so
-(**o** show/hide other windows). Labels are escaped (Qt StyledText). A
-prompt's own help line stays plain. The help row sits under the page, on
-the card's recessed surface.
+(**o** show/hide other windows). Labels are escaped (Qt StyledText). The
+help row sits under the page, on the card's recessed surface, as a
+**toolbar** (`ui/Toolbar.qml`, `Help.buttons`): every action a button
+(`ActionButton`) showing that same label, its key highlighted; an action
+of several keys (`↑/↓`, `hjkl/HJKL`, `[ ]`) a small button per key, then
+its label (`Help.presses` names each key as `Panel.press` takes it);
+digits and ranges (`1–9`) are shown, not clicked: the workspace switcher
+over the view is their mouse. A click on a button feeds its key. An action
+the view would refuse now is dim and inert (`enabled: false` in the row's
+model: Assignment's `a` off a window and `u` with nothing to unassign;
+the picture's edits when read only or with no tree, `w` with nothing
+edited, `R` on All workspaces; the slot list's edits when the slots are
+code's or there is none to act on; a read-only desk's `a`, `r`, `x`, a
+read-only layout's `r`, `x`). It stays one line at the panel's width. While
+a prompt is open the row is the prompt's own help, plain.
 
 **Prompts** (`Prompts.js`, one implementation for every view): a line of
 text typed in place (←/→ Home End move, Backspace Delete, Ctrl+U clears,
@@ -907,7 +933,14 @@ text typed in place (←/→ Home End move, Backspace Delete, Ctrl+U clears,
 and on every workspace's page, shown where the name has it (`(m)ain`,
 `m(a)il`, else `(z) right`); a slot with none is picked with the arrows. A
 pick among anything else (layouts, desks, monitors) keys each option by its
-first letter, else the first free digit, computed per prompt. While
+first letter, else the first free digit, computed per prompt. The message
+band draws a prompt's controls after its question (`Prompts.controls`): a
+choice's options as chips, each with its key cap (the one the arrows are on
+selected, except in an inline choice, which takes keys only) and a Cancel;
+y/n's Yes and No; a text prompt's OK and Cancel. Each is keys: a chip its
+option's key, else the arrows to it and Return (`Prompts.pickPresses`), Yes
+`y`, No `n`, OK Return, Cancel Esc, so clicking does exactly what typing
+does. While
 one is open every key is its own (Tab, q, Esc and Ctrl+S included); Esc
 cancels. When an answer is refused (by the engine: the spec grammar,
 config.lua's validation, a field config.lua owns; or, for a Layout ratio,

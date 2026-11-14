@@ -69,15 +69,16 @@ Item {
     return count > 1
   }
 
-  // The controls strip (StyledText: each trigger key highlighted, Help.js).
+  // The controls strip: its groups (Help.js; the panel draws them as a
+  // toolbar, what the view would refuse now dimmed) and the same as
+  // StyledText (each trigger key highlighted).
   readonly property string accent: String(Commons.Color.accent)
-  readonly property string helpText: prompting ? Help.escape(Prompts.help(prompt)) : Help.row([
-    [{ key: "↑/↓", label: "select" }],
-    { title: "Workspace", items: [{ key: "←/→ [ ]", label: "prev/next" }, { key: Workspaces.jumpKeys(Workspaces.count(state)), label: "jump" }] },
-    [{ key: "a", label: "assign" }, { key: "u", label: "unassign" }],
-    [{ key: "Ctrl+S", label: "save" }],
-    [{ key: "Tab", label: "switch view" }, { key: "q", label: "close" }],
-  ], accent)
+  readonly property var helpGroups: Assignment.helpGroups(state, selectedRow, Workspaces.jumpKeys(Workspaces.count(state)))
+  readonly property string helpText: prompting ? Help.escape(Prompts.help(prompt)) : Help.row(helpGroups, accent)
+
+  // A key by name, for the panel to feed as if pressed (Panel.press): a
+  // double-click on a row runs the view's primary action, a.
+  signal pressKey(string name)
 
   function keyOf(row) {
     if (!row) return ""
@@ -307,8 +308,14 @@ Item {
         readonly property bool empty: modelData.kind === "empty"
         readonly property color ink: current ? root.selectedText : root.foreground
         width: ListView.view.width
+        objectName: "row:" + rowItem.index
         selected: current
         onClicked: root.select(rowItem.index)
+        // the primary action, as its key: put the window into a slot
+        onDoubleClicked: {
+          root.select(rowItem.index)
+          root.pressKey("a")
+        }
 
         Row {
           anchors.fill: parent

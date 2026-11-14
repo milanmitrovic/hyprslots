@@ -14,6 +14,12 @@ import "ui"
 // one line, kept whether or not it shows, so the view above never moves; a
 // longer text grows it upwards, over the view's foot. Panel.qml decides what
 // shows and when it fades.
+//
+// A prompt's controls follow its question (Prompts.controls): a choice's
+// options as chips with their keys, y/n's Yes and No, a text prompt's OK
+// and Cancel, a choice's Cancel. Each is a key: press(name) asks the panel
+// to feed that key (Panel.press), choose(index) to pick that option
+// (Prompts.pickPresses), so a click does what the keys do.
 Item {
   id: root
 
@@ -24,6 +30,9 @@ Item {
   property color foreground: Commons.Color.menu.text
   property color background: Commons.Color.menu.background
   property string fontFamily: Style.font.menuFamily
+
+  signal press(string name)
+  signal choose(int index)
 
   readonly property bool shown: kind !== "none"
   // What shows while the band fades out: the last kind shown.
@@ -38,6 +47,11 @@ Item {
   readonly property color tone: look === "error" ? Commons.Color.urgent : Commons.Color.accent
 
   readonly property var parts: Messages.promptParts(prompt, Prompts.display(prompt))
+  // the options are the chips' to show: a choice's line is its question
+  readonly property bool chipsOnly: !!prompt && (prompt.kind === "choice" || prompt.kind === "confirm")
+  readonly property var controls: Prompts.controls(prompt)
+  // a control's height, which the prompt's text lines up with
+  readonly property int controlHeight: Style.font.body + Style.spacing.xxs * 4 + Style.spacing.xxs * 2
   readonly property string promptError: prompt && prompt.error ? String(prompt.error) : ""
 
   implicitHeight: Style.font.body + Math.round(Style.font.body * 0.4) + padY * 2
@@ -96,27 +110,34 @@ Item {
         font.pixelSize: Style.font.body
       }
 
-      // The question in the accent colour, then what is typed or offered;
-      // the answer the engine refused, and why, after it on the same line
-      // when there is room, else under it.
+      // The question in the accent colour, then what is typed (a text
+      // prompt); the answer the engine refused, and why, after it on the
+      // same line when there is room, else under it; then the prompt's
+      // controls, each a key (a choice's chips, Yes / No, OK / Cancel).
       Flow {
         width: parent.width
         visible: root.look === "prompt"
-        spacing: Style.spacing.xl
+        spacing: Style.spacing.sm
         Text {
           width: Math.min(implicitWidth, parent.width)
+          height: Math.max(implicitHeight, root.controlHeight)
+          verticalAlignment: Text.AlignVCenter
+          rightPadding: Style.spacing.lg
           textFormat: Text.StyledText
           wrapMode: Text.WordWrap
           maximumLineCount: 4
           elide: Text.ElideRight
           text: '<b><font color="' + String(Commons.Color.accent) + '">' + root.markup(root.parts.question) + "</font></b>"
-            + root.markup(root.parts.rest)
+            + (root.chipsOnly ? "" : root.markup(root.parts.rest))
           color: root.foreground
           font.family: root.fontFamily
           font.pixelSize: Style.font.body
         }
         Text {
           width: Math.min(implicitWidth, parent.width)
+          height: Math.max(implicitHeight, root.controlHeight)
+          verticalAlignment: Text.AlignVCenter
+          rightPadding: Style.spacing.lg
           visible: root.promptError !== ""
           textFormat: Text.PlainText
           wrapMode: Text.WordWrap
@@ -124,6 +145,23 @@ Item {
           color: Commons.Color.urgent
           font.family: root.fontFamily
           font.pixelSize: Style.font.body
+        }
+        Repeater {
+          model: root.look === "prompt" ? root.controls : []
+          delegate: ActionButton {
+            required property var modelData
+            objectName: modelData.name
+            keyText: modelData.key
+            text: modelData.label
+            pixelSize: Style.font.body
+            padY: Style.spacing.xxs
+            selected: modelData.kind === "chip" && modelData.selected
+            accented: modelData.kind === "answer" && modelData.accented
+            onClicked: {
+              if (modelData.kind === "chip") root.choose(modelData.index)
+              else root.press(modelData.press)
+            }
+          }
         }
       }
     }

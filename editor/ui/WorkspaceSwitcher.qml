@@ -74,7 +74,9 @@ Row {
             color: Tokens.header
           }
           MouseArea {
+            objectName: "workspace:" + entry.modelData.workspace
             anchors.fill: parent
+            cursorShape: Qt.PointingHandCursor
             onClicked: root.picked(entry.modelData.workspace)
           }
         }
