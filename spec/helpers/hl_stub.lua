@@ -27,6 +27,15 @@ local M = {}
 -- An HL.Monitor-like table.
 function M.monitor(name, fields)
   local monitor = { name = name, description = "", serial = "", id = 0, focused = false, is_mirror = false }
+  -- HL.Monitor:set_workspace, as Omarchy's reconcile shows a workspace: the
+  -- workspace (by name, in the current _G.hl) moves here and is shown.
+  function monitor:set_workspace(opts)
+    local workspace = _G.hl and _G.hl.get_workspace(opts and opts.workspace)
+    if workspace then
+      workspace.monitor = self
+      self.active_workspace = workspace
+    end
+  end
   for key, value in pairs(fields or {}) do
     monitor[key] = value
   end
@@ -83,11 +92,45 @@ end
 -- Omarchy's `o` with a fake `o.workspaces`: `blocks` maps connector -> block,
 -- so workspace N on a monitor is block * 10 + N. Every focus action that runs is
 -- recorded in `o.workspaces.focused` as { workspace, monitor }.
-function M.omarchy(blocks)
-  local workspaces = { slots = 10, focused = {} }
+--
+-- Shaped like monitor-workspaces.lua inside, as hyprslots reaches its block
+-- table there (hl_adapter.set_omarchy_blocks): workspace_id calls a local
+-- `assign` whose upvalues are `blocks` (identity -> block; a monitor's
+-- identity here is its connector), `identities_of` and `save`, which
+-- records every save in `o.workspaces.saved` as connector -> block.
+function M.omarchy(seed)
+  local workspaces = { slots = 10, focused = {}, saved = {} }
+  local blocks = {} -- a copy: hyprslots rewrites it, and specs share their seeds
+  for identity, block in pairs(seed) do
+    blocks[identity] = block
+  end
+
+  local function identities_of(monitors)
+    local identities = {}
+    for _, monitor in ipairs(monitors) do
+      identities[monitor.name] = monitor.name
+    end
+    return identities
+  end
+
+  local function save()
+    local copy = {}
+    for identity, block in pairs(blocks) do
+      copy[identity] = block
+    end
+    workspaces.saved[#workspaces.saved + 1] = copy
+  end
+
+  local function assign(monitor)
+    if blocks[monitor.name] == nil then
+      identities_of({})
+      save()
+    end
+    return blocks[monitor.name] or 0
+  end
 
   function workspaces.workspace_id(monitor, slot)
-    return (blocks[monitor.name] or 0) * 10 + slot
+    return assign(monitor) * 10 + slot
   end
 
   function workspaces.focus(slot, monitor_name)
@@ -189,7 +232,7 @@ function M.new(opts)
     event = dispatcher("event"),
     layout = dispatcher("layout"),
     window = { move = dispatcher("window.move"), resize = dispatcher("window.resize"), swap = dispatcher("window.swap") },
-    workspace = { move = dispatcher("workspace.move") },
+    workspace = { move = dispatcher("workspace.move"), change_id = dispatcher("workspace.change_id") },
   }
 
   -- The dispatches made so far whose `dsp` is `name`.
@@ -337,6 +380,10 @@ end
 --                          to a workspace, creating it on the FOCUSED
 --                          monitor when it does not exist yet
 --   workspace.move         puts a workspace on another monitor
+--   workspace.change_id    renumbers a workspace (refused onto a taken id)
+--   focus                  { monitor } focuses it; { workspace } shows it
+--                          (creating it) on the focused monitor, or on its
+--                          own monitor when it has one
 --   hl.add_workspace(id, monitor_name) creates one directly
 function M.simulate(hl)
   local function find_workspace(id)
@@ -400,6 +447,20 @@ function M.simulate(hl)
       if workspace then
         workspace.monitor = hl.get_monitor(args.monitor)
       end
+    elseif dispatcher.dsp == "workspace.change_id" and args.workspace and args.id then
+      local workspace = find_workspace(args.workspace)
+      if workspace and not find_workspace(args.id) then
+        workspace.id, workspace.name = tonumber(args.id), tostring(args.id)
+      end
+    elseif dispatcher.dsp == "focus" and args.monitor then
+      for _, monitor in ipairs(hl.monitors) do
+        monitor.focused = monitor.name == args.monitor
+      end
+    elseif dispatcher.dsp == "focus" and args.workspace then
+      local monitor = hl.get_active_monitor()
+      local workspace = find_workspace(args.workspace) or hl.add_workspace(tonumber(args.workspace), monitor.name)
+      workspace.monitor = workspace.monitor or monitor
+      workspace.monitor.active_workspace = workspace
     end
     return result
   end
