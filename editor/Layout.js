@@ -955,7 +955,8 @@ function rects(root, area, opts) {
 //     "h" parts left from right), x, y, length (the boundary as a line from
 //     x, y, down for "h", across for "v"), at (where it is along the axis),
 //     start, end (the two neighbours' extent along the axis), before, after
-//     (the leaves of the two neighbours), depth (1: the root's) }
+//     (the leaves of the two neighbours), split (the leaves of the whole
+//     split), depth (1: the root's) }
 // None on a scroll tree or a single window.
 function dividers(root, area, opts) {
   return laidOut(root, area, opts).dividers
@@ -990,51 +991,103 @@ function dividerFraction(divider, pos) {
 
 // --- dragging a divider -------------------------------------------------------
 
-// A dragged divider snaps to the smallest whole pair a : b (a + b up to 12)
-// within 2% of where it was let go, measured as a share of the two
-// neighbours; else to the nearest such pair (record.lua's snap, in its
-// spirit: simple ratios first). Neither neighbour drops below 1/MIN_SHARE of
-// the split (tree.lua's nudge minimum, 5%).
-var SNAP_TOLERANCE = 0.02
-var SNAP_DENOMINATOR = 12
+// A drag snaps the whole split to an allowed arrangement: every child a
+// whole weight 1 to MAX_WEIGHT, divided by their gcd (2 children: 19
+// arrangements, 3: 115, 4: 607). Anchored to where the split's dividers
+// were when the drag started, never where the drag has had them since:
+//   1. of the arrangements keeping every other divider exactly where it
+//      started, the one putting the dragged divider nearest the pointer,
+//      if within SNAP_TOLERANCE of the split;
+//   2. else the one minimising 3 × the dragged divider's distance from the
+//      pointer plus every other divider's from where it started.
+// Back where it started, an allowed split is what it was. A typed ratio may
+// be any whole one; dragging it moves to the nearest allowed arrangement.
+// No child drops below 1/MIN_SHARE of the split (tree.lua's nudge minimum,
+// 5%): with up to four children every arrangement keeps that (the least
+// share is 1/16); with five or six, arrangements that would not are left
+// out. A split of more than MAX_SNAPPED children (whose arrangements grow
+// past 5^7) snaps only the dragged divider's two neighbours, the same way,
+// as a pair of 1 to 5 (neither below 5% of the split); the others keep
+// their size.
+var MAX_WEIGHT = 5
+var SNAP_TOLERANCE = 0.03
 var MIN_SHARE = 20
+var MAX_SNAPPED = 6
+var arranged = {}
 
-// { a, b } for neighbours `pair` of a split's `total` weight, let go at
-// `fraction` of them; null when no pair keeps both above the minimum.
-function snapPair(fraction, pair, total) {
-  var within = null
-  var nearest = null
-  var nearestOff = Infinity
-  for (var s = 2; s <= SNAP_DENOMINATOR; s++) {
-    for (var a = 1; a < s; a++) {
-      var b = s - a
-      if (MIN_SHARE * a * pair < s * total || MIN_SHARE * b * pair < s * total) continue
-      var off = Math.abs(a / s - fraction)
-      if (!within && off <= SNAP_TOLERANCE + 1e-9) within = { a: a, b: b }
-      if (off < nearestOff - 1e-9) {
-        nearest = { a: a, b: b }
-        nearestOff = off
-      }
+// The allowed arrangements of `n` children (above), each a list of weights;
+// computed once per n.
+function arrangements(n) {
+  if (arranged[n]) return arranged[n]
+  var out = []
+  var t = []
+  var fill = function(i, sum) {
+    if (i === n) {
+      var common = t.reduce(function(g, w) { return gcd(g, w) }, 0)
+      if (common === 1 && t.every(function(w) { return MIN_SHARE * w >= sum })) out.push(t.slice())
+      return
+    }
+    for (var w = 1; w <= MAX_WEIGHT; w++) {
+      t[i] = w
+      fill(i + 1, sum + w)
     }
   }
-  var found = within || nearest
-  if (!found) return null
-  var common = gcd(found.a, found.b)
-  return { a: found.a / common, b: found.b / common }
+  fill(0, 0)
+  arranged[n] = out
+  return out
+}
+
+// The dividers of weights `t`: where each falls, as a share of the split.
+function cumulative(t) {
+  var total = t.reduce(function(s, w) { return s + w }, 0)
+  var at = 0
+  return t.slice(0, -1).map(function(w) { return (at += w) / total })
+}
+
+// The arrangement of `list` for divider `k` moved to `target` (a share of
+// the split) from dividers at `start` (cumulative), the rest anchored
+// there (above).
+function snapSplit(list, start, k, target) {
+  var kept = null
+  var keptOff = Infinity
+  var best = null
+  var bestScore = Infinity
+  for (var i = 0; i < list.length; i++) {
+    var p = cumulative(list[i])
+    var off = Math.abs(p[k] - target)
+    var moved = 0
+    var stays = true
+    for (var j = 0; j < p.length; j++) {
+      if (j === k) continue
+      var d = Math.abs(p[j] - start[j])
+      if (d >= 1e-9) stays = false
+      moved += d
+    }
+    if (stays && off < keptOff) {
+      kept = list[i]
+      keptOff = off
+    }
+    if (3 * off + moved < bestScore) {
+      best = list[i]
+      bestScore = 3 * off + moved
+    }
+  }
+  return kept && keptOff <= SNAP_TOLERANCE ? kept : best
 }
 
 var DIVIDER_GONE = "That divider is not in the tree any more."
 
 // A divider of the picture (dividers) let go at `fraction` of its two
-// neighbours (dividerFraction), on the draft it was drawn from: only those
-// two change (snapPair), the split's other children keep their size, and
-// the split's weights are divided by their gcd. The divider names its
-// neighbours by their leaves, so it finds them in the draft whatever the
-// picture left out (other windows' hidden place keeps its size); a divider
-// next to other windows' place where the engine puts it (o) writes that
-// place into the tree, as moving it does. { node, changed, label (the
-// split's ratio, "2 : 1") } or { error }; the draft given is never changed.
-// A null `fraction` (held, not moved yet) changes nothing.
+// neighbours (dividerFraction), on the draft the drag started on: the
+// split's children in the picture snap to an allowed arrangement
+// (snapSplit), anchored to where the draft has them, and the split's
+// weights are divided by their gcd. The divider names its neighbours by
+// their leaves, so it finds them in the draft whatever the picture left
+// out: other windows' place hidden from it keeps its size, out of the
+// arrangement; a divider next to that place where the engine puts it (o)
+// writes it into the tree, as moving it does. { node, changed, label (the
+// split's ratio, "2 : 1 : 1") } or { error }; the draft given is never
+// changed. A null `fraction` (held, not moved yet) changes nothing.
 function dragDivider(draft, divider, fraction) {
   var keys = divider.before.concat(divider.after)
   var own = leaves(draft)
@@ -1049,35 +1102,62 @@ function dragDivider(draft, divider, fraction) {
   var side = split.children.map(function() { return 0 })
   paths.forEach(function(p, i) { side[p[depth + 1].index] |= i < divider.before.length ? 1 : 2 })
   if (side.indexOf(3) >= 0 || side.indexOf(1) < 0 || side.indexOf(2) < 0) return { error: DIVIDER_GONE }
+  // the children the picture draws (a child with none of its leaves in the
+  // picture's split is other windows' hidden place)
+  var drawn = split.children.map(function(c, i) {
+    return side[i] !== 0 || leaves(c).some(function(k) { return divider.split.indexOf(k) >= 0 })
+  })
 
   var old = split.children.map(function(c) { return c.weight })
-  var sum = function(which) {
-    return old.reduce(function(t, w, i) { return t + (which === 0 || side[i] === which ? w : 0) }, 0)
-  }
-  var gl = sum(1)
-  var gr = sum(2)
-  var total = sum(0)
   var reduced = function(list) {
     var common = list.reduce(function(g, w) { return gcd(g, w) }, 0)
     return list.map(function(w) { return w / common })
   }
   var label = function(list) { return reduced(list).join(" : ") }
-  var snap = fraction === null || fraction === undefined ? null : snapPair(fraction, gl + gr, total)
-  if (!snap) return { node: draft, changed: false, label: label(old) }
-  // everything over a common denominator: the pair's two groups come to
-  // a : b of their total, the rest keeps its share
-  var weights = reduced(old.map(function(w, i) {
-    if (side[i] === 1) return w * snap.a * (gl + gr) * gr
-    if (side[i] === 2) return w * snap.b * (gl + gr) * gl
-    return w * (snap.a + snap.b) * gl * gr
-  }))
+  var unchanged = { node: draft, changed: false, label: label(old) }
+  if (fraction === null || fraction === undefined) return unchanged
+
+  var units = []
+  old.forEach(function(w, i) { if (drawn[i]) units.push(i) })
+  var shown = units.map(function(i) { return old[i] })
+  var k = -1
+  units.forEach(function(i, u) { if (side[i] === 1) k = u })
+  if (k < 0 || k + 1 >= units.length || side[units[k + 1]] !== 2) return { error: DIVIDER_GONE }
+  var snapped
+  if (units.length <= MAX_SNAPPED) {
+    var total = shown.reduce(function(s, w) { return s + w }, 0)
+    var upTo = shown.slice(0, k).reduce(function(s, w) { return s + w }, 0)
+    var target = (upTo + fraction * (shown[k] + shown[k + 1])) / total
+    snapped = snapSplit(arrangements(units.length), cumulative(shown), k, target)
+  } else {
+    // the two neighbours as a pair of 1 to 5, neither below 5% of the split
+    var pair = shown[k] + shown[k + 1]
+    var all = old.reduce(function(s, w) { return s + w }, 0)
+    var pairs = arrangements(2).filter(function(t) {
+      return MIN_SHARE * t[0] * pair >= (t[0] + t[1]) * all && MIN_SHARE * t[1] * pair >= (t[0] + t[1]) * all
+    })
+    var ab = snapSplit(pairs, [shown[k] / pair], 0, fraction)
+    // over a common denominator: the pair comes to a : b of its total, the
+    // rest keeps its share
+    snapped = shown.map(function(w, u) {
+      if (u === k) return ab[0] * pair
+      if (u === k + 1) return ab[1] * pair
+      return w * (ab[0] + ab[1])
+    })
+  }
+  // the drawn children come to the arrangement, keeping their share of the
+  // split; a hidden place keeps its own
+  var drawnTotal = shown.reduce(function(s, w) { return s + w }, 0)
+  var snappedTotal = snapped.reduce(function(s, w) { return s + w }, 0)
+  var u = 0
+  var weights = reduced(old.map(function(w, i) { return drawn[i] ? snapped[u++] * drawnTotal : w * snappedTotal }))
   var before = reduced(old)
-  if (weights.every(function(w, i) { return w === before[i] })) return { node: draft, changed: false, label: label(old) }
+  if (weights.every(function(w, i) { return w === before[i] })) return unchanged
 
   var out = copy(base)
-  var target = out
-  for (var k = 1; k <= depth; k++) target = target.children[paths[0][k].index]
-  target.children.forEach(function(c, i) { c.weight = weights[i] })
+  var target2 = out
+  for (var d = 1; d <= depth; d++) target2 = target2.children[paths[0][d].index]
+  target2.children.forEach(function(c, i) { c.weight = weights[i] })
   return { node: out, changed: true, label: weights.join(" : ") }
 }
 
@@ -1119,7 +1199,7 @@ function laidOut(root, area, opts) {
         var at = spans[i + 1].start
         bounds.push({ id: before[before.length - 1] + "|" + after[0], axis: node.kind,
           x: across ? at : box.x, y: across ? box.y : at, length: across ? box.h : box.w, at: at,
-          start: spans[i].start, end: spans[i + 1].end, before: before, after: after, depth: depth })
+          start: spans[i].start, end: spans[i + 1].end, before: before, after: after, split: leaves(node), depth: depth })
       }
     }
     node.children.forEach(function(child, i) {

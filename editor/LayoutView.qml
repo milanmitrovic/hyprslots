@@ -21,9 +21,10 @@ import "ui"
 // takes no room), so there is nothing to add to a tree or take out of it. t
 // cycles a tree through tiles, scroll half and scroll full; r sets a tiled
 // tree's ratios, and so does the mouse: every boundary between two
-// children of a tiled split is a divider, dragged to a new ratio of the two
-// (Layout.dividers, Layout.dragDivider: snapped to simple whole weights, the
-// split's ratio shown by the pointer meanwhile). Edits go to a draft; `w` applies it (api set_trees), Ctrl+S
+// children of a tiled split is a divider, dragged to a new ratio of the split
+// (Layout.dividers, Layout.dragDivider: the whole split snapped to whole
+// weights 1 to 5, anchored to where its dividers were when the drag
+// started; its ratio shown by the pointer meanwhile). Edits go to a draft; `w` applies it (api set_trees), Ctrl+S
 // (the panel's) applies it and saves (api save), `d` reverts a screen's tree
 // to how it was last saved (api reset), `R` records the windows on screen
 // (api record, previewed). It opens on "All workspaces" (`-`): the layout's
@@ -675,7 +676,8 @@ Item {
   }
 
   // The pointer at `fraction` of the two neighbours (Layout.dividerFraction),
-  // at x, y in the picture.
+  // at x, y in the picture: always snapped from the tree the drag started on
+  // (dragging.base), never from where the drag has had it since.
   function dragTo(fraction, x, y) {
     if (!dragging) return
     var result = Layout.dragDivider(dragging.base, dragging.divider, fraction)
@@ -1248,8 +1250,8 @@ Item {
                 }
 
                 // The pointer on the picture: on a divider a resize cursor,
-                // and a press there drags it (Layout.dragDivider: the two
-                // neighbours' new ratio, snapped); anywhere else the press
+                // and a press there drags it (Layout.dragDivider: the split
+                // snapped to a new ratio); anywhere else the press
                 // goes on to the tile under it.
                 MouseArea {
                   id: dividerMouse
