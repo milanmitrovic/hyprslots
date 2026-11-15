@@ -44,10 +44,12 @@ describe("first run", function()
     return require("hyprslots")
   end
 
-  local function setup()
+  local function setup(opts)
     hyprslots = fresh_module()
     hyprslots.setup({ config_dir = dir })
-    hl.run_timers() -- the new desk, a second later
+    if not (opts and opts.before_new_desk) then
+      hl.run_timers() -- the new desk, a second later
+    end
     return hyprslots
   end
 
@@ -74,7 +76,7 @@ describe("first run", function()
   end)
 
   it("writes a starter config.lua and an empty slots.lua where there is no config dir", function()
-    setup()
+    setup({ before_new_desk = true })
     local config = read(dir .. "/config.lua")
     assert.is_string(config, "config.lua written")
     assert.matches('load_data%("slots.lua"%)', config)
@@ -113,6 +115,35 @@ describe("first run", function()
     setup()
     assert.are.equal("headless-2", state().desk)
     assert.are.same({}, hl.notifications, "nothing to say before the first slot")
+  end)
+
+  it("saves the desk and layout it made into slots.lua: nothing reads as unsaved", function()
+    setup()
+    local s = state()
+    assert.is_false(s.dirty, "no unsaved edits on first contact")
+    assert.is_nil(s.desks["headless-2"].auto, "the desk is not new-and-unsaved")
+    local saved = assert(load(read(dir .. "/slots.lua"), "slots.lua", "t", {}))()
+    assert.are.same({ "HEADLESS-2" }, saved.desks["headless-2"].monitors)
+    assert.are.equal(s.layout, saved.desks["headless-2"].layout)
+    assert.are.equal(1, saved.layouts[s.layout].screens)
+  end)
+
+  it("never saves over edits not yet saved: a desk made then waits for Ctrl+S with them", function()
+    setup()
+    local before = read(dir .. "/slots.lua")
+    assert.is_true(call("rename_desk", { desk = "headless-2", to = "home" }).ok)
+    assert.is_true(state().dirty)
+    local monitor = hl_stub.monitor("HEADLESS-3", { id = 1, x = 1920, y = 0 })
+    hl.monitors[#hl.monitors + 1] = monitor
+    hl.emit("monitor.added", monitor)
+    for _ = 1, 3 do
+      hl.run_timers()
+    end
+    local s = state()
+    assert.are.equal("headless-2+headless-3", s.desk)
+    assert.is_true(s.dirty, "the rename and the new desk are both unsaved")
+    assert.is_true(s.desks["headless-2+headless-3"].auto)
+    assert.are.equal(before, read(dir .. "/slots.lua"), "slots.lua untouched")
   end)
 
   it("lays out nothing with zero slots, and raises nothing", function()

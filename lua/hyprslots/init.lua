@@ -198,8 +198,10 @@ end
 -- A desk for the connected monitors, when no desk is them (§8): named
 -- after them, using the most recently used layout for as many screens, or
 -- a new default one named for what it arranges (desk.layout_name_for). It is an edit like the editor's, in memory until
--- saved (the editor and the bar show unsaved edits); where config.lua does
--- not take desks from slots.lua it lives in the running config only.
+-- saved (the editor and the bar show unsaved edits); while there are no
+-- slots it is saved at once, unless other edits are unsaved. Where
+-- config.lua does not take desks from slots.lua it lives in the running
+-- config only.
 function Engine:new_desk()
   if not self.cfg or self.refused or self.active then
     return
@@ -223,6 +225,9 @@ function Engine:new_desk()
     layout = free_name(desk.layout_name_for(#monitors, trees), self.cfg.layouts, data_layouts)
   end
 
+  -- Edits not yet saved (or a slots.lua of before, or a keyboard resize):
+  -- the new desk then waits for Ctrl+S with them, never saved over them.
+  local pending = self.dirty or next(self.resized or {}) ~= nil
   local made = self.data and api.new_desk(self, name, selectors, layout, #monitors, trees)
   if not made then
     -- config.lua builds the desks (or loads no slots.lua): this run only.
@@ -243,7 +248,16 @@ function Engine:new_desk()
   self.auto_desks[name] = true
   self.log:info("new desk %s (%s), layout %s", name, table.concat(selectors, ", "), layout)
   if #self.cfg.slot_names == 0 then
-    return -- before the first slot (a first run) there is nothing to say
+    -- Before the first slot (a first run): nothing to say, and nothing
+    -- to review, so the desk and its layout are saved straight away
+    -- unless other edits wait for Ctrl+S.
+    if made and not pending then
+      local saved = api.save(self)
+      if saved.ok == false then
+        self.log:error("new desk %s: not saved: %s", name, tostring(saved.error))
+      end
+    end
+    return
   end
   adapter.notify(string.format("hyprslots: new monitor setup — using layout '%s'.%s", layout,
     made and " Open the editor to change it." or ""), "info")

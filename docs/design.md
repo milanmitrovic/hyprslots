@@ -127,7 +127,8 @@ no `slots.lua` beside it stays a config error), and `slots.lua` only where it
 is missing too. This is logged, with no notification; a starter that cannot
 be written is a config error, notified. The engine then runs with **zero
 slots**: the connected monitors get a desk and a layout of their own a second
-later (§8), a layout with no trees (nothing to place), so no workspace is
+later (§8), saved into `slots.lua` at once and silently (nothing on first
+contact reads as unsaved), a layout with no trees (nothing to place), so no workspace is
 laid out by hyprslots until the first slot is made; that slot goes into the
 layout's tree at once (no layout is treeless, below), and `save` writes it
 beside the starter. The editor guides the rest (§9, "First run and empty
@@ -825,7 +826,16 @@ where they are. The desk (`Engine:new_desk`):
 It is an edit like the editor's (`api.new_desk`: `edit.add_layout`,
 `edit.add_desk`, config.lua re-run), in memory until saved: `dirty`, the
 bar's unsaved dot, `state.desks[name].auto` until `save`. A reload without
-saving forgets it, and the monitors get one again. Where config.lua builds
+saving forgets it, and the monitors get one again. While there are no slots
+(a first run) the engine saves it at once (`api.save`, the atomic write of
+`save`), so nothing reads as unsaved on first contact: the desk and its
+treeless layout are all there is to review. It does so only when nothing
+else is unsaved (no other edit, no slots.lua of before, no keyboard-resized
+tree): with edits pending the new desk waits for Ctrl+S with them, never
+saved over them. With slots it waits for Ctrl+S as any edit does: a guessed
+layout for a setup that may be a one-off (a projector) is the user's to
+keep or drop, and saving it unasked would add a desk to slots.lua for every
+display ever plugged in. Where config.lua builds
 the desks or layouts in code (or loads no slots.lua) it is added to the
 running config only, for this Lua state. Deleting the active desk in the
 editor makes its monitors unknown again, so a second later they get a new
@@ -898,7 +908,8 @@ the next step, in plain words (no "spec", "overflow" or "tree"):
   a (or click assign) to put it into a slot.`, or, with no window there,
   `Open an app on workspace N, then select it here and press a (or click
   assign).`
-- **Desk tab**: never empty (the engine makes a desk for the monitors);
+- **Desk tab**: never empty (the engine makes a desk for the monitors,
+  saved already, so neither it nor the header says unsaved);
   its opening line: `A desk is a monitor setup; its layout is how your
   slots are arranged on its screens. The other tabs edit the active desk's
   (●).`

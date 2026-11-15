@@ -684,6 +684,11 @@ function handlers.save(engine)
   return { path = path, seq = engine.seq }
 end
 
+-- Save as the save call does: { path, seq }, or { ok = false, error }.
+function M.save(engine)
+  return handlers.save(engine)
+end
+
 -- reload {}: re-read config.lua and slots.lua, dropping unsaved edits.
 function handlers.reload(engine)
   local ok, err = engine:reload()
