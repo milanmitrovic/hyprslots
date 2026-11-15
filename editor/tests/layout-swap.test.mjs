@@ -113,16 +113,20 @@ test("over itself, outside the panes or onto a screen with no tree it does nothi
 });
 
 test("the pane under the pointer: each pane's width and half the gap either side", () => {
-  // three panes of 100 in 320 (gaps of 10): 0..100, 110..210, 220..320
-  assert.equal(L.paneAt(0, 3, 320, 10), 0);
-  assert.equal(L.paneAt(104, 3, 320, 10), 0);
-  assert.equal(L.paneAt(106, 3, 320, 10), 1);
-  assert.equal(L.paneAt(214, 3, 320, 10), 1);
-  assert.equal(L.paneAt(216, 3, 320, 10), 2);
-  assert.equal(L.paneAt(319, 3, 320, 10), 2);
-  assert.equal(L.paneAt(-1, 3, 320, 10), -1);
-  assert.equal(L.paneAt(320, 3, 320, 10), -1);
-  assert.equal(L.paneAt(5, 0, 320, 10), -1);
+  // three panes of 100 (gaps of 10): 0..100, 110..210, 220..320
+  const row = [{ x: 0, w: 100 }, { x: 110, w: 100 }, { x: 220, w: 100 }];
+  assert.equal(L.paneAt(0, row, 10), 0);
+  assert.equal(L.paneAt(104, row, 10), 0);
+  assert.equal(L.paneAt(106, row, 10), 1);
+  assert.equal(L.paneAt(214, row, 10), 1);
+  assert.equal(L.paneAt(216, row, 10), 2);
+  assert.equal(L.paneAt(319, row, 10), 2);
+  assert.equal(L.paneAt(-1, row, 10), -1);
+  assert.equal(L.paneAt(320, row, 10), -1);
+  assert.equal(L.paneAt(5, [], 10), -1);
+  // panes of their screens' sizes: 0..300 and 312..712
+  assert.equal(L.paneAt(305, [{ x: 0, w: 300 }, { x: 312, w: 400 }], 12), 0);
+  assert.equal(L.paneAt(307, [{ x: 0, w: 300 }, { x: 312, w: 400 }], 12), 1);
 });
 
 // --- the help row ---------------------------------------------------------------

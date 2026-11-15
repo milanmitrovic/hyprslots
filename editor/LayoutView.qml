@@ -117,6 +117,15 @@ Item {
   // Esc lets it go, other keys wait.
   property var screenDrag: null
   readonly property bool screenDragging: screenDrag !== null
+  // A slot (or other windows' place) being dragged by its tile or its
+  // filmstrip column: { from: { screen, key }, x, y (the pointer, in this
+  // view), to (the place under it, Layout.slotDrop's: a tile and its zone,
+  // a filmstrip gap, a screen with no tree; null where nothing takes it),
+  // action (Layout.slotDropAction: { kind: "swap" | "insert", label } or
+  // { kind: "none", reason? }) }; null otherwise. It has the keyboard
+  // while held, as a pane's drag does.
+  property var slotDrag: null
+  readonly property bool slotDragging: slotDrag !== null
 
   readonly property var activeDraft: drafts[screen] || null
   readonly property var activeNode: activeDraft ? activeDraft.node : null
@@ -186,6 +195,7 @@ Item {
   function reset() {
     dragging = null
     screenDrag = null
+    slotDrag = null
     prompt = null
     _answer = null
     message = ""
@@ -390,9 +400,13 @@ Item {
   }
 
   function handleKey(key, text, modifiers) {
-    // a pane held in a drag owns the keyboard: Esc cancels it, the rest waits
-    if (screenDragging) {
-      if (key === Qt.Key_Escape) screenDragCancel()
+    // a pane or a slot held in a drag owns the keyboard: Esc cancels it,
+    // the rest waits
+    if (screenDragging || slotDragging) {
+      if (key === Qt.Key_Escape) {
+        screenDragCancel()
+        slotDragCancel()
+      }
       return true
     }
     if (prompting) return handlePrompt(key, text, modifiers)
@@ -531,7 +545,7 @@ Item {
 
   // Whether a pane's title drags: an editable layout of more than one
   // screen, no prompt open, no divider held.
-  readonly property bool screensDrag: block === "" && !prompting && !dragging && paneList.length > 1
+  readonly property bool screensDrag: block === "" && !prompting && !dragging && !slotDrag && paneList.length > 1
 
   // A press on screen `k`'s title moved past the threshold: the drag
   // begins (false when it may not), at x, y in this view.
@@ -547,8 +561,8 @@ Item {
   function paneKeyAt(x, y) {
     var p = mapToItem(paneRow, x, y)
     if (p.y < 0 || p.y >= paneRow.height) return null
-    var i = Layout.paneAt(p.x, paneList.length, paneRow.width, root.gap)
-    return i >= 0 ? paneList[i].key : null
+    var i = Layout.paneAt(p.x, paneGeometry.panes, root.gap)
+    return i >= 0 && i < paneList.length ? paneList[i].key : null
   }
 
   function screenDragTo(x, y) {
@@ -569,6 +583,82 @@ Item {
 
   function screenDragCancel() {
     screenDrag = null
+  }
+
+  // --- dragging a slot ------------------------------------------------------
+
+  // Whether a tile or a filmstrip column drags: an editable layout, no
+  // prompt open, no divider or pane held.
+  readonly property bool slotsDrag: block === "" && !prompting && !dragging && !screenDrag
+
+  // A press on leaf `key` of screen `k`'s picture moved past the threshold:
+  // the drag begins (false when it may not), at x, y in this view. The
+  // selection stays until it is let go (a filmstrip would scroll under the
+  // pointer).
+  function slotDragStart(k, key, x, y) {
+    if (!slotsDrag) return false
+    if (slotFocus) slotFocus = false
+    message = ""
+    slotDrag = { from: { screen: k, key: key }, x: x, y: y, to: null, action: { kind: "none" } }
+    slotDragTo(x, y)
+    return true
+  }
+
+  // The place a slot let go at x, y (in this view) lands, as the pane under
+  // it says (its slotTargetAt), or null.
+  function slotTargetAt(x, y) {
+    for (var i = 0; i < paneRepeater.count; i++) {
+      var item = paneRepeater.itemAt(i)
+      var t = item ? item.slotTargetAt(x, y) : null
+      if (t) return t
+    }
+    return null
+  }
+
+  function slotDragTo(x, y) {
+    if (!slotDrag) return
+    var to = slotTargetAt(x, y)
+    slotDrag = { from: slotDrag.from, x: x, y: y, to: to,
+      action: to ? Layout.slotDropAction(drafts, slotDrag.from, to, { showOther: showOther }) : { kind: "none" } }
+  }
+
+  // Let go: an edit like hjkl/HJKL's, into the drafts (asking first, on a
+  // workspace on the shared trees, whom it is for); a drop refused says
+  // why, one that changes nothing does nothing.
+  function slotDragDrop() {
+    if (!slotDrag) return
+    var done = slotDrag
+    slotDrag = null
+    var to = slotTargetAt(done.x, done.y)
+    if (!to) return
+    var action = Layout.slotDropAction(drafts, done.from, to, { showOther: showOther })
+    if (action.kind === "none") {
+      if (action.reason) say(action.reason, true)
+      return
+    }
+    if (refuseEdit()) return
+    scoped(function() {
+      var result = Layout.slotDrop(root.drafts, done.from, to, { showOther: root.showOther })
+      if (result.error) {
+        root.say(result.error, true)
+        return
+      }
+      if (!result.changed) return
+      root.drafts = result.drafts
+      root.screen = result.screen
+      root.selectedKey = done.from.key
+      if (root.slotFocus) root.slotFocus = false
+      root.keepSelection()
+      var name = root.leafName(done.from.key)
+      var crossed = result.screen !== String(done.from.screen)
+      root.say((action.kind === "swap"
+        ? "Swapped " + name + " with " + root.leafName(to.key) + (crossed ? " of screen " + result.screen : "")
+        : "Moved " + name + (crossed ? " to screen " + result.screen : "")) + "." + root.draftNote(), false)
+    }, true)
+  }
+
+  function slotDragCancel() {
+    slotDrag = null
   }
 
   // A click on a pane's title: its screen has the keys.
@@ -894,6 +984,7 @@ Item {
     var dropped = editedScreens()
     dragging = null
     screenDrag = null
+    slotDrag = null
     workspace = n
     scope = ""
     drafts = ({})
@@ -1098,14 +1189,40 @@ Item {
 
   // --- drawing --------------------------------------------------------------
 
-  function aspectOf(connector) {
+  // A connected monitor's logical size, { w, h }, or null: a screen's size
+  // when the active desk's geometry (Layout.screenSize) has none.
+  function monitorSize(connector) {
     var list = Hyprland.monitors ? Hyprland.monitors.values : []
     for (var i = 0; i < list.length; i++) {
       var m = list[i]
-      if (m && m.name === connector && m.width > 0 && m.height > 0) return m.width / m.height
+      var scale = m && m.scale > 0 ? m.scale : 1
+      if (m && m.name === connector && m.width > 0 && m.height > 0) return { w: m.width / scale, h: m.height / scale }
     }
-    return 16 / 9
+    return null
   }
+
+  FontMetrics {
+    id: titleFont
+    font.family: Tokens.fontFamily
+    font.pixelSize: Style.font.subtitle
+  }
+  FontMetrics {
+    id: footFont
+    font.family: Tokens.fontFamily
+    font.pixelSize: Style.font.bodySmall
+  }
+
+  // The panes laid out (Layout.paneLayout): each screen its monitor's size
+  // (the active desk's geometry, else the connected monitor's, else 16:9)
+  // at one scale, a scroll screen's pane wider for its filmstrip and its
+  // mode under it, in the picture's area under the panes' titles.
+  readonly property var paneGeometry: Layout.paneLayout(paneList.map(function(p) {
+    var size = Layout.screenSize(root.state, p.screen) || root.monitorSize(p.connector)
+    var node = root.shownNode(p.key, root.drafts[p.key])
+    var shown = node ? Layout.picture(node, root.showOther) : null
+    return { key: p.key, w: size ? size.w : 0, h: size ? size.h : 0, scroll: !!shown && shown.kind === "scroll" }
+  }), { w: paneRow.width, h: Math.max(0, paneRow.height - titleFont.height - Style.spacing.sm) },
+    { gap: root.gap, footer: footFont.height + Style.spacing.xs })
 
   readonly property int gap: Style.spacing.md
   // other windows' place: drawn dim, beside the slots
@@ -1243,41 +1360,92 @@ Item {
         }
       }
 
-      Row {
+      // The panes, each a scale model of its monitor (Layout.paneLayout:
+      // one scale for all, top-aligned, a scroll screen's pane wider for
+      // its filmstrip), placed by root.paneGeometry.
+      Item {
         id: paneRow
         visible: !root.welcome
         width: body.width - slotPanel.width - body.spacing
         height: body.height
-        spacing: root.gap
 
         Repeater {
-          model: root.paneList
+          id: paneRepeater
+          // by count: a state read makes a new pane list, and panes made
+          // anew would drop a drag held on one
+          model: root.paneList.length
           delegate: Column {
             id: pane
-            required property var modelData
             required property int index
-            readonly property var draft: root.drafts[modelData.key] || null
+            readonly property var info: root.paneList[index] || ({ screen: index + 1, key: String(index + 1), tree: null,
+              ratio: "", resized: false, connector: "" })
+            // where it goes, its screen in it: Layout.paneLayout's
+            readonly property var geo: root.paneGeometry.panes[index]
+              || ({ x: 0, w: 0, h: 0, screen: { x: 0, y: 0, w: 0, h: 0 } })
+            readonly property var draft: root.drafts[info.key] || null
             // the draft's tree, or the dragged one while a divider is held
-            readonly property var node: root.shownNode(modelData.key, draft)
-            readonly property bool active: modelData.key === root.screen
-            readonly property bool changed: root.edited(modelData.key)
+            readonly property var node: root.shownNode(info.key, draft)
+            readonly property bool active: info.key === root.screen
+            readonly property bool changed: root.edited(info.key)
             // held in a drag by its title (dimmed), or where one would land
-            readonly property bool dragged: !!root.screenDrag && root.screenDrag.from === modelData.key
+            readonly property bool dragged: !!root.screenDrag && root.screenDrag.from === info.key
             readonly property bool landing: !!root.screenDrag && root.screenDrag.action.kind === "swap"
-              && root.screenDrag.target === modelData.key
-            width: (paneRow.width - root.gap * (root.paneList.length - 1)) / Math.max(1, root.paneList.length)
+              && root.screenDrag.target === info.key
+            // where a dragged slot would land on this pane, when letting go
+            // there does something (root.slotDrag.to), else null
+            readonly property var slotTarget: !!root.slotDrag && root.slotDrag.action.kind !== "none"
+              && !!root.slotDrag.to && root.slotDrag.to.screen === info.key ? root.slotDrag.to : null
+            x: geo.x
+            width: geo.w
             height: paneRow.height
             spacing: Style.spacing.sm
             opacity: dragged ? Tokens.dim : 1
 
-            PaneTitle {
+            // The place a dragged slot would land at root's x, y (in
+            // root): a tile and the zone of it under the pointer, a gap
+            // of the filmstrip, or this pane when it has no tree;
+            // null off the pane or off every tile.
+            function slotTargetAt(rx, ry) {
+              var q = pane.mapFromItem(root, rx, ry)
+              if (q.x < 0 || q.x >= pane.width || q.y < 0 || q.y >= pane.height) return null
+              if (!frame.picture) return { screen: info.key }
+              if (frame.scrolls) {
+                var f = film.mapFromItem(root, rx, ry)
+                return { screen: info.key, gap: Layout.stripGap(film.strip.columns, f.x) }
+              }
+              var s = screenBox.mapFromItem(root, rx, ry)
+              var leaf = Layout.leafAt(frame.boxes, s.x - 4, s.y - 4)
+              if (!leaf) return null
+              return { screen: info.key, key: leaf.key, zone: Layout.tileZone(leaf, s.x - 4, s.y - 4) }
+            }
+
+            // The title: the screen and its monitor's name (elided first,
+            // so the marks after it always show), then edited or
+            // keyboard-resized.
+            Item {
               id: paneTitle
               width: parent.width
-              leftPadding: Tokens.textInset
-              // the keys' pane: not while the slot list has them
-              active: pane.active && !root.slotFocus
-              text: Layout.screenLabel(root.state, pane.modelData.screen)
-                + (pane.changed ? "   edited" : "") + (pane.modelData.resized && !pane.changed ? "   keyboard-resized" : "")
+              height: titleText.implicitHeight
+
+              PaneTitle {
+                id: titleText
+                // over its screen (a filmstrip's pane is wider than it)
+                x: pane.geo.screen.x + Tokens.textInset
+                width: Math.min(implicitWidth, parent.width - x - (marks.visible ? marks.implicitWidth + Style.spacing.md : 0))
+                anchors.verticalCenter: parent.verticalCenter
+                // the keys' pane: not while the slot list has them
+                active: pane.active && !root.slotFocus
+                text: Layout.screenLabel(root.state, pane.info.screen)
+              }
+              InfoText {
+                id: marks
+                anchors.left: titleText.right
+                anchors.leftMargin: Style.spacing.md
+                anchors.verticalCenter: parent.verticalCenter
+                visible: text !== ""
+                urgent: pane.changed
+                text: pane.changed ? "edited" : pane.info.resized ? "keyboard-resized" : ""
+              }
 
               // The title is the pane's handle: dragged onto another pane
               // it swaps their trees (screenDragStart, screenDragTo,
@@ -1286,7 +1454,7 @@ Item {
               // keep the rest of the pane.
               MouseArea {
                 id: titleMouse
-                objectName: "screen:" + pane.modelData.key
+                objectName: "screen:" + pane.info.key
                 anchors.fill: parent
                 hoverEnabled: true
                 preventStealing: true
@@ -1313,7 +1481,7 @@ Item {
                   }
                   if (!Assignment.dragBegins(pressX, pressY, mouse.x, mouse.y)) return
                   var p = mapToItem(root, mouse.x, mouse.y)
-                  dragMade = root.screenDragStart(pane.modelData.key, p.x, p.y)
+                  dragMade = root.screenDragStart(pane.info.key, p.x, p.y)
                 }
                 onReleased: (mouse) => {
                   if (root.screenDrag) {
@@ -1322,24 +1490,22 @@ Item {
                   }
                 }
                 onClicked: {
-                  if (!dragMade) root.pickScreen(pane.modelData.key)
+                  if (!dragMade) root.pickScreen(pane.info.key)
                 }
                 onCanceled: root.screenDragCancel()
               }
             }
 
-            // The picture, fitted to the screen's aspect.
+            // The picture: the screen at the panes' common scale, at the
+            // top of the pane.
             Item {
               id: frame
               width: parent.width
               height: parent.height - paneTitle.height - parent.spacing
-              readonly property real aspect: root.aspectOf(pane.modelData.connector)
-              readonly property int boxW: Math.floor(Math.min(width, height * aspect))
-              readonly property int boxH: Math.floor(Math.min(height, width / aspect))
               // the tree as drawn (o: with other windows' place or not)
               readonly property var picture: pane.node ? Layout.picture(pane.node, root.showOther) : null
               readonly property bool scrolls: !!picture && picture.kind === "scroll"
-              readonly property var titles: Layout.titles(root.state, root.workspace, pane.modelData.screen)
+              readonly property var titles: Layout.titles(root.state, root.workspace, pane.info.screen)
               // the tiles' layout, inside the screen box's 4 px margin
               readonly property var area: ({ x: 0, y: 0, w: screenBox.width - 8, h: screenBox.height - 8 })
               readonly property var boxOpts: ({ pad: 5, title: Style.font.bodySmall + 6,
@@ -1348,15 +1514,19 @@ Item {
               readonly property var dividers: picture && !scrolls ? Layout.dividers(picture, area, boxOpts) : []
               // the drag on this pane, else null: every binding below reads
               // this one, so none sees a drag the others have let go
-              readonly property var drag: root.dragging && root.dragging.screen === pane.modelData.key ? root.dragging : null
+              readonly property var drag: root.dragging && root.dragging.screen === pane.info.key ? root.dragging : null
               readonly property bool dragHere: drag !== null
+              // the leaf of this pane a slot drag lifted (dimmed), else ""
+              readonly property string lifted: root.slotDrag && root.slotDrag.from.screen === pane.info.key
+                ? root.slotDrag.from.key : ""
 
-              // Where a screen dragged by its title would land: the whole
-              // pane, its title included, outlined in the accent with a
-              // faint accent fill, as a drop target in the Assignment table.
+              // Where a screen dragged by its title would land, or a slot
+              // dragged onto a screen with no tree: the whole pane, its
+              // title included, outlined in the accent with a faint accent
+              // fill, as a drop target in the Assignment table.
               Rectangle {
-                objectName: "dropzone:screen:" + pane.modelData.key
-                visible: pane.landing
+                objectName: "dropzone:screen:" + pane.info.key
+                visible: pane.landing || (!!pane.slotTarget && !frame.picture)
                 z: 5
                 x: -Tokens.dropLine
                 y: -(paneTitle.height + pane.spacing) - Tokens.dropLine
@@ -1372,9 +1542,10 @@ Item {
               Rectangle {
                 id: screenBox
                 visible: !frame.scrolls
-                x: Math.floor((frame.width - frame.boxW) / 2)
-                width: frame.boxW
-                height: frame.boxH
+                x: pane.geo.screen.x
+                y: pane.geo.screen.y
+                width: pane.geo.screen.w
+                height: pane.geo.screen.h
                 radius: Style.cornerRadius
                 color: "transparent"
                 // the keys' side: the picture's frame steps back while the slot list has them
@@ -1400,11 +1571,14 @@ Item {
                     readonly property bool isOther: modelData.kind === "overflow"
                     readonly property bool isContainer: !isLeaf
                     readonly property bool picked: !!modelData.selected
+                    // the press and the pointer go to pictureMouse below
+                    objectName: cell.isContainer ? "" : "tile:" + pane.info.key + ":" + cell.modelData.key
                     x: 4 + modelData.x + 2
                     y: 4 + modelData.y + 2
                     width: Math.max(0, modelData.w - 4)
                     height: Math.max(0, modelData.h - 4)
                     radius: Style.cornerRadius
+                    opacity: isLeaf && frame.lifted === modelData.key ? Tokens.dim : 1
                     color: picked && isLeaf ? root.selectedBackground
                       : isLeaf ? Commons.Util.alpha(isOther ? root.otherColor : root.foreground, isOther ? 0.04 : 0.06)
                       : "transparent"
@@ -1460,21 +1634,41 @@ Item {
                         font.pixelSize: Style.font.bodySmall
                       }
                     }
-
-                    // a click selects the tile, the keys back to the picture
-                    MouseArea {
-                      objectName: cell.isContainer ? "" : "tile:" + pane.modelData.key + ":" + cell.modelData.key
-                      anchors.fill: parent
-                      enabled: !cell.isContainer
-                      cursorShape: Qt.PointingHandCursor
-                      onClicked: root.pickLeaf(pane.modelData.key, cell.modelData.key)
-                    }
                   }
+                }
+
+                // Where a dragged slot would land on a tile: the tile
+                // outlined for a swap, the half of it on that side lit for
+                // an edge (Layout.zoneRect).
+                Rectangle {
+                  id: tileDrop
+                  objectName: zone ? "slotdrop:" + pane.info.key + ":" + target.key + ":" + target.zone : ""
+                  readonly property var target: pane.slotTarget && pane.slotTarget.key !== undefined && !frame.scrolls
+                    ? pane.slotTarget : null
+                  readonly property var box: {
+                    if (!target) return null
+                    for (var i = 0; i < frame.boxes.length; i++) {
+                      var b = frame.boxes[i]
+                      if ((b.kind === "slot" || b.kind === "overflow") && b.key === target.key) return b
+                    }
+                    return null
+                  }
+                  readonly property var zone: box ? Layout.zoneRect(box, target.zone) : null
+                  visible: !!zone
+                  z: 2
+                  x: zone ? 4 + zone.x + 2 : 0
+                  y: zone ? 4 + zone.y + 2 : 0
+                  width: zone ? Math.max(0, zone.w - 4) : 0
+                  height: zone ? Math.max(0, zone.h - 4) : 0
+                  radius: Style.cornerRadius
+                  color: target && target.zone === "centre" ? Tokens.dropFill : Tokens.dropBand
+                  border.width: Tokens.dropLine
+                  border.color: Tokens.dropOutline
                 }
 
                 // The dividers: every boundary between two children of a
                 // tiled split, a band the pointer grabs, its line lit on
-                // hover and while dragged. (Drawn only; dividerMouse below
+                // hover and while dragged. (Drawn only; pictureMouse below
                 // takes the pointer, so a drag survives the picture being
                 // laid out anew at every step.)
                 Repeater {
@@ -1484,8 +1678,8 @@ Item {
                     required property var modelData
                     readonly property bool across: modelData.axis === "h"
                     readonly property bool held: !!frame.drag && frame.drag.divider.id === modelData.id
-                    readonly property bool lit: held || (!frame.dragHere && dividerMouse.enabled && dividerMouse.hoveredId === modelData.id)
-                    objectName: "divider:" + pane.modelData.key + ":" + modelData.id
+                    readonly property bool lit: held || (!frame.dragHere && pictureMouse.live && pictureMouse.hoveredId === modelData.id)
+                    objectName: "divider:" + pane.info.key + ":" + modelData.id
                     x: 4 + (across ? modelData.at - Tokens.dividerHit / 2 : modelData.x)
                     y: 4 + (across ? modelData.y : modelData.at - Tokens.dividerHit / 2)
                     width: across ? Tokens.dividerHit : modelData.length
@@ -1502,62 +1696,105 @@ Item {
 
                 // The pointer on the picture: on a divider a resize cursor,
                 // and a press there drags it (Layout.dragDivider: the split
-                // snapped to a new ratio); anywhere else the press
-                // goes on to the tile under it.
+                // snapped to a new ratio); on a tile a click selects it,
+                // and pressed and moved past the threshold it drags the
+                // slot (root.slotDragStart: onto a tile, a filmstrip or
+                // another screen). Anywhere else the press goes on.
                 MouseArea {
-                  id: dividerMouse
-                  objectName: "dividers:" + pane.modelData.key
+                  id: pictureMouse
+                  objectName: "dividers:" + pane.info.key
                   anchors.fill: parent
-                  enabled: root.dividersLive(pane.modelData.key)
+                  enabled: !!frame.picture && !frame.scrolls
                   hoverEnabled: true
                   preventStealing: true
+                  // the dividers take the mouse: an editable tiled tree, no prompt
+                  readonly property bool live: root.dividersLive(pane.info.key)
                   property string hoveredId: ""
                   property string hoveredAxis: ""
                   property bool overLeaf: false
+                  // a press on a tile: its leaf, where, and whether it made a drag
+                  property string pressKey: ""
+                  property real pressX: 0
+                  property real pressY: 0
+                  property bool dragMade: false
                   readonly property string axis: frame.drag ? frame.drag.divider.axis : hoveredAxis
                   cursorShape: axis === "h" ? Qt.SplitHCursor : axis === "v" ? Qt.SplitVCursor
-                    : overLeaf ? Qt.PointingHandCursor : Qt.ArrowCursor
+                    : root.slotDrag ? Qt.ClosedHandCursor
+                    : overLeaf ? (root.slotsDrag ? Qt.OpenHandCursor : Qt.PointingHandCursor) : Qt.ArrowCursor
 
                   // the divider under the pointer (picture coordinates are
                   // the screen box's less its 4 px margin)
                   function hit(mx, my) {
-                    return Layout.dividerAt(frame.dividers, mx - 4, my - 4, Tokens.dividerHit / 2)
-                  }
-                  function onLeaf(mx, my) {
-                    return frame.boxes.some(function(b) {
-                      return (b.kind === "slot" || b.kind === "overflow") && mx - 4 >= b.x && mx - 4 < b.x + b.w
-                        && my - 4 >= b.y && my - 4 < b.y + b.h
-                    })
+                    return live ? Layout.dividerAt(frame.dividers, mx - 4, my - 4, Tokens.dividerHit / 2) : null
                   }
                   function hover(mx, my) {
                     var d = hit(mx, my)
                     hoveredId = d ? d.id : ""
                     hoveredAxis = d ? d.axis : ""
-                    overLeaf = !d && onLeaf(mx, my)
+                    overLeaf = !d && !!Layout.leafAt(frame.boxes, mx - 4, my - 4)
+                  }
+                  function follow(mouse) {
+                    var p = mapToItem(root, mouse.x, mouse.y)
+                    root.slotDragTo(p.x, p.y)
                   }
 
                   onPositionChanged: (mouse) => {
-                    if (!frame.drag) {
+                    if (frame.drag) {
+                      var d = frame.drag.divider
+                      root.dragTo(Layout.dividerFraction(d, (d.axis === "h" ? mouse.x : mouse.y) - 4), mouse.x, mouse.y)
+                      return
+                    }
+                    if (pressKey === "" || !pressed) {
                       hover(mouse.x, mouse.y)
                       return
                     }
-                    var d = frame.drag.divider
-                    root.dragTo(Layout.dividerFraction(d, (d.axis === "h" ? mouse.x : mouse.y) - 4), mouse.x, mouse.y)
+                    if (dragMade) {
+                      if (root.slotDrag) follow(mouse)
+                      return
+                    }
+                    if (!Assignment.dragBegins(pressX, pressY, mouse.x, mouse.y)) return
+                    var p = mapToItem(root, mouse.x, mouse.y)
+                    dragMade = root.slotDragStart(pane.info.key, pressKey, p.x, p.y)
                   }
                   onPressed: (mouse) => {
                     var d = hit(mouse.x, mouse.y)
-                    if (!d || !root.dragStart(pane.modelData.key, d)) {
+                    if (d && root.dragStart(pane.info.key, d)) {
+                      root.dragTo(null, mouse.x, mouse.y)
+                      return
+                    }
+                    var leaf = Layout.leafAt(frame.boxes, mouse.x - 4, mouse.y - 4)
+                    if (!leaf) {
                       mouse.accepted = false
                       return
                     }
-                    root.dragTo(null, mouse.x, mouse.y)
+                    pressKey = leaf.key
+                    pressX = mouse.x
+                    pressY = mouse.y
+                    dragMade = false
                   }
                   onReleased: (mouse) => {
-                    if (!frame.dragHere) return
-                    root.dragEnd()
-                    hover(mouse.x, mouse.y)
+                    if (frame.dragHere) {
+                      root.dragEnd()
+                      hover(mouse.x, mouse.y)
+                      return
+                    }
+                    var key = pressKey
+                    pressKey = ""
+                    if (key === "") return
+                    if (dragMade) {
+                      if (root.slotDrag) {
+                        follow(mouse)
+                        root.slotDragDrop()
+                      }
+                    } else {
+                      root.pickLeaf(pane.info.key, key)
+                    }
                   }
-                  onCanceled: if (frame.dragHere) root.dragCancel()
+                  onCanceled: {
+                    if (frame.dragHere) root.dragCancel()
+                    if (pressKey !== "" && dragMade && root.slotDrag) root.slotDragCancel()
+                    pressKey = ""
+                  }
                   onExited: {
                     hoveredId = ""
                     hoveredAxis = ""
@@ -1568,7 +1805,7 @@ Item {
                 // The dragged split's ratio, by the pointer.
                 Rectangle {
                   id: ratioTip
-                  objectName: "dragRatio:" + pane.modelData.key
+                  objectName: "dragRatio:" + pane.info.key
                   visible: !!frame.drag && frame.drag.x >= 0
                   readonly property real px: frame.drag ? frame.drag.x : 0
                   readonly property real py: frame.drag ? frame.drag.y : 0
@@ -1594,35 +1831,29 @@ Item {
               }
 
               // A scroll tree: a filmstrip. Its columns, half or full screen
-              // width, in slot order; the screen a viewport over them,
-              // scrolled to the selected column, a third of the picture's
-              // width so a screen's width of the strip shows on each side;
-              // columns beyond it faded.
+              // width, in slot order; the screen a viewport over them (at
+              // the top of the pane, where the other panes' screens are),
+              // scrolled to the selected column, the pane wider than it
+              // (Layout.paneLayout: up to three screens' widths) so the
+              // columns either side show, faded; the mode under it.
               Item {
                 id: film
                 visible: frame.scrolls
-                anchors.fill: parent
+                width: pane.geo.w
+                height: pane.geo.h
                 clip: true
-                readonly property int labelHeight: filmLabel.implicitHeight + Style.spacing.xs
                 // between neighbouring columns, half of it each side
                 readonly property int gap: Math.max(2, Style.spacing.xs)
-                readonly property var strip: frame.scrolls
-                  ? Layout.filmstrip(frame.picture, { x: 0, y: labelHeight, w: width, h: height - labelHeight }, {
-                    aspect: frame.aspect,
-                    span: 3,
+                readonly property var strip: frame.scrolls && pane.geo.screen.w > 0
+                  ? Layout.filmstrip(frame.picture, { x: 0, y: 0, w: pane.geo.w, h: pane.geo.screen.h }, {
+                    aspect: pane.geo.screen.w / Math.max(1, pane.geo.screen.h),
+                    span: pane.geo.w / pane.geo.screen.w,
                     selected: pane.active ? root.selectedKey : "",
                     titles: frame.titles,
                   })
                   : null
-
-                // what it is, quietly, over the screen: "scroll · half"
-                InfoText {
-                  id: filmLabel
-                  x: film.strip ? film.strip.viewport.x : 0
-                  y: film.strip ? Math.max(0, film.strip.viewport.y - implicitHeight - Style.spacing.sm) : 0
-                  text: film.strip ? film.strip.label : ""
-                  font.italic: true
-                }
+                // a slot dragged over a gap of it: where it would go
+                readonly property var gapTarget: pane.slotTarget && pane.slotTarget.gap !== undefined ? pane.slotTarget : null
 
                 Repeater {
                   model: film.strip ? film.strip.columns : []
@@ -1636,12 +1867,14 @@ Item {
                     // screen peeks in at the side): its label goes there
                     readonly property real shownLeft: Math.max(x, 0)
                     readonly property real shownRight: Math.min(x + width, film.width)
+                    // the press and the pointer go to filmMouse below
+                    objectName: "tile:" + pane.info.key + ":" + modelData.key
                     x: modelData.x + film.gap
                     y: modelData.y + film.gap
                     width: Math.max(0, modelData.w - film.gap * 2)
                     height: Math.max(0, modelData.h - film.gap * 2)
                     radius: Style.cornerRadius
-                    opacity: onScreen ? 1 : 0.45
+                    opacity: (onScreen ? 1 : 0.45) * (frame.lifted === modelData.key ? Tokens.dim : 1)
                     color: picked ? root.selectedBackground
                       : Commons.Util.alpha(isOther ? root.otherColor : root.foreground, isOther ? 0.04 : 0.06)
                     border.width: picked ? 2 : 1
@@ -1679,14 +1912,6 @@ Item {
                         font.pixelSize: Style.font.bodySmall
                       }
                     }
-
-                    // a click selects the column, the keys back to the picture
-                    MouseArea {
-                      objectName: "tile:" + pane.modelData.key + ":" + column.modelData.key
-                      anchors.fill: parent
-                      cursorShape: Qt.PointingHandCursor
-                      onClicked: root.pickLeaf(pane.modelData.key, column.modelData.key)
-                    }
                   }
                 }
 
@@ -1694,14 +1919,116 @@ Item {
                 // columns it shows
                 Rectangle {
                   x: film.strip ? film.strip.viewport.x - 2 : 0
-                  y: film.strip ? film.strip.viewport.y - 2 : 0
+                  y: film.strip ? film.strip.viewport.y : 0
                   width: film.strip ? film.strip.viewport.w + 4 : 0
-                  height: film.strip ? film.strip.viewport.h + 4 : 0
+                  height: film.strip ? film.strip.viewport.h : 0
                   radius: Style.cornerRadius
                   color: "transparent"
                   border.width: pane.active && !root.slotFocus ? 2 : 1
                   border.color: pane.active ? Commons.Util.alpha(Commons.Color.accent, root.slotFocus ? 0.5 : 1)
                     : Commons.Util.alpha(root.foreground, 0.35)
+                }
+
+                // Where a dragged slot would go between the columns: an
+                // accent bar in the gap, the strip's height.
+                Rectangle {
+                  objectName: visible ? "slotdrop:" + pane.info.key + ":gap:" + film.gapTarget.gap : ""
+                  visible: !!film.gapTarget && !!film.strip
+                  z: 3
+                  readonly property real at: film.strip && film.gapTarget ? Layout.stripGapX(film.strip.columns, film.gapTarget.gap) : 0
+                  x: Math.max(0, Math.min(film.width - width, at - width / 2))
+                  y: film.strip ? film.strip.viewport.y : 0
+                  width: Tokens.dropLine * 2
+                  height: film.strip ? film.strip.viewport.h : 0
+                  radius: width / 2
+                  color: Tokens.dropOutline
+                }
+
+                // what it is, quietly, under the screen: "scroll · half"
+                InfoText {
+                  id: filmLabel
+                  x: film.strip ? film.strip.viewport.x : 0
+                  y: film.strip ? film.strip.viewport.y + film.strip.viewport.h + Style.spacing.xs : 0
+                  text: film.strip ? film.strip.label : ""
+                  font.italic: true
+                }
+
+                // The pointer on the strip: a click on a column selects it,
+                // pressed and moved past the threshold it drags the slot
+                // (root.slotDragStart: between the columns, onto a tile or
+                // another screen).
+                MouseArea {
+                  id: filmMouse
+                  objectName: "film:" + pane.info.key
+                  anchors.fill: parent
+                  enabled: frame.scrolls
+                  hoverEnabled: true
+                  preventStealing: true
+                  z: 4
+                  property string pressKey: ""
+                  property real pressX: 0
+                  property real pressY: 0
+                  property bool dragMade: false
+                  property bool overColumn: false
+                  cursorShape: root.slotDrag ? Qt.ClosedHandCursor
+                    : overColumn ? (root.slotsDrag ? Qt.OpenHandCursor : Qt.PointingHandCursor) : Qt.ArrowCursor
+
+                  // the column under the pointer, as the strip lays it out
+                  function columnAt(mx, my) {
+                    var list = film.strip ? film.strip.columns : []
+                    if (mx < 0 || mx >= film.width) return null
+                    for (var i = 0; i < list.length; i++) {
+                      var c = list[i]
+                      if (mx >= c.x && mx < c.x + c.w && my >= c.y && my < c.y + c.h) return c
+                    }
+                    return null
+                  }
+                  function follow(mouse) {
+                    var p = mapToItem(root, mouse.x, mouse.y)
+                    root.slotDragTo(p.x, p.y)
+                  }
+                  onPositionChanged: (mouse) => {
+                    if (pressKey === "" || !pressed) {
+                      overColumn = !!columnAt(mouse.x, mouse.y)
+                      return
+                    }
+                    if (dragMade) {
+                      if (root.slotDrag) follow(mouse)
+                      return
+                    }
+                    if (!Assignment.dragBegins(pressX, pressY, mouse.x, mouse.y)) return
+                    var p = mapToItem(root, mouse.x, mouse.y)
+                    dragMade = root.slotDragStart(pane.info.key, pressKey, p.x, p.y)
+                  }
+                  onPressed: (mouse) => {
+                    var c = columnAt(mouse.x, mouse.y)
+                    if (!c) {
+                      mouse.accepted = false
+                      return
+                    }
+                    pressKey = c.key
+                    pressX = mouse.x
+                    pressY = mouse.y
+                    dragMade = false
+                  }
+                  onReleased: (mouse) => {
+                    var key = pressKey
+                    pressKey = ""
+                    if (key === "") return
+                    if (dragMade) {
+                      if (root.slotDrag) {
+                        follow(mouse)
+                        root.slotDragDrop()
+                      }
+                    } else {
+                      root.pickLeaf(pane.info.key, key)
+                    }
+                  }
+                  onCanceled: {
+                    if (pressKey !== "" && dragMade && root.slotDrag) root.slotDragCancel()
+                    pressKey = ""
+                  }
+                  onExited: overColumn = false
                 }
               }
             }
@@ -1834,6 +2161,20 @@ Item {
         }
       }
     }
+  }
+
+  // A slot held by its tile or column: its ghost by the pointer (the slot
+  // and the title of the window in it), and what letting go does there.
+  DragGhost {
+    id: slotGhost
+    objectName: "slotGhost"
+    visible: root.slotDragging
+    z: 10
+    title: root.slotDrag ? root.leafName(root.slotDrag.from.key) : ""
+    subtitle: root.slotDrag ? Layout.titles(root.state, root.workspace, parseInt(root.slotDrag.from.screen, 10))[root.slotDrag.from.key] || "" : ""
+    label: root.slotDrag && root.slotDrag.action.kind !== "none" ? root.slotDrag.action.label : ""
+    x: root.slotDrag ? Math.max(0, Math.min(root.width - width, root.slotDrag.x + Style.spacing.lg)) : 0
+    y: root.slotDrag ? Math.max(0, Math.min(root.height - height, root.slotDrag.y + Style.spacing.md)) : 0
   }
 
   // A screen's pane held by its title: its ghost by the pointer (the

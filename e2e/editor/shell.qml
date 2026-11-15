@@ -214,6 +214,12 @@ ShellRoot {
       return panel.layoutScreenDragText()
     }
 
+    // A slot dragged by its tile or column in the Layout view: "1 right
+    // -> Swap with main", "" for none.
+    function slotDrag(): string {
+      return panel.layoutSlotDragText()
+    }
+
     function layoutMode(): string {
       return panel.layoutModeText()
     }

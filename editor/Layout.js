@@ -797,14 +797,16 @@ function screenDropAction(drafts, from, to) {
   return { kind: "swap", label: "Swap with screen " + to }
 }
 
-// The index of the pane under x in a row of `count` panes, `width` wide in
-// all with `gap` between them (each pane its width and half the gap either
-// side), or -1 outside the row.
-function paneAt(x, count, width, gap) {
-  if (count < 1 || x < 0 || x >= width) return -1
-  var w = (width - gap * (count - 1)) / count
-  var i = Math.floor((x + gap / 2) / (w + gap))
-  return Math.max(0, Math.min(count - 1, i))
+// The index of the pane under x in a row of panes (`panes`: [{ x, w }] left
+// to right, `gap` between them): each pane its width and half the gap
+// either side; -1 outside the row.
+function paneAt(x, panes, gap) {
+  var list = panes || []
+  if (list.length === 0) return -1
+  var last = list[list.length - 1]
+  if (x < list[0].x || x >= last.x + last.w) return -1
+  for (var i = 0; i < list.length; i++) if (x < list[i].x + list[i].w + gap / 2) return i
+  return list.length - 1
 }
 
 // --- the panes on a desk of several monitors -----------------------------------

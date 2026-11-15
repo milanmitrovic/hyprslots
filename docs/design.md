@@ -990,11 +990,13 @@ Layout picture (select it, the keys back to the picture) and a slot of the
 slot list (select it, the keys to the list) are clicked as they are. Hover
 and press looks come from the theme's control tokens. One thing the mouse
 does that no key press spells: dragging a divider of the Layout picture to
-a new ratio (below), an edit of the same draft `r` writes. And two the
+a new ratio (below), an edit of the same draft `r` writes. And three the
 keys spell differently: dragging an Assignment row's window onto a slot
-(`a` with that slot) or onto the other windows (`u`), and dragging a
+(`a` with that slot) or onto the other windows (`u`), dragging a
 Layout pane by its title onto another pane (`p`, swapping the two
-screens' trees), below.
+screens' trees), and dragging a Layout tile or filmstrip column onto
+another tile, between two columns or onto another screen (hjkl/HJKL's
+moves, a drop anywhere rather than a step at a time), below.
 
 **One look per kind of element** (`editor/ui/`, theme tokens only):
 section headers are the accent colour in small letter-spaced capitals
@@ -1183,17 +1185,28 @@ dropped, and the message says so). When other desks use the layout too, a
 quiet line under the header says so: `Shared with desk beamer: edits here
 change it there too — fork it in the Desk tab.` (forking is the Desk
 tab's alone). A pane per screen, side by side, titled `Screen 1
-· Built-in`, the display name (§4) of the active desk's monitor at that position,
-each a scale model of its monitor (its aspect from Hyprland, else 16:9): leaves are boxes
+· Built-in`, the display name (§4) of the active desk's monitor at that position
+(elided first, so the pane's `edited` or `keyboard-resized` after it always
+shows), each a scale model of its monitor (`Layout.paneLayout`,
+`Layout.screenSize`, node-tested): its size from the active desk's geometry
+in state (§8), else the connected monitor's, else 1920 x 1080, and one scale
+for every pane, so a 2560-wide screen is drawn larger than a 1920 one; the
+largest that fits the picture's width and the page's height under the titles,
+every pane top-aligned (the row centred across what is left; a desk much
+wider than the picture leaves height unused, as its shape must). Leaves are boxes
 proportional to their weights (tree.lua's integer arithmetic) with the slot
 name, `×n` for a share other than 1, and the title of the window in the
 slot; a nested split is a box titled with its kind and ratio (`h 1:3`). A
 scroll branch is a **filmstrip** (`Layout.filmstrip`, node-tested): no tile
 boxes, but its columns in slot order on a horizontal strip, each as wide as
 the branch says (half or the whole screen), a viewport frame the size of
-the screen, a third of the picture's width and centred, so about three
-screens' widths of the strip show at once, scrolled to show the selected
-column, and the columns beyond it faded, labelled in the part that shows; a quiet `scroll · half` / `scroll · full` over the frame. The picture
+the screen at the panes' scale, at the top of its pane as a tiled screen is,
+scrolled to show the selected column, and the columns beyond it faded,
+labelled in the part that shows; a quiet `scroll · half` / `scroll · full`
+under the frame. The pane is wider than its screen, the screen in its middle:
+up to three screens' widths, so the columns either side show, taking the
+width the screens leave, the screens shrinking for it to no less than 0.7 of
+the scale they would have without. The picture
 is the whole story: no tree text, ratio string or order line under it (a
 tiled tree's ratios are the `×n` shares and the split titles; a scroll
 branch has none).
@@ -1238,14 +1251,48 @@ knows what the picture drew), and one next to that
 place where the engine puts it (`o`) writes its `*` into the tree, as
 moving it does. No dividers on a scroll tree, a read-only layout, or while
 a prompt is open; a press anywhere but on a divider goes on to the tile.
+**Dragging slots** (`Layout.slotDrop`, `slotDropAction`, `tileZone`,
+`leafAt`, `zoneRect`, `stripGap`, `stripGapX`; node-tested). A tile or a
+filmstrip column pressed and moved `Assignment.DRAG_THRESHOLD` (6) px drags
+its slot (other windows' place too while `o` shows it); under that a press
+is a click (select), and a press on a divider drags the divider, a pane's
+title the screen. Let go on a tile: its middle **swaps** the two slots
+(each keeping its share, `×n`, as h/l's swap does: `h[main:2, right]`,
+right onto main, is `h[right, main:2]`); an edge band a quarter of the
+tile deep (the nearer edge in a corner) puts the dragged slot **beside** it
+on that side: along the tile's split, a child next to it (its share kept);
+across it, the tile split in two that way (the tile's share the new
+split's), or, when the two were neighbours in one split, the two paired
+in a new split taking both their shares (HJKL's pair). Let go between two
+columns of a filmstrip and the column moves there. These are the keys'
+own operations: a node test checks that a drop where hjkl/HJKL would put a
+slot makes their tree. Let go on another screen's pane, the slot leaves its
+tree (closing up) and lands there as the keys' cross-screen move lands it
+(a share of 1; the same tree as `l` off the edge for a drop at the next
+screen's near edge); a centre drop there trades the two slots between the
+screens; a pane with no tree takes it as its whole tree. Other windows'
+place never leaves its screen and a screen's only slot only goes in a trade
+(refused: letting go says why). It is an edit like hjkl's: into the
+drafts (`edited`, `w`, Ctrl+S, `d`), on a workspace using the shared trees
+asking first whom it is for; the selection goes with the slot. While held
+(as a pane's drag): the slot's tile or column dimmed, a `DragGhost` by the
+pointer (the slot, the title of the window in it) with what letting go does
+(`Swap with main`, `Put left of main`, `Put above main`, `Put between side
+and chat`, `Put on screen 2`), and where: the target tile outlined in the
+accent for a swap, the half of it on that side lit (`Tokens.dropBand`) for
+an edge, an accent bar in a filmstrip's gap, a pane with no tree outlined
+whole; where letting go does nothing, nothing is lit and no label shows. Esc
+while held lets it go; an open hand over a tile that drags, a closed hand
+while dragging. The panes are kept by count, so a state read while a drag
+is held does not drop it.
 A node test checks a dragged tree is the whole tree's ratio as ratio.lua
 writes it in.
 **Swapping screens** (`Layout.swapScreens`, `nextScreen`,
 `screenDropAction`, `paneAt`; node-tested). A pane's title (`Screen 1 ·
 Built-in`) is its handle: pressed and moved `Assignment.DRAG_THRESHOLD`
 (6) px it drags (a click gives that screen the keys). The title, because
-the rest of a pane is taken: tiles select, dividers drag ratios, filmstrip
-columns select. Let go over another pane (the pane under the pointer, with
+the rest of a pane is taken: tiles and filmstrip columns select and drag
+slots, dividers drag ratios. Let go over another pane (the pane under the pointer, with
 any number of screens; anywhere on it, its title included) and the two
 screens trade trees: screen 1's tree goes to screen 2 and screen 2's to
 screen 1, so their slots move between the monitors while the screens keep
@@ -1303,7 +1350,7 @@ each with its key and its description and nothing else (below).
 | Key | Does |
 |---|---|
 | ←↑↓→ | select the leaf that way; off a pane's left/right edge, the next screen's |
-| h j k l | swap the leaf with its neighbour in its container; off the edge, move it to the next screen's tree |
+| h j k l | swap the leaf with its neighbour in its container; off the edge, move it to the next screen's tree; by mouse, drag its tile (above) |
 | H J K L | along its container: pair it with its neighbour in a new container across; across: move it out beside its container |
 | / | on a tiled tree: flip every split of the tree; on a scroll branch refused (its columns always stand in a row), and the help row leaves it out |
 | t | cycle tiles → scroll half → scroll full → tiles: a tiled tree becomes `scroll:0.5[...]` of its leaves in reading order (other windows' place, `*`, as the column they take), that becomes `scroll[...]` (any other width too), and that goes back to the tree it was made from while its columns are as they were, else its columns side by side; the slot order is kept |

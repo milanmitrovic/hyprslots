@@ -20,7 +20,10 @@ import qs.Commons as Commons
 //                     a ghost of it by the pointer (DragGhost, on the menu
 //                     surface), the row or section it would land on in an
 //                     accent outline, what letting go does on the tooltip
-//                     surface beside the ghost (as the ratio label)
+//                     surface beside the ghost (as the ratio label);
+//                     the Layout picture's slots the same, a tile's half
+//                     a dropped slot lands in a stronger accent band
+//                     (dropBand), a filmstrip's gap an accent bar
 //   mini-maps         a slot's place on its screen (MiniMap): the slot an
 //                     accent fill, the others dim outlines; a desk's
 //                     monitors (DeskMap): connected solid, absent
@@ -66,6 +69,8 @@ QtObject {
   readonly property color surface: Commons.Color.menu.background
   readonly property color dropOutline: Commons.Color.accent
   readonly property color dropFill: Commons.Util.alpha(Commons.Color.accent, 0.1)
+  // the half of a Layout tile a slot dropped on its edge lands in
+  readonly property color dropBand: Commons.Util.alpha(Commons.Color.accent, 0.28)
   readonly property int dropLine: Math.max(2, Style.spacing.xxs)
   // a slot's mini-map: the box it fits (the screen's shape inside it), and
   // the rows tall enough for it
