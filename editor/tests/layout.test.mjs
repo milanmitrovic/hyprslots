@@ -686,15 +686,22 @@ const ONE_LINE = 150;
 
 test("the picture's help row: no add, take out or fork; d reverts; t says what it makes next", () => {
   const line = helpLine(L.pictureHelp({ node: tree("h[a, b]"), hasOwn: true, jumpKeys: "1–9 0" }));
-  assert.equal(line, "←↑↓→ select hjkl/HJKL move / flip t scroll half ratios other windows · w apply d revert Record "
+  assert.equal(line, "←↑↓→ select hjkl/HJKL move / flip t scroll half ratios others · w apply d revert Record "
     + "use shared · slots · [ ] 1–9 0 - workspace · Tab view");
   assert.ok(line.length <= ONE_LINE, `${line.length} characters: ${line}`);
   assert.doesNotMatch(line, /add|take out|fork|\.lua/);
 });
 
+test("on a desk of two screens p, swap, joins the row, still one line", () => {
+  const line = helpLine(L.pictureHelp({ node: tree("h[a, b]"), hasOwn: true, jumpKeys: "1–9 0", screens: 2 }));
+  assert.equal(line, "←↑↓→ select hjkl/HJKL move / flip t scroll half ratios swap others · w apply d revert "
+    + "Record use shared · slots · [ ] 1–9 0 - workspace · Tab view");
+  assert.ok(line.length <= ONE_LINE, `${line.length} characters: ${line}`);
+});
+
 test("/ flip and r ratios show on tiles only; t names the next of tiles, scroll half, scroll full", () => {
   const half = helpLine(L.pictureHelp({ node: tree("scroll:0.5[a, b]"), hasOwn: false, jumpKeys: "1–9" }));
-  assert.equal(half, "←↑↓→ select hjkl/HJKL move t scroll full other windows · w apply d revert Record · slots · "
+  assert.equal(half, "←↑↓→ select hjkl/HJKL move t scroll full others · w apply d revert Record · slots · "
     + "[ ] 1–9 - workspace · Tab view");
   const full = helpLine(L.pictureHelp({ node: tree("scroll[a, b]"), hasOwn: false, jumpKeys: "1–9" }));
   assert.match(full, / t tiles /);
@@ -705,7 +712,7 @@ test("/ flip and r ratios show on tiles only; t names the next of tiles, scroll 
 test("the trigger keys are highlighted in the help row", () => {
   const styled = H.row(L.pictureHelp({ node: tree("h[a, b]"), hasOwn: true, jumpKeys: "1–9" }), "#fff");
   const k = (key) => `<b><font color="#fff">${key}</font></b>`;
-  for (const part of [k("t") + " scroll half", k("r") + "atios", k("o") + "ther windows", k("d") + " revert",
+  for (const part of [k("t") + " scroll half", k("r") + "atios", k("o") + "thers", k("d") + " revert",
     k("R") + "ecord", k("u") + "se shared", k("s") + "lots", k("hjkl/HJKL") + " move", k("[ ] 1–9 -") + " workspace"]) {
     assert.ok(styled.includes(part), `${part} in ${styled}`);
   }

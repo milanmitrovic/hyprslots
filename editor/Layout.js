@@ -747,6 +747,66 @@ function crossMove(source, target, key, direction) {
   return { source: rest, target: rooted(into) }
 }
 
+// --- swapping screens ------------------------------------------------------------
+
+// The drafts (screen key -> { node, base }) with screens `a` and `b`'s trees
+// traded: a pane dragged onto another by its title, or p. The screens keep
+// their numbers (left to right) and their bases (the trees in force there),
+// so both are edited until applied; each tree goes whole, its place for
+// other windows (its * leaf, or none: the engine's column at its right),
+// a scroll branch's column width and t's memory of the tiles it came from
+// included. { drafts } or { error }.
+function swapScreens(drafts, a, b) {
+  a = String(a)
+  b = String(b)
+  if (a === b) return { error: "Screen " + a + " cannot be swapped with itself." }
+  var missing = [a, b].filter(function(k) { return !drafts || !drafts[k] })
+  if (missing.length) return { error: "There is no screen " + missing[0] + " in this layout." }
+  var empty = [a, b].filter(function(k) { return !drafts[k].node })
+  if (empty.length) return { error: "Screen " + empty[0] + " has no tree here, so there is nothing to swap with it." }
+  var out = {}
+  for (var k in drafts) out[k] = drafts[k]
+  out[a] = { node: copy(drafts[b].node), base: drafts[a].base }
+  out[b] = { node: copy(drafts[a].node), base: drafts[b].base }
+  return { drafts: out }
+}
+
+function swappedText(a, b) {
+  return "Swapped screens " + a + " and " + b + ": screen " + a + "'s slots are on screen " + b + " now, and screen "
+    + b + "'s on screen " + a + "."
+}
+
+// The screen p swaps the selected one (`key`) with: the next of `panes`
+// (panes()), round from the last to the first; null with one screen.
+function nextScreen(panes, key) {
+  var list = panes || []
+  if (list.length < 2) return null
+  for (var i = 0; i < list.length; i++) {
+    if (list[i].key === key) return list[(i + 1) % list.length].key
+  }
+  return null
+}
+
+// What letting screen `from`'s pane go over screen `to`'s does (`to`: null
+// outside the panes): { kind: "swap", label } or { kind: "none" } (itself,
+// outside, or a screen with no tree on either side).
+function screenDropAction(drafts, from, to) {
+  if (to === null || to === undefined || String(to) === String(from)) return { kind: "none" }
+  var d = drafts || {}
+  if (!d[from] || !d[from].node || !d[to] || !d[to].node) return { kind: "none" }
+  return { kind: "swap", label: "Swap with screen " + to }
+}
+
+// The index of the pane under x in a row of `count` panes, `width` wide in
+// all with `gap` between them (each pane its width and half the gap either
+// side), or -1 outside the row.
+function paneAt(x, count, width, gap) {
+  if (count < 1 || x < 0 || x >= width) return -1
+  var w = (width - gap * (count - 1)) / count
+  var i = Math.floor((x + gap / 2) / (w + gap))
+  return Math.max(0, Math.min(count - 1, i))
+}
+
 // The slot `key` taken out of a tree, tidied ({ node: null } when it was
 // all of it): an edited draft following the slot list's delete. Never the
 // place for other windows. { node } or { error }.
@@ -1347,7 +1407,8 @@ function workspaceHelp(jumpKeys) {
 // what it makes of it, / and r show on tiles only), hasOwn (the workspace
 // has trees of its own: u), jumpKeys (Workspaces.jumpKeys), readOnly (the
 // layout takes no edit), edited (a pane has unapplied edits: w), workspace
-// ("default": R records a workspace, not the shared trees) }. A key the
+// ("default": R records a workspace, not the shared trees), screens (the
+// layout's screen count: p, swap with the next, on more than one) }. A key the
 // picture would refuse now is marked `enabled: false` (the toolbar dims it).
 function pictureHelp(opts) {
   var tiles = scrollMode(opts.node) === "tiles"
@@ -1361,7 +1422,8 @@ function pictureHelp(opts) {
   if (tiles) tree.push(off({ key: "/", label: "flip" }, edits))
   tree.push(off({ key: "t", label: cycleLabel(opts.node), before: true }, edits))
   if (tiles) tree.push(off({ key: "r", label: "ratios" }, edits))
-  tree.push({ key: "o", label: "other windows" })
+  if ((opts.screens || 0) > 1) tree.push(off({ key: "p", label: "swap" }, edits))
+  tree.push({ key: "o", label: "others" })
   var layout = [off({ key: "w", label: "apply" }, !ro && opts.edited !== false), off({ key: "d", label: "revert" }, !ro),
     off({ key: "R", label: "record" }, !ro && opts.workspace !== "default")]
   if (opts.hasOwn) layout.push(off({ key: "u", label: "use shared" }, !ro))
