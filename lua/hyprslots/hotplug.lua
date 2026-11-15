@@ -66,6 +66,11 @@ function M.attach(engine)
       M.monitors_changed(engine, event)
     end)
   end
+  -- A mode, scale or position change: the desk's geometry is recorded again
+  -- (docs/design.md §8).
+  adapter.on("monitor.layout_changed", function()
+    engine:guard("monitor.layout_changed: desk geometry", engine.want_geometry, engine)
+  end)
 end
 
 return M

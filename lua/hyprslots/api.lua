@@ -163,7 +163,8 @@ end
 -- name -> { monitors[] (selectors), connected[] (whether each is),
 -- displays[] (each one's display name, monitor_name.lua), layout, active,
 -- screens[] (the active desk's connectors, left to right), auto (made for
--- these monitors, not saved yet), read_only }.
+-- these monitors, not saved yet), read_only, geometry[] (one box
+-- { x, y, w, h, screen } per selector: the map) }.
 local function desks_info(engine, read_only, monitors)
   local out = object()
   local cfg = engine.cfg
@@ -179,7 +180,15 @@ local function desks_info(engine, read_only, monitors)
       displays[i] = monitor_name.of_selector(selector, found, labels_of(engine), monitor_name.system_makes())
     end
     local active = engine.active ~= nil and engine.active.desk == name
+    -- The map: the live boxes while it is active, else the recorded ones,
+    -- else equal boxes (desk.map numbers the screens as the layout does).
+    local live = active and desk.geometry(entry.monitors, monitors)
+    local geometry = array()
+    for i, box in ipairs(desk.map(entry.monitors, live or entry.geometry)) do
+      geometry[i] = object(box)
+    end
     out[name] = object({
+      geometry = geometry,
       monitors = array(shallow(entry.monitors)),
       connected = connected,
       displays = displays,
@@ -687,6 +696,42 @@ end
 -- Save as the save call does: { path, seq }, or { ok = false, error }.
 function M.save(engine)
   return handlers.save(engine)
+end
+
+-- The active desk's geometry into slots.lua (docs/design.md §8): its
+-- monitors' logical boxes (desk.geometry), when they differ from what the
+-- data holds and the desk is the editor's. Not an edit: it never makes the
+-- engine dirty. Saved at once while nothing else is unsaved (as a first
+-- run's new desk is), else it waits in the data for the next save.
+function M.record_geometry(engine)
+  local active = engine.active
+  if not (engine.cfg and engine.data and active) or engine.refused then
+    return
+  end
+  local entry = type(engine.data.desks) == "table" and engine.data.desks[active.desk]
+  if type(entry) ~= "table" or type(entry.monitors) ~= "table"
+      or not edit.editable(read_only_paths(engine.cfg), "desks", active.desk) then
+    return
+  end
+  local geometry = desk.geometry(entry.monitors, adapter.monitors())
+  if not geometry or desk.same_geometry(geometry, entry.geometry) then
+    return
+  end
+  local pending = engine.dirty or next(engine.resized or {}) ~= nil
+  entry.geometry = geometry -- the running data, which save writes
+  local running = engine.cfg.desks[active.desk]
+  if running then
+    running.geometry = geometry
+  end
+  engine.log:info("desk %s: geometry recorded%s", active.desk, pending and " (saved with the next save)" or "")
+  if pending then
+    engine:changed()
+    return
+  end
+  local saved = handlers.save(engine)
+  if saved.ok == false then
+    engine.log:error("desk %s: geometry not saved: %s", active.desk, tostring(saved.error))
+  end
 end
 
 -- reload {}: re-read config.lua and slots.lua, dropping unsaved edits.
@@ -1765,6 +1810,18 @@ local function as_edited(engine, saved)
   return out
 end
 
+-- The data without the desks' recorded geometry (a copy): what an edit
+-- compares, the geometry being no edit.
+local function without_geometry(data)
+  local out = edit.copy(data)
+  for _, entry in pairs(type(out.desks) == "table" and out.desks or {}) do
+    if type(entry) == "table" then
+      entry.geometry = nil
+    end
+  end
+  return out
+end
+
 -- reset { layout?, workspace (or "default"), screen }: a branch back to the
 -- tree slots.lua holds on disk (its own there, else the default one; no
 -- tree when it has neither), read through the slot and layout renames and
@@ -1794,8 +1851,17 @@ function handlers.reset(engine, args)
     return fail(load_err)
   end
   resize.clear(engine, name, n, screen)
-  -- a file in a shape of before differs from what runs until it is saved
-  engine:apply_config(cfg, data, migrated or serialize.dump(data) ~= serialize.dump(saved))
+  -- a file in a shape of before differs from what runs until it is saved;
+  -- a desk geometry recorded meanwhile is no edit (record_geometry): with
+  -- nothing else left unsaved it is saved now, quietly
+  local differs = migrated or serialize.dump(without_geometry(data)) ~= serialize.dump(without_geometry(saved))
+  engine:apply_config(cfg, data, differs)
+  if not differs and next(engine.resized or {}) == nil and serialize.dump(data) ~= serialize.dump(saved) then
+    local written = handlers.save(engine)
+    if written.ok == false then
+      engine.log:error("reset: desk geometry not saved: %s", tostring(written.error))
+    end
+  end
   local node = configured_tree(cfg, name, n, screen)
   return { layout = name, workspace = n, screen = screen, tree = node and serialize.tree(node) or nil,
     ratio = node and ratio.format(node) or nil, seq = engine.seq }

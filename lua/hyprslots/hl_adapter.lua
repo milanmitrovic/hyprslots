@@ -36,6 +36,8 @@ function M.monitors()
         y = monitor.y or py or 0,
         width = monitor.width,
         height = monitor.height,
+        scale = monitor.scale,
+        transform = monitor.transform,
       }
     end
   end

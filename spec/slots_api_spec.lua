@@ -477,8 +477,9 @@ return { slots = data.slots, specs = specs, desks = data.desks, layouts = data.l
         seq = state().seq }, reply)
       local s = state()
       assert.are.same({ monitors = { "DP-1", "DP-2" }, connected = { false, false }, displays = { "DP-1", "DP-2" },
-        layout = "dual",
-        active = false, read_only = false }, s.desks.office)
+        layout = "dual", active = false, read_only = false,
+        geometry = { { x = 0, y = 0, w = 1600, h = 900, screen = 1 }, { x = 1600, y = 0, w = 1600, h = 900, screen = 2 } } },
+        s.desks.office)
       assert.are.same({ "dual", "office" }, s.layouts.dual.used_by)
       assert.are.equal("dual", s.desk)
       assert.is_true(s.dirty)

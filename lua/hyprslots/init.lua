@@ -106,6 +106,7 @@ function Engine:reselect()
 
   if self.active then
     self:used_layout(self.active.layout)
+    self:want_geometry()
     for n = 1, self.cfg.workspaces or WORKSPACES do
       for screen, branch in pairs(config.trees_for(self.active.entry, n) or {}) do
         local monitor = self.active.monitors[screen]
@@ -147,6 +148,19 @@ function Engine:used_layout(name)
     end
   end
   self.recent_layouts = recent
+end
+
+-- Record the active desk's geometry in slots.lua (api.record_geometry),
+-- deferred: reselect runs inside edits and saves.
+function Engine:want_geometry()
+  if self.geometry_pending then
+    return
+  end
+  self.geometry_pending = true
+  adapter.defer(function()
+    self.geometry_pending = false
+    self:guard("desk geometry", api.record_geometry, self)
+  end)
 end
 
 function Engine:want_desk()
