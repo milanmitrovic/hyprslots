@@ -1265,28 +1265,30 @@ function filmstrip(root, area, opts) {
 }
 
 // The Assignment view's mini-map of a tree (its text, as state has it) on
-// one screen, `size` { w, h } pixels, the slot `slot` lit: the Layout
-// picture's own geometry at thumbnail size, without the place for other
-// windows (picture, no o). { kind: "tiles" | "scroll" | "none", tiles: [{
-// kind, key, x, y, w, h, selected, visible? }] }: a tiled tree's leaves
-// (rects, no padding or titles), a scroll tree's columns (filmstrip, one
-// screen across, scrolled to the slot's column; `visible` how much of each
-// is on the screen), none for no tree or one that does not parse.
+// one screen, in a box `size` { w, h } pixels, the slot `slot` lit: the
+// Layout picture's own geometry at thumbnail size, without the place for
+// other windows (picture, no o). { kind: "tiles" | "scroll" | "none",
+// screen: { x, y, w, h } (where the screen is in the box), tiles: [{ kind,
+// key, x, y, w, h, selected, visible? }] }: a tiled tree's leaves (rects,
+// no padding or titles) filling the box, the screen; a scroll tree's
+// columns (filmstrip, the screen half the box across in its middle,
+// scrolled to the slot's column, the strip beside it; `visible` how much
+// of each is on the screen); none for no tree or one that does not parse.
 function miniMap(text, slot, size) {
-  var none = { kind: "none", tiles: [] }
+  var none = { kind: "none", screen: null, tiles: [] }
   if (!text) return none
   var parsed = parse(String(text))
   if (!parsed.node) return none
   var node = picture(parsed.node, false)
   var area = { x: 0, y: 0, w: size.w, h: size.h }
   if (node.kind === "scroll") {
-    var strip = filmstrip(node, area, { aspect: size.h > 0 ? size.w / size.h : 0, span: 1, selected: slot })
-    return { kind: "scroll", tiles: strip.columns.map(function(c) {
+    var strip = filmstrip(node, area, { aspect: size.h > 0 ? size.w / size.h : 0, span: 2, selected: slot })
+    return { kind: "scroll", screen: strip.viewport, tiles: strip.columns.map(function(c) {
       return { kind: c.kind, key: c.key, x: c.x, y: c.y, w: c.w, h: c.h, selected: c.selected, visible: c.visible }
     }) }
   }
   var leavesOnly = rects(node, area, { selected: slot }).filter(function(r) { return r.kind === "slot" || r.kind === "overflow" })
-  return { kind: "tiles", tiles: leavesOnly.map(function(r) {
+  return { kind: "tiles", screen: area, tiles: leavesOnly.map(function(r) {
     return { kind: r.kind, key: r.key, x: r.x, y: r.y, w: r.w, h: r.h, selected: r.selected }
   }) }
 }

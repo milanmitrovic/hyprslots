@@ -27,24 +27,30 @@ test("a mini-map leaves out the place for other windows, as the Layout picture d
   assert.deepEqual(boxes(L.miniMap("h[main:3, *]", "main", { w: 56, h: 32 })), [["main", 0, 0, 56, 32, true]]);
 });
 
-test("a scroll tree's mini-map is a filmstrip scrolled to the slot's column, columns beyond the screen part shown", () => {
+test("a scroll tree's mini-map is a filmstrip: the screen half the box across, scrolled to the slot's column, a column's width of strip beside it", () => {
+  // the screen 28 x 16 (the box's shape) in the middle of 56 x 32
   const right = plain(L.miniMap("scroll:0.5[left, main, right]", "right", { w: 56, h: 32 }));
   assert.equal(right.kind, "scroll");
-  assert.deepEqual(right.tiles.map((t) => [t.key, t.x, t.w, t.selected, t.visible]), [
-    ["left", -28, 28, false, 0],
-    ["main", 0, 28, false, 1],
-    ["right", 28, 28, true, 1],
+  assert.deepEqual(right.screen, { x: 14, y: 8, w: 28, h: 16 });
+  assert.deepEqual(right.tiles.map((t) => [t.key, t.x, t.y, t.w, t.h, t.selected, t.visible]), [
+    ["left", 0, 8, 14, 16, false, 0],
+    ["main", 14, 8, 14, 16, false, 1],
+    ["right", 28, 8, 14, 16, true, 1],
   ]);
   const left = plain(L.miniMap("scroll[left, main]", "left", { w: 56, h: 32 }));
   assert.deepEqual(left.tiles.map((t) => [t.key, t.x, t.w, t.selected, t.visible]), [
-    ["left", 0, 56, true, 1],
-    ["main", 56, 56, false, 0],
-  ], "full-width columns: one screen each");
+    ["left", 14, 28, true, 1],
+    ["main", 42, 28, false, 0],
+  ], "full-width columns: one screen each, the next peeking in at the side");
+});
+
+test("a tiled tree's mini-map screen is the whole box", () => {
+  assert.deepEqual(plain(L.miniMap("h[main, right]", "main", { w: 56, h: 32 }).screen), { x: 0, y: 0, w: 56, h: 32 });
 });
 
 test("no tree, or one that does not parse, draws no mini-map", () => {
-  assert.deepEqual(plain(L.miniMap(null, "main", { w: 56, h: 32 })), { kind: "none", tiles: [] });
-  assert.deepEqual(plain(L.miniMap("h[main", "main", { w: 56, h: 32 })), { kind: "none", tiles: [] });
+  assert.deepEqual(plain(L.miniMap(null, "main", { w: 56, h: 32 })), { kind: "none", screen: null, tiles: [] });
+  assert.deepEqual(plain(L.miniMap("h[main", "main", { w: 56, h: 32 })), { kind: "none", screen: null, tiles: [] });
 });
 
 test("a mini-map is the screen's shape, as large as fits its column's box", () => {
