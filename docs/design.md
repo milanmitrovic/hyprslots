@@ -873,7 +873,7 @@ the running engine only through Hyprland:
 | `BarWidget.qml` | the bar widget (below): glyph and active layout; left click toggles the panel, right click a menu |
 | `Services.js` | where the service registers itself, for a bar widget whose bar hands it no `serviceFor` |
 | `AssignmentView.qml`, `LayoutView.qml`, `DesksLayoutsView.qml` | aerolayout's Assignment, Layout (with its logical slots as a list beside the screens) and monitors views (below) |
-| `ui/` (`qmldir`) | the editor's design system, one component per kind of element, all from the theme (below): `Tokens` (a singleton: colours, spacing, the Layout picture's divider band and line, the ratio label by the pointer), `SectionHeader`, `WorkspaceSwitcher`, `InfoText`, `ProblemText`, `Placeholder`, `TableHeader`, `TableRow`, `TableCell`, `PaneTitle`, `KeyCap`, `ActionButton`, `Toolbar` |
+| `ui/` (`qmldir`) | the editor's design system, one component per kind of element, all from the theme (below): `Tokens` (a singleton: colours, spacing, the Layout picture's divider band and line, the ratio label by the pointer, drag and drop's outline and fill, the mini-map's box), `SectionHeader`, `WorkspaceSwitcher`, `InfoText`, `ProblemText`, `Placeholder`, `TableHeader`, `TableRow` (`dropTarget`: outlined where a drag would land), `TableCell`, `PaneTitle`, `KeyCap`, `ActionButton`, `Toolbar`, `MiniMap` (a slot's place on its screen), `DragGhost` (what a drag carries, and the label of what letting go does) |
 | `Protocol.js`, `Assignment.js`, `Layout.js`, `Slots.js`, `DesksLayouts.js`, `Prompts.js`, `Workspaces.js`, `BarStatus.js`, `Help.js`, `Messages.js`, `Guide.js` | pure logic, tested under node (`editor/tests/`); `Slots.js` is the slot list's, `Workspaces.js` the workspace keys', `DesksLayouts.js` the Desk view's and the panel header's, `Help.js` the help rows', `Messages.js` the message band's, `Guide.js` the opening tab's and every empty state's (below) |
 
 **Opening tab.** The panel opens on the Layout tab while there are no
@@ -950,7 +950,9 @@ Layout picture (select it, the keys back to the picture) and a slot of the
 slot list (select it, the keys to the list) are clicked as they are. Hover
 and press looks come from the theme's control tokens. One thing the mouse
 does that no key press spells: dragging a divider of the Layout picture to
-a new ratio (below), an edit of the same draft `r` writes.
+a new ratio (below), an edit of the same draft `r` writes. And one the
+keys spell differently: dragging an Assignment row's window onto a slot
+(`a` with that slot) or onto the other windows (`u`), below.
 
 **One look per kind of element** (`editor/ui/`, theme tokens only):
 section headers are the accent colour in small letter-spaced capitals
@@ -972,7 +974,12 @@ keys are in the picture: an outline). Pane titles (`PaneTitle`: the Layout
 tab's screens and its slot list) are the accent colour on the pane that has
 the keys. What stands in an empty list or picture is a muted `Placeholder`;
 why a tab cannot work, an urgent `ProblemText`. Headers, notes and cells
-start at one inset (`Tokens.textInset`).
+start at one inset (`Tokens.textInset`). What a drag would land on is
+outlined in the accent with a faint accent fill (`TableRow.dropTarget`,
+`MiniMap.targeted`), what it carries a `DragGhost` on the menu surface,
+and what letting go does a label on the tooltip surface, as the ratio
+label by the pointer; a slot's place on its screen is a `MiniMap`, the
+slot an accent fill among dim outlines.
 
 **Message band** (`MessageBand.qml`, `Messages.js`): the outcome of every
 call shows in a band of its own at the foot of the page, just above the
@@ -1045,7 +1052,8 @@ for when one is assigned to the slot on the workspace but none is open, or an em
 and title alike) when nothing says what fills it; then the
 windows overflowing on the workspace and any other windows on it. So a
 workspace whose tree is `scroll[main, right]` with a spec for main only
-lists main Missing, then right empty. Columns: Screen (`N <connector>`, when more than one), Slot
+lists main Missing, then right empty. Columns: a mini-map (below; on slot
+rows only), Screen (`N <connector>`, when more than one), Slot
 (`main`, `main (by hand)`, `other (main taken)` (a window for main while main is taken, waiting with the other windows), `unassigned`, `—`), App (a
 Missing row's awaited window, `—` for an empty slot), Title (`Missing —
 waiting for it to open`, `—` for an
@@ -1065,6 +1073,64 @@ As aerolayout's `a` did, `a` writes the window's spec into the slot, and
 edits"), for a window that is open or one that is only Missing, on the
 page's workspace. aerolayout's `n` (name a workspace) has no counterpart:
 workspaces have no names.
+
+**Mini-maps** (`ui/MiniMap.qml`, `Layout.miniMap`, `Layout.miniMapSize`,
+`Assignment.miniMapSource`). Every slot row leads with a thumbnail of
+where the slot is: the workspace's tree in force on the slot's screen (the
+screen of the active layout whose tree for the workspace places it, its
+own or the shared ones as state reports them; on a desk of several
+screens only that one), at the screen's shape fitted into a fixed box
+(`Tokens.miniMapWidth` × `miniMapHeight`, 56 × 32 at scale 1; an
+ultrawide flatter, 4:3 narrower), in a column of its own. A tiled tree's
+geometry is the Layout picture's, not a copy: its leaves are
+`Layout.rects` at thumbnail size (no padding or titles). A scroll tree is
+its whole strip across the box, each column its width of a screen and the
+box's height (its columns are the screen's height anyway, so the strip
+gets all of it), the screen outlined where Hyprland scrolls to show the
+slot's column (the least, as `Layout.filmstrip` scrolls), the columns off
+it fainter: so `scroll[left, main, aside, side]` shows four columns, the
+slot's lit, and which of them the screen shows. The place for
+other windows is left out, as the picture does without `o`. The slot is an
+accent fill, the others dim outlines, on a faint screen. The other
+windows' rows have no mini-map (the column is empty), nor does a slot no
+tree places. While a drag would land on a slot row, that row's mini-map is
+outlined in the accent as well. The rows are tall enough for it
+(`Tokens.miniMapRowHeight`).
+
+**Drag and drop** (`Assignment.canDrag`, `dragBegins`, `dropAction`; one
+MouseArea over the table, `rowMouse`, so a drag outlives the rows a state
+read makes anew). Any row with a window drags: one in a slot, one
+overflowing, a stray. A press that moves `Assignment.DRAG_THRESHOLD` (6) px
+starts the drag; under that it is a click (select) or a double-click (`a`),
+as before. Let go:
+
+- on a **slot row** of the page (its window, a Missing or an empty one):
+  exactly `a` with that slot (the same handler, `take_spec`): the window
+  takes the slot and its spec becomes the workspace's; the slot's window,
+  if any, gives it up as with `a`. On the slot the window is already in:
+  nothing;
+- on the **other windows** (overflowing and unslotted rows) or the list's
+  empty space below its rows: `u` on the window (`unassign` with
+  `clear_spec`, as `Assignment.unassignPlan` plans it), without u's
+  question (letting go there is the answer), only for a window in a slot;
+  one overflowing or in no slot is among the other windows already:
+  nothing;
+- **anywhere else** (outside the list), or **Esc** while the button is
+  held: nothing; the panel stays open (a held drag has the keyboard: Esc
+  lets it go, other keys wait).
+
+While held: the row dragged is dimmed (`Tokens.dim`), a ghost of it
+follows the pointer (`ui/DragGhost.qml`: its app, bold, and title on the
+menu surface), and over a target the target is outlined in the accent
+with a faint accent fill (`Tokens.dropOutline`, `dropFill`: the slot row,
+or the other windows' section down to the list's foot) and a label under
+the ghost, on the tooltip surface as the Layout picture's ratio label,
+says what letting go does: `Assign to main`, `Unassign`. Where letting go
+does nothing nothing is outlined and no label shows. The cursor is an open
+hand over a row that drags, a closed hand while dragging; held near the
+list's top or bottom edge the drag scrolls it. A drop is an edit like
+`a`'s or `u`'s, in memory until Ctrl+S (the header's `● unsaved`), with
+their messages in the message band; the dropped window's row is selected.
 
 **Layout view** (aerolayout `views.py` LayoutView, `tree_visualizer.py`).
 One workspace of the active desk's layout at a time; it opens on the
@@ -1644,6 +1710,7 @@ with Omarchy's gaps (5/10, border 2).
 | One set of slots | every tree holds every global slot (`migrate.normalize` on load and every edit; an empty slot closes up), so nothing places or takes out a slot: the Layout tab's `a` / `x`, `take_spec` `place` and `edit.place_slot` go, a new slot is in every tree; a scroll branch's own column width (`scroll:0.5[...]`, config.lua's `scroll.width` migrated into the trees), the Layout tab's `t` cycling tiles, scroll half and scroll full, scroll branches drawn as a filmstrip, `r` on tiles only; `d` reverts; fork only in the Desk tab; pinned screens removed (migrated away); the Layout header one strip and its help one line; no file names in the editor's text | done 2026-11-09 |
 | Monitor names | display names for monitors (Built-in, the model from the description less make and serial, the user's label in slots.lua `monitor_names`) everywhere the editor shows one; the Desk tab's `m`; api `set_monitor_name`, `display` / `displays[]`; new desks named after them (`built-in+odyssey-g95nc`) | done 2026-11-11 |
 | First run | a fresh install: the starter config.lua and empty slots.lua (`starter.lua`), zero slots running; the panel opening on Layout with no slots, else Assignment; every empty state pointing to the next step (`Guide.js`: the Layout tab's explanation and "Create your first slot", the Assignment tab's way back to it, a workspace's how-to-assign line, the Desk tab's opening line); the bar's set-up state; README's Getting started | done 2026-11-15 |
+| Assignment by mouse | Assignment rows dragged and dropped (onto a slot: `a`; onto the other windows: `u`; Esc or elsewhere: nothing; a ghost, the target outlined, its label); each slot row's mini-map of its screen's tree, the slot lit (the Layout picture's geometry, `ui/MiniMap`) | done 2026-11-15 |
 
 Slices 2 to 6 were built in parallel on top of slices 1 and 2 and
 integrated on `feature/engine`; the cross-slice behaviour (keyboard-resized
@@ -1752,7 +1819,17 @@ Parked:
   a slot clicked in the slot list, the toolbar's `e` and OK, a double-click
   showing the slot in the picture, a tile clicked, a double-click on a desk
   row asking for its layout, the toolbar's Ctrl+S saving and `q` closing;
-  screenshots `26-mouse-toolbar-hover` to `31-mouse-desk-chips`), and writes screenshots to
+  screenshots `26-mouse-toolbar-hover` to `31-mouse-desk-chips`; the
+  Layout picture's dividers dragged, `32` to `34`; and Assignment rows
+  dragged (`mouse_drops`, `smoke_drag` from a row, `smoke assignmentDrag`
+  reading the held drag): an unassigned window onto an empty slot assigned
+  with its spec, on to main moving there with t-main giving main up, let
+  go on its own slot doing nothing, onto the other windows unassigned with
+  the spec, an unassigned one let go there doing nothing, Esc mid-drag and
+  a drop outside the list cancelling, Ctrl+S saving a last drop;
+  screenshots of the slot rows' mini-maps, `35-assignment-minimaps` (tiled)
+  and `35b-assignment-minimaps-scroll`, and mid-drag, `36-mouse-drag-assign`
+  and `37-mouse-drag-unassign`), and writes screenshots to
   `.e2e-tmp/editor-smoke-*.png` (the Layout tab on tiles, scroll half and
   scroll full: `8a-layout-tiles`, `8b-layout-scroll-half`,
   `8c-layout-scroll-full`). `e2e/editor_first_run.sh` (also `make

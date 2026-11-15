@@ -46,8 +46,9 @@ editor; hyprmoncfg's workspace planner, if you use it, Off).
 4. Click it. The editor opens on the **Layout** tab: **Create your first
    slot** (a name such as `main`), add more (`s`, then `a`) and arrange them
    on your screens. Then, in the **Assignment** tab, select a window and
-   press `a` to put it into a slot: from now on that app opens there on that
-   workspace. `Ctrl+S` saves.
+   press `a` to put it into a slot (or drag its row onto the slot's row;
+   each slot row shows a small map of where the slot is on its screen):
+   from now on that app opens there on that workspace. `Ctrl+S` saves.
 
 The **Desk** tab lists your monitor setups (desks, made for you when you
 plug in monitors hyprslots has not seen) and the layout each one uses.
