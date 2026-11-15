@@ -1065,7 +1065,7 @@ workspace × slot table.
 | ↑/↓, k/j | select |
 | ←/→, h/l (p), [ / ] | previous / next workspace's page (1 to N, round) |
 | 1–9, 0 | workspace 1–9, 10's page (0 only when ten are managed) |
-| a | `Assign kitty to a slot on workspace 3: (m)ain, (r)ight, m(o)re? [Esc] cancel`: every global slot, the workspace's own first, each by its key (§4); then `take_spec`: the window takes the slot and its spec (`spec.from_window`) becomes the workspace's for it, replacing the one it had, and the message says so (`Assigned kitty to main on workspace 3 (instead of foot)`); the slot is in the trees already, so nothing is placed |
+| a | `Assign kitty to a slot on workspace 3: (m)ain, (r)ight, m(o)re? [Esc] cancel`: every global slot, the workspace's own first, each by its key (§4); then `take_spec`: the window takes the slot and its spec (`spec.from_window`) becomes the workspace's for it, replacing the one it had, and the message says so (`Assigned kitty to main on workspace 3 (instead of foot)`); the slot is in the trees already, so nothing is placed. A window moving out of another slot leaves it empty, not Missing it: that slot's spec goes in the same edit when it is the window's (`; right is empty now`) |
 | u | on a window in a slot: `Unassign kitty from main on workspace 3? The slot is left empty. (y/n)`, then `unassign` with `clear_spec`: the window leaves the slot and the workspace no longer says what fills it, so the row is empty, not Missing that window; on an overflowing window, or one in a slot the workspace has no spec for, `unassign` alone; on a red Missing row (a window assigned but not open): `Unassign kitty/deltaf from main on workspace 3? It is not open; the slot is left empty. (y/n)`, then `clear_spec`. The editor's words are assign and unassign; "spec" is the api's |
 
 As aerolayout's `a` did, `a` writes the window's spec into the slot, and
@@ -1107,7 +1107,8 @@ as before. Let go:
 - on a **slot row** of the page (its window, a Missing or an empty one):
   exactly `a` with that slot (the same handler, `take_spec`): the window
   takes the slot and its spec becomes the workspace's; the slot's window,
-  if any, gives it up as with `a`. On the slot the window is already in:
+  if any, gives it up as with `a`, and the slot the dragged window left is
+  empty, its spec cleared, as with `a`. On the slot the window is already in:
   nothing;
 - on the **other windows** (overflowing and unslotted rows) or the list's
   empty space below its rows: `u` on the window (`unassign` with
@@ -1428,7 +1429,7 @@ left-most; as an object key, `"1"`).
 | `drop_override` | `layout?`, `workspace`, `screen?` | `layout, workspace, screen?, own` (whether it still has trees of its own), `seq`: the workspace (or that screen of it) back to the shared trees |
 | `record` | `workspace_id?` (default focused), `apply?` | `layout, workspace, screen, workspace_id, tree, ratio, missing[], applied, seq` |
 | `assign` | `address`, `workspace`, `slot` | `address, workspace, slot, displaced?, seq` |
-| `unassign` | `address`, `clear_spec?` | `address, workspace?, slot?, spec?` (the spec cleared), `seq` |
+| `unassign` | `address`, `clear_spec?` | `address, workspace?, slot?` (the slot the window was in), `spec?` (the spec cleared), `seq` |
 | `add_slot` | `slot`, `description?`, `key?` (else picked from the name, §4) | `slot, key, description?, seq` |
 | `remove_slot` | `slot`, `force?` | `slot, trees[]` (`layout/workspace/screen`, workspace `default` for the default trees), `specs[]` (workspaces), `seq`; refused, saying which, while workspaces fill it (every tree holds it anyway), unless `force` |
 | `rename_slot` | `slot`, `to` | `slot, to, trees` (how many were rewritten), `specs[]` (workspaces whose spec moved), `seq` |
@@ -1436,7 +1437,7 @@ left-most; as an object key, `"1"`).
 | `set_slot_key` | `slot`, `key` (one letter a-z no other slot has, §4) | `slot, key, seq` |
 | `set_spec` | `workspace`, `slot`, `spec` | `workspace, slot, spec` (normalized), `seq` |
 | `clear_spec` | `workspace`, `slot` | `workspace, slot, spec` (the one cleared), `seq` |
-| `take_spec` | `workspace`, `slot`, `address` | `workspace, slot, spec, replaced?, address, displaced?, seq`: the window takes the slot and its spec becomes the workspace's (every tree holds the slot already) |
+| `take_spec` | `workspace`, `slot`, `address` | `workspace, slot, spec, replaced?, address, displaced?, left?` (`workspace, slot, spec`: the slot the window left, its spec cleared with the move), `seq`: the window takes the slot and its spec becomes the workspace's (every tree holds the slot already) |
 | `add_desk` | `name`, `monitors[]` (selectors), `layout` | `desk, monitors, layout, active, seq` |
 | `rename_desk` | `desk`, `to` | `desk, to, active, seq` |
 | `delete_desk` | `desk` | `desk, active, seq`; the active one too (its monitors then get a new desk, §8) |
@@ -1507,7 +1508,9 @@ take any global slot, spec or none).
 window just taken out. The spec goes first, as `clear_spec` (checked by
 re-running config.lua, refused with nothing moved when config.lua owns the
 workspace's specs), so no other window it matched takes the slot; then the
-window is unassigned as above. A window that only overflows, or holds a
+window is unassigned as above. The reply names the slot the window was in,
+even where clearing its spec re-routed it into another slot that the spec
+of before still matched, a moment before it was taken out. A window that only overflows, or holds a
 slot its workspace has no spec for, is just unassigned. The cleared spec stays
 in memory until `save`, like any spec edit.
 
@@ -1519,7 +1522,15 @@ re-run over it) before anything moves; then the window is assigned as by
 `assign` (the holder displaced and routed again), the assignment is made an
 ordinary one (the new spec names the window), and the edit is applied, so
 the re-solve keeps that window in the slot over any older one the spec also
-matches.
+matches. **A window moving out of another slot** (slot A to slot B, by `a`
+or a drop; on the same workspace or, through the api, another) leaves A
+empty: when A's spec on its workspace admits the window (it is what put it
+there) and is the editor's, the same edit clears it, as `u` would (reply
+`left`: `workspace, slot, spec`), so A is not left `Missing` the window that
+just moved, and a later `u` from B leaves it unassigned rather than routing
+it back into A. One edit, one change event, one unsaved change. A spec of
+A's that is not the window's (it was put there by hand) stays, and so does
+one config.lua owns. `assign` (by hand, in memory only) never touches specs.
 
 Every tree holds every slot (§4), so the slot is in the workspace's trees
 already: taking a spec places nothing.
@@ -1823,10 +1834,12 @@ Parked:
   Layout picture's dividers dragged, `32` to `34`; and Assignment rows
   dragged (`mouse_drops`, `smoke_drag` from a row, `smoke assignmentDrag`
   reading the held drag): an unassigned window onto an empty slot assigned
-  with its spec, on to main moving there with t-main giving main up, let
+  with its spec, on to main moving there with t-main giving main up and the slot it left
+empty again (its spec cleared, the message saying so), let
   go on its own slot doing nothing, onto the other windows unassigned with
   the spec, an unassigned one let go there doing nothing, Esc mid-drag and
-  a drop outside the list cancelling, Ctrl+S saving a last drop;
+  a drop outside the list cancelling, Ctrl+S saving a last drop; the
+unassign after the move naming main, the slot it was in;
   screenshots of the slot rows' mini-maps, `35-assignment-minimaps` (tiled)
   and `35b-assignment-minimaps-scroll`, and mid-drag, `36-mouse-drag-assign`
   and `37-mouse-drag-unassign`), and writes screenshots to
