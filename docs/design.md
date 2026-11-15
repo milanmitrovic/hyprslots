@@ -1398,8 +1398,11 @@ and centred in it, each screen a rectangle labelled with its number, the
 layout's (left to right, then top to bottom), a pixel apart from the next;
 a connected monitor solid, one that is not outlined; the active desk's in
 the accent, the others in a dim line colour. Hovering a map shows its
-screens' display names on the tooltip surface beside it (`1 Built-in · 2
-Odyssey G95NC (not connected)`). Desk rows are tall enough for it
+screens' display names as a tooltip (`1 Built-in · 2 Odyssey G95NC (not
+connected)`, the tooltip surface) just under the map's row, its left edge
+at the map's (above the row when the list has no room below), drawn over
+the list by the view: nothing on the hovered row is hidden (beside the map
+it covered the desk's name) and neither the row nor the list clips it. Desk rows are tall enough for it
 (`Tokens.deskMapRowHeight`).
 
 The section headers are quiet labels (`DESKS monitor setups · ○ not

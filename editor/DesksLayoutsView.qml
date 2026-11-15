@@ -330,6 +330,9 @@ Item {
   // two of the section's own (a desk: monitors, layout; a layout: screens,
   // the desks using it). Titles and cells share them, so they line up.
   readonly property real mapWidth: Tokens.deskMapWidth + Tokens.cellPadding * 2
+  // The desk map under the pointer: { map (its DeskMap), row (its row) }, or
+  // null; the tooltip below shows its tip.
+  property var tipFor: null
   readonly property real markWidth: Style.font.body + Style.spacing.md * 2
   readonly property real nameWidth: width * 0.2
   function secondWidth(desk) { return width * (desk ? 0.38 : 0.14) }
@@ -422,6 +425,7 @@ Item {
         }
 
         TableRow {
+          id: deskRow
           width: parent.width
           height: entry.desk ? Tokens.deskMapRowHeight : Tokens.rowHeight
           objectName: "row:" + entry.index
@@ -437,8 +441,6 @@ Item {
             Item {
               width: root.mapWidth
               height: parent.height
-              // over the cells beside it, so the map's tip shows whole
-              z: deskMap.hovered ? 1 : 0
               DeskMap {
                 id: deskMap
                 visible: entry.desk
@@ -450,6 +452,12 @@ Item {
                   : ({ w: 0, h: 0, screens: [] })
                 tip: entry.desk ? DesksLayouts.deskMapTip(entry.modelData) : ""
                 active: entry.active
+                // the view's tooltip follows the map the pointer is on
+                onHoveredChanged: {
+                  if (hovered) root.tipFor = { map: deskMap, row: deskRow }
+                  else if (root.tipFor && root.tipFor.map === deskMap) root.tipFor = null
+                }
+                Component.onDestruction: if (root.tipFor && root.tipFor.map === deskMap) root.tipFor = null
               }
             }
             TableCell {
@@ -462,6 +470,7 @@ Item {
               font.pixelSize: Style.font.bodySmall
             }
             TableCell {
+              objectName: "deskname:" + entry.modelData.name
               width: root.nameWidth
               text: entry.cells.name
               color: entry.current ? root.selectedText : entry.ink
@@ -490,6 +499,43 @@ Item {
         text: root.state ? "No desks or layouts yet — n makes a layout"
           : (root.engine && root.engine.error === "" ? "Reading hyprslots…" : "")
       }
+    }
+  }
+
+  // A desk map's tip (its screens' display names) while the pointer is on
+  // it: a tooltip on the tooltip surface just under the map's row, its left
+  // edge at the map's (above the row where the list has no room below), over
+  // the list, so it hides nothing on the hovered row and no clip cuts it.
+  Rectangle {
+    id: mapTip
+    objectName: root.tipFor ? "deskmaptip:" + root.tipFor.map.name : ""
+    visible: !!root.tipFor && root.tipFor.map.tip !== ""
+    z: 20
+    readonly property var at: {
+      list.contentY // follow the list when it scrolls
+      if (!root.tipFor) return { x: 0, y: 0 }
+      var map = root.tipFor.map.mapToItem(root, 0, 0)
+      var row = root.tipFor.row.mapToItem(root, 0, 0)
+      var below = row.y + root.tipFor.row.height + Style.spacing.xxs
+      var y = below + height <= root.height ? below : row.y - height - Style.spacing.xxs
+      return { x: Math.max(0, Math.min(root.width - width, map.x)), y: Math.max(0, y) }
+    }
+    x: at.x
+    y: at.y
+    width: mapTipText.implicitWidth + Style.spacing.md * 2
+    height: mapTipText.implicitHeight + Style.spacing.xs * 2
+    radius: Tokens.radius
+    color: Tokens.tipFill
+    border.width: 1
+    border.color: Tokens.tipBorder
+    Text {
+      id: mapTipText
+      anchors.centerIn: parent
+      textFormat: Text.PlainText
+      text: root.tipFor ? root.tipFor.map.tip : ""
+      color: Tokens.tipText
+      font.family: Tokens.fontFamily
+      font.pixelSize: Style.font.bodySmall
     }
   }
 }

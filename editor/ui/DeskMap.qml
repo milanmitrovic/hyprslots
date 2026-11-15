@@ -9,9 +9,11 @@ import qs.Commons as Commons
 // rectangle labelled with its number, solid when the monitor is connected,
 // outlined when not, the active desk's in the accent (the others in the
 // mini-maps' dim line colour). `tip`: what hovering it says (the screens'
-// display names), on the tooltip surface beside it. `name` keys its
+// display names); the view that holds it shows that while `hovered`, as a
+// tooltip under the map's row, over the list (DesksLayoutsView), so it
+// hides nothing on the row and no row or list clip cuts it. `name` keys its
 // objectNames for the e2e smoke: "deskmap:<name>", each screen
-// "deskmap:<name>:<n>", the tip "deskmaptip:<name>".
+// "deskmap:<name>:<n>".
 Item {
   id: root
 
@@ -64,31 +66,6 @@ Item {
           font.bold: true
         }
       }
-    }
-  }
-
-  // The tip: the screens' display names, on the tooltip surface to the
-  // right of the map, while the pointer is over it.
-  Rectangle {
-    objectName: root.name !== "" ? "deskmaptip:" + root.name : ""
-    visible: root.hovered && root.tip !== ""
-    x: root.width + Style.spacing.xs
-    anchors.verticalCenter: parent.verticalCenter
-    z: 10
-    width: tipText.implicitWidth + Style.spacing.md * 2
-    height: tipText.implicitHeight + Style.spacing.xs * 2
-    radius: Tokens.radius
-    color: Tokens.tipFill
-    border.width: 1
-    border.color: Tokens.tipBorder
-    Text {
-      id: tipText
-      anchors.centerIn: parent
-      textFormat: Text.PlainText
-      text: root.tip
-      color: Tokens.tipText
-      font.family: Tokens.fontFamily
-      font.pixelSize: Style.font.bodySmall
     }
   }
 }

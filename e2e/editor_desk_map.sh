@@ -92,6 +92,20 @@ hover() {
   vpointer_do $box move || harness_fail "vpointer failed (see $E2E_DIR/vpointer.log)"
 }
 
+# The desk map's tip of desk $2 (row $1) hides nothing on its row: it starts
+# below the row, and its name cell and map show whole.
+tip_clear_of_row() {
+  local tx ty tw th rx ry rw rh nx ny nw nh
+  read -r tx ty tw th <<<"$(smoke bounds "deskmaptip:$2")"
+  read -r rx ry rw rh <<<"$(smoke bounds "row:$1")"
+  read -r nx ny nw nh <<<"$(smoke bounds "deskname:$2")"
+  log "tip at $tx,$ty ${tw}x$th; row $1 at $rx,$ry ${rw}x$rh; name at $nx,$ny ${nw}x$nh"
+  if [[ -n $ty && -n $ry ]] && ((ty >= ry + rh)); then pass "$2's tip shows under its row, hiding nothing on it"
+  else fail "$2's tip at '$tx $ty $tw $th', its row at '$rx $ry $rw $rh'"; fi
+  if [[ -n $ny ]] && ((ty >= ny + nh || ty + th <= ny || tx >= nx + nw || tx + tw <= nx)); then pass "and clear of $2's name"
+  else fail "$2's tip over its name: tip '$tx $ty $tw $th', name '$nx $ny $nw $nh'"; fi
+}
+
 test_body() {
   for tool in qs grim; do
     command -v "$tool" >/dev/null || harness_fail "the desk map scenario needs $tool"
@@ -149,13 +163,14 @@ test_body() {
   fi
   if [[ -z $(drawn dual 3) ]]; then pass "and no third"; else fail "a third screen: $(drawn dual 3)"; fi
 
-  # hovering the map names its screens
+  # hovering the map names its screens, under the row: nothing on it hidden
   hover deskmap:dual
   if eventually 3 bash -c "[[ -n \$(qs ipc --pid $SMOKE_QS_PID call smoke bounds deskmaptip:dual) ]]"; then
     pass "hovering dual's map shows its tip"
   else
     fail "no tip over dual's map"
   fi
+  tip_clear_of_row 0 dual
   shot 1-two-screens
 
   # unplug HEADLESS-3: solo is active, dual's screen 2 outlined where it was recorded
@@ -180,5 +195,6 @@ test_body() {
   else
     fail "no tip over dual's map after the unplug"
   fi
+  tip_clear_of_row 0 dual
   shot 2-unplugged
 }
