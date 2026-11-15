@@ -2,9 +2,9 @@
 
 // Workspace keys, the same in the Layout and Assignment views (docs/design.md
 // §9): [ and ] step through the workspaces hyprslots manages (state
-// `workspace_count`, config `workspaces`: 1 to 10 by default, Omarchy's ten
-// per screen), the digits jump to one as Super+N does (0 is workspace 10,
-// no key when it manages fewer). The arrows stay the view's own; `-` is
+// `workspace_count`, config `workspaces`: 1 to 9 by default, at most
+// Omarchy's ten per screen), the digits jump to one as Super+N does (0 is
+// workspace 10, no key when it manages fewer). The arrows stay the view's own; `-` is
 // "All workspaces", the layout's shared (default) trees, in the Layout view. Pure, so node can test it
 // (editor/tests/workspaces.test.mjs).
 

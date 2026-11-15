@@ -385,17 +385,26 @@ describe("config.validate", function()
     assert.are.equal("the editor", cfg.slots.main.description)
   end)
 
-  it("rejects a specs workspace that is not 1-10", function()
+  it("rejects a specs workspace past 9, naming the setting that allows 10", function()
     local raw = valid()
-    raw.specs[11] = { main = "y" }
-    rejects(raw, "specs%[11%]: a workspace must be an integer from 1 to 10")
+    raw.specs[10] = { main = "y" }
+    rejects(raw, "specs%[10%]: a workspace must be an integer from 1 to 9 %(workspaces = 9%)")
   end)
 
-  it("manages workspaces 1 to 10 unless workspaces says how many", function()
-    assert.are.equal(10, assert(config.validate(valid())).workspaces)
+  it("rejects a specs workspace that is not 1-10 with workspaces = 10", function()
     local raw = valid()
-    raw.workspaces = 9
-    assert.are.equal(9, assert(config.validate(raw)).workspaces)
+    raw.workspaces = 10
+    raw.specs[11] = { main = "y" }
+    rejects(raw, "specs%[11%]: a workspace must be an integer from 1 to 10$")
+  end)
+
+  it("manages workspaces 1 to 9 unless workspaces says how many", function()
+    assert.are.equal(9, assert(config.validate(valid())).workspaces)
+    local raw = valid()
+    raw.workspaces = 10
+    assert.are.equal(10, assert(config.validate(raw)).workspaces)
+    raw.workspaces = 5
+    assert.are.equal(5, assert(config.validate(raw)).workspaces)
   end)
 
   it("rejects a workspaces count that is no integer from 1 to 10", function()

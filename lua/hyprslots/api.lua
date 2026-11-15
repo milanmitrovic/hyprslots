@@ -35,7 +35,7 @@ local tree = require("hyprslots.tree")
 local DATA_FILE = "slots.lua"
 -- Messages reach the editor, so they name no files.
 local NO_DATA = "your config loads no editor data, so there is nothing the editor may change"
-local WORKSPACES = 10
+local WORKSPACES = 9 -- config `workspaces` when unset
 
 local M = {}
 

@@ -559,7 +559,7 @@ return { slots = data.slots, specs = data.specs, desks = desks, layouts = data.l
       assert.are.equal("h[left, main, right]", home.default["1"].tree)
       assert.is_nil(home.default["2"])
       assert.are.same({}, home.own)
-      for n = 1, 10 do
+      for n = 1, 9 do
         assert.are.equal("h[left, main, right]", home.workspaces[tostring(n)]["1"].tree, n)
       end
       ok("add_layout", { name = "trio", screens = 3, default = true })

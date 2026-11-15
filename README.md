@@ -21,7 +21,7 @@ editor; hyprmoncfg's workspace planner, if you use it, Off).
    package.path = root .. "/?.lua;" .. root .. "/?/init.lua;" .. package.path
    hyprslots = require("hyprslots")
    hyprslots.setup()
-   hyprslots.bind_workspace_keys() -- Super+1..0 switch every screen at once
+   hyprslots.bind_workspace_keys() -- Super+1..9 switch every screen at once (Super+0 too with workspaces = 10)
    hyprslots.bind_resize_keys()    -- Omarchy's resize keys work on slots
    ```
 

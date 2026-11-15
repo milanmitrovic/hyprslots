@@ -95,6 +95,7 @@ describe("first run", function()
     assert.matches("slots.lua", config)
     assert.matches("rewrites it", config)
     assert.matches("Lua", config)
+    assert.matches("1 to this (9 when unset)", config, nil, true)
   end)
 
   it("runs on it with zero slots: no error, a desk and a layout for the monitors", function()

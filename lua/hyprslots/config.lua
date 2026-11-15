@@ -26,7 +26,8 @@ local tree = require("hyprslots.tree")
 
 local M = {}
 
-local WORKSPACES = 10
+local WORKSPACES = 10 -- Omarchy's per screen: the most hyprslots can manage
+local DEFAULT_WORKSPACES = 9 -- workspace 10 (Super+0) stays Omarchy's unless config says otherwise
 local MAX_SCREENS = 10
 local SLOT_NAME = "^[%a_][%w_%-]*$"
 
@@ -508,15 +509,15 @@ local function validate_monitor_names(raw, fail)
 end
 
 -- How many workspaces hyprslots manages (1 to N: Super+N, the editor's
--- workspace keys, the workspace rules), default all ten of Omarchy's.
+-- workspace keys, the workspace rules), default 1 to 9.
 local function validate_count(raw, fail)
   if raw == nil then
-    return WORKSPACES
+    return DEFAULT_WORKSPACES
   end
   if math.type(raw) ~= "integer" or raw < 1 or raw > WORKSPACES then
     fail("workspaces", "must be how many workspaces hyprslots manages, an integer from 1 to " .. WORKSPACES
       .. ", got " .. tostring(raw))
-    return WORKSPACES
+    return DEFAULT_WORKSPACES
   end
   return raw
 end

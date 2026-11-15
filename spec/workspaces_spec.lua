@@ -6,6 +6,7 @@ local engine = require("helpers.engine")
 local BLOCKS = { ["HEADLESS-2"] = 0, ["HEADLESS-3"] = 1 }
 
 local NINE = engine.CONFIG:gsub("layouts = data.layouts", "layouts = data.layouts, workspaces = 9", 1)
+local TEN = engine.CONFIG:gsub("layouts = data.layouts", "layouts = data.layouts, workspaces = 10", 1)
 
 
 describe("workspaces across screens", function()
@@ -92,10 +93,10 @@ describe("workspaces across screens", function()
     end)
   end)
 
-  it("says it manages ten workspaces by default", function()
+  it("says it manages nine workspaces by default: workspace 10 stays Omarchy's", function()
     hl, o = engine.stub({ "HEADLESS-2", "HEADLESS-3" }, BLOCKS)
     hyprslots = engine.setup(engine.TWO_SCREENS)
-    assert.are.equal(10, engine.state(hyprslots).workspace_count)
+    assert.are.equal(9, engine.state(hyprslots).workspace_count)
   end)
 
   describe("when hyprslots is not running", function()
@@ -137,12 +138,12 @@ describe("workspaces across screens", function()
       hl, o = engine.stub({ "HEADLESS-2", "HEADLESS-3" }, BLOCKS)
     end)
 
-    it("rebinds Super+1..0 to workspace switching through Omarchy's o.rebind", function()
+    it("with workspaces = 10 rebinds Super+1..0 to workspace switching through Omarchy's o.rebind", function()
       local rebound = {}
       o.rebind = function(keys, description, dispatcher)
         rebound[#rebound + 1] = { keys = keys, description = description, dispatcher = dispatcher }
       end
-      hyprslots = engine.setup(engine.TWO_SCREENS)
+      hyprslots = engine.setup(engine.TWO_SCREENS, TEN)
       assert.are.same({}, rebound, "setup alone leaves Omarchy's bindings alone")
 
       hyprslots.bind_workspace_keys()
@@ -159,10 +160,10 @@ describe("workspaces across screens", function()
       assert.are.equal("hyprslots.workspace(10)", o.bind_expressions[rebound[10].dispatcher])
     end)
 
-    it("with workspaces = 9 rebinds Super+1..9 and leaves Super+0 Omarchy's", function()
+    it("by default (workspaces = 9) rebinds Super+1..9 and leaves Super+0 Omarchy's", function()
       local rebound = {}
       o.rebind = function(keys) rebound[#rebound + 1] = keys end
-      hyprslots = engine.setup(engine.TWO_SCREENS, NINE)
+      hyprslots = engine.setup(engine.TWO_SCREENS)
       hyprslots.bind_workspace_keys()
       assert.are.equal(9, #rebound)
       assert.are.equal("SUPER + code:18", rebound[9])
@@ -174,7 +175,7 @@ describe("workspaces across screens", function()
       hl.bind = function(keys, dispatcher) calls[#calls + 1] = { "bind", keys, type(dispatcher) } end
       hyprslots = engine.setup(engine.TWO_SCREENS)
       hyprslots.bind_workspace_keys()
-      assert.are.equal(20, #calls)
+      assert.are.equal(18, #calls, "Super+1..9, unbound and bound")
       assert.are.same({ "unbind", "SUPER + code:12" }, calls[5])
       assert.are.same({ "bind", "SUPER + code:12", "function" }, calls[6])
     end)

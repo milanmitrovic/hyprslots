@@ -12,12 +12,13 @@ local adapter = require("hyprslots.hl_adapter")
 
 local M = {}
 
--- How many workspaces the engine manages (config `workspaces`, default 10).
+-- How many workspaces the engine manages (config `workspaces`, default 9).
 function M.count(engine)
-  return engine and engine.cfg and engine.cfg.workspaces or 10
+  return engine and engine.cfg and engine.cfg.workspaces or 9
 end
 
--- Whether `workspace` is one of 1..count (default all ten of Omarchy's).
+-- Whether `workspace` is one of 1..count (default all ten of Omarchy's: the
+-- fallback to Omarchy's own switch while hyprslots is not running).
 function M.valid(workspace, count)
   return math.type(workspace) == "integer" and workspace >= 1 and workspace <= (count or 10)
 end

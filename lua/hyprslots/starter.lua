@@ -49,12 +49,12 @@ return {
   layouts = data.layouts,             -- where the slots sit on 1, 2, ... screens
   monitor_names = data.monitor_names, -- your names for your monitors
 
-  -- How many workspaces hyprslots manages: 1 to this (10 when unset).
+  -- How many workspaces hyprslots manages: 1 to this (9 when unset).
   workspaces = data.workspaces,
 
   -- Examples (replace a line above, or add one, and reload Hyprland):
   --
-  --   workspaces = 9,                                -- workspace 10 stays Omarchy's
+  --   workspaces = 10,                               -- Super+0's workspace 10 too
   --   workspaces = hostname() == "work" and 5 or 9,  -- one number per machine
   --
   -- Tell windows of one app apart by their title: with this, the spec

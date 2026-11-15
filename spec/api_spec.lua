@@ -148,7 +148,7 @@ describe("hyprslots editor api", function()
 
     it("lists the workspaces with specs or trees: every one, with the shared trees", function()
       setup()
-      assert.are.same({ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 }, state().used_workspaces)
+      assert.are.same({ 1, 2, 3, 4, 5, 6, 7, 8, 9 }, state().used_workspaces, "1 to 9, as many as are managed")
     end)
 
     it("gives a layout slots.lua leaves treeless the default trees, unsaved until saved", function()

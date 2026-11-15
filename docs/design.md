@@ -145,7 +145,7 @@ return {
   desks = data.desks,                 -- name -> { monitors, layout }
   layouts = data.layouts,             -- name -> { screens, default?, workspaces? }
   title_matching = { ... },           -- per-class title extraction (§7a)
-  workspaces = 9,                     -- optional: manage workspaces 1 to 9 (default 10)
+  workspaces = 10,                    -- optional: manage workspaces 1 to 10 (default 9)
 }
 ```
 
@@ -202,11 +202,12 @@ serial (six or more capitals and digits, or hex): `Odyssey G95NC` again. The use
 set by the Desk tab's `m`. config.lua need not pass it on: where it
 returns no `monitor_names`, the data file's are used.
 
-`workspaces` (top level, optional, an integer 1 to 10, default 10) is how
+`workspaces` (top level, optional, an integer 1 to 10, default 9: workspace
+10, Super+0, stays Omarchy's unless it says 10) is how
 many workspaces hyprslots manages: 1 to N. Specs and trees for a workspace
 past it are config errors (`specs[10]: a workspace must be an integer from
 1 to 9 (workspaces = 9)`); `bind_workspace_keys()` rebinds only Super+1..N
-(with 9, Super+0 stays Omarchy's own switch); the api refuses a workspace
+(with 9, the default, Super+0 stays Omarchy's own switch); the api refuses a workspace
 past it (`workspace`, `assign`; the edits through config.lua's validation);
 the workspace rules cover only 1 to N; `state` says `workspace_count`, and
 the editor's workspace strips, digit keys (`0` is no key with fewer than
@@ -381,8 +382,9 @@ changes last. With no active desk only the origin switches, as Omarchy's
 Super+N does.
 
 `setup()` leaves Omarchy's Super+1..0 alone. `hyprslots.bind_workspace_keys()`
-rebinds `SUPER + code:10..19` to `hyprslots.workspace(1..10)` (as many as
-config `workspaces` says, §4, read when it is called) through
+rebinds `SUPER + code:10..18` to `hyprslots.workspace(1..9)` by default, up
+to `code:19` and workspace 10 (as many as config `workspaces` says, §4, read
+when it is called) through
 `o.rebind` (so the keybindings menu keeps a description, "Switch to workspace
 N on every screen"); the user's shim calls it (`bind_desk_keys` is a
 deprecated alias).
@@ -1143,7 +1145,7 @@ Edits go to a **draft**
 per pane (`edited` on the pane, `edited, not applied (w)` in the header).
 The header is the workspace switcher, one strip (`Workspaces.stripLine`): `All workspaces · 1 2 3•
 … 9`, the layout's shared (default) trees first, then the managed
-workspaces (config `workspaces`, 1 to 10 by default) by their keys, a dot
+workspaces (config `workspaces`, 1 to 9 by default) by their keys, a dot
 after each with trees of its own (`3•`: an override); the current one in
 the accent colour, underlined, the ones using the shared trees italic and
 dimmer; a click switches. The view opens on All workspaces. A workspace
@@ -1383,7 +1385,7 @@ left-most; as an object key, `"1"`).
 | `arrange` | — | `swaps, widened[]` (workspace ids): the scroll pass now, every column of the focused scroll workspace widened (Super+L entering slots) |
 
 `state`: `seq`, `workspace_count` (config `workspaces`: how many
-workspaces hyprslots manages, 10 by default), `dirty` (unsaved edits, keyboard-resized trees, a new desk
+workspaces hyprslots manages, 9 by default), `dirty` (unsaved edits, keyboard-resized trees, a new desk
 and slots.lua in a shape of before included), `desk` and `layout` (the
 active ones' names), `screens[]` (the active desk's connectors, left to
 right), `workspaces` (id -> `workspace, screen, monitor, layout`:
