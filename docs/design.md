@@ -1617,7 +1617,11 @@ Parked:
   the service and adds an IPC target), drives the panel with real pointer
   clicks (`e2e/shim/vpointer.c`, built by the smoke: a
   wlr-virtual-pointer client that moves to a point in two steps, waits for
-  the surface under it to take pointer focus, then clicks or double-clicks;
+  the surface under it to take pointer focus, then clicks, double-clicks or
+  drags; one `vpointer serve` for the whole run, fed commands through a
+  FIFO, since a pointer device per click made the panel rebind its
+  wl_pointer each time and Hyprland now and then sent the fresh one no
+  motion after its enter at -1, -1, so a click was lost;
   `smoke_click` clicks the control a `Panel.clickPoint` names by its
   objectName: `toolbar:a`, `chip:s`, `prompt:yes`, `tab:Desk`, `row:3`,
   `slot:main`, `tile:1:aside`, `workspace:8`) and with real keys from
