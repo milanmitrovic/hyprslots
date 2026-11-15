@@ -1171,7 +1171,7 @@ mouse_drops() {
   eventually 5 smoke_idle || true
   expect_eq "t-stray moved to main" '{"slot":"main","workspace":3}' "$(assignment_of "$stray")"
   expect_eq "t-main gave main up, as with a, and $empty is empty now" \
-    "Assigned t-stray to main on workspace 3; t-main gave it up; $empty is empty now. Ctrl+S saves." "$(smoke message)"
+    "Assigned t-stray to main on workspace 3 (instead of t-main); t-main gave it up; $empty is empty now. Ctrl+S saves." "$(smoke message)"
   if [[ $(assignment_of "$main") != '{"slot":"main","workspace":3}' ]]; then pass "t-main is out of main: $(assignment_of "$main")"
   else fail "t-main still holds main"; fi
   # the slot it left is cleared with the move: empty, not Missing t-stray
