@@ -39,7 +39,9 @@
 # with no question of placing it, which Ctrl+S saves. Then the same by mouse
 # alone, with real pointer clicks: tabs, the workspace switcher, rows,
 # the toolbar, a prompt's chips, Yes, OK and Cancel, double-clicks; and
-# the Layout picture's dividers dragged to new ratios (mouse_ratios).
+# the Layout picture's dividers dragged to new ratios (mouse_ratios); the
+# Assignment rows dragged onto slots and the other windows, their slot rows'
+# mini-maps (mouse_drops).
 # Screenshots of the nested compositor go to .e2e-tmp/editor-smoke-*.png.
 #
 # Screen: HEADLESS-2, 1920x1080, Omarchy block 0 (workspace N = workspace id N).
@@ -1097,6 +1099,168 @@ mouse_ratios() {
   expect_eq "Escape" "ok" "$(smoke press Escape)"
 }
 
+# Drag and drop in the Assignment table, with the real pointer (smoke_drag
+# from a row): on workspace 3 (tiled; screenshot of its slot rows' mini-maps,
+# and of workspace 8's scroll tree's) the unassigned t-stray dragged onto an
+# empty slot is assigned there with its spec, as a would (held: the label
+# says "Assign to <slot>", the row and its mini-map outlined: screenshot);
+# dragged on to main it moves, t-main giving main up as with a; let go on
+# the slot it is in it does nothing; dragged onto the other windows (the
+# list's empty space below them) it is unassigned with main's spec, as u
+# (held: "Unassign", the section outlined: screenshot); an unassigned
+# window let go there does nothing; Esc mid-drag cancels (the panel stays
+# open) and so does a drop outside the list; Ctrl+S saves a last drop.
+row_point() { smoke point "row:$(row_index "$1")"; }
+
+mouse_drops() {
+  local watch="qs ipc --pid $SMOKE_QS_PID call smoke" stray main empty x y lx ly lw lh
+  stray=$(address_of t-stray)
+  main=$(address_of t-main)
+  expect_eq "panel opens" "ok" "$(smoke open)"
+  eventually 10 smoke_ready || fail "the panel never read state: $(smoke errors)"
+  smoke_click tab:Assignment
+  eventually 3 bash -c "[[ \$($watch tabs) == *'| Assignment' ]]" || fail "after the click on Assignment: $(smoke tabs)"
+  smoke_click workspace:8
+  eventually 3 bash -c "[[ \$($watch assignmentPage) == 'Workspace 8' ]]" || fail "after the click on 8: $(smoke assignmentPage)"
+  if [[ -n $(smoke bounds minimap:main) ]]; then pass "workspace 8's main row leads with a mini-map"
+  else fail "no mini-map on workspace 8's main row"; fi
+  sleep 0.3
+  shot 35b-assignment-minimaps-scroll
+  smoke_click workspace:3
+  eventually 3 bash -c "[[ \$($watch assignmentPage) == 'Workspace 3' ]]" || fail "after the click on 3: $(smoke assignmentPage)"
+  log "workspace 3 rows: $(smoke rows)"
+  if [[ -n $(smoke bounds minimap:main) && -n $(smoke bounds minimap:side) ]]; then pass "workspace 3's slot rows lead with mini-maps"
+  else fail "no mini-maps on workspace 3's slot rows"; fi
+  sleep 0.3
+  shot 35-assignment-minimaps
+
+  # an unassigned window onto an empty slot
+  if [[ $(assignment_of "$stray") != null ]]; then
+    repl "return hyprslots.api.call(\"unassign\", \"{\\\"address\\\":\\\"$stray\\\"}\")" >/dev/null
+    eventually 5 unassigned "$stray" || fail "t-stray would not unassign: $(assignment_of "$stray")"
+  fi
+  empty=$(smoke rows | awk -v RS='; ' -F'|' '$2 == "—" && $3 == "—" { print $1; exit }')
+  log "the empty slot: $empty"
+  [[ -n $empty ]] || fail "workspace 3 has no empty slot row: $(smoke rows)"
+  read -r x y <<<"$(row_point "^$empty[|]")"
+  smoke_drag "row:$(row_index '[|]t-stray[|]window')" "$x" "$y" 2500
+  if eventually 3 bash -c "[[ \$($watch assignmentDrag) == 't-stray -> Assign to $empty' ]]"; then
+    pass "held over the empty $empty row, the label says Assign to $empty"
+  else
+    fail "mid-drag: '$(smoke assignmentDrag)'"
+  fi
+  sleep 0.3
+  shot 36-mouse-drag-assign
+  wait "$SMOKE_DRAG_PID" 2>/dev/null
+  if eventually 5 bash -c "[[ \$($watch message) == Assigned* ]]"; then pass "let go, it assigned"
+  else fail "after the drop: $(smoke message)"; fi
+  eventually 5 smoke_idle || true
+  expect_eq "t-stray is in $empty" "{\"slot\":\"$empty\",\"workspace\":3}" "$(assignment_of "$stray")"
+  expect_eq "the message is a's" "Assigned t-stray to $empty on workspace 3. Ctrl+S saves." "$(smoke message)"
+  expect_eq "its spec is workspace 3's for $empty" "t-stray" "$(api_state | jq -r --arg s "$empty" '.specs["3"][$s]')"
+  expect_eq "an unsaved edit" "true" "$(api_state | jq -r .dirty)"
+  expect_eq "no drag is held" "" "$(smoke assignmentDrag)"
+
+  # an assigned window onto another slot's window: it moves, the holder gives it up
+  read -r x y <<<"$(row_point '^main[|]')"
+  smoke_drag "row:$(row_index '[|]t-stray[|]window')" "$x" "$y" 1000
+  if eventually 3 bash -c "[[ \$($watch assignmentDrag) == 't-stray -> Assign to main' ]]"; then pass "held over main: Assign to main"
+  else fail "mid-drag onto main: '$(smoke assignmentDrag)'"; fi
+  wait "$SMOKE_DRAG_PID" 2>/dev/null
+  eventually 5 bash -c "[[ \$($watch message) == 'Assigned t-stray to main'* ]]" || fail "after the drop on main: $(smoke message)"
+  eventually 5 smoke_idle || true
+  expect_eq "t-stray moved to main" '{"slot":"main","workspace":3}' "$(assignment_of "$stray")"
+  if [[ $(smoke message) == *"; t-main gave it up. Ctrl+S saves." ]]; then pass "t-main gave main up, as with a: $(smoke message)"
+  else fail "message: $(smoke message)"; fi
+  if [[ $(assignment_of "$main") != '{"slot":"main","workspace":3}' ]]; then pass "t-main is out of main: $(assignment_of "$main")"
+  else fail "t-main still holds main"; fi
+
+  # let go on the slot it is in: nothing (a drag clears the band, as a
+  # prompt does, and says nothing new)
+  read -r x y <<<"$(row_point '[|]t-stray[|]window')"
+  smoke_drag "row:$(row_index '[|]t-stray[|]window')" "$((x + 60))" "$y" 1000
+  if eventually 3 bash -c "[[ \$($watch assignmentDrag) == 't-stray -> none' ]]"; then pass "over its own slot: no label"
+  else fail "mid-drag over its own slot: '$(smoke assignmentDrag)'"; fi
+  wait "$SMOKE_DRAG_PID" 2>/dev/null
+  sleep 0.5
+  expect_eq "let go on its own slot, nothing changes" '{"slot":"main","workspace":3}' "$(assignment_of "$stray")"
+  expect_eq "and nothing is said" "" "$(smoke message)"
+  if [[ $(smoke selection) == *' t-stray' ]]; then pass "the dragged row is selected"
+  else fail "selection after the drag: $(smoke selection)"; fi
+
+  # onto the other windows: unassigned, main's spec with it
+  read -r lx ly lw lh <<<"$(smoke bounds assignment:list)"
+  x=$((lx + lw / 2))
+  y=$((ly + lh - 20))
+  smoke_drag "row:$(row_index '[|]t-stray[|]window')" "$x" "$y" 2500
+  if eventually 3 bash -c "[[ \$($watch assignmentDrag) == 't-stray -> Unassign' ]]"; then pass "held over the other windows: Unassign"
+  else fail "mid-drag onto the other windows: '$(smoke assignmentDrag)'"; fi
+  sleep 0.3
+  shot 37-mouse-drag-unassign
+  wait "$SMOKE_DRAG_PID" 2>/dev/null
+  eventually 5 bash -c "[[ \$($watch message) == Unassigned* ]]" || fail "after the drop on the other windows: $(smoke message)"
+  eventually 5 smoke_idle || true
+  # (u's own message: t-stray's spec is side's too since a moved it, so
+  # clearing main's re-routes it there first, and the api names that slot)
+  if [[ $(smoke message) == 'Unassigned t-stray from '*' on workspace 3: the slot is empty. Ctrl+S saves.' ]]; then
+    pass "the message is u's: $(smoke message)"
+  else
+    fail "message: $(smoke message)"
+  fi
+  if unassigned "$stray"; then pass "t-stray is unassigned"
+  else fail "t-stray: $(assignment_of "$stray")"; fi
+  expect_eq "workspace 3 no longer says what fills main" "null" "$(api_state | jq -c '.specs["3"].main')"
+
+  # an unassigned window onto the other windows: nothing
+  smoke_drag "row:$(row_index '[|]t-stray[|]window')" "$x" "$y" 1000
+  if eventually 3 bash -c "[[ \$($watch assignmentDrag) == 't-stray -> none' ]]"; then pass "an unassigned window over the other windows: no label"
+  else fail "mid-drag: '$(smoke assignmentDrag)'"; fi
+  wait "$SMOKE_DRAG_PID" 2>/dev/null
+  sleep 0.5
+  if unassigned "$stray"; then pass "let go there, it stays unassigned"; else fail "t-stray: $(assignment_of "$stray")"; fi
+  expect_eq "and nothing is said" "" "$(smoke message)"
+
+  # Esc mid-drag cancels; the panel stays open
+  read -r x y <<<"$(row_point "^$empty[|]")"
+  smoke_drag "row:$(row_index '[|]t-stray[|]window')" "$x" "$y" 2500
+  eventually 3 bash -c "[[ \$($watch assignmentDrag) == 't-stray -> Assign to $empty' ]]" || fail "mid-drag: '$(smoke assignmentDrag)'"
+  expect_eq "Esc mid-drag" "ok" "$(smoke press Escape)"
+  expect_eq "Esc let the drag go" "" "$(smoke assignmentDrag)"
+  expect_eq "the panel is still open" "yes" "$(smoke ready)"
+  wait "$SMOKE_DRAG_PID" 2>/dev/null
+  sleep 0.5
+  if unassigned "$stray"; then pass "let go after Esc, nothing is assigned"; else fail "t-stray: $(assignment_of "$stray")"; fi
+  expect_eq "the panel is still open after letting go" "yes" "$(smoke ready)"
+
+  # let go outside the list: nothing
+  read -r x y <<<"$(smoke point tab:Desk)"
+  smoke_drag "row:$(row_index '[|]t-stray[|]window')" "$x" "$y" 1000
+  eventually 3 bash -c "[[ \$($watch assignmentDrag) == 't-stray -> none' ]]" || fail "mid-drag outside: '$(smoke assignmentDrag)'"
+  wait "$SMOKE_DRAG_PID" 2>/dev/null
+  sleep 0.5
+  if unassigned "$stray"; then pass "let go outside the list, nothing changes"; else fail "t-stray: $(assignment_of "$stray")"; fi
+  if [[ $(smoke tabs) == *'| Assignment' ]]; then pass "nor does the tab it was let go on"
+  else fail "tabs: $(smoke tabs)"; fi
+
+  # a last drop, saved
+  read -r x y <<<"$(row_point "^$empty[|]")"
+  smoke_drag "row:$(row_index '[|]t-stray[|]window')" "$x" "$y" 600
+  wait "$SMOKE_DRAG_PID" 2>/dev/null
+  eventually 5 bash -c "[[ \$($watch message) == Assigned* ]]" || fail "after the last drop: $(smoke message)"
+  eventually 5 smoke_idle || true
+  expect_eq "Ctrl+S" "ok" "$(smoke press Ctrl+s)"
+  if eventually 5 saved; then pass "Ctrl+S saved the drops"
+  else fail "still dirty after Ctrl+S: $(smoke message) $(smoke errors)"; fi
+  if grep -qF "$empty = \"t-stray\"" "$E2E_CONFIG_HOME/hyprslots/slots.lua"; then
+    pass "slots.lua holds workspace 3's $empty = t-stray"
+  else
+    fail "slots.lua: $(cat "$E2E_CONFIG_HOME/hyprslots/slots.lua")"
+  fi
+  if ! grep -qF 'main = "t-stray"' "$E2E_CONFIG_HOME/hyprslots/slots.lua"; then pass "and no main = t-stray: the unassign is saved too"
+  else fail "slots.lua still has main = t-stray"; fi
+  expect_eq "Escape" "ok" "$(smoke press Escape)"
+}
+
 test_body() {
   for tool in qs grim wtype; do
     command -v "$tool" >/dev/null || harness_fail "the editor smoke needs $tool"
@@ -1475,6 +1639,7 @@ test_body() {
   assignment_assign
   mouse_flows
   mouse_ratios
+  mouse_drops
 
   log "assign round trip takes $(time_ms repl "return hyprslots.api.call(\"assign\", \"{\\\"address\\\":\\\"$stray\\\",\\\"workspace\\\":3,\\\"slot\\\":\\\"side\\\"}\")") ms"
 
