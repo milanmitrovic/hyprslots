@@ -187,6 +187,11 @@ ShellRoot {
       return panel.deskMonitorsText()
     }
 
+    // The Desk tab's desk maps: "<desk>[*]: <n> solid|outlined <x>,<y> <w>x<h>, ...; ...".
+    function deskMaps(): string {
+      return panel.deskMapsText()
+    }
+
     // How many lines the help row wraps to.
     function helpLines(): string {
       return String(panel.helpLines())

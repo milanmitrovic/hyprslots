@@ -13,3 +13,4 @@ ActionButton 1.0 ActionButton.qml
 Toolbar 1.0 Toolbar.qml
 MiniMap 1.0 MiniMap.qml
 DragGhost 1.0 DragGhost.qml
+DeskMap 1.0 DeskMap.qml

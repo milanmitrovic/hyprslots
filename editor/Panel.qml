@@ -336,6 +336,18 @@ Item {
     }).join("; ")
   }
 
+  // The Desk tab's desk maps as drawn (DesksLayouts.deskMap at the map's
+  // size), "<desk>: <n> solid|outlined <x>,<y> <w>x<h>, ..." joined by "; ",
+  // the active desk's name starred: for the e2e smoke.
+  function deskMapsText() {
+    return desksView.rows.filter(function(row) { return row.kind === "desk" }).map(function(row) {
+      var map = DesksLayouts.deskMap(row, Tokens.deskMapWidth, Tokens.deskMapHeight)
+      return row.name + (row.active ? "*" : "") + ": " + map.screens.map(function(s) {
+        return s.screen + " " + (s.connected ? "solid" : "outlined") + " " + s.x + "," + s.y + " " + s.w + "x" + s.h
+      }).join(", ")
+    }).join("; ")
+  }
+
   // How many lines the help row takes (it should take one): for the e2e smoke.
   function helpLines() {
     return root.currentView && root.currentView.prompting ? help.lineCount : toolbar.lineCount()

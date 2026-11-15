@@ -22,7 +22,9 @@ import qs.Commons as Commons
 //                     accent outline, what letting go does on the tooltip
 //                     surface beside the ghost (as the ratio label)
 //   mini-maps         a slot's place on its screen (MiniMap): the slot an
-//                     accent fill, the others dim outlines
+//                     accent fill, the others dim outlines; a desk's
+//                     monitors (DeskMap): connected solid, absent
+//                     outlined, the active desk's in the accent
 //   actions           buttons (ActionButton: the help row's toolbar, a prompt's
 //                     chips and answers), keys as key caps (KeyCap); hover
 //                     and press from the theme's control tokens
@@ -73,6 +75,15 @@ QtObject {
   readonly property color miniMapFrame: Commons.Util.alpha(text, 0.04)
   readonly property color miniMapLine: Commons.Util.alpha(text, 0.35)
   readonly property color miniMapSlot: Commons.Color.accent
+  // a desk's map (DeskMap, the Desk tab): its monitors in a box a little
+  // wider than a slot's mini-map, the desk rows tall enough for it; a
+  // connected screen solid, one that is not outlined, the active desk's in
+  // the accent
+  readonly property int deskMapWidth: Style.space(72)
+  readonly property int deskMapHeight: Style.space(36)
+  readonly property int deskMapRowHeight: Math.max(rowHeight, deskMapHeight + Style.spacing.sm * 2)
+  readonly property color deskMapLine: Commons.Util.alpha(text, 0.45)
+  readonly property color deskMapActive: Commons.Color.accent
   // where a page's text starts: past a row's stripe and its cell padding,
   // so headers, notes and cells line up on every tab
   readonly property int textInset: stripeWidth + cellPadding

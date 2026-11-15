@@ -325,13 +325,15 @@ Item {
     return true
   }
 
-  // The columns: the selection's stripe, the active mark, the name, then
+  // The columns: the selection's stripe, a desk's map (its monitors,
+  // ui/DeskMap; empty on a layout row), the active mark, the name, then
   // two of the section's own (a desk: monitors, layout; a layout: screens,
   // the desks using it). Titles and cells share them, so they line up.
+  readonly property real mapWidth: Tokens.deskMapWidth + Tokens.cellPadding * 2
   readonly property real markWidth: Style.font.body + Style.spacing.md * 2
-  readonly property real nameWidth: width * 0.22
-  function secondWidth(desk) { return width * (desk ? 0.43 : 0.14) }
-  function thirdWidth(desk) { return width - Tokens.stripeWidth - markWidth - nameWidth - secondWidth(desk) }
+  readonly property real nameWidth: width * 0.2
+  function secondWidth(desk) { return width * (desk ? 0.38 : 0.14) }
+  function thirdWidth(desk) { return width - Tokens.stripeWidth - mapWidth - markWidth - nameWidth - secondWidth(desk) }
   // The selection is the strongest thing on the page (TableRow). The
   // active desk and layout are quiet beside it: a small ● and
   // full-strength text where the rest is a little dimmer.
@@ -409,16 +411,19 @@ Item {
           width: parent.width
           readonly property var titles: DesksLayouts.columnTitles(entry.modelData.kind)
           columns: entry.desk
-            ? [{ text: "", width: Tokens.stripeWidth + root.markWidth }, { text: columnTitles.titles.name, width: root.nameWidth },
+            ? [{ text: "", width: Tokens.stripeWidth + root.mapWidth + root.markWidth },
+              { text: columnTitles.titles.name, width: root.nameWidth },
               { text: columnTitles.titles.monitors, width: root.secondWidth(true) },
               { text: columnTitles.titles.layout, width: root.thirdWidth(true) }]
-            : [{ text: "", width: Tokens.stripeWidth + root.markWidth }, { text: columnTitles.titles.name, width: root.nameWidth },
+            : [{ text: "", width: Tokens.stripeWidth + root.mapWidth + root.markWidth },
+              { text: columnTitles.titles.name, width: root.nameWidth },
               { text: columnTitles.titles.screens, width: root.secondWidth(false) },
               { text: columnTitles.titles.usedBy, width: root.thirdWidth(false) }]
         }
 
         TableRow {
           width: parent.width
+          height: entry.desk ? Tokens.deskMapRowHeight : Tokens.rowHeight
           objectName: "row:" + entry.index
           selected: entry.current
           onClicked: root.select(entry.index)
@@ -429,6 +434,24 @@ Item {
 
           Row {
             height: parent.height
+            Item {
+              width: root.mapWidth
+              height: parent.height
+              // over the cells beside it, so the map's tip shows whole
+              z: deskMap.hovered ? 1 : 0
+              DeskMap {
+                id: deskMap
+                visible: entry.desk
+                anchors.centerIn: parent
+                width: Tokens.deskMapWidth
+                height: Tokens.deskMapHeight
+                name: entry.desk ? entry.modelData.name : ""
+                map: entry.desk ? DesksLayouts.deskMap(entry.modelData, Tokens.deskMapWidth, Tokens.deskMapHeight)
+                  : ({ w: 0, h: 0, screens: [] })
+                tip: entry.desk ? DesksLayouts.deskMapTip(entry.modelData) : ""
+                active: entry.active
+              }
+            }
             TableCell {
               width: root.markWidth
               leftPadding: 0
