@@ -698,42 +698,6 @@ function M.save(engine)
   return handlers.save(engine)
 end
 
--- The active desk's geometry into slots.lua (docs/design.md §8): its
--- monitors' logical boxes (desk.geometry), when they differ from what the
--- data holds and the desk is the editor's. Not an edit: it never makes the
--- engine dirty. Saved at once while nothing else is unsaved (as a first
--- run's new desk is), else it waits in the data for the next save.
-function M.record_geometry(engine)
-  local active = engine.active
-  if not (engine.cfg and engine.data and active) or engine.refused then
-    return
-  end
-  local entry = type(engine.data.desks) == "table" and engine.data.desks[active.desk]
-  if type(entry) ~= "table" or type(entry.monitors) ~= "table"
-      or not edit.editable(read_only_paths(engine.cfg), "desks", active.desk) then
-    return
-  end
-  local geometry = desk.geometry(entry.monitors, adapter.monitors())
-  if not geometry or desk.same_geometry(geometry, entry.geometry) then
-    return
-  end
-  local pending = engine.dirty or next(engine.resized or {}) ~= nil
-  entry.geometry = geometry -- the running data, which save writes
-  local running = engine.cfg.desks[active.desk]
-  if running then
-    running.geometry = geometry
-  end
-  engine.log:info("desk %s: geometry recorded%s", active.desk, pending and " (saved with the next save)" or "")
-  if pending then
-    engine:changed()
-    return
-  end
-  local saved = handlers.save(engine)
-  if saved.ok == false then
-    engine.log:error("desk %s: geometry not saved: %s", active.desk, tostring(saved.error))
-  end
-end
-
 -- reload {}: re-read config.lua and slots.lua, dropping unsaved edits.
 function handlers.reload(engine)
   local ok, err = engine:reload()
@@ -1865,6 +1829,48 @@ function handlers.reset(engine, args)
   local node = configured_tree(cfg, name, n, screen)
   return { layout = name, workspace = n, screen = screen, tree = node and serialize.tree(node) or nil,
     ratio = node and ratio.format(node) or nil, seq = engine.seq }
+end
+
+-- The active desk's geometry into slots.lua (docs/design.md §8): its
+-- monitors' logical boxes (desk.geometry), when they differ from what the
+-- data holds and the desk is the editor's. Not an edit: it never makes the
+-- engine dirty. Saved at once while nothing else is unsaved (as a first
+-- run's new desk is) and slots.lua on disk is still what runs, else it
+-- waits in the data for the next save (never written over a file changed
+-- since it was read: a hand edit, a reload that failed).
+function M.record_geometry(engine)
+  local active = engine.active
+  if not (engine.cfg and engine.data and active) or engine.refused then
+    return
+  end
+  local entry = type(engine.data.desks) == "table" and engine.data.desks[active.desk]
+  if type(entry) ~= "table" or type(entry.monitors) ~= "table"
+      or not edit.editable(read_only_paths(engine.cfg), "desks", active.desk) then
+    return
+  end
+  local geometry = desk.geometry(entry.monitors, adapter.monitors())
+  if not geometry or desk.same_geometry(geometry, entry.geometry) then
+    return
+  end
+  local pending = engine.dirty or next(engine.resized or {}) ~= nil
+  if not pending then
+    local on_disk = saved_data(engine)
+    pending = not on_disk or serialize.dump(without_geometry(on_disk)) ~= serialize.dump(without_geometry(engine.data))
+  end
+  entry.geometry = geometry -- the running data, which save writes
+  local running = engine.cfg.desks[active.desk]
+  if running then
+    running.geometry = geometry
+  end
+  engine.log:info("desk %s: geometry recorded%s", active.desk, pending and " (saved with the next save)" or "")
+  if pending then
+    engine:changed()
+    return
+  end
+  local saved = handlers.save(engine)
+  if saved.ok == false then
+    engine.log:error("desk %s: geometry not saved: %s", active.desk, tostring(saved.error))
+  end
 end
 
 return M

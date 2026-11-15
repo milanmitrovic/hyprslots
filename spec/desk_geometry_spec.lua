@@ -147,6 +147,18 @@ return {
       assert.is_nil(saved().desks.dual.geometry)
     end)
 
+    it("is not saved over a slots.lua that changed on disk since it was read", function()
+      local path = state().config.data_file
+      local file = assert(io.open(path, "w"))
+      file:write("return { slots = {} } -- by hand\n")
+      file:close()
+      hl.run_timers()
+      assert.are.equal("return { slots = {} } -- by hand\n", read(path))
+      assert.is_false(state().dirty)
+      ok("save")
+      assert.are.same(DUAL, saved().desks.dual.geometry, "it goes with the next save")
+    end)
+
     it("is recorded again when a monitor's mode changes", function()
       hl.run_timers()
       side.scale = 1.5
