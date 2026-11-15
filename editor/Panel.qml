@@ -12,6 +12,7 @@ import "Layout.js" as Layout
 import "Assignment.js" as Assignment
 import "Messages.js" as Messages
 import "Help.js" as Help
+import "Guide.js" as Guide
 import "ui"
 
 // The hyprslots editor panel (docs/design.md §9): aerolayout's `edit` TUI as
@@ -86,6 +87,11 @@ Item {
   // `{"record": true}` (the bar widget's Record) opens on the Layout tab and
   // starts its record flow (R) once the state is read.
   property bool pendingRecord: false
+  // The tab it opens on is Guide.openingTab's: the Layout tab while there
+  // are no slots, else Assignment; one the payload asks for wins. Chosen
+  // again on the first state read after opening (the state it had may be
+  // older), unless a tab was picked meanwhile.
+  property bool pendingTab: false
 
   function open(payloadJson) {
     var payload = {}
@@ -105,8 +111,10 @@ Item {
     layoutView.focusedWorkspace = assignmentView.focusedWorkspace
     layoutView.reset()
     desksView.reset()
+    var opening = Guide.openingTab(root.engine ? root.engine.state : null, payload)
+    root.tab = opening !== null ? opening : 0 // nothing read yet: Assignment, which says why
+    root.pendingTab = !Guide.asksForTab(payload)
     if (payload.record === true) {
-      root.tab = 1
       root.pendingRecord = true
       Qt.callLater(root.startPendingRecord)
     }
@@ -119,9 +127,24 @@ Item {
     if (!layoutView.prompting) layoutView.recordFocused()
   }
 
+  // The first state read after opening settles the opening tab.
+  function settleTab() {
+    if (!root.pendingTab || !root.opened || !root.engine || root.engine.state === null) return
+    root.pendingTab = false
+    var opening = Guide.openingTab(root.engine.state, {})
+    if (opening !== null) root.tab = opening
+  }
+
+  // A tab picked by key or click: the opening tab is settled.
+  function pickTab(index) {
+    root.pendingTab = false
+    root.tab = index
+  }
+
   function close() {
     root.opened = false
     root.pendingRecord = false
+    root.pendingTab = false
     if (root.engine) root.engine.active = false
   }
 
@@ -148,11 +171,11 @@ Item {
       return true
     }
     if (key === Qt.Key_Backtab || (key === Qt.Key_Tab && (modifiers & Qt.ShiftModifier))) {
-      root.tab = (root.tab + root.tabs.length - 1) % root.tabs.length
+      root.pickTab((root.tab + root.tabs.length - 1) % root.tabs.length)
       return true
     }
     if (key === Qt.Key_Tab) {
-      root.tab = (root.tab + 1) % root.tabs.length
+      root.pickTab((root.tab + 1) % root.tabs.length)
       return true
     }
     // Esc in the Layout tab's slot list goes back to its picture.
@@ -403,7 +426,9 @@ Item {
   Connections {
     target: root.engine
     function onStateRead(ok) {
-      if (ok) root.startPendingRecord()
+      if (!ok) return
+      root.settleTab()
+      root.startPendingRecord()
     }
   }
 
@@ -514,7 +539,7 @@ Item {
                   objectName: "tab:" + tabItem.modelData
                   anchors.fill: parent
                   cursorShape: Qt.PointingHandCursor
-                  onClicked: root.tab = tabItem.index
+                  onClicked: root.pickTab(tabItem.index)
                 }
               }
             }
