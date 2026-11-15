@@ -1265,15 +1265,19 @@ function filmstrip(root, area, opts) {
 }
 
 // The Assignment view's mini-map of a tree (its text, as state has it) on
-// one screen, in a box `size` { w, h } pixels, the slot `slot` lit: the
-// Layout picture's own geometry at thumbnail size, without the place for
-// other windows (picture, no o). { kind: "tiles" | "scroll" | "none",
-// screen: { x, y, w, h } (where the screen is in the box), tiles: [{ kind,
-// key, x, y, w, h, selected, visible? }] }: a tiled tree's leaves (rects,
-// no padding or titles) filling the box, the screen; a scroll tree's
-// columns (filmstrip, the screen half the box across in its middle,
-// scrolled to the slot's column, the strip beside it; `visible` how much
-// of each is on the screen); none for no tree or one that does not parse.
+// one screen, in a box `size` { w, h } pixels, the slot `slot` lit,
+// without the place for other windows (picture, no o). { kind: "tiles" |
+// "scroll" | "none", screen: { x, y, w, h } (where the screen is in the
+// box), tiles: [{ kind, key, x, y, w, h, selected, visible? }] }:
+//   tiles   the Layout picture's own geometry at thumbnail size (rects, no
+//           padding or titles): the leaves, filling the box, the screen
+//   scroll  the whole strip across the box (a strip shorter than a screen
+//           from its left), each column its `width` of a screen and the
+//           box's height (a scroll tree's columns are the screen's height,
+//           so the height says nothing and the strip gets it all); the
+//           screen where Hyprland scrolls to show the slot's column (the
+//           least, as filmstrip), `visible` how much of each column it shows
+//   none    no tree, or one that does not parse
 function miniMap(text, slot, size) {
   var none = { kind: "none", screen: null, tiles: [] }
   if (!text) return none
@@ -1281,16 +1285,33 @@ function miniMap(text, slot, size) {
   if (!parsed.node) return none
   var node = picture(parsed.node, false)
   var area = { x: 0, y: 0, w: size.w, h: size.h }
-  if (node.kind === "scroll") {
-    var strip = filmstrip(node, area, { aspect: size.h > 0 ? size.w / size.h : 0, span: 2, selected: slot })
-    return { kind: "scroll", screen: strip.viewport, tiles: strip.columns.map(function(c) {
-      return { kind: c.kind, key: c.key, x: c.x, y: c.y, w: c.w, h: c.h, selected: c.selected, visible: c.visible }
-    }) }
-  }
+  if (node.kind === "scroll") return miniStrip(node, slot, area)
   var leavesOnly = rects(node, area, { selected: slot }).filter(function(r) { return r.kind === "slot" || r.kind === "overflow" })
   return { kind: "tiles", screen: area, tiles: leavesOnly.map(function(r) {
     return { kind: r.kind, key: r.key, x: r.x, y: r.y, w: r.w, h: r.h, selected: r.selected }
   }) }
+}
+
+function miniStrip(node, slot, area) {
+  var fraction = node.width || 1
+  var count = node.children.length
+  // screens the strip spans, at least the one it is shown on
+  var screens = Math.max(1, count * fraction)
+  var perScreen = area.w / screens
+  var column = perScreen * fraction
+  var sw = Math.round(perScreen)
+  var keys = node.children.map(keyOf)
+  var at = keys.indexOf(slot)
+  var offset = at >= 0 ? Math.round(Math.max(0, (at + 1) * column - perScreen)) : 0
+  var screen = { x: area.x + offset, y: area.y, w: sw, h: area.h }
+  var tiles = node.children.map(function(child, i) {
+    var x = Math.round(i * column)
+    var w = Math.round((i + 1) * column) - x
+    var shown = Math.max(0, Math.min(x + w, offset + sw) - Math.max(x, offset))
+    return { kind: child.kind, key: keys[i], x: area.x + x, y: area.y, w: w, h: area.h, selected: keys[i] === slot,
+      visible: w > 0 ? shown / w : 0 }
+  })
+  return { kind: "scroll", screen: screen, tiles: tiles }
 }
 
 // A mini-map's size: the screen's shape (`aspect`, width / height; 16:9 for
