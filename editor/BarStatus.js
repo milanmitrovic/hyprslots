@@ -27,6 +27,7 @@ function hasTree(state, entry) {
 }
 
 var HINT = "Click: editor · Right-click: menu"
+var SETUP_HINT = "Click to set up your slots"
 
 // The display name of the monitor a workspace entry is on (" on Built-in"),
 // "" when the engine names none.
@@ -60,10 +61,11 @@ function layoutLine(state) {
 // input: { engine (whether the service is there), error (its last state
 // read's error, "" when fine), state (the last state that read fine, or
 // null), workspaceId (the bar's monitor's active Hyprland workspace id, -1 if
-// none) }. Returns { label, status: "normal" | "dirty" | "error", tooltip,
-// error, workspace (its number 1 to 10, or null), desk ("" when none),
-// dirty }. The label is the active layout's name ("none" without one), and a
-// dot for unsaved edits.
+// none) }. Returns { label, status: "normal" | "dirty" | "setup" | "error",
+// tooltip, error, workspace (its number 1 to 10, or null), desk ("" when
+// none), dirty, setup (zero slots: the widget asks to be set up, an accent
+// dot by its glyph) }. The label is the active layout's name ("none" without
+// one), and a dot for unsaved edits; "set up" while there are no slots.
 function view(input) {
   var state = input.state
   var entry = entryOf(state, input.workspaceId)
@@ -88,7 +90,14 @@ function view(input) {
   } else if (state && state.config_error) {
     out.error = "config error: " + state.config_error
   }
-  if (out.error) {
+  // Zero slots (a fresh install): a quiet nudge to set them up, until the
+  // first slot is made. An auto desk's unsaved dot waits until then.
+  out.setup = !out.error && !!state && Array.isArray(state.slots) && state.slots.length === 0
+  if (out.setup) {
+    out.status = "setup"
+    out.label = GLYPH + " set up"
+    out.tooltip = "Hyprslots: no slots yet\n" + SETUP_HINT
+  } else if (out.error) {
     out.status = "error"
     if (!state) out.label = GLYPH + " hyprslots"
     out.tooltip = "Hyprslots: " + out.error + (state && input.engine && !input.error && !state.refused ? "\n" + here : "") + "\n" + HINT

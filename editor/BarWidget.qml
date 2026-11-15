@@ -10,7 +10,9 @@ import "Services.js" as Services
 
 // The hyprslots bar widget (docs/design.md §9): a grid glyph and
 // the active layout's name, a dot
-// while edits are unsaved, red with the error in the tooltip when the engine
+// while edits are unsaved; "set up" with an accent dot by the glyph while
+// there are no slots (a fresh install; a click opens the editor on its
+// Layout tab, where the first is made); red with the error in the tooltip when the engine
 // has a config error, refused to run, is not loaded, or the plugin's service
 // is missing. The state is the service's (Engine.qml): the widget only asks
 // it to follow events (watch / unwatch), it never polls of its own.
@@ -145,6 +147,21 @@ BarWidget {
         root.toggleEditor()
       }
     }
+  }
+
+  // Zero slots: a small accent dot at the glyph's top right, a quiet "this
+  // wants setting up" (gone once a slot exists).
+  Rectangle {
+    id: setupDot
+    objectName: "bar:setup-dot"
+    visible: root.status.setup === true
+    readonly property int size: Math.max(5, Style.space(5))
+    width: size
+    height: size
+    radius: size / 2
+    color: Commons.Color.accent
+    x: Math.round(Style.spaceReal(6) + Style.font.body * 0.62)
+    y: Math.round(root.height / 2 - Style.font.body * 0.8)
   }
 
   PopupCard {

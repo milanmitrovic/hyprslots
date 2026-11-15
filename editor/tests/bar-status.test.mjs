@@ -168,3 +168,25 @@ test("the tooltip names the monitor the workspace is on by its display name", ()
   assert.equal(B.view(running({ monitors }, 13)).tooltip,
     "Hyprslots: desk laptop, workspace 3 on Odyssey G95NC has no tree on this screen\nLayout: solo (also used by: office)\n" + HINT);
 });
+
+test("with zero slots the widget asks to be set up, quietly", () => {
+  const view = B.view(running({ slots: [], dirty: true }));
+  assert.equal(view.status, "setup");
+  assert.equal(view.label, "󰕰 set up", "no unsaved dot: there is nothing of yours to save yet");
+  assert.equal(view.setup, true);
+  assert.equal(view.tooltip, "Hyprslots: no slots yet\nClick to set up your slots");
+});
+
+test("the set-up state goes once a slot exists", () => {
+  const view = B.view(running({ slots: [{ name: "main", key: "m" }] }));
+  assert.equal(view.status, "normal");
+  assert.equal(view.label, "󰕰 solo");
+  assert.equal(view.setup, false);
+});
+
+test("an error wins over the set-up state", () => {
+  const view = B.view(running({ slots: [], config_error: "config.lua:1: oops" }));
+  assert.equal(view.status, "error");
+  assert.equal(view.setup, false);
+  assert.equal(B.view({ engine: true, error: "", state: null, workspaceId: 3 }).setup, false, "nothing read yet");
+});
