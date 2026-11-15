@@ -15,7 +15,9 @@ used by filling it, never by placing it), a scroll branch says its own
 column width (`scroll:0.5[...]` half the screen, `scroll[...]` full), and
 pinned screens are gone (§3, §4, §6, §9); then **first run**: a fresh
 install starts on a starter config and zero slots, and the editor guides a
-newcomer from there (§4, §9).
+newcomer from there (§4, §9); then **desk maps**: the engine records each
+desk's monitor geometry in slots.lua and the Desk tab draws every desk's
+monitors (§4, §8, §9).
 Targets Hyprland 0.56.2 (Lua config) on Omarchy 4.5.
 
 ## 1. Purpose
@@ -142,7 +144,7 @@ local data = load_data("slots.lua")   -- sandbox helper
 return {
   slots = data.slots,                 -- slot name -> { key?, description? }
   specs = data.specs,                 -- workspace -> slot name -> spec
-  desks = data.desks,                 -- name -> { monitors, layout }
+  desks = data.desks,                 -- name -> { monitors, layout, geometry? }
   layouts = data.layouts,             -- name -> { screens, default?, workspaces? }
   title_matching = { ... },           -- per-class title extraction (§7a)
   workspaces = 10,                    -- optional: manage workspaces 1 to 10 (default 9)
@@ -180,7 +182,15 @@ A desk's `monitors` are each a monitor description, serial, or connector
 name, tried in that order of precedence against each connected monitor; the
 order they are listed in does not matter (screens are numbered by
 position, §3). Its `layout` must be one for as many screens as it has
-monitors. A layout's `screens` is its screen
+monitors. Its `geometry` (optional; absent is none, as in every slots.lua of
+before) is the engine's record of how its monitors sat when it was last
+active (§8): monitor selector -> `{ x = 0, y = 360, w = 1440, h = 900 }`,
+each a logical box (the mode divided by the scale, width and height swapped
+for a monitor turned 90 or 270 degrees, whole pixels), the desk's top-left at
+0, 0; a box per monitor of the desk at most, `w` and `h` above 0, else a
+config error (`desks.docked.geometry[DP-9]: 'DP-9' is none of the desk's
+monitors`). The serializer writes each box on one line, after the desk's
+`layout`. The editor never edits it. A layout's `screens` is its screen
 count; `workspaces[n][i]` is workspace n's tree on screen i, and
 `default[i]` screen i's tree for every workspace with no entry of its own
 (an entry replaces the default trees whole, so `workspaces = { [5] = {} }`
@@ -797,6 +807,24 @@ workspace**, the one last switched to with
 focus returns to the screen that had it. Before the first workspace switch a
 new screen keeps whatever Omarchy shows on it.
 
+**Desk geometry.** While a desk is active the engine records its monitors'
+logical boxes (`desk.geometry`, §4) in slots.lua under the desk, so the
+editor can draw any desk's arrangement later, when it is not connected
+(§9's Desk tab). It does so (`api.record_geometry`, a oneshot hop after
+`reselect`, which runs inside edits and saves) on load, after every desk
+change (hotplug, an edit) and on `monitor.layout_changed` (a mode, scale or
+position change), whenever the boxes differ from those recorded. Recording is
+no edit: it never makes the engine dirty. It is saved at once and quietly
+(`api.save`) while nothing else is unsaved, the same rule as a first run's
+new desk (no other edit, no slots.lua of before, no keyboard-resized tree);
+with edits pending, or slots.lua on disk no longer what runs (changed by
+hand, a `reload` that failed), it waits in the running data and goes with
+the next Ctrl+S, never saved over them. `reset` compares the data with the file
+without it, so a reset back to the file is clean, and then saves the
+geometry quietly. A desk config.lua builds in code, or one not in slots.lua,
+records nothing. `HL.Monitor` gives `x`, `y` (logical), `width`, `height`
+(the mode's pixels), `scale` and `transform`, as `hyprctl monitors -j` does.
+
 **A new desk.** Monitors no desk knows get a desk of their own once the set
 has held for a second (hotplug passes through sets on its way: undocking
 goes from laptop + monitor through the monitor alone, or the other way, as
@@ -873,7 +901,7 @@ the running engine only through Hyprland:
 | `BarWidget.qml` | the bar widget (below): glyph and active layout; left click toggles the panel, right click a menu |
 | `Services.js` | where the service registers itself, for a bar widget whose bar hands it no `serviceFor` |
 | `AssignmentView.qml`, `LayoutView.qml`, `DesksLayoutsView.qml` | aerolayout's Assignment, Layout (with its logical slots as a list beside the screens) and monitors views (below) |
-| `ui/` (`qmldir`) | the editor's design system, one component per kind of element, all from the theme (below): `Tokens` (a singleton: colours, spacing, the Layout picture's divider band and line, the ratio label by the pointer, drag and drop's outline and fill, the mini-map's box), `SectionHeader`, `WorkspaceSwitcher`, `InfoText`, `ProblemText`, `Placeholder`, `TableHeader`, `TableRow` (`dropTarget`: outlined where a drag would land), `TableCell`, `PaneTitle`, `KeyCap`, `ActionButton`, `Toolbar`, `MiniMap` (a slot's place on its screen), `DragGhost` (what a drag carries, and the label of what letting go does) |
+| `ui/` (`qmldir`) | the editor's design system, one component per kind of element, all from the theme (below): `Tokens` (a singleton: colours, spacing, the Layout picture's divider band and line, the ratio label by the pointer, drag and drop's outline and fill, the mini-map's box), `SectionHeader`, `WorkspaceSwitcher`, `InfoText`, `ProblemText`, `Placeholder`, `TableHeader`, `TableRow` (`dropTarget`: outlined where a drag would land), `TableCell`, `PaneTitle`, `KeyCap`, `ActionButton`, `Toolbar`, `MiniMap` (a slot's place on its screen), `DeskMap` (a desk's monitors, the Desk tab), `DragGhost` (what a drag carries, and the label of what letting go does) |
 | `Protocol.js`, `Assignment.js`, `Layout.js`, `Slots.js`, `DesksLayouts.js`, `Prompts.js`, `Workspaces.js`, `BarStatus.js`, `Help.js`, `Messages.js`, `Guide.js` | pure logic, tested under node (`editor/tests/`); `Slots.js` is the slot list's, `Workspaces.js` the workspace keys', `DesksLayouts.js` the Desk view's and the panel header's, `Help.js` the help rows', `Messages.js` the message band's, `Guide.js` the opening tab's and every empty state's (below) |
 
 **Opening tab.** The panel opens on the Layout tab while there are no
@@ -1306,7 +1334,8 @@ layouts are two lists and a desk points at a layout). A line says what the
 two are; then two sections, each under its column titles (Desk, Monitors,
 Uses layout; Layout, Screens, Used by):
 
-- **Desks** (monitor setups): each stored desk by name, its monitors by
+- **Desks** (monitor setups): each stored desk led by its **map** (below),
+  by name, its monitors by
   display name (§4; `●` connected, `○` not: `● Built-in + ● Odyssey
   G95NC`), the
   layout it uses as a mapping (`→ dual`, so a desk and a layout of one
@@ -1316,6 +1345,21 @@ Uses layout; Layout, Screens, Used by):
 - **Layouts** (logical arrangements for N screens): each by name, its screen
   count, the desks using it (`unused` when none); the active layout marked
   the same way.
+
+**Desk maps** (`ui/DeskMap.qml`, `DesksLayouts.deskMap`,
+`DesksLayouts.deskMapTip`). Each desk row leads with a small map of its
+monitors, in a column of its own (layout rows leave it empty): the boxes
+state reports (`desks[].geometry`: the live ones on the active desk, the
+recorded ones on another, equal boxes side by side in the order the desk
+lists its monitors for a desk never seen, §8) fitted at their own shape into
+a fixed box (`Tokens.deskMapWidth` × `deskMapHeight`, 72 × 36 at scale 1)
+and centred in it, each screen a rectangle labelled with its number, the
+layout's (left to right, then top to bottom), a pixel apart from the next;
+a connected monitor solid, one that is not outlined; the active desk's in
+the accent, the others in a dim line colour. Hovering a map shows its
+screens' display names on the tooltip surface beside it (`1 Built-in · 2
+Odyssey G95NC (not connected)`). Desk rows are tall enough for it
+(`Tokens.deskMapRowHeight`).
 
 The section headers are quiet labels (`DESKS monitor setups · ● connected
 ○ not`, muted small capitals), the column titles muted. One selection runs
@@ -1464,7 +1508,10 @@ workspace's overflow leaf), `unassigned[]` (addresses taken out of their
 slot by `unassign`), `desks` (name -> `monitors[]` (selectors),
 `connected[]` and `displays[]` (one per selector: the display name, §4), `layout`, `active`,
 `screens[]` (the active one's connectors), `auto` (made for new monitors,
-unsaved), `read_only`), `layouts` (name -> `screens` (count), `default`
+unsaved), `read_only`, `geometry[]` (one per selector, the desk's map:
+`x, y, w, h` normalized as slots.lua records them, §4, and `screen`, its
+number as the layout's; the live boxes on the active desk, the recorded ones
+on another, else equal boxes side by side in selector order)), `layouts` (name -> `screens` (count), `default`
 ("1" -> `{tree, ratio, slots[], resized?}`), `workspaces` ("3" -> "1" ->
 the same: the trees each workspace shows, its own or the default ones),
 `own[]` (the workspaces with trees of their own), `used_by[]` (desks),
@@ -1657,7 +1704,7 @@ Under `lua/hyprslots/`:
 | pure | `config` | load and validate `config.lua` / `slots.lua` (sandboxed) |
 | pure | `migrate` | slots.lua's shapes of before (per-workspace slots; arrangements), read as global slots, desks and layouts |
 | pure | `edit` | edits to the `slots.lua` data (trees, slots, specs, desks, layouts); which fields code owns |
-| pure | `desk` | pick the desk matching the monitor set, number its screens left to right; name and default trees of a new desk |
+| pure | `desk` | pick the desk matching the monitor set, number its screens left to right; name and default trees of a new desk; its geometry (logical boxes) and map |
 | pure | `monitor_name` | a monitor's display name: the user's label, Built-in, the model (PNP vendor names read once) |
 | pure | `assign` | windows → slots |
 | pure | `serialize` | write `slots.lua` and tree text deterministically |
@@ -1721,6 +1768,7 @@ with Omarchy's gaps (5/10, border 2).
 | One set of slots | every tree holds every global slot (`migrate.normalize` on load and every edit; an empty slot closes up), so nothing places or takes out a slot: the Layout tab's `a` / `x`, `take_spec` `place` and `edit.place_slot` go, a new slot is in every tree; a scroll branch's own column width (`scroll:0.5[...]`, config.lua's `scroll.width` migrated into the trees), the Layout tab's `t` cycling tiles, scroll half and scroll full, scroll branches drawn as a filmstrip, `r` on tiles only; `d` reverts; fork only in the Desk tab; pinned screens removed (migrated away); the Layout header one strip and its help one line; no file names in the editor's text | done 2026-11-09 |
 | Monitor names | display names for monitors (Built-in, the model from the description less make and serial, the user's label in slots.lua `monitor_names`) everywhere the editor shows one; the Desk tab's `m`; api `set_monitor_name`, `display` / `displays[]`; new desks named after them (`built-in+odyssey-g95nc`) | done 2026-11-11 |
 | First run | a fresh install: the starter config.lua and empty slots.lua (`starter.lua`), zero slots running; the panel opening on Layout with no slots, else Assignment; every empty state pointing to the next step (`Guide.js`: the Layout tab's explanation and "Create your first slot", the Assignment tab's way back to it, a workspace's how-to-assign line, the Desk tab's opening line); the bar's set-up state; README's Getting started | done 2026-11-15 |
+| Desk maps | the active desk's geometry recorded in slots.lua (quietly: saved when nothing else is unsaved, else with the next save), `state.desks[].geometry`; the Desk tab's rows led by a map of each desk's monitors (`ui/DeskMap`); moving a window to another slot clears the spec of the one it left (`take_spec` `left`), `unassign` naming the slot the window was in | done 2026-11-15 |
 | Assignment by mouse | Assignment rows dragged and dropped (onto a slot: `a`; onto the other windows: `u`; Esc or elsewhere: nothing; a ghost, the target outlined, its label); each slot row's mini-map of its screen's tree, the slot lit (the Layout picture's geometry, `ui/MiniMap`) | done 2026-11-15 |
 
 Slices 2 to 6 were built in parallel on top of slices 1 and 2 and
@@ -1854,7 +1902,15 @@ unassign after the move naming main, the slot it was in;
   bar's set-up state gone; Ctrl+S saving it with config.lua untouched; the
   panel then opening on the Assignment tab with its how-to-assign line, gone
   once the window is assigned (screenshots
-  `.e2e-tmp/editor-first-run[-<theme>]-*.png`). `make e2e-editor-multimon`
+  `.e2e-tmp/editor-first-run[-<theme>]-*.png`). `e2e/editor_desk_map.sh` (also `make e2e-editor`): two outputs of
+  different sizes, offset (HEADLESS-2 1920x1080 at 0,360, HEADLESS-3
+  2560x1440 at 1920,0), desks dual, solo and a never-seen office: dual's
+  geometry in slots.lua at once, not dirty; the Desk tab's maps as drawn
+  (dual's two screens side by side, the second larger and higher, office's
+  equal and outlined), the tip on hover by the real pointer; after
+  HEADLESS-3 is removed, solo active and dual's screen 2 outlined where it
+  was recorded (screenshots `.e2e-tmp/editor-desk-map[-<theme>]-*.png`).
+  `make e2e-editor-multimon`
   (`e2e/editor_multimon.sh`, opt-in, the same tools) looks rather than
   tests: the editor on a 2-screen desk (HEADLESS-2 and a 2560x1440
   HEADLESS-3, layout `dual` with slots on both screens, foot windows in
