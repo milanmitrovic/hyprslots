@@ -108,6 +108,21 @@ return { slots = data.slots, desks = data.desks, layouts = data.layouts, scroll 
     assert.is_falsy(cfg.migrated)
   end)
 
+  it("loads clean a slots.lua whose shared trees leave out a slot a workspace's own trees place", function()
+    local two = SLOTS_LUA:gsub('layouts = {.-\n  },\n}', [[layouts = {
+    dual = { screens = 2, default = { [1] = "h[main, right]" },
+      workspaces = { [3] = { [1] = "h[main:2, right]", [2] = "left" } } },
+    single = { screens = 1, default = { [1] = "h[left, main, right]" } },
+  },
+}]])
+    assert.matches('default = { %[1%] = "h%[main, right%]" }', two)
+    dir = config_dir({ ["config.lua"] = CONFIG_LUA, ["slots.lua"] = two })
+    local cfg = assert(config.load(dir))
+    assert.is_falsy(cfg.migrated, "nothing differs from the file: no unsaved edit on load")
+    assert.is_falsy(cfg.data_files["slots.lua"].migrated)
+    assert.are.same({ [1] = "h[main, right]" }, cfg.data_files["slots.lua"].data.layouts.dual.default)
+  end)
+
   it("keys the slots of a slots.lua whose slots have no key (left, main, right: l, m, r), and says it changed", function()
     dir = config_dir({ ["config.lua"] = CONFIG_LUA, ["slots.lua"] = SLOTS_LUA:gsub(' key = "%a",?', "") })
     local cfg = assert(config.load(dir))
@@ -515,11 +530,12 @@ describe("config.validate", function()
   it("takes default trees for the workspaces with none of their own", function()
     local raw = valid()
     raw.layouts.solo.default = { [1] = "main" }
+    raw.specs[5] = { left = "t-other" }
     local cfg = assert(config.validate(raw))
     local layout = cfg.layouts.solo
     assert.are.same({ "left", "main" }, require("hyprslots.tree").slots(config.trees_for(layout, 3)[1]))
     assert.are.same({ "main", "left" }, require("hyprslots.tree").slots(config.trees_for(layout, 5)[1]),
-      "every tree holds every slot")
+      "the shared tree holds every slot a workspace on it fills")
   end)
 
   it("gives a layout with no default tree one with every slot: a scroll branch on a laptop panel", function()

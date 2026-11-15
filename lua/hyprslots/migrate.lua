@@ -154,11 +154,15 @@ end
 -- One tree set (screen -> text) holding every global slot (`names`,
 -- sorted, `global` the same as a set): the slots that are not global
 -- dropped (a tree left with none goes), the missing ones appended
--- (tree.append) to the left-most screen that has a tree. Changes `trees`
--- in place; a tree whose slots stay is kept as written. Returns whether
+-- (tree.append) to the left-most screen that has a tree. A slot another
+-- tree set of the same layout places (`elsewhere`, a set) is not missing
+-- unless a workspace using this set fills it (`needed`, a set): it is in
+-- the layout, on whichever screen that set puts it, so a set leaving it
+-- out is already valid and stays as it is. Changes `trees` in
+-- place; a tree whose slots stay is kept as written. Returns whether
 -- anything changed. A set with a tree that does not parse is left alone,
 -- for config.validate to report.
-local function fill(trees, names, global)
+local function fill(trees, names, global, elsewhere, needed)
   local screens, nodes = {}, {}
   for screen, text in pairs(trees) do
     if type(text) ~= "string" then
@@ -193,7 +197,7 @@ local function fill(trees, names, global)
   end
   local missing = {}
   for _, name in ipairs(names) do
-    if not placed[name] then
+    if not placed[name] and not (elsewhere and elsewhere[name] and not needed[name]) then
       missing[#missing + 1] = name
     end
   end
@@ -254,6 +258,53 @@ local function first_screen(data, name, screens, monitors)
   return nil
 end
 
+-- The global slots some tree of a layout places, any tree set (its
+-- default trees, each workspace's own), any screen, as a set. Trees that do
+-- not parse place nothing.
+local function placed_in(layout, global)
+  local out = {}
+  local function scan(trees)
+    if type(trees) ~= "table" then
+      return
+    end
+    for _, text in pairs(trees) do
+      local node = type(text) == "string" and tree.parse(text)
+      if node then
+        for _, slot in ipairs(tree.slots(node)) do
+          if global[slot] then
+            out[slot] = true
+          end
+        end
+      end
+    end
+  end
+  scan(layout.default)
+  if type(layout.workspaces) == "table" then
+    for _, trees in pairs(layout.workspaces) do
+      scan(trees)
+    end
+  end
+  return out
+end
+
+-- The slots a tree set of `layout` must hold whatever the other sets
+-- place: those a workspace using it fills (`specs`: workspace -> slot ->
+-- spec). `n` nil is the default set, which the workspaces with no set of
+-- their own use. As a set.
+local function needed_by(layout, n, specs)
+  local out = {}
+  local own = type(layout.workspaces) == "table" and layout.workspaces or {}
+  for workspace, filled in pairs(type(specs) == "table" and specs or {}) do
+    local uses = n == nil and own[workspace] == nil or n ~= nil and workspace == n
+    if uses and type(filled) == "table" then
+      for slot in pairs(filled) do
+        out[slot] = true
+      end
+    end
+  end
+  return out
+end
+
 -- Whether a tree set has no tree.
 local function treeless(trees)
   return trees == nil or (type(trees) == "table" and next(trees) == nil)
@@ -290,7 +341,8 @@ function M.normalize(data, monitors)
   for _, name in ipairs(sorted(out.layouts)) do
     local layout = out.layouts[name]
     if type(layout) == "table" then
-      if type(layout.default) == "table" and fill(layout.default, names, global) then
+      local elsewhere = placed_in(layout, global)
+      if type(layout.default) == "table" and fill(layout.default, names, global, elsewhere, needed_by(layout, nil, out.specs)) then
         changed = true
       end
       local screens = layout.screens
@@ -302,7 +354,7 @@ function M.normalize(data, monitors)
       end
       if type(layout.workspaces) == "table" then
         for _, n in ipairs(sorted(layout.workspaces)) do
-          if type(layout.workspaces[n]) == "table" and fill(layout.workspaces[n], names, global) then
+          if type(layout.workspaces[n]) == "table" and fill(layout.workspaces[n], names, global, elsewhere, needed_by(layout, n, out.specs)) then
             changed = true
           end
         end

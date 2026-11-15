@@ -666,8 +666,16 @@ return { slots = data.slots, specs = data.specs, desks = desks, layouts = data.l
       local home = state().layouts.home
       assert.are.equal("v[left, main, right]", home.default["1"].tree)
       assert.are.equal("v[left, main, right]", home.workspaces["3"]["1"].tree)
-      assert.are.equal("h[main, right, left]", home.workspaces["4"]["1"].tree, "its own trees replace the default ones")
+      assert.are.equal("h[main, right]", home.workspaces["4"]["1"].tree,
+        "its own trees replace the default ones (left, which it does not fill, is in the shared tree)")
       assert.are.same({ 4 }, home.own)
+    end)
+
+    it("a workspace's own trees take a slot it comes to fill that only the shared tree places", function()
+      ok("set_tree", { workspace = 4, screen = 1, tree = "h[main, right]" })
+      assert.are.equal("h[main, right]", state().layouts.home.workspaces["4"]["1"].tree)
+      ok("set_spec", { workspace = 4, slot = "left", spec = "kitty" })
+      assert.are.equal("h[main, right, left]", state().layouts.home.workspaces["4"]["1"].tree)
     end)
 
     it("are written by save as default", function()

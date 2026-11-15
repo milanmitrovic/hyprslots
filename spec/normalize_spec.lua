@@ -21,9 +21,11 @@ describe("migrate.normalize", function()
   end)
 
   it("appends them at the end of a scroll branch, before a trailing *", function()
-    local out = migrate.normalize(data({
+    local given = data({
       solo = { screens = 1, default = { [1] = "scroll:0.5[main, *]" }, workspaces = { [3] = { [1] = "scroll[right]" } } },
-    }))
+    })
+    given.specs[4] = { right = "t-right" } -- workspace 4, on the shared tree, fills right
+    local out = migrate.normalize(given)
     assert.are.equal("scroll:0.5[main, left, right, *]", out.layouts.solo.default[1])
     assert.are.equal("scroll[right, left, main]", out.layouts.solo.workspaces[3][1])
   end)
@@ -44,6 +46,61 @@ describe("migrate.normalize", function()
     assert.are.equal("h[left, main, right]", out.layouts.dual.default[2])
     assert.are.equal("h[main, right]", out.layouts.dual.workspaces[3][1])
     assert.are.equal("left", out.layouts.dual.workspaces[3][2])
+  end)
+
+  it("counts a slot another tree set of the layout places as present: nothing appended, nothing changed", function()
+    -- the shared trees leave chat out; workspace 3's own trees place it on
+    -- screen 2: chat is not appended to the shared tree's screen 1
+    local given = data({
+      dual = { screens = 2, default = { [1] = "h[main, right]", [2] = "side" },
+        workspaces = { [3] = { [1] = "h[main:2, right]", [2] = "v[side, chat]" } } },
+    }, { main = { key = "m" }, right = { key = "r" }, side = { key = "s" }, chat = { key = "c" } })
+    local out, changed = migrate.normalize(given)
+    assert.is_false(changed)
+    assert.are.same({ [1] = "h[main, right]", [2] = "side" }, out.layouts.dual.default)
+    assert.are.same({ [1] = "h[main:2, right]", [2] = "v[side, chat]" }, out.layouts.dual.workspaces[3])
+  end)
+
+  it("counts it present the other way round too: a workspace's own set leaving out what the shared one places", function()
+    local out, changed = migrate.normalize(data({
+      dual = { screens = 2, default = { [1] = "h[left, main]", [2] = "right" },
+        workspaces = { [3] = { [2] = "h[main, right]" } } },
+    })) -- workspace 3 fills main, which its own set places
+    assert.is_false(changed)
+    assert.are.same({ [2] = "h[main, right]" }, out.layouts.dual.workspaces[3])
+  end)
+
+  it("appends a slot another set places all the same when a workspace on this set fills it", function()
+    -- workspace 4 uses the shared trees and fills chat: they must place it
+    local given = data({
+      dual = { screens = 2, default = { [1] = "h[main, right]", [2] = "side" },
+        workspaces = { [3] = { [1] = "h[main:2, right]", [2] = "v[side, chat]" } } },
+    }, { main = { key = "m" }, right = { key = "r" }, side = { key = "s" }, chat = { key = "c" } })
+    given.specs[4] = { chat = "t-chat" }
+    local out, changed = migrate.normalize(given)
+    assert.is_true(changed)
+    assert.are.equal("h[main, right, chat]", out.layouts.dual.default[1])
+    -- workspace 3's own set fills main and places it: as written
+    assert.are.same({ [1] = "h[main:2, right]", [2] = "v[side, chat]" }, out.layouts.dual.workspaces[3])
+  end)
+
+  it("appends to a workspace's own set a slot that workspace fills, though the shared set places it", function()
+    local given = data({
+      dual = { screens = 2, default = { [1] = "h[left, main]", [2] = "right" },
+        workspaces = { [3] = { [2] = "h[left, right]" } } },
+    })
+    local out, changed = migrate.normalize(given) -- specs[3] fills main
+    assert.is_true(changed)
+    assert.are.equal("h[left, right, main]", out.layouts.dual.workspaces[3][2])
+  end)
+
+  it("still appends a slot no tree of the layout places, to every tree set", function()
+    local out, changed = migrate.normalize(data({
+      dual = { screens = 2, default = { [1] = "h[left, main]" }, workspaces = { [3] = { [2] = "main" } } },
+    }))
+    assert.is_true(changed)
+    assert.are.equal("h[left, main, right]", out.layouts.dual.default[1])
+    assert.are.equal("h[main, right]", out.layouts.dual.workspaces[3][2])
   end)
 
   it("leaves trees that hold every slot as they are written, and says nothing changed", function()

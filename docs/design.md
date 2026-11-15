@@ -82,8 +82,9 @@ desks, then arrangements; a desk was always the physical setup you sit at.)
   or `v` splits with exact integer weights (`h[main:2, right:1]`); leaves
   are slots or the overflow leaf. A whole branch may instead be a scroll
   branch. **Every tree set holds every global slot** (a layout's shared
-  trees, each workspace's own: one screen or another, §4), so which slots
-  a workspace uses is only which ones it fills.
+  trees, each workspace's own: one screen or another, §4), or leaves out
+  one that another set of the same layout places and no workspace on it
+  fills, so which slots a workspace uses is only which ones it fills.
 - **Slot**: a named leaf, a **global logical name** (`left`, `main`,
   `right`) defined once with an optional description, aerolayout's logical
   slots. Every tree holds every slot, and one nothing fills takes no room;
@@ -233,7 +234,14 @@ over the edited data): the global slots a tree set leaves out are
 appended, by name, to its left-most screen that has a tree (new children
 of a tiled tree's root split, a bare leaf becoming `h[leaf, slot]`; columns
 at the end of a scroll branch, before its `*` when that is its last
-column: `tree.append`), and a slot that is not global is dropped from the
+column: `tree.append`), except one
+that another tree set of the same layout places (any screen) while no
+workspace using this set fills it (a spec for it on a workspace with no
+trees of its own, for the shared set; on the workspace itself, for its
+own): that slot is in the layout already, so data like `default = { [1]
+= "h[main, right]", [2] = "side" }` beside workspace 3's own `[2] =
+"v[side, chat]"` is valid as written, loads clean (no `● unsaved` on
+opening) and keeps `chat` off the shared tree's screen 1, and a slot that is not global is dropped from the
 tree. **No layout is treeless**: one with no default tree (none given,
 `default = {}`, or every one dropped as above; a new layout the Desk tab's
 `n` makes empty) gets the default trees a new desk's layout gets (§8):
