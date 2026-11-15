@@ -26,7 +26,9 @@ import "ui"
 // children of a tiled split is a divider, dragged to a new ratio of the split
 // (Layout.dividers, Layout.dragDivider: the whole split snapped to whole
 // weights 1 to 5, anchored to where its dividers were when the drag
-// started; its ratio shown by the pointer meanwhile). Edits go to a draft; `w` applies it (api set_trees), Ctrl+S
+// started; its ratio shown by the pointer meanwhile). A pane dragged by
+// its title onto another, or p (the selected screen with the next), swaps
+// the two screens' trees (Layout.swapScreens). Edits go to a draft; `w` applies it (api set_trees), Ctrl+S
 // (the panel's) applies it and saves (api save), `d` reverts a screen's tree
 // to how it was last saved (api reset), `R` records the windows on screen
 // (api record, previewed). It opens on "All workspaces" (`-`): the layout's
