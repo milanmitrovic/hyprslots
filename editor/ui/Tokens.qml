@@ -16,6 +16,13 @@ import qs.Commons as Commons
 //                     wide enough to grab, an accent line on hover, the
 //                     full accent while dragged; the ratio by the pointer
 //                     on the theme's tooltip surface
+//   drag and drop     the Assignment table's rows: the dragged row dimmed,
+//                     a ghost of it by the pointer (DragGhost, on the menu
+//                     surface), the row or section it would land on in an
+//                     accent outline, what letting go does on the tooltip
+//                     surface beside the ghost (as the ratio label)
+//   mini-maps         a slot's place on its screen (MiniMap): the slot an
+//                     accent fill, the others dim outlines
 //   actions           buttons (ActionButton: the help row's toolbar, a prompt's
 //                     chips and answers), keys as key caps (KeyCap); hover
 //                     and press from the theme's control tokens
@@ -51,6 +58,21 @@ QtObject {
   readonly property color tipFill: Commons.Color.tooltip.background
   readonly property color tipText: Commons.Color.tooltip.text
   readonly property color tipBorder: Commons.Util.alpha(Commons.Color.accent, 0.7)
+  // drag and drop (the Assignment table): what lands it, outlined and
+  // faintly filled in the accent; the ghost by the pointer on the menu
+  // surface (the label beside it: tipFill, tipText, tipBorder)
+  readonly property color surface: Commons.Color.menu.background
+  readonly property color dropOutline: Commons.Color.accent
+  readonly property color dropFill: Commons.Util.alpha(Commons.Color.accent, 0.1)
+  readonly property int dropLine: Math.max(2, Style.spacing.xxs)
+  // a slot's mini-map: the box it fits (the screen's shape inside it), and
+  // the rows tall enough for it
+  readonly property int miniMapWidth: Style.space(56)
+  readonly property int miniMapHeight: Style.space(32)
+  readonly property int miniMapRowHeight: Math.max(rowHeight, miniMapHeight + Style.spacing.sm * 2)
+  readonly property color miniMapFrame: Commons.Util.alpha(text, 0.04)
+  readonly property color miniMapLine: Commons.Util.alpha(text, 0.35)
+  readonly property color miniMapSlot: Commons.Color.accent
   // where a page's text starts: past a row's stripe and its cell padding,
   // so headers, notes and cells line up on every tab
   readonly property int textInset: stripeWidth + cellPadding
