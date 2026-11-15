@@ -30,6 +30,8 @@ import "ui"
 // help row is a toolbar whose buttons feed their keys (press), a prompt's
 // chips and answers are keys, a double-click on a row is its view's
 // primary action's key; the tabs and the workspace switchers are clicked.
+// The Assignment view's rows also drag: onto a slot (a), onto the other
+// windows (u).
 //
 //   omarchy-shell shell toggle milan.hyprslots
 //   omarchy-shell shell call milan.hyprslots press a   (a key, for scripts and tests)
@@ -163,7 +165,8 @@ Item {
   // panel used it.
   function handleKey(key, text, modifiers) {
     if (Messages.dismissedByKey(root.bandKind)) root.dismissedKey = root.messageKey
-    if (assignmentView.prompting && root.tab === 0) return assignmentView.handleKey(key, text, modifiers)
+    // a prompt, or a row held in a drag (Esc cancels it), owns the keyboard
+    if ((assignmentView.prompting || assignmentView.dragging) && root.tab === 0) return assignmentView.handleKey(key, text, modifiers)
     if (layoutView.prompting && root.tab === 1) return layoutView.handleKey(key, text, modifiers)
     if (desksView.prompting && root.tab === 2) return desksView.handleKey(key, text, modifiers)
     if (key === Qt.Key_S && (modifiers & Qt.ControlModifier)) {
@@ -253,6 +256,15 @@ Item {
       return Assignment.slotText(row) + "|" + (kept ? Assignment.specText(row) : row.cls) + "|"
         + (kept ? Assignment.titleText(row) : "window")
     }).join("; ")
+  }
+
+  // A row being dragged in the Assignment view: "<class> -> <what letting
+  // go does there>" ("t-stray -> Assign to main", "t-main -> Unassign",
+  // "t-main -> none"), "" when none is: for the e2e smoke.
+  function assignmentDragText() {
+    var d = assignmentView.drag
+    if (!d) return ""
+    return (d.source.cls || "Unknown") + " -> " + (d.action.kind === "none" ? "none" : d.action.label)
   }
 
   // What stands in the current tab while there is nothing in it yet

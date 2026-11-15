@@ -25,6 +25,14 @@ import "ui"
 // that spec. Spec edits stay in memory until Ctrl+S (the header says
 // "unsaved edits"). The model is Assignment.js; the calls are the api's
 // take_spec, clear_spec and unassign (docs/design.md §9).
+//
+// By mouse: a click selects a row, a double-click is a; a row with a window
+// drags (past Assignment.DRAG_THRESHOLD px): let go on a slot row it is a
+// with that slot (assign, the same handler), on the other windows or the
+// list's empty space below them u (unassign, without its question: the drop
+// is the answer), anywhere else, or on Esc, nothing (Assignment.dropAction).
+// Each slot row leads with a mini-map of its screen's tree, the slot lit
+// (ui/MiniMap).
 Item {
   id: root
 
@@ -56,6 +64,13 @@ Item {
   property bool messageIsError: false
   // Counts say(): the panel's message band knows a message by it.
   property int messageSeq: 0
+
+  // A row being dragged: { source (the row, as it was when the drag
+  // began), key (keyOf it), x, y (the pointer, in the view), lx, ly (the
+  // pointer, in the list's box), target (dropTargetAt), action
+  // (Assignment.dropAction: what letting go does) }, null when none is.
+  property var drag: null
+  readonly property bool dragging: drag !== null
 
   // Zero slots: the Layout tab comes first (Guide.assignmentEmpty, its
   // button the Tab key); a workspace with nothing assigned says how
@@ -223,6 +238,76 @@ Item {
     })
   }
 
+  // --- drag and drop ---------------------------------------------------------
+
+  // What is under the pointer at lx, ly in the list's box: { row, index }
+  // (a row), { others: true } (the list's empty space below its rows) or
+  // null (outside the list).
+  function dropTargetAt(lx, ly) {
+    if (lx < 0 || ly < 0 || lx >= listBox.width || ly >= listBox.height) return null
+    var i = list.indexAt(lx + list.contentX, ly + list.contentY)
+    if (i >= 0 && i < rows.length) return { row: rows[i], index: i }
+    return { others: true }
+  }
+
+  // The first row of the other windows (overflowing, or in no slot): where
+  // the unassign target's outline starts; rows.length when there is none.
+  readonly property int firstOtherIndex: {
+    for (var i = 0; i < rows.length; i++) if (!Assignment.isSlotRow(rows[i])) return i
+    return rows.length
+  }
+
+  // A press on row `index` moved past the threshold: the drag begins
+  // (false when that row does not drag, or a prompt is open).
+  function dragStart(index, x, y, lx, ly) {
+    if (prompting || index < 0 || index >= rows.length || !Assignment.canDrag(rows[index])) return false
+    var source = rows[index]
+    selectedKey = keyOf(source)
+    message = ""
+    drag = { source: source, key: keyOf(source), x: x, y: y, lx: lx, ly: ly, target: null, action: { kind: "none" } }
+    dragTo(x, y, lx, ly)
+    return true
+  }
+
+  // The source row as it is now (rows are re-read under the drag), null
+  // when its window has gone.
+  function dragSource() {
+    if (!drag) return null
+    for (var i = 0; i < rows.length; i++) if (keyOf(rows[i]) === drag.key) return rows[i]
+    return null
+  }
+
+  function dragTo(x, y, lx, ly) {
+    if (!drag) return
+    var source = dragSource() || drag.source
+    var target = dropTargetAt(lx, ly)
+    drag = { source: source, key: drag.key, x: x, y: y, lx: lx, ly: ly, target: target,
+      action: Assignment.dropAction(state, currentPage.workspace, source, target) }
+  }
+
+  // The rows changed under a held drag: what it would land on, again.
+  function dragRetarget() {
+    if (drag) dragTo(drag.x, drag.y, drag.lx, drag.ly)
+  }
+  onRowsChanged: Qt.callLater(dragRetarget)
+
+  // Let go: what dropAction says, through a's and u's own handlers.
+  function dragDrop() {
+    if (!drag) return
+    var source = dragSource()
+    var target = dropTargetAt(drag.lx, drag.ly)
+    drag = null
+    if (!source) return
+    var action = Assignment.dropAction(state, currentPage.workspace, source, target)
+    selectedKey = keyOf(source)
+    if (action.kind === "assign") assign(source, action.option)
+    else if (action.kind === "unassign") unassign(source, action.plan)
+  }
+
+  function dragCancel() {
+    drag = null
+  }
+
   function handlePrompt(key, text, modifiers) {
     var out = Prompts.key(prompt, Prompts.keyName(key, modifiers, Qt), Prompts.typed(text))
     var answer = _answer
@@ -235,6 +320,11 @@ Item {
   }
 
   function handleKey(key, text, modifiers) {
+    // a held drag owns the keyboard: Esc cancels it, the rest waits
+    if (dragging) {
+      if (key === Qt.Key_Escape) dragCancel()
+      return true
+    }
     if (prompting) return handlePrompt(key, text, modifiers)
     if (key === Qt.Key_Up || text === "k") select(selected - 1)
     else if (key === Qt.Key_Down || text === "j") select(selected + 1)
@@ -247,12 +337,13 @@ Item {
     return true
   }
 
-  // Columns: the selection's stripe, then [Screen] Slot App Title, sized
-  // by share of the width.
+  // Columns: the selection's stripe, the mini-map, then [Screen] Slot App
+  // Title, sized by share of the width.
+  readonly property real miniMapColumn: Tokens.miniMapWidth + Tokens.cellPadding
   readonly property real screenWidth: showScreen ? width * 0.1 : 0
   readonly property real slotWidth: width * 0.18
   readonly property real appWidth: width * 0.18
-  readonly property real titleWidth: width - Tokens.stripeWidth - screenWidth - slotWidth - appWidth
+  readonly property real titleWidth: width - Tokens.stripeWidth - miniMapColumn - screenWidth - slotWidth - appWidth
 
   Column {
     anchors.fill: parent
@@ -298,6 +389,7 @@ Item {
       width: parent.width
       columns: [
         { text: "", width: Tokens.stripeWidth },
+        { text: "", width: root.miniMapColumn },
         { text: "Screen", width: root.screenWidth },
         { text: "Slot", width: root.slotWidth },
         { text: "App", width: root.appWidth },
@@ -305,107 +397,247 @@ Item {
       ]
     }
 
-    ListView {
-      id: list
+    // The table's rows, and over them the one MouseArea that clicks,
+    // double-clicks and drags them (rowMouse: it outlives the rows, which
+    // every state read makes anew).
+    Item {
+      id: listBox
+      objectName: "assignment:list"
       width: parent.width
       height: parent.height - headerBox.height - (titles.visible ? titles.height + parent.spacing : 0)
         - (problem.visible ? problem.height + parent.spacing : 0)
         - (hintLine.visible ? hintLine.height + parent.spacing : 0) - parent.spacing
-      clip: true
-      model: root.rows
-      boundsBehavior: Flickable.StopAtBounds
-      currentIndex: root.selected
 
-      delegate: TableRow {
-        id: rowItem
-        required property var modelData
-        required property int index
-        readonly property bool current: index === root.selected
-        // no window in the slot: Missing (the workspace's spec waits for one) or
-        // empty (nothing says what fills it)
-        readonly property bool missing: modelData.kind === "missing" || modelData.kind === "empty"
-        readonly property bool empty: modelData.kind === "empty"
-        readonly property color ink: current ? root.selectedText : root.foreground
-        width: ListView.view.width
-        objectName: "row:" + rowItem.index
-        selected: current
-        onClicked: root.select(rowItem.index)
+      ListView {
+        id: list
+        anchors.fill: parent
+        clip: true
+        model: root.rows
+        boundsBehavior: Flickable.StopAtBounds
+        currentIndex: root.selected
+
+        delegate: TableRow {
+          id: rowItem
+          required property var modelData
+          required property int index
+          readonly property bool current: index === root.selected
+          // no window in the slot: Missing (the workspace's spec waits for one) or
+          // empty (nothing says what fills it)
+          readonly property bool missing: modelData.kind === "missing" || modelData.kind === "empty"
+          readonly property bool empty: modelData.kind === "empty"
+          readonly property bool slotRow: Assignment.isSlotRow(modelData)
+          readonly property color ink: current ? root.selectedText : root.foreground
+          // the drag's: this row is dragged (dimmed), or where it would land
+          readonly property bool dragged: !!root.drag && root.drag.key === root.keyOf(modelData)
+          readonly property bool landing: !!root.drag && root.drag.action.kind === "assign"
+            && !!root.drag.target && root.drag.target.index === index
+          readonly property var miniMap: slotRow ? Assignment.miniMapSource(root.state, root.currentPage.workspace, modelData.slot) : null
+          width: ListView.view.width
+          height: Tokens.miniMapRowHeight
+          objectName: "row:" + rowItem.index
+          selected: current
+          interactive: false // rowMouse has the pointer
+          dropTarget: landing
+          opacity: dragged ? Tokens.dim : 1
+
+          Row {
+            anchors.fill: parent
+            // the slot's place on its screen; nothing for the other windows
+            Item {
+              width: root.miniMapColumn
+              height: parent.height
+              MiniMap {
+                objectName: rowItem.miniMap ? "minimap:" + rowItem.modelData.slot : ""
+                x: Tokens.cellPadding
+                anchors.verticalCenter: parent.verticalCenter
+                width: Tokens.miniMapWidth
+                height: Tokens.miniMapHeight
+                tree: rowItem.miniMap ? rowItem.miniMap.tree || "" : ""
+                slot: rowItem.slotRow ? rowItem.modelData.slot : ""
+                connector: rowItem.miniMap ? rowItem.miniMap.connector : ""
+                targeted: rowItem.landing
+              }
+            }
+            TableCell {
+              width: root.screenWidth
+              visible: root.showScreen
+              text: Assignment.screenText(root.state, rowItem.modelData)
+              color: rowItem.ink
+              opacity: 0.7
+            }
+            TableCell {
+              width: root.slotWidth
+              text: Assignment.slotText(rowItem.modelData)
+              color: rowItem.current ? root.selectedText
+                : rowItem.modelData.status === "overflow" || rowItem.modelData.status === "unassigned" ? Commons.Color.urgent
+                : Commons.Color.accent
+              opacity: rowItem.empty ? Tokens.faint : rowItem.missing || rowItem.modelData.status === "none" ? Tokens.dim : 1
+              font.bold: !rowItem.missing
+            }
+            TableCell {
+              width: root.appWidth
+              text: rowItem.missing ? Assignment.specText(rowItem.modelData) : (rowItem.modelData.cls || "Unknown")
+              color: rowItem.ink
+              opacity: rowItem.missing ? Tokens.dim : 1
+              font.bold: rowItem.modelData.status === "slot" || rowItem.modelData.status === "manual"
+            }
+            TableCell {
+              width: root.titleWidth
+              rightPadding: Tokens.cellPadding
+              text: Assignment.titleText(rowItem.modelData)
+              color: rowItem.missing && !rowItem.empty && !rowItem.current ? Commons.Color.urgent : rowItem.ink
+              opacity: rowItem.empty ? Tokens.faint : 1
+              font.italic: rowItem.missing
+            }
+          }
+        }
+
+        Placeholder {
+          anchors.centerIn: parent
+          width: parent.width
+          visible: root.rows.length === 0 && !root.empty
+          text: root.state ? "No windows" : (root.engine && root.engine.error === "" ? "Reading hyprslots…" : "")
+        }
+
+        // No slots yet: nothing can be assigned until the Layout tab makes one.
+        Column {
+          anchors.centerIn: parent
+          width: Math.min(parent.width - Style.spacing.xxl * 2, Style.space(520))
+          visible: !!root.empty
+          spacing: Style.spacing.lg
+          Placeholder {
+            width: parent.width
+            text: root.empty ? root.empty.text : ""
+          }
+          Item {
+            width: parent.width
+            height: layoutButton.height
+            ActionButton {
+              id: layoutButton
+              objectName: root.empty ? "empty:layout" : ""
+              anchors.horizontalCenter: parent.horizontalCenter
+              accented: true
+              keyText: root.empty ? root.empty.action.key : ""
+              text: root.empty ? root.empty.action.label : ""
+              pixelSize: Style.font.body
+              padX: Style.spacing.xl
+              padY: Style.spacing.sm
+              onClicked: root.pressKey(root.empty.action.key)
+            }
+          }
+        }
+      }
+
+      // Where letting go unassigns: the other windows and the empty space
+      // below them, outlined while a dragged window in a slot is over it.
+      Rectangle {
+        id: othersZone
+        objectName: "dropzone:others"
+        readonly property real zoneTop: Math.max(0, root.firstOtherIndex * Tokens.miniMapRowHeight - list.contentY)
+        visible: !!root.drag && root.drag.action.kind === "unassign" && zoneTop < listBox.height
+        y: zoneTop
+        width: listBox.width
+        height: listBox.height - zoneTop
+        radius: Tokens.radius
+        color: Tokens.dropFill
+        border.width: Tokens.dropLine
+        border.color: Tokens.dropOutline
+      }
+
+      // The pointer on the rows: a click selects, a double-click is a, a
+      // press on a window's row moved past the threshold drags it
+      // (dragStart, dragTo, dragDrop; Esc cancels: handleKey).
+      MouseArea {
+        id: rowMouse
+        anchors.fill: parent
+        hoverEnabled: true
+        preventStealing: true // a drag is the row's, not the list's flick
+        enabled: !root.empty
+        property int pressIndex: -1
+        property real pressX: 0
+        property real pressY: 0
+        // this press made a drag (held, let go or cancelled): no click
+        property bool dragMade: false
+        property int hoverIndex: -1
+        cursorShape: root.drag ? Qt.ClosedHandCursor
+          : hoverIndex >= 0 && Assignment.canDrag(root.rows[hoverIndex]) ? Qt.OpenHandCursor : Qt.ArrowCursor
+
+        function rowAt(mx, my) {
+          var i = list.indexAt(mx + list.contentX, my + list.contentY)
+          return i >= 0 && i < root.rows.length ? i : -1
+        }
+        function follow(mouse) {
+          var p = mapToItem(root, mouse.x, mouse.y)
+          root.dragTo(p.x, p.y, mouse.x, mouse.y)
+        }
+
+        onPressed: (mouse) => {
+          pressIndex = rowAt(mouse.x, mouse.y)
+          pressX = mouse.x
+          pressY = mouse.y
+          dragMade = false
+        }
+        onPositionChanged: (mouse) => {
+          hoverIndex = rowAt(mouse.x, mouse.y)
+          if (!pressed) return
+          if (dragMade) {
+            if (root.drag) follow(mouse)
+            return
+          }
+          if (pressIndex < 0 || !Assignment.dragBegins(pressX, pressY, mouse.x, mouse.y)) return
+          var p = mapToItem(root, mouse.x, mouse.y)
+          dragMade = root.dragStart(pressIndex, p.x, p.y, mouse.x, mouse.y)
+          if (!dragMade) pressIndex = -1 // no drag from this row: the press is a click
+        }
+        onReleased: (mouse) => {
+          if (root.drag) {
+            follow(mouse)
+            root.dragDrop()
+          }
+        }
+        onClicked: (mouse) => {
+          if (dragMade) return
+          var i = rowAt(mouse.x, mouse.y)
+          if (i >= 0) root.select(i)
+        }
         // the primary action, as its key: put the window into a slot
-        onDoubleClicked: {
-          root.select(rowItem.index)
+        onDoubleClicked: (mouse) => {
+          if (dragMade) return
+          var i = rowAt(mouse.x, mouse.y)
+          if (i < 0) return
+          root.select(i)
           root.pressKey("a")
         }
-
-        Row {
-          anchors.fill: parent
-          TableCell {
-            width: root.screenWidth
-            visible: root.showScreen
-            text: Assignment.screenText(root.state, rowItem.modelData)
-            color: rowItem.ink
-            opacity: 0.7
-          }
-          TableCell {
-            width: root.slotWidth
-            text: Assignment.slotText(rowItem.modelData)
-            color: rowItem.current ? root.selectedText
-              : rowItem.modelData.status === "overflow" || rowItem.modelData.status === "unassigned" ? Commons.Color.urgent
-              : Commons.Color.accent
-            opacity: rowItem.empty ? Tokens.faint : rowItem.missing || rowItem.modelData.status === "none" ? Tokens.dim : 1
-            font.bold: !rowItem.missing
-          }
-          TableCell {
-            width: root.appWidth
-            text: rowItem.missing ? Assignment.specText(rowItem.modelData) : (rowItem.modelData.cls || "Unknown")
-            color: rowItem.ink
-            opacity: rowItem.missing ? Tokens.dim : 1
-            font.bold: rowItem.modelData.status === "slot" || rowItem.modelData.status === "manual"
-          }
-          TableCell {
-            width: root.titleWidth
-            rightPadding: Tokens.cellPadding
-            text: Assignment.titleText(rowItem.modelData)
-            color: rowItem.missing && !rowItem.empty && !rowItem.current ? Commons.Color.urgent : rowItem.ink
-            opacity: rowItem.empty ? Tokens.faint : 1
-            font.italic: rowItem.missing
-          }
-        }
+        onCanceled: root.dragCancel()
+        onExited: hoverIndex = -1
       }
 
-      Placeholder {
-        anchors.centerIn: parent
-        width: parent.width
-        visible: root.rows.length === 0 && !root.empty
-        text: root.state ? "No windows" : (root.engine && root.engine.error === "" ? "Reading hyprslots…" : "")
-      }
-
-      // No slots yet: nothing can be assigned until the Layout tab makes one.
-      Column {
-        anchors.centerIn: parent
-        width: Math.min(parent.width - Style.spacing.xxl * 2, Style.space(520))
-        visible: !!root.empty
-        spacing: Style.spacing.lg
-        Placeholder {
-          width: parent.width
-          text: root.empty ? root.empty.text : ""
-        }
-        Item {
-          width: parent.width
-          height: layoutButton.height
-          ActionButton {
-            id: layoutButton
-            objectName: root.empty ? "empty:layout" : ""
-            anchors.horizontalCenter: parent.horizontalCenter
-            accented: true
-            keyText: root.empty ? root.empty.action.key : ""
-            text: root.empty ? root.empty.action.label : ""
-            pixelSize: Style.font.body
-            padX: Style.spacing.xl
-            padY: Style.spacing.sm
-            onClicked: root.pressKey(root.empty.action.key)
-          }
+      // Near the list's top or bottom edge a held drag scrolls it.
+      Timer {
+        interval: 30
+        repeat: true
+        running: !!root.drag && (root.drag.ly < Tokens.rowHeight || root.drag.ly > listBox.height - Tokens.rowHeight)
+        onTriggered: {
+          var step = Math.max(2, Math.round(Tokens.rowHeight / 4))
+          var most = Math.max(0, list.contentHeight - list.height)
+          var y = root.drag.ly < Tokens.rowHeight ? list.contentY - step : list.contentY + step
+          list.contentY = Math.max(0, Math.min(most, y))
+          root.dragRetarget()
         }
       }
     }
+  }
+
+  // The dragged row's ghost by the pointer, and what letting go does there.
+  DragGhost {
+    id: ghost
+    objectName: "dragGhost"
+    visible: root.dragging
+    z: 10
+    title: root.drag ? root.drag.source.cls || "Unknown" : ""
+    subtitle: root.drag ? Assignment.titleText(root.drag.source) : ""
+    label: root.drag && root.drag.action.kind !== "none" ? root.drag.action.label : ""
+    x: root.drag ? Math.max(0, Math.min(root.width - width, root.drag.x + Style.spacing.lg)) : 0
+    y: root.drag ? Math.max(0, Math.min(root.height - height, root.drag.y + Style.spacing.md)) : 0
   }
 }

@@ -197,6 +197,12 @@ ShellRoot {
       return panel.layoutDragText()
     }
 
+    // A row being dragged in the Assignment view: "t-stray -> Assign to
+    // main", "" for none.
+    function assignmentDrag(): string {
+      return panel.assignmentDragText()
+    }
+
     function layoutMode(): string {
       return panel.layoutModeText()
     }
