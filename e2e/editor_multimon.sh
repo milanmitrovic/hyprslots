@@ -14,7 +14,8 @@
 # workspace N = id N); HEADLESS-3, 2560x1440 at 1920,0 (screen 2, block 1:
 # workspace N = id 10+N). Desk dual (both) uses the 2-screen layout dual:
 # workspace 3 h[main:2, right] on screen 1, v[side, chat] on screen 2; its
-# shared trees h[main, right] and side. Desk solo (HEADLESS-2 alone) uses
+# shared trees h[main, right] and side (chat, which workspace 3's own trees
+# place, is not appended to them: nothing is unsaved on opening). Desk solo (HEADLESS-2 alone) uses
 # layout solo. Windows: t-main, t-right, t-side and t-chat in their slots on
 # workspace 3, and t-stray in none.
 
@@ -108,6 +109,11 @@ test_body() {
   eventually 10 smoke_ready || fail "the panel never read state: $(smoke errors)"
   sleep 0.5 # let the overlay reveal itself (it waits for the output's scale)
   log "header: $(smoke header)"
+  # the shared trees leave chat out, which workspace 3's own trees place on
+  # screen 2: valid as written, so nothing is unsaved on opening
+  expect_eq "nothing unsaved on opening" "false" "$(api_state | jq -r .dirty)"
+  if [[ $(smoke header) != *unsaved* ]]; then pass "the header says nothing is unsaved"
+  else fail "header: $(smoke header)"; fi
   log "assignment page: $(smoke assignmentPage); rows: $(smoke rows)"
   shot 1-assignment
 

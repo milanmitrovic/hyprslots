@@ -211,7 +211,9 @@ test_body() {
   if [[ $(smoke message) == 'Apply to (a)ll workspaces or (o)nly workspace 4?'* ]]; then pass "p on workspace 4 asks first"
   else fail "p on workspace 4: $(smoke message)"; fi
   smoke press o >/dev/null
-  expect_eq "only workspace 4: its drafts swapped" "1: side *; 2: h[main, right, chat] *" "$(smoke layout)"
+  # (chat, which workspace 3's own trees place and no workspace on the shared
+  # trees fills, is not in them)
+  expect_eq "only workspace 4: its drafts swapped" "1: side *; 2: h[main, right] *" "$(smoke layout)"
   if [[ $(smoke layoutHeader) == *'w gives workspace 4 its own'* ]]; then pass "the header says w gives it its own"
   else fail "header: $(smoke layoutHeader)"; fi
 }
