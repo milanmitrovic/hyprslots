@@ -106,10 +106,13 @@ describe("hyprslots engine", function()
       assert.is_function(hl.layouts.slots.recalculate, "the layout still exists so lua:slots never dangles")
     end)
 
-    it("does not notify when there is simply no config", function()
+    it("starts a fresh install on a starter config, with no error notification", function()
       setup({})
-      assert.are.equal(0, #hl.notifications)
-      assert.matches("no config", state().config_error)
+      for _, n in ipairs(hl.notifications) do
+        assert.are_not.equal(3, n.icon, "an error notification: " .. tostring(n.text))
+      end
+      assert.is_nil(state().config_error)
+      assert.are.same({}, state().slots)
     end)
 
     it("contains an error raised while starting", function()

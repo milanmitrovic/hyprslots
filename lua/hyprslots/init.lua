@@ -22,6 +22,7 @@ local monitor_name = require("hyprslots.monitor_name")
 local resize = require("hyprslots.resize")
 local router = require("hyprslots.router")
 local scroll = require("hyprslots.scroll")
+local starter = require("hyprslots.starter")
 local tree = require("hyprslots.tree")
 local window_rules = require("hyprslots.window_rules")
 
@@ -341,6 +342,19 @@ end
 local function load_config(self, dir)
   self.config_dir = dir
   local cfg, err, missing = config.load(dir, { monitors = adapter.monitors() })
+  if missing then
+    -- A fresh install: a starter config.lua and an empty slots.lua, then
+    -- run on them with zero slots (the editor's Layout tab makes the first).
+    local written, why = starter.ensure(dir or config.dir())
+    if not written then
+      self.config_error = why
+      self.log:error("first run: %s", why)
+      adapter.notify("hyprslots: " .. why, "error")
+      return
+    end
+    self.log:info("first run: wrote a starter %s in %s", table.concat(written, " and "), dir or config.dir())
+    cfg, err, missing = config.load(dir, { monitors = adapter.monitors() })
+  end
   if cfg then
     self.cfg = cfg
     local file = cfg.data_files["slots.lua"]
