@@ -5,10 +5,21 @@
 //
 //   vpointer <x> <y> <width> <height> [move|click|double]
 //   vpointer <x> <y> <width> <height> drag <x2> <y2> [hold-ms]
+//   vpointer serve
 //
 // drag presses the left button at x, y, moves to x2, y2 in small steps,
 // holds the button there hold-ms (default 300: time for a screenshot
 // mid-drag), then lets go.
+//
+// serve keeps ONE virtual pointer for its whole life: it reads commands
+// from stdin, one per line, each the arguments above ("<x> <y> <width>
+// <height> click"), and answers each on stdout with "ok" once it is done
+// (or "error: ..."); it exits at end of input. The smoke drives it so, not
+// with a process per click: when the seat's only pointer goes away, every
+// client loses its wl_pointer, and the next device's client pointer is
+// bound afresh, entered at -1, -1, and Hyprland sometimes sends no motion
+// after that enter, only a frame: the press then lands at -1, -1, on no
+// control (a real mouse, plugged in once, never sees this).
 //
 // x and y are in the layout's pixels; width and height its extent (one
 // output here, at 0,0). The protocol's interfaces are spelled out below as
@@ -128,17 +139,76 @@ static void click(struct wl_display *display, struct wl_proxy *pointer) {
     button(display, pointer, 0);
 }
 
-int main(int argc, char **argv) {
-    if (argc < 5) {
-        fprintf(stderr, "usage: %s <x> <y> <width> <height> [move|click|double]\n"
-                        "       %s <x> <y> <width> <height> drag <x2> <y2> [hold-ms]\n", argv[0], argv[0]);
+// Carry out one command (argv as the one-shot command line has it, after
+// the program name): up to the point in two steps, then a pause, so the
+// compositor gives the surface under it pointer focus before the button
+// comes; then the action. Returns 0, or 2 on bad arguments.
+static int run(struct wl_display *display, struct wl_proxy *pointer, int argc, char **argv) {
+    if (argc < 4) {
+        fprintf(stderr, "vpointer: want <x> <y> <width> <height> [action ...]\n");
         return 2;
     }
-    uint32_t x = (uint32_t)atoi(argv[1]), y = (uint32_t)atoi(argv[2]);
-    uint32_t width = (uint32_t)atoi(argv[3]), height = (uint32_t)atoi(argv[4]);
-    const char *action = argc > 5 ? argv[5] : "click";
-    if (strcmp(action, "drag") == 0 && argc < 8) {
+    uint32_t x = (uint32_t)atoi(argv[0]), y = (uint32_t)atoi(argv[1]);
+    uint32_t width = (uint32_t)atoi(argv[2]), height = (uint32_t)atoi(argv[3]);
+    const char *action = argc > 4 ? argv[4] : "click";
+    if (strcmp(action, "drag") == 0 && argc < 7) {
         fprintf(stderr, "vpointer: drag needs <x2> <y2>\n");
+        return 2;
+    }
+    if (strcmp(action, "drag") != 0 && strcmp(action, "click") != 0 && strcmp(action, "double") != 0 &&
+        strcmp(action, "move") != 0) {
+        fprintf(stderr, "vpointer: unknown action %s\n", action);
+        return 2;
+    }
+
+    move_to(display, pointer, x > 0 ? x - 1 : x + 1, y, width, height);
+    pause_ms(40);
+    move_to(display, pointer, x, y, width, height);
+    pause_ms(200);
+
+    if (strcmp(action, "drag") == 0) {
+        long hold = argc > 7 ? atol(argv[7]) : 300;
+        drag(display, pointer, x, y, (uint32_t)atoi(argv[5]), (uint32_t)atoi(argv[6]), width, height, hold);
+    } else if (strcmp(action, "click") == 0) {
+        click(display, pointer);
+    } else if (strcmp(action, "double") == 0) {
+        click(display, pointer);
+        pause_ms(80);
+        click(display, pointer);
+    }
+    pause_ms(300);
+    return 0;
+}
+
+// Commands from stdin, one per line, through the one pointer.
+static int serve(struct wl_display *display, struct wl_proxy *pointer) {
+    char line[512];
+    while (fgets(line, sizeof line, stdin)) {
+        char *args[16];
+        int n = 0;
+        for (char *tok = strtok(line, " \t\r\n"); tok && n < 16; tok = strtok(NULL, " \t\r\n")) args[n++] = tok;
+        if (n == 0) continue;
+        if (run(display, pointer, n, args) == 0) {
+            printf("ok\n");
+        } else {
+            printf("error: bad command (see stderr)\n");
+        }
+        fflush(stdout);
+        if (wl_display_get_error(display)) {
+            fprintf(stderr, "vpointer: the Wayland connection failed\n");
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int main(int argc, char **argv) {
+    int serving = argc == 2 && strcmp(argv[1], "serve") == 0;
+    if (!serving && argc < 5) {
+        fprintf(stderr, "usage: %s <x> <y> <width> <height> [move|click|double]\n"
+                        "       %s <x> <y> <width> <height> drag <x2> <y2> [hold-ms]\n"
+                        "       %s serve   (those arguments, one command per line on stdin)\n",
+                argv[0], argv[0], argv[0]);
         return 2;
     }
 
@@ -159,30 +229,10 @@ int main(int argc, char **argv) {
                                                       (struct wl_proxy *)seat, NULL);
     wl_display_roundtrip(display);
 
-    // Up to the point in two steps, then a pause: the compositor gives the
-    // surface under it pointer focus before the button comes.
-    move_to(display, pointer, x > 0 ? x - 1 : x + 1, y, width, height);
-    pause_ms(40);
-    move_to(display, pointer, x, y, width, height);
-    pause_ms(200);
-
-    if (strcmp(action, "drag") == 0) {
-        long hold = argc > 8 ? atol(argv[8]) : 300;
-        drag(display, pointer, x, y, (uint32_t)atoi(argv[6]), (uint32_t)atoi(argv[7]), width, height, hold);
-    } else if (strcmp(action, "click") == 0) {
-        click(display, pointer);
-    } else if (strcmp(action, "double") == 0) {
-        click(display, pointer);
-        pause_ms(80);
-        click(display, pointer);
-    } else if (strcmp(action, "move") != 0) {
-        fprintf(stderr, "vpointer: unknown action %s\n", action);
-        return 2;
-    }
-    pause_ms(300);
+    int status = serving ? serve(display, pointer) : run(display, pointer, argc - 1, argv + 1);
 
     wl_proxy_marshal_flags(pointer, DESTROY, NULL, 1, WL_MARSHAL_FLAG_DESTROY);
     wl_display_roundtrip(display);
     wl_display_disconnect(display);
-    return 0;
+    return status;
 }
