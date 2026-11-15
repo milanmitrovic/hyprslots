@@ -175,6 +175,108 @@ function M.default_trees(monitors, slot_names)
   return { [1] = text }
 end
 
+-- A monitor's logical size: its mode divided by its scale, width and height
+-- swapped when it is turned 90 or 270 degrees (transforms 1, 3, 5, 7),
+-- rounded to whole pixels; nil when its size or scale is unknown.
+function M.logical_size(monitor)
+  local width, height = tonumber(monitor.width), tonumber(monitor.height)
+  local scale = monitor.scale == nil and 1 or tonumber(monitor.scale)
+  if not (width and height and scale) or width <= 0 or height <= 0 or scale <= 0 then
+    return nil
+  end
+  local w, h = math.floor(width / scale + 0.5), math.floor(height / scale + 0.5)
+  if (tonumber(monitor.transform) or 0) % 2 == 1 then
+    w, h = h, w
+  end
+  return w, h
+end
+
+-- A desk's geometry, as slots.lua records it (docs/design.md §8): selector
+-- -> { x, y, w, h }, each monitor's logical box with the desk's top-left at
+-- 0, 0 (normalized: where the desk sits in Hyprland's layout does not
+-- matter). Nil unless the selectors are exactly these monitors, every
+-- one's size known.
+function M.geometry(selectors, monitors)
+  local found = M.match(selectors, M.usable(monitors))
+  if not found then
+    return nil
+  end
+  local boxes, min_x, min_y = {}, math.huge, math.huge
+  for _, selector in ipairs(selectors) do
+    local monitor = found[selector]
+    local w, h = M.logical_size(monitor)
+    if not w then
+      return nil
+    end
+    local x, y = math.floor((tonumber(monitor.x) or 0) + 0.5), math.floor((tonumber(monitor.y) or 0) + 0.5)
+    boxes[selector] = { x = x, y = y, w = w, h = h }
+    min_x, min_y = math.min(min_x, x), math.min(min_y, y)
+  end
+  for _, box in pairs(boxes) do
+    box.x, box.y = box.x - min_x, box.y - min_y
+  end
+  return boxes
+end
+
+-- Whether two geometries (selector -> box, or nil) are the same.
+function M.same_geometry(a, b)
+  if a == nil or b == nil then
+    return a == b
+  end
+  for selector, box in pairs(a) do
+    local other = b[selector]
+    if type(other) ~= "table" or other.x ~= box.x or other.y ~= box.y or other.w ~= box.w or other.h ~= box.h then
+      return false
+    end
+  end
+  for selector in pairs(b) do
+    if a[selector] == nil then
+      return false
+    end
+  end
+  return true
+end
+
+-- A never-seen desk's screens: equal boxes side by side.
+M.GUESS = { w = 1600, h = 900 }
+
+-- A desk's map for the editor: one { x, y, w, h, screen } per selector, in
+-- the selectors' order, from `geometry` (selector -> box) when it has every
+-- selector, else equal boxes side by side in selector order. Screens are
+-- numbered as the layout numbers them (M.order: by x, then y; a tie in
+-- selector order, where the layout would go by connector name).
+function M.map(selectors, geometry)
+  local complete = type(geometry) == "table"
+  for _, selector in ipairs(selectors) do
+    if complete and type(geometry[selector]) ~= "table" then
+      complete = false
+    end
+  end
+  local out = {}
+  for i, selector in ipairs(selectors) do
+    local box = complete and geometry[selector]
+      or { x = (i - 1) * M.GUESS.w, y = 0, w = M.GUESS.w, h = M.GUESS.h }
+    out[i] = { x = box.x, y = box.y, w = box.w, h = box.h }
+  end
+  local order = {}
+  for i = 1, #out do
+    order[i] = i
+  end
+  table.sort(order, function(a, b)
+    if out[a].x ~= out[b].x then
+      return out[a].x < out[b].x
+    end
+    if out[a].y ~= out[b].y then
+      return out[a].y < out[b].y
+    end
+    return a < b
+  end)
+  for screen, i in ipairs(order) do
+    out[i].screen = screen
+  end
+  return out
+end
+
 -- The name a new layout for `count` screens with these trees (data form)
 -- takes before a free one is found: what it arranges, never the desk's
 -- name (a desks table reading "laptop -> laptop" says nothing): "scroll"

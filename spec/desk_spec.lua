@@ -187,3 +187,91 @@ describe("a new desk for unknown monitors", function()
     assert.are.same({}, desk.default_trees({ monitor("DP-1") }, {}))
   end)
 end)
+
+describe("a desk's geometry (its monitors' logical boxes)", function()
+  it("is each selector's logical box, the desk's top-left at 0, 0", function()
+    local laptop = monitor("eDP-1", { x = 0, y = 360, width = 2880, height = 1800, scale = 2, transform = 0 })
+    local odyssey = monitor("DP-2", { description = ODYSSEY, x = 1440, y = 0, width = 5120, height = 1440, scale = 1,
+      transform = 0 })
+    assert.are.same({
+      ["eDP-1"] = { x = 0, y = 360, w = 1440, h = 900 },
+      [ODYSSEY] = { x = 1440, y = 0, w = 5120, h = 1440 },
+    }, desk.geometry({ ODYSSEY, "eDP-1" }, { odyssey, laptop }))
+  end)
+
+  it("divides by the scale and swaps width and height for a monitor turned 90 or 270 degrees", function()
+    local portrait = monitor("DP-1", { x = -1000, y = -200, width = 3840, height = 2160, scale = 1.5, transform = 1 })
+    local turned = monitor("DP-3", { x = 440, y = -200, width = 1920, height = 1080, scale = 1, transform = 3 })
+    local flipped = monitor("DP-4", { x = 1520, y = -200, width = 1920, height = 1080, scale = 1, transform = 2 })
+    assert.are.same({
+      ["DP-1"] = { x = 0, y = 0, w = 1440, h = 2560 },
+      ["DP-3"] = { x = 1440, y = 0, w = 1080, h = 1920 },
+      ["DP-4"] = { x = 2520, y = 0, w = 1920, h = 1080 },
+    }, desk.geometry({ "DP-1", "DP-3", "DP-4" }, { portrait, turned, flipped }))
+  end)
+
+  it("rounds a fractional logical size to whole pixels", function()
+    local m = monitor("DP-1", { width = 2560, height = 1440, scale = 1.25 })
+    assert.are.same({ ["DP-1"] = { x = 0, y = 0, w = 2048, h = 1152 } }, desk.geometry({ "DP-1" }, { m }))
+    local odd = monitor("DP-1", { width = 2880, height = 1920, scale = 1.6666667 })
+    assert.are.same({ ["DP-1"] = { x = 0, y = 0, w = 1728, h = 1152 } }, desk.geometry({ "DP-1" }, { odd }))
+  end)
+
+  it("is nil when the selectors are not exactly the monitors, or a monitor's size is unknown", function()
+    local a = monitor("DP-1", { width = 1920, height = 1080, scale = 1 })
+    assert.is_nil(desk.geometry({ "DP-1", "DP-2" }, { a }))
+    assert.is_nil(desk.geometry({ "DP-1" }, { monitor("DP-1") }))
+    assert.is_nil(desk.geometry({ "DP-1" }, { monitor("DP-1", { width = 1920, height = 1080, scale = 0 }) }))
+  end)
+
+  it("reads a missing scale as 1 and a missing transform as none", function()
+    local a = monitor("DP-1", { width = 1920, height = 1080 })
+    assert.are.same({ ["DP-1"] = { x = 0, y = 0, w = 1920, h = 1080 } }, desk.geometry({ "DP-1" }, { a }))
+  end)
+end)
+
+describe("a desk's map", function()
+  it("numbers the screens as the layout does: left to right, then top to bottom", function()
+    local left = monitor("DP-1", { x = 0, y = 0, width = 1920, height = 1080 })
+    local right = monitor("DP-2", { x = 1920, y = 0, width = 2560, height = 1440 })
+    local below = monitor("DP-3", { x = 1920, y = 1440, width = 1920, height = 1080 })
+    local monitors = { below, right, left }
+    local selectors = { "DP-3", "DP-1", "DP-2" }
+    local map = desk.map(selectors, desk.geometry(selectors, monitors))
+    assert.are.same({
+      { x = 1920, y = 1440, w = 1920, h = 1080, screen = 3 },
+      { x = 0, y = 0, w = 1920, h = 1080, screen = 1 },
+      { x = 1920, y = 0, w = 2560, h = 1440, screen = 2 },
+    }, map)
+    -- the same numbers as the layout's screens
+    local cfg = assert(config.validate({
+      slots = { main = {} },
+      desks = { trio = { monitors = selectors, layout = "trio" } },
+      layouts = { trio = { screens = 3, default = { [1] = "main" } } },
+    }))
+    local active = desk.select(cfg, monitors)
+    for i, selector in ipairs(selectors) do
+      local found = desk.find(selector, monitors)
+      assert.are.equal(active.screens[found.name], map[i].screen, selector)
+    end
+  end)
+
+  it("is equal boxes side by side in selector order for a desk never seen", function()
+    assert.are.same({
+      { x = 0, y = 0, w = 1600, h = 900, screen = 1 },
+      { x = 1600, y = 0, w = 1600, h = 900, screen = 2 },
+    }, desk.map({ "DP-9", "eDP-1" }, nil))
+  end)
+
+  it("is the equal boxes too when the recorded geometry misses a selector", function()
+    assert.are.same({
+      { x = 0, y = 0, w = 1600, h = 900, screen = 1 },
+      { x = 1600, y = 0, w = 1600, h = 900, screen = 2 },
+    }, desk.map({ "DP-9", "eDP-1" }, { ["DP-9"] = { x = 0, y = 0, w = 1920, h = 1080 } }))
+  end)
+
+  it("breaks a tie of position by selector order", function()
+    local same = { a = { x = 0, y = 0, w = 10, h = 10 }, b = { x = 0, y = 0, w = 10, h = 10 } }
+    assert.are.same({ 1, 2 }, { desk.map({ "b", "a" }, same)[1].screen, desk.map({ "b", "a" }, same)[2].screen })
+  end)
+end)
