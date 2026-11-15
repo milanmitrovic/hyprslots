@@ -37,9 +37,10 @@ e2e:
 	./e2e/run.sh $(TESTS)
 
 # The editor plugin in Quickshell on the nested Hyprland (opt-in: not part of
-# `make e2e`); needs qs, grim and wtype. Screenshots: .e2e-tmp/editor-smoke-*.png
+# `make e2e`); needs qs, grim and wtype: the smoke, and a fresh install's first
+# run. Screenshots: .e2e-tmp/editor-smoke-*.png, .e2e-tmp/editor-first-run-*.png
 e2e-editor:
-	./e2e/run.sh e2e/editor_smoke.sh
+	./e2e/run.sh e2e/editor_smoke.sh e2e/editor_first_run.sh
 
 # The editor on a 2-screen desk, screenshots only (opt-in, like e2e-editor):
 # into $MULTIMON_SHOTS (default .e2e-tmp/multimon/latest).

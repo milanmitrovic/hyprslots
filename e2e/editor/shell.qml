@@ -205,6 +205,27 @@ ShellRoot {
       return panel.press(key)
     }
 
+    // What stands in the current tab while it is empty, and its line on
+    // what to do next (Guide.js).
+    function empty(): string {
+      return panel.emptyText()
+    }
+
+    function hint(): string {
+      return panel.hintText()
+    }
+
+    // The Desk tab's opening line.
+    function deskIntro(): string {
+      return panel.deskIntroText()
+    }
+
+    // Whether the bar widget shows its set-up dot.
+    function barDot(): string {
+      if (!root.widget) return "no widget"
+      return root.widget.status.setup ? "dot" : "none"
+    }
+
     // Where the control named `name` shows, "<x> <y>" on the screen ("" for
     // none): the smoke's pointer clicks there (smoke_click).
     function point(name: string): string {

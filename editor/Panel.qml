@@ -255,6 +255,27 @@ Item {
     }).join("; ")
   }
 
+  // What stands in the current tab while there is nothing in it yet
+  // (Guide.js), " | " between its parts, the action last as "[key] label";
+  // "" when nothing does: for the e2e smoke.
+  function emptyText() {
+    var e = root.tab === 1 ? layoutView.welcome : root.tab === 0 ? assignmentView.empty : null
+    if (!e) return ""
+    var parts = e.title ? [e.title].concat(e.lines) : [e.text]
+    return parts.concat(["[" + e.action.key + "] " + e.action.label]).join(" | ")
+  }
+
+  function deskIntroText() {
+    return Guide.deskIntro()
+  }
+
+  // The current tab's line on what to do next (Guide.js), "" for none.
+  function hintText() {
+    if (root.tab === 1) return layoutView.nextHint
+    if (root.tab === 0) return assignmentView.hint
+    return ""
+  }
+
   // The Layout view's draft trees, "1: h[a, b]; 2: c" (edited ones marked
   // *): for the e2e smoke.
   function layoutText() {
