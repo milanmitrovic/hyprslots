@@ -354,3 +354,61 @@ function helpGroups(state, row, jumpKeys) {
     [{ key: "Tab", label: "switch view" }, { key: "q", label: "close" }],
   ]
 }
+
+// --- drag and drop ---------------------------------------------------------
+//
+// A row with a window is dragged (the view's one MouseArea over the list);
+// where it is let go decides what happens (dropAction). Pure, so node tests
+// it (editor/tests/assignment-drag.test.mjs).
+
+// How far (px) the pointer moves from its press before the press is a drag:
+// under it, a click (select) or a double-click (a), as before.
+var DRAG_THRESHOLD = 6
+
+// Whether a press at x0, y0 with the pointer now at x, y is a drag.
+function dragBegins(x0, y0, x, y) {
+  var dx = x - x0, dy = y - y0
+  return dx * dx + dy * dy >= DRAG_THRESHOLD * DRAG_THRESHOLD
+}
+
+// Whether `row` drags: any row with a window (in a slot, overflowing or a
+// stray), never a Missing or empty slot.
+function canDrag(row) {
+  return !!row && row.kind === "window" && !!row.address
+}
+
+// Whether `row` is one of the page's slot rows: a slot's window, a Missing
+// slot or an empty one (not an overflowing window or a stray).
+function isSlotRow(row) {
+  if (!row) return false
+  if (row.kind === "missing" || row.kind === "empty") return true
+  return row.kind === "window" && (row.status === "slot" || row.status === "manual")
+}
+
+// What letting `source` (the dragged row) go over `target` does on
+// workspace `workspace`'s page: target is { row } (the row under the
+// pointer), { others: true } (the other windows, or the list's empty space
+// below its rows) or null (anywhere else). One of
+//   { kind: "assign", option, label }   a with that slot (option as
+//                                       slotOptions has it, what a's prompt
+//                                       answers with)
+//   { kind: "unassign", plan, label }   u on the window (unassignPlan's plan)
+//   { kind: "none" }                    nothing: a cancelled drag
+function dropAction(state, workspace, source, target) {
+  var none = { kind: "none" }
+  if (!canDrag(source) || !target) return none
+  var row = target.row || null
+  if (row && isSlotRow(row)) {
+    if (isSlotRow(source) && source.slot === row.slot) return none
+    var options = slotOptions(state, workspace)
+    for (var i = 0; i < options.length; i++) {
+      if (options[i].slot === row.slot) return { kind: "assign", option: options[i], label: "Assign to " + row.slot }
+    }
+    return none
+  }
+  // the other windows: only a window in a slot has one to leave
+  if (!isSlotRow(source)) return none
+  var plan = unassignPlan(state, source)
+  if (plan.error) return none
+  return { kind: "unassign", plan: plan, label: "Unassign" }
+}
