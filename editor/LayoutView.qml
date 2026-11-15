@@ -9,6 +9,7 @@ import "Prompts.js" as Prompts
 import "Slots.js" as Slots
 import "DesksLayouts.js" as DesksLayouts
 import "Help.js" as Help
+import "Guide.js" as Guide
 import "ui"
 
 // One workspace's trees in the active desk's layout, edited (aerolayout's
@@ -117,6 +118,11 @@ Item {
   readonly property int slotIndex: indexOfSlot(selectedSlot)
   readonly property var slotRow: slotIndex >= 0 && slotIndex < slotRows.length ? slotRows[slotIndex] : null
   readonly property string slotsReadOnly: Slots.readOnlyReason(state)
+  // No slots yet: the picture's place explains them and makes the first
+  // (Guide.layoutWelcome, a); once there is one, a line says what comes
+  // next until a workspace fills a slot (Guide.layoutHint).
+  readonly property var welcome: Guide.layoutWelcome(state)
+  readonly property string nextHint: Guide.layoutHint(state)
 
   // The controls strip: its groups (the panel draws them as a toolbar,
   // what the picture or the slot list would refuse now dimmed) and the
@@ -125,6 +131,7 @@ Item {
   readonly property var helpGroups: {
     var jump = Workspaces.jumpKeys(Workspaces.count(state))
     if (slotFocus) return Layout.slotListHelp({ jumpKeys: jump, readOnly: slotsReadOnly !== "", hasSlot: !!slotRow })
+    if (welcome) return Guide.welcomeHelp()
     return Layout.pictureHelp({ node: activeNode, hasOwn: Layout.hasOwn(state, layout, workspace), jumpKeys: jump,
       readOnly: block !== "", edited: editedScreens().length > 0, workspace: workspace })
   }
@@ -383,6 +390,12 @@ Item {
   }
 
   function handlePictureKey(key, text) {
+    if (welcome) {
+      // Nothing to arrange yet: a makes the first slot.
+      if (text !== "a") return false
+      startNewSlot(null, true)
+      return true
+    }
     var arrow = arrowOf(key)
     if (arrow !== "") select(arrow)
     else if (moveKeys[text]) scoped(function() { root.moveSelected(root.moveKeys[text], false) }, true)
@@ -467,7 +480,7 @@ Item {
   function handleSlotKey(key, text) {
     if (key === Qt.Key_Up || text === "k") selectSlot(slotIndex - 1)
     else if (key === Qt.Key_Down || text === "j") selectSlot(slotIndex + 1)
-    else if (text === "a") startNewSlot(null)
+    else if (text === "a") startNewSlot(null, slotRows.length === 0)
     else if (key === Qt.Key_Return || key === Qt.Key_Enter) showSelectedSlot()
     else if (text === "r") startRenameSlot()
     else if (text === "e") startDescribeSlot()
@@ -534,22 +547,24 @@ Item {
 
   // a: a new global slot, a name and then an optional description; the
   // engine puts it into every tree (an empty slot takes no room), and edited
-  // drafts follow on the next state read (sync).
-  function startNewSlot(values) {
+  // drafts follow on the next state read (sync). `first`: the first slot,
+  // made from the picture's explanation, asked for in a newcomer's words.
+  function startNewSlot(values, first) {
     if (!slotsEditable()) return
     values = values || { name: "", description: "", error: "" }
-    ask(Prompts.withError(Prompts.text(Slots.newSlotLabel(), { value: values.name, required: true }), values.error),
+    var label = first ? Guide.firstSlotLabel() : Slots.newSlotLabel()
+    ask(Prompts.withError(Prompts.text(label, { value: values.name, required: true }), values.error),
       function(name) {
         root.ask(Prompts.text("Description, optional [Enter] add  [Esc] cancel: ", { value: values.description }),
           function(description) {
             root.engine.call("add_slot", { slot: name.trim(), description: description }, function(reply) {
               if (!reply.ok) {
-                root.startNewSlot({ name: name, description: description, error: reply.error })
+                root.startNewSlot({ name: name, description: description, error: reply.error }, first)
                 return
               }
               root.selectedSlot = reply.slot
               root._newSlot = reply.slot
-              root.say(Slots.addedText(reply.slot), false)
+              root.say(first ? Guide.firstSlotAdded(reply.slot) : Slots.addedText(reply.slot), false)
             })
           })
       })
@@ -1041,6 +1056,16 @@ Item {
       text: DesksLayouts.sharedNote(root.sharedWith)
     }
 
+    // After the first slot: what comes next, until a workspace fills one.
+    InfoText {
+      id: nextNote
+      width: parent.width
+      leftPadding: Tokens.textInset
+      visible: root.nextHint !== ""
+      elide: Text.ElideRight
+      text: root.nextHint
+    }
+
     // Why the trees cannot be edited, or the engine cannot be reached.
     ProblemText {
       id: problem
@@ -1060,11 +1085,61 @@ Item {
       width: parent.width
       height: parent.height - headerBox.height - (problem.visible ? problem.height + parent.spacing : 0)
         - (sharedNote.visible ? sharedNote.height + parent.spacing : 0)
+        - (nextNote.visible ? nextNote.height + parent.spacing : 0)
         - parent.spacing
       spacing: root.gap * 2
 
+      // No slots yet: in the picture's place, what slots are, what
+      // happens next, and the one thing to do now (a, or the button).
+      Item {
+        id: welcomeBox
+        visible: !!root.welcome
+        width: body.width - slotPanel.width - body.spacing
+        height: body.height
+
+        Column {
+          anchors.centerIn: parent
+          width: Math.min(parent.width - Style.spacing.xxl * 2, Style.space(560))
+          spacing: Style.spacing.lg
+
+          Placeholder {
+            width: parent.width
+            color: Tokens.text
+            font.bold: true
+            font.pixelSize: Style.font.subtitle
+            text: root.welcome ? root.welcome.title : ""
+          }
+          Repeater {
+            model: root.welcome ? root.welcome.lines : []
+            delegate: Placeholder {
+              required property string modelData
+              width: parent.width
+              text: modelData
+            }
+          }
+          Item {
+            width: parent.width
+            height: createButton.height + Style.spacing.sm
+            ActionButton {
+              id: createButton
+              objectName: root.welcome ? "welcome:create" : ""
+              anchors.horizontalCenter: parent.horizontalCenter
+              anchors.bottom: parent.bottom
+              accented: true
+              keyText: root.welcome ? root.welcome.action.key : ""
+              text: root.welcome ? root.welcome.action.label : ""
+              pixelSize: Style.font.body
+              padX: Style.spacing.xl
+              padY: Style.spacing.sm
+              onClicked: root.pressKey(root.welcome.action.key)
+            }
+          }
+        }
+      }
+
       Row {
         id: paneRow
+        visible: !root.welcome
         width: body.width - slotPanel.width - body.spacing
         height: body.height
         spacing: root.gap
@@ -1577,7 +1652,7 @@ Item {
               anchors.centerIn: parent
               width: parent.width
               visible: root.slotRows.length === 0
-              text: root.state ? "No slots yet — s, then a, makes one (left, main, right…)" : ""
+              text: root.state ? "No slots yet" : ""
             }
           }
         }

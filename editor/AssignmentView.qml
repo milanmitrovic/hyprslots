@@ -6,6 +6,7 @@ import "Assignment.js" as Assignment
 import "Workspaces.js" as Workspaces
 import "Prompts.js" as Prompts
 import "Help.js" as Help
+import "Guide.js" as Guide
 import "ui"
 
 // Which live window fills which slot (aerolayout's AssignmentView). A table
@@ -55,6 +56,12 @@ Item {
   property bool messageIsError: false
   // Counts say(): the panel's message band knows a message by it.
   property int messageSeq: 0
+
+  // Zero slots: the Layout tab comes first (Guide.assignmentEmpty, its
+  // button the Tab key); a workspace with nothing assigned says how
+  // (Guide.assignmentHint).
+  readonly property var empty: Guide.assignmentEmpty(state)
+  readonly property string hint: Guide.assignmentHint(state, rows, currentPage.workspace)
 
   readonly property bool showScreen: {
     var seen = {}
@@ -274,9 +281,20 @@ Item {
       }
     }
 
+    // What to do next on a workspace with nothing assigned.
+    InfoText {
+      id: hintLine
+      width: parent.width
+      leftPadding: Tokens.textInset
+      visible: root.hint !== "" && !root.empty
+      elide: Text.ElideRight
+      text: root.hint
+    }
+
     // Column titles.
     TableHeader {
       id: titles
+      visible: !root.empty
       width: parent.width
       columns: [
         { text: "", width: Tokens.stripeWidth },
@@ -290,8 +308,9 @@ Item {
     ListView {
       id: list
       width: parent.width
-      height: parent.height - headerBox.height - titles.height - (problem.visible ? problem.height + parent.spacing : 0)
-        - parent.spacing * 2
+      height: parent.height - headerBox.height - (titles.visible ? titles.height + parent.spacing : 0)
+        - (problem.visible ? problem.height + parent.spacing : 0)
+        - (hintLine.visible ? hintLine.height + parent.spacing : 0) - parent.spacing
       clip: true
       model: root.rows
       boundsBehavior: Flickable.StopAtBounds
@@ -356,8 +375,36 @@ Item {
       Placeholder {
         anchors.centerIn: parent
         width: parent.width
-        visible: root.rows.length === 0
+        visible: root.rows.length === 0 && !root.empty
         text: root.state ? "No windows" : (root.engine && root.engine.error === "" ? "Reading hyprslots…" : "")
+      }
+
+      // No slots yet: nothing can be assigned until the Layout tab makes one.
+      Column {
+        anchors.centerIn: parent
+        width: Math.min(parent.width - Style.spacing.xxl * 2, Style.space(520))
+        visible: !!root.empty
+        spacing: Style.spacing.lg
+        Placeholder {
+          width: parent.width
+          text: root.empty ? root.empty.text : ""
+        }
+        Item {
+          width: parent.width
+          height: layoutButton.height
+          ActionButton {
+            id: layoutButton
+            objectName: root.empty ? "empty:layout" : ""
+            anchors.horizontalCenter: parent.horizontalCenter
+            accented: true
+            keyText: root.empty ? root.empty.action.key : ""
+            text: root.empty ? root.empty.action.label : ""
+            pixelSize: Style.font.body
+            padX: Style.spacing.xl
+            padY: Style.spacing.sm
+            onClicked: root.pressKey(root.empty.action.key)
+          }
+        }
       }
     }
   }

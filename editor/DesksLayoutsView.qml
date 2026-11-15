@@ -5,6 +5,7 @@ import qs.Commons as Commons
 import "DesksLayouts.js" as DesksLayouts
 import "Prompts.js" as Prompts
 import "Help.js" as Help
+import "Guide.js" as Guide
 import "ui"
 
 // The desks and the layouts (docs/design.md §9). A desk is a monitor setup:
@@ -346,8 +347,7 @@ Item {
       leftPadding: Tokens.textInset
       rightPadding: Tokens.cellPadding
       wrapMode: Text.WordWrap
-      text: "A desk is a monitor setup; it uses a layout with the same number of screens, and desks may share one."
-        + " The other tabs edit the layout of the active desk (●)."
+      text: Guide.deskIntro()
     }
 
     ProblemText {
