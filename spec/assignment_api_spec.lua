@@ -289,6 +289,18 @@ return {
         assert.are.same({ stranger.address }, state().unassigned)
       end)
 
+      it("names the slot the window was in, though clearing its spec routed it into another first", function()
+        assert.is_true(call("set_spec", { workspace = 3, slot = "right", spec = "t-main" }).ok)
+        local first = open(1, "t-main", 1)
+        assert.are.same({ workspace = 3, slot = "main" }, state().assignments[first.address])
+        local reply = call("unassign", { address = first.address, clear_spec = true })
+        assert.is_true(reply.ok, reply.error)
+        assert.are.same({ workspace = 3, slot = "main", spec = "t-main" },
+          { workspace = reply.workspace, slot = reply.slot, spec = reply.spec })
+        assert.is_nil(state().assignments[first.address])
+        assert.are.same({ first.address }, state().unassigned)
+      end)
+
       it("is refused, the window kept in its slot, when config.lua owns the workspace's specs", function()
         engine.cleanup()
         hl = engine.stub({ "HEADLESS-2", "HEADLESS-3" }, BLOCKS)

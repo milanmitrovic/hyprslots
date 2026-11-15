@@ -194,8 +194,9 @@ end
 -- routed again, as if it had just opened: into another free slot it matches,
 -- else its workspace's overflow. The slot the window leaves goes to the oldest
 -- window overflowing on it. Returns the new assignment and the displaced
--- window's address.
-function M.assign(engine, window, workspace, slot)
+-- window's address. `opts.quiet`: no relayout or change event (the caller
+-- applies an edit after, which does both).
+function M.assign(engine, window, workspace, slot, opts)
   local address = window.address
   local displaced
   for other, held in pairs(engine.assignments) do
@@ -232,8 +233,10 @@ function M.assign(engine, window, workspace, slot)
   if engine.rearrange then
     engine.rearrange("event")
   end
-  engine:relayout()
-  engine:changed()
+  if not (opts and opts.quiet) then
+    engine:relayout()
+    engine:changed()
+  end
   return assignment, displaced
 end
 

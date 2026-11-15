@@ -757,7 +757,9 @@ function handlers.unassign(engine, args)
       cleared = reply.spec
     end
   end
-  local previous = router.unassign(engine, window.address) or held
+  -- The slot it was in, not where clearing the spec may have routed it.
+  local previous = router.unassign(engine, window.address)
+  previous = held or previous
   return { address = window.address, workspace = previous and previous.workspace or nil,
     slot = previous and previous.slot or nil, spec = cleared, seq = engine.seq }
 end
@@ -1088,6 +1090,26 @@ function handlers.clear_spec(engine, args)
   return { workspace = workspace, slot = args.slot, spec = was, seq = engine.seq }
 end
 
+-- The slot a window moving to `slot` on `workspace` leaves, when its
+-- spec there is the window's and the editor's to clear:
+-- { workspace, slot, spec }, else nil.
+local function leaving(engine, window, workspace, slot)
+  local held = engine.assignments[window.address]
+  if not held or (held.workspace == workspace and held.slot == slot) then
+    return nil
+  end
+  local entry = engine.cfg and engine.cfg.specs[held.workspace] and engine.cfg.specs[held.workspace][held.slot]
+  local text = engine.data and type(engine.data.specs) == "table" and type(engine.data.specs[held.workspace]) == "table"
+    and engine.data.specs[held.workspace][held.slot]
+  if not (entry and text and spec.admits(entry, window)) then
+    return nil
+  end
+  if not edit.editable(read_only_paths(engine.cfg), "specs", held.workspace) then
+    return nil
+  end
+  return { workspace = held.workspace, slot = held.slot, spec = text }
+end
+
 -- take_spec { workspace, slot, address }: the Assignment view's a
 -- (aerolayout's): the window's spec (spec.from_window) becomes the
 -- workspace's spec for the slot, replacing the one it had, and the window
@@ -1113,8 +1135,16 @@ function handlers.take_spec(engine, args)
     return fail(edit_err)
   end
   text = data.specs[workspace][args.slot]
+  -- The slot the window leaves: its spec goes in the same edit when it is
+  -- the window's (the spec that put it there), as u would clear it, so the
+  -- slot is left empty rather than Missing the window that just moved.
+  local left = leaving(engine, window, workspace, args.slot)
+  if left then
+    data = edit.clear_spec(data, left.workspace, left.slot)
+  end
   local cfg, load_err = config.load(engine.config_dir, { data = { [DATA_FILE] = data } })
-  if cfg and workspace_spec(cfg, workspace, args.slot) ~= text then
+  if cfg and (workspace_spec(cfg, workspace, args.slot) ~= text
+      or (left and workspace_spec(cfg, left.workspace, left.slot) ~= nil)) then
     cfg, load_err = nil, not_taken("workspace " .. workspace .. "'s specs")
   end
   if not cfg then
@@ -1124,13 +1154,14 @@ function handlers.take_spec(engine, args)
   local replaced = type(before) == "table" and before[args.slot] or nil
   -- Into the slot first, so the re-solve under the new spec keeps it there;
   -- the spec names the window, so it is an ordinary assignment, not by hand.
-  local _, displaced = router.assign(engine, window, workspace, args.slot)
+  -- apply_config tells the editor, once.
+  local _, displaced = router.assign(engine, window, workspace, args.slot, { quiet = true })
   if spec.admits(cfg.specs[workspace][args.slot], window) then
     engine.assignments[window.address] = { workspace = workspace, slot = args.slot }
   end
   engine:apply_config(cfg, data, true)
   return { workspace = workspace, slot = args.slot, spec = text, replaced = replaced, address = window.address,
-    displaced = displaced, seq = engine.seq }
+    displaced = displaced, left = left, seq = engine.seq }
 end
 
 -- Desks and layouts (the Desk view) --------------------------------
