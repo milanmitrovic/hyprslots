@@ -4,7 +4,9 @@
 #
 # A fresh install: no hyprslots config dir at all. The engine writes a
 # starter config.lua and an empty slots.lua and runs with zero slots, making
-# a desk for the monitor. The bar widget asks to be set up (an accent dot,
+# a desk for the monitor, which it saves at once and without a notification
+# (nothing reads as unsaved: no dirty state, no "unsaved" in the header), on
+# workspaces 1 to 9 (the default; the strip ends at 9). The bar widget asks to be set up (an accent dot,
 # "Click to set up your slots"). The panel opens on the Layout tab, whose
 # picture explains slots; the Assignment tab sends you back there by a
 # button; the button "Create your first slot", clicked with the real
@@ -20,6 +22,15 @@
 test_setup() {
   cat >"$E2E_CONFIG_HOME/hypr/test-extra.lua" <<'LUA'
 hl.monitor({ output = "HEADLESS-2", mode = "1920x1080@60", position = "0x0", scale = 1 })
+-- Every notification's text, for the test to read (none on a first run).
+e2e_notifications = {}
+e2e_notifications_seen = pcall(function()
+  local create = hl.notification.create
+  hl.notification.create = function(spec)
+    e2e_notifications[#e2e_notifications + 1] = spec and spec.text
+    return create(spec)
+  end
+end)
 LUA
   smoke_theme_look
   seed_workspace_blocks HEADLESS-2
@@ -77,6 +88,21 @@ test_body() {
   else
     fail "no desk: $(api_state | jq -c '{desk, layout, desks}')"
   fi
+  # Saved at once, silently: nothing on first contact reads as unsaved.
+  if eventually 5 state_is .dirty false; then
+    pass "the desk and its layout are saved: nothing unsaved"
+  else
+    fail "unsaved on first run: $(api_state | jq -c '{dirty, desks}')"
+  fi
+  expect_eq "the desk is not new-and-unsaved" "null" "$(api_state | jq -r '.desks["headless-2"].auto')"
+  grep -q 'headless-2' "$dir/slots.lua" || fail "slots.lua lacks the desk: $(cat "$dir/slots.lua")"
+  expect_eq "notifications are observed" "true" "$(repl 'return tostring(e2e_notifications_seen)')"
+  expect_eq "no notification" "0" "$(repl 'return #e2e_notifications')"
+  # (The wrapper does see one: a probe, gone in a millisecond.)
+  repl 'hl.notification.create({ text = "e2e probe", timeout = 1 })' >/dev/null
+  expect_eq "the probe was seen" "e2e probe" "$(repl 'return e2e_notifications[1]')"
+  repl 'e2e_notifications = {}' >/dev/null
+  expect_eq "workspaces 1 to 9 by default" "9" "$(api_state | jq -r .workspace_count)"
   spawn_and_wait t-first
   settle
 
@@ -97,6 +123,12 @@ test_body() {
   eventually 10 smoke_ready || fail "the panel never read state: $(smoke errors)"
   eventually 5 tab_is Layout || true
   expect_eq "zero slots: the panel opens on the Layout tab" "Layout" "$(smoke_tab)"
+  if [[ $(smoke header) == *nsaved* ]]; then
+    fail "the header reads as unsaved: $(smoke header)"
+  else
+    pass "nothing unsaved in the header"
+  fi
+  expect_eq "the strip shows workspaces 1 to 9" "[All workspaces] · 1 2 3 4 5 6 7 8 9" "$(smoke layoutStrip)"
   expect_eq "the picture explains slots and offers the first" \
     "Start with your slots | Slots are named places on your screens, like left, main and right. Each app you assign goes into its slot. | You choose the names, and how many. Arrange them here, then put windows into them in the Assignment tab. | [a] Create your first slot" \
     "$(smoke empty)"
