@@ -123,6 +123,12 @@ test_body() {
   smoke press Tab >/dev/null
   eventually 3 bash -c "[[ \$(qs ipc --pid $SMOKE_QS_PID call smoke tabs) == *'| Desk' ]]" || fail "tabs: $(smoke tabs)"
   log "desk maps: $(smoke deskMaps)"
+  # dual lists HEADLESS-3 first, but its monitors read in screen order, as its map
+  if [[ $(smoke deskMonitors) == *"dual: 1 · HEADLESS-2 + 2 · HEADLESS-3;"* ]]; then
+    pass "dual's monitors in screen order: $(smoke deskMonitors)"
+  else
+    fail "desk monitors: $(smoke deskMonitors)"
+  fi
 
   # dual: screen 1 (HEADLESS-2, lower and narrower) left, screen 2 right and taller
   expect_eq "dual's map" "1 solid 0,6 31x17, 2 solid 31,0 41x23" "$(desk_map dual)"

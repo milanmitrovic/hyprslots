@@ -93,10 +93,10 @@ function monitorsLabel(count) {
   return count === 1 ? "1 monitor" : count + " monitors"
 }
 
-// One monitor of a desk by its display name: "● Built-in" when connected,
-// "○ Odyssey G95NC" when not.
-function monitorText(m) {
-  return (m.connected ? "● " : "○ ") + m.display
+// One monitor of a desk as its screen `n` by display name: "1 · Built-in"
+// when connected, "2 · ○ Odyssey G95NC" when not.
+function monitorText(n, m) {
+  return n + " · " + (m.connected ? "" : "○ ") + m.display
 }
 
 function nameCell(row) {
@@ -109,7 +109,8 @@ function deskCells(row) {
   return {
     mark: row.active ? "●" : "",
     name: nameCell(row),
-    monitors: row.monitors.map(monitorText).join(" + "),
+    // in screen order, left to right, as its map and its layout's screens
+    monitors: deskMap(row, 1, 1).screens.map(function(s) { return monitorText(s.screen, s) }).join(" + "),
     layout: "→ " + row.layout,
   }
 }
@@ -119,7 +120,7 @@ function deskCells(row) {
 // desk, else those recorded when it last was, else equal boxes; equal boxes
 // here too when state has none) fitted into maxW x maxH at their own shape:
 // { w, h (the fitted size), screens: [{ screen, x, y, w, h, connected,
-// display }] } by screen number, the layout's (1 the left-most). Edges are
+// display, selector }] } by screen number, the layout's (1 the left-most). Edges are
 // rounded, not sizes, so screens that meet still meet.
 function deskMap(row, maxW, maxH) {
   var n = row.monitors.length
@@ -140,7 +141,8 @@ function deskMap(row, maxW, maxH) {
     var x0 = Math.round((b.x - left) * scale), y0 = Math.round((b.y - top) * scale)
     var x1 = Math.round((b.x + b.w - left) * scale), y1 = Math.round((b.y + b.h - top) * scale)
     var m = row.monitors[i]
-    return { screen: b.screen, x: x0, y: y0, w: x1 - x0, h: y1 - y0, connected: m.connected, display: m.display }
+    return { screen: b.screen, x: x0, y: y0, w: x1 - x0, h: y1 - y0, connected: m.connected, display: m.display,
+      selector: m.selector }
   })
   screens.sort(function(a, b) { return a.screen - b.screen })
   return { w: Math.round(width * scale), h: Math.round(height * scale), screens: screens }
@@ -173,7 +175,7 @@ function layoutCells(row) {
 // A section's quiet header ("desk" or "layout"): its title, and what it
 // lists.
 function sectionHeader(kind) {
-  if (kind === "desk") return { title: "Desks", hint: "monitor setups · ● connected  ○ not" }
+  if (kind === "desk") return { title: "Desks", hint: "monitor setups · ○ not connected" }
   return { title: "Layouts", hint: "a desk can use a layout with the same number of screens" }
 }
 
@@ -197,12 +199,12 @@ function actions(row) {
   ])
 }
 
-// m on a desk: which of its monitors to name, numbered ([{ key, label: its
-// display name, value: its selector }]); asked only when it has more
-// than one.
+// m on a desk: which of its monitors to name, by screen number as the
+// Monitors column shows them ([{ key, label: its display name, value: its
+// selector }]); asked only when it has more than one.
 function monitorOptions(row) {
-  return row.monitors.map(function(m, i) {
-    return { key: i < 9 ? String(i + 1) : "", label: m.display, value: m.selector }
+  return deskMap(row, 1, 1).screens.map(function(s) {
+    return { key: s.screen <= 9 ? String(s.screen) : "", label: s.display, value: s.selector }
   })
 }
 

@@ -489,7 +489,7 @@ name_monitor() {
   else
     fail "help row: $help"
   fi
-  if [[ $(smoke deskMonitors) == *"solo: ● HEADLESS-2"* ]]; then
+  if [[ $(smoke deskMonitors) == *"solo: 1 · HEADLESS-2"* ]]; then
     pass "monitors by display name: $(smoke deskMonitors)"
   else
     fail "desk monitors: $(smoke deskMonitors)"
@@ -515,7 +515,7 @@ name_monitor() {
   expect_eq "it says so" "Monitor 'HEADLESS-2' is 'Main screen' now. Ctrl+S saves." "$(smoke message)"
   expect_eq "state names the monitor by it" "Main screen" "$(api_state | jq -r '.monitors[] | select(.name == "HEADLESS-2") | .display')"
   expect_eq "desk solo still matches by connector" "solo" "$(api_state | jq -r .desk)"
-  if [[ $(smoke deskMonitors) == *"away: ● Main screen + ○ "*"solo: ● Main screen"* ]]; then
+  if [[ $(smoke deskMonitors) == *"away: 1 · Main screen + 2 · ○ "*"solo: 1 · Main screen"* ]]; then
     pass "the Desk tab shows the label: $(smoke deskMonitors)"
   else
     fail "desk monitors: $(smoke deskMonitors)"

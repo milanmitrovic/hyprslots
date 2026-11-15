@@ -83,31 +83,31 @@ test("a desk row's monitors carry the user's label and fall back to the selector
   state.monitor_names = { [SAMSUNG]: "Samsung" };
   state.desks.docked.displays = ["Built-in", "Samsung"];
   assert.deepEqual(plain(D.rows(state)[0].monitors[1]).label, "Samsung");
-  assert.equal(D.deskCells(D.rows(state)[0]).monitors, "● Built-in + ● Samsung");
+  assert.equal(D.deskCells(D.rows(state)[0]).monitors, "1 · Built-in + 2 · Samsung");
   delete state.desks.office.displays;
-  assert.equal(D.deskCells(D.rows(state)[2]).monitors, "● Built-in + ○ Dell U2723QE ABC", "the connected monitor's");
+  assert.equal(D.deskCells(D.rows(state)[2]).monitors, "1 · Built-in + 2 · ○ Dell U2723QE ABC", "the connected monitor's");
   state.monitors = [];
-  assert.equal(D.deskCells(D.rows(state)[2]).monitors, "● eDP-1 + ○ Dell U2723QE ABC", "else the selector");
+  assert.equal(D.deskCells(D.rows(state)[2]).monitors, "1 · eDP-1 + 2 · ○ Dell U2723QE ABC", "else the selector");
 });
 
-test("a desk row reads: name, monitors with ● when connected, → the layout it uses", () => {
+test("a desk row reads: name, monitors by screen number (○ when not connected), → the layout it uses", () => {
   const rows = D.rows(fixture());
   assert.deepEqual(plain(D.deskCells(rows[0])), {
     mark: "●",
     name: "docked",
-    monitors: "● Built-in + ● Odyssey G95NC",
+    monitors: "1 · Built-in + 2 · Odyssey G95NC",
     layout: "→ docked",
   });
   assert.deepEqual(plain(D.deskCells(rows[2])), {
     mark: "",
     name: "office (set in your config)",
-    monitors: "● Built-in + ○ Dell U2723QE ABC",
+    monitors: "1 · Built-in + 2 · ○ Dell U2723QE ABC",
     layout: "→ docked",
   });
 });
 
 test("each section has a quiet header: its title and what it lists", () => {
-  assert.deepEqual(plain(D.sectionHeader("desk")), { title: "Desks", hint: "monitor setups · ● connected  ○ not" });
+  assert.deepEqual(plain(D.sectionHeader("desk")), { title: "Desks", hint: "monitor setups · ○ not connected" });
   assert.deepEqual(plain(D.sectionHeader("layout")), { title: "Layouts", hint: "a desk can use a layout with the same number of screens" });
 });
 
@@ -326,4 +326,19 @@ test("a desk the state gives no geometry is its monitors as equal boxes side by 
 test("a desk's map tip names its screens by number and display name, saying which are not connected", () => {
   assert.equal(D.deskMapTip(D.rows(mapState())[0]), "1 HEADLESS-2 · 2 HEADLESS-3 (not connected)");
   assert.equal(D.deskMapTip(D.rows(fixture())[1]), "1 Built-in");
+});
+
+test("a desk's monitors read in screen order, left to right as its map and layouts number them, not as it lists them", () => {
+  // docked lists HEADLESS-3 first, but it is screen 2: right of HEADLESS-2
+  assert.equal(D.deskCells(D.rows(mapState())[0]).monitors, "1 · HEADLESS-2 + 2 · ○ HEADLESS-3");
+  const state = fixture();
+  state.desks.docked.geometry = [{ x: 5120, y: 0, w: 1920, h: 1080, screen: 2 }, { x: 0, y: 0, w: 5120, h: 1440, screen: 1 }];
+  assert.equal(D.deskCells(D.rows(state)[0]).monitors, "1 · Odyssey G95NC + 2 · Built-in");
+});
+
+test("m numbers a desk's monitors by screen, as the Monitors column does", () => {
+  assert.deepEqual(plain(D.monitorOptions(D.rows(mapState())[0])), [
+    { key: "1", label: "HEADLESS-2", value: "HEADLESS-2" },
+    { key: "2", label: "HEADLESS-3", value: "HEADLESS-3" },
+  ]);
 });

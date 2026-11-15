@@ -1374,9 +1374,11 @@ two are; then two sections, each under its column titles (Desk, Monitors,
 Uses layout; Layout, Screens, Used by):
 
 - **Desks** (monitor setups): each stored desk led by its **map** (below),
-  by name, its monitors by
-  display name (§4; `●` connected, `○` not: `● Built-in + ● Odyssey
-  G95NC`), the
+  by name, its monitors in screen order, left to right as its map and its
+  layout number them (not the order the desk lists them in), each led by
+  its screen number, by display name (§4), `○` before one not connected:
+  `1 · Built-in + 2 · Odyssey G95NC`, `1 · Built-in + 2 · ○ Dell U2723QE`
+  (`m` numbers them the same way), the
   layout it uses as a mapping (`→ dual`, so a desk and a layout of one
   name do not read as the name twice); the active desk marked quietly: a
   small `●` in the accent colour and its text at full strength where the
@@ -1400,8 +1402,8 @@ screens' display names on the tooltip surface beside it (`1 Built-in · 2
 Odyssey G95NC (not connected)`). Desk rows are tall enough for it
 (`Tokens.deskMapRowHeight`).
 
-The section headers are quiet labels (`DESKS monitor setups · ● connected
-○ not`, muted small capitals), the column titles muted. One selection runs
+The section headers are quiet labels (`DESKS monitor setups · ○ not
+connected`, muted small capitals), the column titles muted. One selection runs
 through both sections (↑/↓, k/j); it opens on the active desk, and it is
 the strongest thing on the page: the theme's selected accent fill, a
 stripe of the accent down its left edge, its name in the selected text
