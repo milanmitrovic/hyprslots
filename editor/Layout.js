@@ -807,6 +807,75 @@ function paneAt(x, count, width, gap) {
   return Math.max(0, Math.min(count - 1, i))
 }
 
+// --- the panes on a desk of several monitors -----------------------------------
+
+// A screen's size as the active desk's geometry has it (its monitor's
+// logical box): { w, h }, or null when state has none for that screen.
+function screenSize(state, screen) {
+  var d = state && state.desks && state.desk ? state.desks[state.desk] : null
+  var boxes = d && Array.isArray(d.geometry) ? d.geometry : []
+  for (var i = 0; i < boxes.length; i++) {
+    if (boxes[i].screen === screen && boxes[i].w > 0 && boxes[i].h > 0) return { w: boxes[i].w, h: boxes[i].h }
+  }
+  return null
+}
+
+// The Layout picture's panes laid out in `area` ({ w, h }: the row, and the
+// height under the panes' titles), one per screen of `screens` ([{ key, w,
+// h (the monitor's size; 1920 x 1080 when unknown), scroll (its tree is a
+// filmstrip) }], left to right, `gap` between): every screen at one scale,
+// so their sizes compare as the monitors' do, the largest that fits the
+// width and the height (a scroll screen's label, `footer` high, under it),
+// top-aligned. A scroll screen's pane is wider than its screen, the screen
+// in the middle and the filmstrip either side, up to `span` (3) screens'
+// widths: the screens shrink for it no further than `floor` (0.7) of the
+// scale they would have without, and the scroll panes share what width is
+// left. The row is centred across what is left after that. Returns {
+// scale, panes: [{ key, x, w, h (the pane's picture: the screen, and a
+// scroll screen's footer), screen: { x, y, w, h } (in the pane) }] }.
+function paneLayout(screens, area, opts) {
+  opts = opts || {}
+  var list = screens || []
+  if (list.length === 0) return { scale: 0, panes: [] }
+  var gap = opts.gap || 0
+  var span = opts.span >= 1 ? opts.span : 3
+  var floor = opts.floor > 0 ? opts.floor : 0.7
+  var footer = opts.footer || 0
+  var sizes = list.map(function(s) {
+    return { key: s.key, w: s.w > 0 ? s.w : 1920, h: s.h > 0 ? s.h : 1080, scroll: !!s.scroll }
+  })
+  var room = Math.max(0, area.w - gap * (sizes.length - 1))
+  var sumW = 0
+  var scrollW = 0
+  var byHeight = Infinity
+  sizes.forEach(function(s) {
+    sumW += s.w
+    if (s.scroll) scrollW += s.w
+    byHeight = Math.min(byHeight, Math.max(0, area.h - (s.scroll ? footer : 0)) / s.h)
+  })
+  var tiles = Math.min(room / sumW, byHeight)
+  var scale = tiles
+  if (scrollW > 0) scale = Math.max(Math.min(room / (sumW + (span - 1) * scrollW), byHeight), floor * tiles)
+  var boxes = sizes.map(function(s) { return { w: Math.floor(s.w * scale), h: Math.floor(s.h * scale) } })
+  var used = boxes.reduce(function(sum, b) { return sum + b.w }, 0)
+  var scrollUsed = sizes.reduce(function(sum, s, i) { return sum + (s.scroll ? boxes[i].w : 0) }, 0)
+  var extra = Math.max(0, room - used)
+  var panes = sizes.map(function(s, i) {
+    var b = boxes[i]
+    var w = b.w
+    if (s.scroll && scrollUsed > 0) w += Math.min(Math.floor(extra * b.w / scrollUsed), Math.floor((span - 1) * b.w))
+    return { key: s.key, x: 0, w: w, h: b.h + (s.scroll ? footer : 0),
+      screen: { x: Math.floor((w - b.w) / 2), y: 0, w: b.w, h: b.h } }
+  })
+  var total = panes.reduce(function(sum, p) { return sum + p.w }, 0) + gap * (panes.length - 1)
+  var x = Math.floor(Math.max(0, area.w - total) / 2)
+  panes.forEach(function(p) {
+    p.x = x
+    x += p.w + gap
+  })
+  return { scale: scale, panes: panes }
+}
+
 // --- dragging a slot ----------------------------------------------------------
 
 // A tile's edge band, as a share of the tile across that axis: a drop
