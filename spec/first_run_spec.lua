@@ -109,6 +109,12 @@ describe("first run", function()
     assert.are.same({}, s.config.read_only)
   end)
 
+  it("makes the desk without a notification while there are no slots", function()
+    setup()
+    assert.are.equal("headless-2", state().desk)
+    assert.are.same({}, hl.notifications, "nothing to say before the first slot")
+  end)
+
   it("lays out nothing with zero slots, and raises nothing", function()
     setup()
     local ctx = hl_stub.layout_ctx({ x = 0, y = 0, w = 1920, h = 1080 }, { hl_stub.window(1, "foot") })

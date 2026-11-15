@@ -831,6 +831,12 @@ running config only, for this Lua state. Deleting the active desk in the
 editor makes its monitors unknown again, so a second later they get a new
 desk, on the layout they ran.
 
+A new desk says so in an info notification, in plain words: `hyprslots: new
+monitor setup — using layout 'scroll'. Open the editor to change it.` (the
+second sentence left out where config.lua builds the desks, so the editor
+cannot). While there are no slots (a first run) it says nothing: there is
+nothing laid out to change yet.
+
 ## 9. Editor
 
 An Omarchy shell plugin, `milan.hyprslots` (QML), with full aerolayout TUI

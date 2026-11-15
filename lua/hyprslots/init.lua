@@ -242,8 +242,11 @@ function Engine:new_desk()
   end
   self.auto_desks[name] = true
   self.log:info("new desk %s (%s), layout %s", name, table.concat(selectors, ", "), layout)
-  adapter.notify(string.format("hyprslots: new desk '%s' for these monitors, layout '%s'%s", name, layout,
-    made and "; save it in the editor (Ctrl+S)" or ""), "info")
+  if #self.cfg.slot_names == 0 then
+    return -- before the first slot (a first run) there is nothing to say
+  end
+  adapter.notify(string.format("hyprslots: new monitor setup — using layout '%s'.%s", layout,
+    made and " Open the editor to change it." or ""), "info")
 end
 
 -- Assign every live window (on load: nothing survives a reload), except

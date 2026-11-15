@@ -57,6 +57,18 @@ describe("a new desk for unknown monitors", function()
     assert.is_true(state.dirty, "an unsaved edit")
   end)
 
+  it("says so in plain words, and how to change it", function()
+    hl = engine.stub({ "HEADLESS-2" }, BLOCKS)
+    hyprslots = engine.setup(ONE_DESK)
+    unplug("HEADLESS-2")
+    plug("HEADLESS-3")
+    local texts = {}
+    for _, n in ipairs(hl.notifications) do
+      texts[#texts + 1] = n.text
+    end
+    assert.are.same({ "hyprslots: new monitor setup — using layout 'solo'. Open the editor to change it." }, texts)
+  end)
+
   it("gets a new layout with the default trees when no layout has as many screens", function()
     hl = engine.stub({ "HEADLESS-2" }, BLOCKS)
     hyprslots = engine.setup(ONE_DESK)
