@@ -90,21 +90,29 @@ vpointer_do() {
   [[ $reply == ok ]]
 }
 
+# The box around every output, "<left> <top> <width> <height>" (scale 1):
+# vpointer's absolute motion spans it, so a point on the screen is given
+# relative to its corner, with its size (one output at 0,0: that output).
+pointer_box() {
+  hc monitors -j | jq -r '(map(.x) | min) as $l | (map(.y) | min) as $t
+    | "\($l) \($t) \((map(.x + .width) | max) - $l) \((map(.y + .height) | max) - $t)"'
+}
+
 # A real pointer click (or "double", or "move") on the panel's control named
 # $1 (its objectName, Panel.clickPoint: "toolbar:a", "chip:m",
 # "prompt:yes", "tab:Layout", "row:2"...), through the nested compositor's
 # virtual pointer, so it reaches the same MouseArea a mouse does. Fails
 # (the test, not the harness) when no such control shows.
 smoke_click() {
-  local name=$1 action=${2:-click} point size
+  local name=$1 action=${2:-click} point x y l t w h
   point=$(smoke point "$name")
   if [[ ! $point =~ ^-?[0-9]+\ -?[0-9]+$ ]]; then
     fail "no control '$name' to click (got '$point')"
     return 1
   fi
-  size=$(hc monitors -j | jq -r '.[0] | "\(.width) \(.height)"')
-  # shellcheck disable=SC2086
-  vpointer_do $point $size "$action" || harness_fail "vpointer failed (see $E2E_DIR/vpointer.log)"
+  read -r x y <<<"$point"
+  read -r l t w h <<<"$(pointer_box)"
+  vpointer_do "$((x - l))" "$((y - t))" "$w" "$h" "$action" || harness_fail "vpointer failed (see $E2E_DIR/vpointer.log)"
 }
 
 # A real pointer drag (e2e/shim/vpointer.c) from the panel's control named
@@ -115,18 +123,19 @@ smoke_click() {
 # too: the pointer does one thing at a time). Fails (the test) when no such
 # control shows.
 smoke_drag() {
-  local name=$1 x2=$2 y2=$3 hold=${4:-300} point size
+  local name=$1 x2=$2 y2=$3 hold=${4:-300} point x y l t w h
   point=$(smoke point "$name")
   if [[ ! $point =~ ^-?[0-9]+\ -?[0-9]+$ ]]; then
     fail "no control '$name' to drag (got '$point')"
     SMOKE_DRAG_PID=''
     return 1
   fi
-  size=$(hc monitors -j | jq -r '.[0] | "\(.width) \(.height)"')
-  # shellcheck disable=SC2086
+  read -r x y <<<"$point"
+  read -r l t w h <<<"$(pointer_box)"
   if [[ -n $SMOKE_DRAG_PID ]]; then wait "$SMOKE_DRAG_PID" 2>/dev/null; fi
   SMOKE_DRAG_PID=''
-  { vpointer_do $point $size drag "$x2" "$y2" "$hold" || printf 'smoke_drag %s: vpointer failed\n' "$name" >>"$E2E_DIR/vpointer.log"; } &
+  { vpointer_do "$((x - l))" "$((y - t))" "$w" "$h" drag "$((x2 - l))" "$((y2 - t))" "$hold" ||
+    printf 'smoke_drag %s: vpointer failed\n' "$name" >>"$E2E_DIR/vpointer.log"; } &
   SMOKE_DRAG_PID=$!
   E2E_CLIENT_PIDS+=("$SMOKE_DRAG_PID")
 }
