@@ -38,11 +38,12 @@ e2e:
 
 # The editor plugin in Quickshell on the nested Hyprland (opt-in: not part of
 # `make e2e`); needs qs, grim and wtype: the smoke, a fresh install's first
-# run, and the Desk tab's desk maps on two screens. Screenshots:
-# .e2e-tmp/editor-smoke-*.png, .e2e-tmp/editor-first-run-*.png,
-# .e2e-tmp/editor-desk-map-*.png
+# run, the Desk tab's desk maps on two screens, and the Layout tab's screens
+# swapped by drag and by p. Screenshots: .e2e-tmp/editor-smoke-*.png,
+# .e2e-tmp/editor-first-run-*.png, .e2e-tmp/editor-desk-map-*.png,
+# .e2e-tmp/editor-screen-swap-*.png
 e2e-editor:
-	./e2e/run.sh e2e/editor_smoke.sh e2e/editor_first_run.sh e2e/editor_desk_map.sh
+	./e2e/run.sh e2e/editor_smoke.sh e2e/editor_first_run.sh e2e/editor_desk_map.sh e2e/editor_screen_swap.sh
 
 # The editor on a 2-screen desk, screenshots only (opt-in, like e2e-editor):
 # into $MULTIMON_SHOTS (default .e2e-tmp/multimon/latest).

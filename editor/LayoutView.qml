@@ -10,6 +10,7 @@ import "Slots.js" as Slots
 import "DesksLayouts.js" as DesksLayouts
 import "Help.js" as Help
 import "Guide.js" as Guide
+import "Assignment.js" as Assignment
 import "ui"
 
 // One workspace's trees in the active desk's layout, edited (aerolayout's
@@ -106,6 +107,14 @@ Item {
   // now), label (its split's ratio), changed, x, y (the pointer, in the
   // pane's picture) }; the pane draws `node` meanwhile. null otherwise.
   property var dragging: null
+  // A screen's pane being dragged by its title onto another's, to swap
+  // their trees: { from (its screen key), x, y (the pointer, in this view),
+  // target (the screen key of the pane under the pointer, null outside the
+  // panes), action (Layout.screenDropAction: { kind: "swap", label } or
+  // { kind: "none" }) }; null otherwise. It has the keyboard while held:
+  // Esc lets it go, other keys wait.
+  property var screenDrag: null
+  readonly property bool screenDragging: screenDrag !== null
 
   readonly property var activeDraft: drafts[screen] || null
   readonly property var activeNode: activeDraft ? activeDraft.node : null
@@ -133,7 +142,7 @@ Item {
     if (slotFocus) return Layout.slotListHelp({ jumpKeys: jump, readOnly: slotsReadOnly !== "", hasSlot: !!slotRow })
     if (welcome) return Guide.welcomeHelp()
     return Layout.pictureHelp({ node: activeNode, hasOwn: Layout.hasOwn(state, layout, workspace), jumpKeys: jump,
-      readOnly: block !== "", edited: editedScreens().length > 0, workspace: workspace })
+      readOnly: block !== "", edited: editedScreens().length > 0, workspace: workspace, screens: paneList.length })
   }
   readonly property string helpText: prompting ? Help.escape(Prompts.help(prompt)) : Help.row(helpGroups, accent)
 
@@ -174,6 +183,7 @@ Item {
   // Back to the opening target: the focused workspace's number and screen.
   function reset() {
     dragging = null
+    screenDrag = null
     prompt = null
     _answer = null
     message = ""
@@ -378,6 +388,11 @@ Item {
   }
 
   function handleKey(key, text, modifiers) {
+    // a pane held in a drag owns the keyboard: Esc cancels it, the rest waits
+    if (screenDragging) {
+      if (key === Qt.Key_Escape) screenDragCancel()
+      return true
+    }
     if (prompting) return handlePrompt(key, text, modifiers)
     if (text === "[" || text === "]") goWorkspace(Workspaces.step(workspace, text === "]" ? 1 : -1, Workspaces.count(state)))
     else if (Workspaces.ofDigit(text, Workspaces.count(state)) !== null) goWorkspace(Workspaces.ofDigit(text, Workspaces.count(state)))
@@ -406,6 +421,7 @@ Item {
       else scoped(function() { root.edit(function(n) { return { node: Layout.flip(n) } }, "Flipped every split.") }, true)
     }
     else if (text === "t") scoped(cycleScroll, true)
+    else if (text === "p") swapWithNext()
     else if (text === "o") toggleOther()
     else if (text === "r") {
       // ratios are for tiles: refused on a scroll tree before anything asks
@@ -473,6 +489,93 @@ Item {
     if (!activeNode) return
     var result = Layout.cycleScroll(activeNode)
     edit(function() { return result }, result.node ? what[Layout.scrollMode(result.node)] || "" : "")
+  }
+
+  // --- swapping screens --------------------------------------------------------
+
+  // Screens `a` and `b` trade trees (Layout.swapScreens): an edit like
+  // any other, into both drafts (asking first, on a workspace on the shared
+  // trees, whom it is for). The selection goes with screen a's tree, to b.
+  function swapScreens(a, b) {
+    if (refuseEdit()) return
+    var check = Layout.swapScreens(drafts, a, b)
+    if (check.error) {
+      say(check.error, true)
+      return
+    }
+    scoped(function() {
+      var result = Layout.swapScreens(root.drafts, a, b)
+      if (result.error) {
+        root.say(result.error, true)
+        return
+      }
+      root.drafts = result.drafts
+      root.screen = String(b)
+      if (root.slotFocus) root.slotFocus = false
+      root.keepSelection()
+      root.say(Layout.swappedText(a, b) + root.draftNote(), false)
+    }, false)
+  }
+
+  // p: the selected screen with the next (round from the last to the first).
+  function swapWithNext() {
+    var next = Layout.nextScreen(currentPanes(), screen)
+    if (next === null) {
+      say("This layout has one screen: there is no other to swap it with.", true)
+      return
+    }
+    swapScreens(screen, next)
+  }
+
+  // Whether a pane's title drags: an editable layout of more than one
+  // screen, no prompt open, no divider held.
+  readonly property bool screensDrag: block === "" && !prompting && !dragging && paneList.length > 1
+
+  // A press on screen `k`'s title moved past the threshold: the drag
+  // begins (false when it may not), at x, y in this view.
+  function screenDragStart(k, x, y) {
+    if (!screensDrag) return false
+    message = ""
+    screenDrag = { from: k, x: x, y: y, target: null, action: { kind: "none" } }
+    screenDragTo(x, y)
+    return true
+  }
+
+  // The pane under x, y (in this view): its screen key, or null.
+  function paneKeyAt(x, y) {
+    var p = mapToItem(paneRow, x, y)
+    if (p.y < 0 || p.y >= paneRow.height) return null
+    var i = Layout.paneAt(p.x, paneList.length, paneRow.width, root.gap)
+    return i >= 0 ? paneList[i].key : null
+  }
+
+  function screenDragTo(x, y) {
+    if (!screenDrag) return
+    var target = paneKeyAt(x, y)
+    screenDrag = { from: screenDrag.from, x: x, y: y, target: target,
+      action: Layout.screenDropAction(drafts, screenDrag.from, target) }
+  }
+
+  // Let go: over another pane, the two swap (swapScreens, as p does).
+  function screenDragDrop() {
+    if (!screenDrag) return
+    var done = screenDrag
+    screenDrag = null
+    var action = Layout.screenDropAction(drafts, done.from, paneKeyAt(done.x, done.y))
+    if (action.kind === "swap") swapScreens(done.from, paneKeyAt(done.x, done.y))
+  }
+
+  function screenDragCancel() {
+    screenDrag = null
+  }
+
+  // A click on a pane's title: its screen has the keys.
+  function pickScreen(k) {
+    if (slotFocus) slotFocus = false
+    if (screen === k) return
+    screen = k
+    selectedKey = ""
+    keepSelection()
   }
 
   // --- the slot list ---------------------------------------------------------
@@ -788,6 +891,7 @@ Item {
     }
     var dropped = editedScreens()
     dragging = null
+    screenDrag = null
     workspace = n
     scope = ""
     drafts = ({})
@@ -1155,9 +1259,14 @@ Item {
             readonly property var node: root.shownNode(modelData.key, draft)
             readonly property bool active: modelData.key === root.screen
             readonly property bool changed: root.edited(modelData.key)
+            // held in a drag by its title (dimmed), or where one would land
+            readonly property bool dragged: !!root.screenDrag && root.screenDrag.from === modelData.key
+            readonly property bool landing: !!root.screenDrag && root.screenDrag.action.kind === "swap"
+              && root.screenDrag.target === modelData.key
             width: (paneRow.width - root.gap * (root.paneList.length - 1)) / Math.max(1, root.paneList.length)
             height: paneRow.height
             spacing: Style.spacing.sm
+            opacity: dragged ? Tokens.dim : 1
 
             PaneTitle {
               id: paneTitle
@@ -1167,6 +1276,54 @@ Item {
               active: pane.active && !root.slotFocus
               text: Layout.screenLabel(root.state, pane.modelData.screen)
                 + (pane.changed ? "   edited" : "") + (pane.modelData.resized && !pane.changed ? "   keyboard-resized" : "")
+
+              // The title is the pane's handle: dragged onto another pane
+              // it swaps their trees (screenDragStart, screenDragTo,
+              // screenDragDrop; Esc cancels: handleKey); a click gives its
+              // screen the keys. Tiles, dividers and filmstrip columns
+              // keep the rest of the pane.
+              MouseArea {
+                id: titleMouse
+                objectName: "screen:" + pane.modelData.key
+                anchors.fill: parent
+                hoverEnabled: true
+                preventStealing: true
+                property real pressX: 0
+                property real pressY: 0
+                // this press made a drag (held, let go or cancelled): no click
+                property bool dragMade: false
+                cursorShape: root.screenDrag ? Qt.ClosedHandCursor : root.screensDrag ? Qt.OpenHandCursor : Qt.ArrowCursor
+
+                function follow(mouse) {
+                  var p = mapToItem(root, mouse.x, mouse.y)
+                  root.screenDragTo(p.x, p.y)
+                }
+                onPressed: (mouse) => {
+                  pressX = mouse.x
+                  pressY = mouse.y
+                  dragMade = false
+                }
+                onPositionChanged: (mouse) => {
+                  if (!pressed) return
+                  if (dragMade) {
+                    if (root.screenDrag) follow(mouse)
+                    return
+                  }
+                  if (!Assignment.dragBegins(pressX, pressY, mouse.x, mouse.y)) return
+                  var p = mapToItem(root, mouse.x, mouse.y)
+                  dragMade = root.screenDragStart(pane.modelData.key, p.x, p.y)
+                }
+                onReleased: (mouse) => {
+                  if (root.screenDrag) {
+                    follow(mouse)
+                    root.screenDragDrop()
+                  }
+                }
+                onClicked: {
+                  if (!dragMade) root.pickScreen(pane.modelData.key)
+                }
+                onCanceled: root.screenDragCancel()
+              }
             }
 
             // The picture, fitted to the screen's aspect.
@@ -1191,6 +1348,23 @@ Item {
               // this one, so none sees a drag the others have let go
               readonly property var drag: root.dragging && root.dragging.screen === pane.modelData.key ? root.dragging : null
               readonly property bool dragHere: drag !== null
+
+              // Where a screen dragged by its title would land: the whole
+              // pane, its title included, outlined in the accent with a
+              // faint accent fill, as a drop target in the Assignment table.
+              Rectangle {
+                objectName: "dropzone:screen:" + pane.modelData.key
+                visible: pane.landing
+                z: 5
+                x: -Tokens.dropLine
+                y: -(paneTitle.height + pane.spacing) - Tokens.dropLine
+                width: frame.width + Tokens.dropLine * 2
+                height: frame.height + paneTitle.height + pane.spacing + Tokens.dropLine * 2
+                radius: Tokens.radius
+                color: Tokens.dropFill
+                border.width: Tokens.dropLine
+                border.color: Tokens.dropOutline
+              }
 
               // Tiles: boxes in a scale model of the screen.
               Rectangle {
@@ -1658,5 +1832,20 @@ Item {
         }
       }
     }
+  }
+
+  // A screen's pane held by its title: its ghost by the pointer (the
+  // screen and the slots its tree places), and what letting go does there.
+  DragGhost {
+    id: screenGhost
+    objectName: "screenGhost"
+    visible: root.screenDragging
+    z: 10
+    readonly property var draft: root.screenDrag ? root.drafts[root.screenDrag.from] || null : null
+    title: root.screenDrag ? Layout.screenLabel(root.state, parseInt(root.screenDrag.from, 10)) : ""
+    subtitle: draft && draft.node ? Layout.leaves(Layout.picture(draft.node, false)).join(", ") : ""
+    label: root.screenDrag && root.screenDrag.action.kind !== "none" ? root.screenDrag.action.label : ""
+    x: root.screenDrag ? Math.max(0, Math.min(root.width - width, root.screenDrag.x + Style.spacing.lg)) : 0
+    y: root.screenDrag ? Math.max(0, Math.min(root.height - height, root.screenDrag.y + Style.spacing.md)) : 0
   }
 }

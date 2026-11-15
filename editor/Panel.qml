@@ -165,9 +165,9 @@ Item {
   // panel used it.
   function handleKey(key, text, modifiers) {
     if (Messages.dismissedByKey(root.bandKind)) root.dismissedKey = root.messageKey
-    // a prompt, or a row held in a drag (Esc cancels it), owns the keyboard
+    // a prompt, or a row or a screen held in a drag (Esc cancels it), owns the keyboard
     if ((assignmentView.prompting || assignmentView.dragging) && root.tab === 0) return assignmentView.handleKey(key, text, modifiers)
-    if (layoutView.prompting && root.tab === 1) return layoutView.handleKey(key, text, modifiers)
+    if ((layoutView.prompting || layoutView.screenDragging) && root.tab === 1) return layoutView.handleKey(key, text, modifiers)
     if (desksView.prompting && root.tab === 2) return desksView.handleKey(key, text, modifiers)
     if (key === Qt.Key_S && (modifiers & Qt.ControlModifier)) {
       root.save()
@@ -300,6 +300,14 @@ Item {
   function layoutDragText() {
     var d = layoutView.dragging
     return d ? d.screen + " " + Layout.format(d.node) + " | " + d.label : ""
+  }
+
+  // A screen's pane being dragged by its title in the Layout view: "1 ->
+  // Swap with screen 2", "1 -> none" where letting go does nothing, "" for
+  // none: for the e2e smoke.
+  function layoutScreenDragText() {
+    var d = layoutView.screenDrag
+    return d ? d.from + " -> " + (d.action.kind === "none" ? "none" : d.action.label) : ""
   }
 
   // The Layout view's pane titles ("Screen 1 · Built-in" joined by

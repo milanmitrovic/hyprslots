@@ -982,9 +982,11 @@ Layout picture (select it, the keys back to the picture) and a slot of the
 slot list (select it, the keys to the list) are clicked as they are. Hover
 and press looks come from the theme's control tokens. One thing the mouse
 does that no key press spells: dragging a divider of the Layout picture to
-a new ratio (below), an edit of the same draft `r` writes. And one the
+a new ratio (below), an edit of the same draft `r` writes. And two the
 keys spell differently: dragging an Assignment row's window onto a slot
-(`a` with that slot) or onto the other windows (`u`), below.
+(`a` with that slot) or onto the other windows (`u`), and dragging a
+Layout pane by its title onto another pane (`p`, swapping the two
+screens' trees), below.
 
 **One look per kind of element** (`editor/ui/`, theme tokens only):
 section headers are the accent colour in small letter-spaced capitals
@@ -1230,6 +1232,36 @@ moving it does. No dividers on a scroll tree, a read-only layout, or while
 a prompt is open; a press anywhere but on a divider goes on to the tile.
 A node test checks a dragged tree is the whole tree's ratio as ratio.lua
 writes it in.
+**Swapping screens** (`Layout.swapScreens`, `nextScreen`,
+`screenDropAction`, `paneAt`; node-tested). A pane's title (`Screen 1 ·
+Built-in`) is its handle: pressed and moved `Assignment.DRAG_THRESHOLD`
+(6) px it drags (a click gives that screen the keys). The title, because
+the rest of a pane is taken: tiles select, dividers drag ratios, filmstrip
+columns select. Let go over another pane (the pane under the pointer, with
+any number of screens; anywhere on it, its title included) and the two
+screens trade trees: screen 1's tree goes to screen 2 and screen 2's to
+screen 1, so their slots move between the monitors while the screens keep
+their numbers, left to right. Each tree goes whole: its place for other
+windows (its `*` leaf, or none, where the engine puts them), a scroll
+branch's column width, and `t`'s memory of the tiles it came from. `p` is
+the keys' way: the selected screen with the next (round from the last to
+the first; on a layout of one screen the help row leaves it out and it is
+refused). It is a layout edit like any other: into both panes' drafts
+(`edited`, `w` applies them in one `set_trees`, so both screens change in
+one edit; Ctrl+S saves, `d` reverts a screen), the message naming the
+desks that share the layout (fork it in the Desk tab first), and on a
+workspace using the shared trees asking first whom it is for (all
+workspaces or only this one). The selection goes with the dragged (or
+`p`'s) screen's tree. A screen with no tree there is not swapped (the
+message says why). While held (as an Assignment row's drag): the dragged
+pane dimmed, a `DragGhost` by the pointer (the screen's title, then the
+slots its tree places), and over another pane that whole pane, title
+included, outlined in the accent with a faint accent fill and the label
+`Swap with screen 2` under the ghost; over its own pane or outside the
+panes nothing is outlined and no label shows, and letting go does
+nothing; Esc while held lets it go (the panel stays open; other keys
+wait). An open hand over a title that drags (an editable layout of more
+than one screen, no prompt open), a closed hand while dragging.
 **Other windows** (windows assigned to no slot) always have a place in
 every tree: its `*` leaf, else where the engine puts them (a column at the
 right, `h[tree:3, *:1]`; after a scroll branch's columns). `o` shows or
@@ -1267,6 +1299,7 @@ each with its key and its description and nothing else (below).
 | H J K L | along its container: pair it with its neighbour in a new container across; across: move it out beside its container |
 | / | on a tiled tree: flip every split of the tree; on a scroll branch refused (its columns always stand in a row), and the help row leaves it out |
 | t | cycle tiles → scroll half → scroll full → tiles: a tiled tree becomes `scroll:0.5[...]` of its leaves in reading order (other windows' place, `*`, as the column they take), that becomes `scroll[...]` (any other width too), and that goes back to the tree it was made from while its columns are as they were, else its columns side by side; the slot order is kept |
+| p | swap the selected screen's tree with the next screen's (round); by mouse, drag a pane by its title onto another (above) |
 | r | on a tiled tree: prompt for the whole tree's ratio (grammar below; the current one shown, empty clears all); on a scroll branch refused (ratios are for tiles), and the help row leaves it out; by mouse, drag a divider (above) |
 | o | show/hide other windows: where windows assigned to no slot go, in the picture (it changes no tree; moving it with hjkl writes its `*`) |
 | w | apply the edited panes (`set_trees`) |
@@ -1281,10 +1314,12 @@ each with its key and its description and nothing else (below).
 
 The help row is one line at the panel's width (`Layout.pictureHelp`), the
 keys grouped, the trigger keys highlighted: `←↑↓→ select  hjkl/HJKL move
-/ flip  t scroll half  r ratios  o other windows · w apply  d revert
+/ flip  t scroll half  r ratios  p swap  o others · w apply  d revert
 R record  u use shared · s slots · [ ] 1–9 - workspace · Tab view`
 (`t`'s label names the next mode,
-`/` and `r` only on tiles, `u` only on a workspace with trees of its own).
+`/` and `r` only on tiles, `p` only on a layout of more than one screen,
+`u` only on a workspace with trees of its own; `o`'s label is `others` to
+keep the row one line with all of them, ten workspaces' `0` too).
 A layout set in config.lua's code, a config without slots.lua, or the engine being
 off shows `Read only: <why>` (naming no file: `layout 'x' is set by code in
 your config`) and refuses the editing keys. No text the editor shows names
@@ -1914,6 +1949,17 @@ unassign after the move naming main, the slot it was in;
   equal and outlined), the tip on hover by the real pointer; after
   HEADLESS-3 is removed, solo active and dual's screen 2 outlined where it
   was recorded (screenshots `.e2e-tmp/editor-desk-map[-<theme>]-*.png`).
+  `e2e/editor_screen_swap.sh` (also `make e2e-editor`): two outputs, layout
+  dual shared with a never-connected desk, workspace 3 tiles on screen 1
+  and `scroll:0.5[...]` on screen 2; screen 1's pane dragged by its title
+  with the real pointer: over itself nothing, Esc while held nothing (the
+  panel open), held over screen 2 its pane outlined, the ghost and `Swap
+  with screen 2` (a screenshot mid-drag), let go the drafts swapped and the
+  message naming the sharing desk; `w` moving the windows between the
+  monitors (workspace 3 scrolling, 13 on lua:slots), Ctrl+S saving it; `p`
+  swapping back and `w` moving them back; `p` on a workspace using the
+  shared trees asking first (screenshots
+  `.e2e-tmp/editor-screen-swap[-<theme>]-*.png`).
   `make e2e-editor-multimon`
   (`e2e/editor_multimon.sh`, opt-in, the same tools) looks rather than
   tests: the editor on a 2-screen desk (HEADLESS-2 and a 2560x1440

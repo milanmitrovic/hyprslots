@@ -208,6 +208,12 @@ ShellRoot {
       return panel.assignmentDragText()
     }
 
+    // A screen's pane dragged by its title in the Layout view: "1 -> Swap
+    // with screen 2", "" for none.
+    function screenDrag(): string {
+      return panel.layoutScreenDragText()
+    }
+
     function layoutMode(): string {
       return panel.layoutModeText()
     }
