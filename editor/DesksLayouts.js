@@ -330,11 +330,16 @@ function sharedNote(names) {
     + ": edits here change it there too — fork it in the Desk tab."
 }
 
-// The active desk's monitors by display name, left to right as its
-// selectors list them ("Built-in + Odyssey G95NC"), "" when the engine
-// names none.
+// The active desk's monitors by display name in screen order, left to
+// right as its map numbers them (its geometry's screens; without one, as
+// its selectors list them): "Built-in + Odyssey G95NC", "" when the
+// engine names none.
 function deskMonitors(d) {
-  return d && Array.isArray(d.displays) ? d.displays.join(" + ") : ""
+  if (!d || !Array.isArray(d.displays)) return ""
+  var geometry = Array.isArray(d.geometry) && d.geometry.length === d.displays.length ? d.geometry : null
+  var order = d.displays.map(function(display, i) { return { display: display, screen: geometry ? geometry[i].screen : i + 1 } })
+  order.sort(function(a, b) { return a.screen - b.screen })
+  return order.map(function(o) { return o.display }).join(" + ")
 }
 
 // The panel's header line, on every tab.

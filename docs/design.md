@@ -961,7 +961,7 @@ the message band's are the theme's radius (`Style.cornerRadius`, which
 follows Hyprland's `decoration:rounding`): square when it is 0. Beside them, in
 every tab and quietly (muted, small), what the edits go to: `Desk:
 home (Built-in + Odyssey G95NC) · Layout: ultrawide (also used by: office)`
-(the desk's monitors by display name; `Desk: none` with no
+(the desk's monitors by display name, in screen order as the Desk tab lists them; `Desk: none` with no
 active desk, `; new, unsaved` in the brackets after a desk the engine made for new
 monitors), then `● unsaved (Ctrl+S)` in the urgent colour while
 there are any. Every edit outside the Desk view goes to the

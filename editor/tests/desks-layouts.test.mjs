@@ -204,6 +204,12 @@ test("deleting a used layout offers the layouts with as many screens to move its
     remap: [] });
 });
 
+test("the panel's header names the desk's monitors in screen order, as the Desk tab does", () => {
+  const state = mapState();
+  state.layout = "docked";
+  assert.equal(D.header(state), "Desk: docked (HEADLESS-2 + HEADLESS-3) · Layout: docked (also used by: office)");
+});
+
 test("the panel's header names the desk, its layout and the other desks that share it", () => {
   const state = fixture();
   assert.equal(D.header(state), "Desk: docked (Built-in + Odyssey G95NC) · Layout: docked (also used by: office)");
