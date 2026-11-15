@@ -342,7 +342,7 @@ function initialPage(state, workspaceId) {
 }
 
 // The message after `a` (take_spec's reply): the slot the window took, the
-// window it replaced and the one that gave the slot up.
+// window it replaced, the one that gave the slot up and the slot it left.
 function assignedText(state, cls, reply) {
   var text = "Assigned " + cls + " to " + reply.slot + " on workspace " + reply.workspace
   if (reply.replaced && reply.replaced !== reply.spec) text += " (instead of " + reply.replaced + ")"
@@ -351,6 +351,11 @@ function assignedText(state, cls, reply) {
     var gone = reply.displaced
     for (var i = 0; i < windows.length; i++) if (windows[i].address === reply.displaced) gone = windows[i].class
     text += "; " + gone + " gave it up"
+  }
+  // The slot it moved out of, its spec cleared with the move (take_spec's left).
+  if (reply.left) {
+    text += "; " + reply.left.slot + (reply.left.workspace !== reply.workspace ? " on workspace " + reply.left.workspace : "")
+      + " is empty now"
   }
   return text + ". Ctrl+S saves."
 }

@@ -252,6 +252,16 @@ test("the message after a says which slot the window took, whom it replaced and 
   assert.equal(A.placedText, undefined);
 });
 
+test("the message after a moving a window out of another slot says that slot is empty now", () => {
+  const state = { windows: [{ address: "0xf", class: "foot" }] };
+  assert.equal(A.assignedText(state, "t-main", { slot: "right", workspace: 3, spec: "t-main", replaced: "t-right",
+    left: { workspace: 3, slot: "main", spec: "t-main" } }),
+    "Assigned t-main to right on workspace 3 (instead of t-right); main is empty now. Ctrl+S saves.");
+  assert.equal(A.assignedText(state, "t-main", { slot: "main", workspace: 5, spec: "t-main", displaced: "0xf",
+    left: { workspace: 3, slot: "main", spec: "t-main" } }),
+    "Assigned t-main to main on workspace 5; foot gave it up; main on workspace 3 is empty now. Ctrl+S saves.");
+});
+
 test("the help row: a only on a window, u only where there is something to unassign", () => {
   const state = fixture();
   const rows = A.rows(state, 3);
