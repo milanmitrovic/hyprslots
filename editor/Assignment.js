@@ -103,6 +103,24 @@ function slotOrder(state, workspace) {
   return out
 }
 
+// Where slot `slot`'s mini-map comes from: the screen of the active
+// layout whose tree for workspace `workspace` places it (as state reports
+// it: the workspace's own, else the default ones), that tree's text and the
+// active desk's monitor there; null when no tree places it.
+function miniMapSource(state, workspace, slot) {
+  var layout = activeLayout(state)
+  if (!layout || !layout.workspaces) return null
+  var branches = layout.workspaces[String(workspace)] || {}
+  for (var r = 1; r <= (layout.screens || 0); r++) {
+    var branch = branches[String(r)]
+    if (branch && Array.isArray(branch.slots) && branch.slots.indexOf(slot) >= 0) {
+      var screens = state && Array.isArray(state.screens) ? state.screens : []
+      return { screen: r, tree: branch.tree, connector: screens[r - 1] || "" }
+    }
+  }
+  return null
+}
+
 function windowList(state) {
   return state && Array.isArray(state.windows) ? state.windows : []
 }

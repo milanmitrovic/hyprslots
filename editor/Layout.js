@@ -1264,6 +1264,41 @@ function filmstrip(root, area, opts) {
   return { label: modeLabel(root), viewport: viewport, columns: columns }
 }
 
+// The Assignment view's mini-map of a tree (its text, as state has it) on
+// one screen, `size` { w, h } pixels, the slot `slot` lit: the Layout
+// picture's own geometry at thumbnail size, without the place for other
+// windows (picture, no o). { kind: "tiles" | "scroll" | "none", tiles: [{
+// kind, key, x, y, w, h, selected, visible? }] }: a tiled tree's leaves
+// (rects, no padding or titles), a scroll tree's columns (filmstrip, one
+// screen across, scrolled to the slot's column; `visible` how much of each
+// is on the screen), none for no tree or one that does not parse.
+function miniMap(text, slot, size) {
+  var none = { kind: "none", tiles: [] }
+  if (!text) return none
+  var parsed = parse(String(text))
+  if (!parsed.node) return none
+  var node = picture(parsed.node, false)
+  var area = { x: 0, y: 0, w: size.w, h: size.h }
+  if (node.kind === "scroll") {
+    var strip = filmstrip(node, area, { aspect: size.h > 0 ? size.w / size.h : 0, span: 1, selected: slot })
+    return { kind: "scroll", tiles: strip.columns.map(function(c) {
+      return { kind: c.kind, key: c.key, x: c.x, y: c.y, w: c.w, h: c.h, selected: c.selected, visible: c.visible }
+    }) }
+  }
+  var leavesOnly = rects(node, area, { selected: slot }).filter(function(r) { return r.kind === "slot" || r.kind === "overflow" })
+  return { kind: "tiles", tiles: leavesOnly.map(function(r) {
+    return { kind: r.kind, key: r.key, x: r.x, y: r.y, w: r.w, h: r.h, selected: r.selected }
+  }) }
+}
+
+// A mini-map's size: the screen's shape (`aspect`, width / height; 16:9 for
+// an unknown one), as large as fits `maxW` x `maxH`.
+function miniMapSize(aspect, maxW, maxH) {
+  var a = aspect > 0 ? aspect : 16 / 9
+  var w = Math.min(maxW, Math.round(maxH * a))
+  return { w: w, h: Math.min(maxH, Math.round(w / a)) }
+}
+
 // The ratio prompt for a tree (aerolayout's [r]): { text } or { error } when
 // there is nothing a ratio could divide.
 function ratioPrompt(root) {
