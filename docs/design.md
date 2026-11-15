@@ -13,7 +13,9 @@ an override for a real difference (§3, §9); then **one set of slots**:
 every tree holds every global slot (an empty one closes up, so a slot is
 used by filling it, never by placing it), a scroll branch says its own
 column width (`scroll:0.5[...]` half the screen, `scroll[...]` full), and
-pinned screens are gone (§3, §4, §6, §9).
+pinned screens are gone (§3, §4, §6, §9); then **first run**: a fresh
+install starts on a starter config and zero slots, and the editor guides a
+newcomer from there (§4, §9).
 Targets Hyprland 0.56.2 (Lua config) on Omarchy 4.5.
 
 ## 1. Purpose
@@ -111,6 +113,25 @@ Two files under `$XDG_CONFIG_HOME/hyprslots/` (default `~/.config/hyprslots/`):
 - `slots.lua` — data only, owned by the editor (§9). The editor rewrites it
   through the serializer; the user does not hand-edit it. Loaded in an empty
   environment, so it can only be a table literal.
+
+**First run.** With no `config.lua` (a fresh install) the engine writes a
+starter one (`starter.lua`): commented for someone who has never seen
+hyprslots (what slots are, that `slots.lua` is the editor's and rewritten on
+save, that `config.lua` is real Lua and theirs, with examples), and passing
+every field of `slots.lua` through (`slots`, `specs`, `desks`, `layouts`,
+`monitor_names`, `workspaces`), so the editor can edit all of it; and an
+empty `slots.lua` (`return {}`) where there is none. The config dir is made
+when it is not there. A file that is there is never written over: the
+starter is written only where `config.lua` is missing (a `config.lua` with
+no `slots.lua` beside it stays a config error), and `slots.lua` only where it
+is missing too. This is logged, with no notification; a starter that cannot
+be written is a config error, notified. The engine then runs with **zero
+slots**: the connected monitors get a desk and a layout of their own a second
+later (§8), a layout with no trees (nothing to place), so no workspace is
+laid out by hyprslots until the first slot is made; that slot goes into the
+layout's tree at once (no layout is treeless, below), and `save` writes it
+beside the starter. The editor guides the rest (§9, "First run and empty
+states").
 
 Sketch:
 
@@ -835,7 +856,49 @@ the running engine only through Hyprland:
 | `Services.js` | where the service registers itself, for a bar widget whose bar hands it no `serviceFor` |
 | `AssignmentView.qml`, `LayoutView.qml`, `DesksLayoutsView.qml` | aerolayout's Assignment, Layout (with its logical slots as a list beside the screens) and monitors views (below) |
 | `ui/` (`qmldir`) | the editor's design system, one component per kind of element, all from the theme (below): `Tokens` (a singleton: colours, spacing, the Layout picture's divider band and line, the ratio label by the pointer), `SectionHeader`, `WorkspaceSwitcher`, `InfoText`, `ProblemText`, `Placeholder`, `TableHeader`, `TableRow`, `TableCell`, `PaneTitle`, `KeyCap`, `ActionButton`, `Toolbar` |
-| `Protocol.js`, `Assignment.js`, `Layout.js`, `Slots.js`, `DesksLayouts.js`, `Prompts.js`, `Workspaces.js`, `BarStatus.js`, `Help.js`, `Messages.js` | pure logic, tested under node (`editor/tests/`); `Slots.js` is the slot list's, `Workspaces.js` the workspace keys', `DesksLayouts.js` the Desk view's and the panel header's, `Help.js` the help rows', `Messages.js` the message band's |
+| `Protocol.js`, `Assignment.js`, `Layout.js`, `Slots.js`, `DesksLayouts.js`, `Prompts.js`, `Workspaces.js`, `BarStatus.js`, `Help.js`, `Messages.js`, `Guide.js` | pure logic, tested under node (`editor/tests/`); `Slots.js` is the slot list's, `Workspaces.js` the workspace keys', `DesksLayouts.js` the Desk view's and the panel header's, `Help.js` the help rows', `Messages.js` the message band's, `Guide.js` the opening tab's and every empty state's (below) |
+
+**Opening tab.** The panel opens on the Layout tab while there are no
+global slots (that is where they are made), else on the Assignment tab
+(`Guide.openingTab`); a tab the open payload asks for wins (the bar's
+Record: `{"record": true}`, the Layout tab; `{"tab": "Desk"}` by name). The
+choice is made again on the first state read after opening (the state the
+panel had may be older, or none), unless a tab was picked meanwhile.
+
+**First run and empty states** (`Guide.js`, drawn with the shared
+`Placeholder`, `InfoText` and `ActionButton`). Every empty state points to
+the next step, in plain words (no "spec", "overflow" or "tree"):
+
+- **Layout tab, zero slots**: in the picture's place, `Start with your
+  slots`, then `Slots are named places on your screens, like left, main and
+  right. Each app you assign goes into its slot.` and `You choose the names,
+  and how many. Arrange them here, then put windows into them in the
+  Assignment tab.`, and one button, `[a] Create your first slot` (the
+  picture's `a` while it shows; the help row is `create your first slot ·
+  slots · Tab view q close`): the slot list's create prompt (a name,
+  `Name your first slot (main, left, notes…)`, then an optional
+  description; the key is picked from the name, §4), `Made slot 'main': it
+  shows in the picture. Ctrl+S saves.` No starter set of slots is offered.
+  Not shown where no slot can be made (the slots are config.lua's, a config
+  error, hyprslots off): the problem line says why.
+- **Layout tab, slots but nothing assigned anywhere** (no workspace has a
+  spec): a line under the header, `Add more slots (s, then a), or go to
+  Assignment (Tab) to put windows into them.`
+- **Assignment tab, zero slots**: `Define slots in the Layout tab first:
+  they are the places your windows go into.` and a button, `[Tab] Go to
+  Layout`, in place of the table.
+- **A workspace with nothing assigned** (no window in a slot, none waited
+  for, none overflowing): a line over its table, `Select a window and press
+  a (or click assign) to put it into a slot.`, or, with no window there,
+  `Open an app on workspace N, then select it here and press a (or click
+  assign).`
+- **Desk tab**: never empty (the engine makes a desk for the monitors);
+  its opening line: `A desk is a monitor setup; its layout is how your
+  slots are arranged on its screens. The other tabs edit the active desk's
+  (●).`
+- **Bar widget, zero slots**: `󰕰 set up` with a small accent dot at the
+  glyph's top right, the tooltip `Hyprslots: no slots yet` / `Click to set
+  up your slots`; gone once a slot exists.
 
 **Every view.** The panel's keys come first: Tab / Shift+Tab cycle the
 tabs (Assignment, Layout, Desk), **Ctrl+S saves** (api
@@ -1208,6 +1271,7 @@ from Quickshell's Hyprland objects, with no state read.
 | State | Shows |
 |---|---|
 | normal | `󰕰 scroll` in the bar's foreground |
+| zero slots (a fresh install) | `󰕰 set up` and an accent dot at the glyph's top right; the tooltip "no slots yet", "Click to set up your slots" (a click opens the panel on its Layout tab); no unsaved dot meanwhile |
 | unsaved edits (`dirty`) | `󰕰 scroll •`, the tooltip says "unsaved edits" |
 | error | the bar's urgent colour, the error first in the tooltip: the service missing, a state read failing (hyprctl, `hyprslots` not loaded: `󰕰 hyprslots` until a state was read, else the last one), `refused` (`󰕰 off`), `config_error` (the running config still shown) |
 
@@ -1502,6 +1566,7 @@ Under `lua/hyprslots/`:
 | pure | `assign` | windows → slots |
 | pure | `serialize` | write `slots.lua` and tree text deterministically |
 | pure | `slot_key` | each global slot's key: check one, pick a new slot's, fill the ones missing (§4) |
+| adapter | `starter` | a fresh install's starter `config.lua` and empty `slots.lua`, written only where missing (§4) |
 | pure | `dkjson` | vendored JSON |
 | adapter | `init` | `setup()`, wrapped in `pcall`, never takes Hyprland down |
 | adapter | `hl_adapter` | the only module that touches `hl` |
@@ -1559,6 +1624,7 @@ with Omarchy's gaps (5/10, border 2).
 | Shared trees | one shared tree per layout and screen ("All workspaces", the default trees) instead of the cutover's per-workspace copies cut down to each workspace's slots (empty slots close up anyway): `edit.redundant_with_default`, api `fold_trees` and `drop_override`, `take_spec` `place` into the shared trees for a workspace without its own; the Layout view opening on All workspaces, first in the strip, overrides dotted, the first edit of a workspace on the shared tree asking all or only this one, `u` dropping an override; the user's layouts folded (only `wide` and `dual` workspace 3 keep their own) | done 2026-11-09 |
 | One set of slots | every tree holds every global slot (`migrate.normalize` on load and every edit; an empty slot closes up), so nothing places or takes out a slot: the Layout tab's `a` / `x`, `take_spec` `place` and `edit.place_slot` go, a new slot is in every tree; a scroll branch's own column width (`scroll:0.5[...]`, config.lua's `scroll.width` migrated into the trees), the Layout tab's `t` cycling tiles, scroll half and scroll full, scroll branches drawn as a filmstrip, `r` on tiles only; `d` reverts; fork only in the Desk tab; pinned screens removed (migrated away); the Layout header one strip and its help one line; no file names in the editor's text | done 2026-11-09 |
 | Monitor names | display names for monitors (Built-in, the model from the description less make and serial, the user's label in slots.lua `monitor_names`) everywhere the editor shows one; the Desk tab's `m`; api `set_monitor_name`, `display` / `displays[]`; new desks named after them (`built-in+odyssey-g95nc`) | done 2026-11-11 |
+| First run | a fresh install: the starter config.lua and empty slots.lua (`starter.lua`), zero slots running; the panel opening on Layout with no slots, else Assignment; every empty state pointing to the next step (`Guide.js`: the Layout tab's explanation and "Create your first slot", the Assignment tab's way back to it, a workspace's how-to-assign line, the Desk tab's opening line); the bar's set-up state; README's Getting started | done 2026-11-15 |
 
 Slices 2 to 6 were built in parallel on top of slices 1 and 2 and
 integrated on `feature/engine`; the cross-slice behaviour (keyboard-resized
@@ -1670,7 +1736,16 @@ Parked:
   screenshots `26-mouse-toolbar-hover` to `31-mouse-desk-chips`), and writes screenshots to
   `.e2e-tmp/editor-smoke-*.png` (the Layout tab on tiles, scroll half and
   scroll full: `8a-layout-tiles`, `8b-layout-scroll-half`,
-  `8c-layout-scroll-full`). `make e2e-editor-multimon`
+  `8c-layout-scroll-full`). `e2e/editor_first_run.sh` (also `make
+  e2e-editor`) starts from no config dir at all: the starter files written,
+  zero slots, a desk made; the bar's set-up state; the panel opening on the
+  Layout tab's explanation, the Assignment tab's button back to it, the
+  Desk tab; "Create your first slot" clicked with the real pointer, the
+  prompt answered, the picture showing the slot and the next-step line, the
+  bar's set-up state gone; Ctrl+S saving it with config.lua untouched; the
+  panel then opening on the Assignment tab with its how-to-assign line, gone
+  once the window is assigned (screenshots
+  `.e2e-tmp/editor-first-run[-<theme>]-*.png`). `make e2e-editor-multimon`
   (`e2e/editor_multimon.sh`, opt-in, the same tools) looks rather than
   tests: the editor on a 2-screen desk (HEADLESS-2 and a 2560x1440
   HEADLESS-3, layout `dual` with slots on both screens, foot windows in
