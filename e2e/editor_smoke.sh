@@ -1170,10 +1170,14 @@ mouse_drops() {
   eventually 5 bash -c "[[ \$($watch message) == 'Assigned t-stray to main'* ]]" || fail "after the drop on main: $(smoke message)"
   eventually 5 smoke_idle || true
   expect_eq "t-stray moved to main" '{"slot":"main","workspace":3}' "$(assignment_of "$stray")"
-  if [[ $(smoke message) == *"; t-main gave it up. Ctrl+S saves." ]]; then pass "t-main gave main up, as with a: $(smoke message)"
-  else fail "message: $(smoke message)"; fi
+  expect_eq "t-main gave main up, as with a, and $empty is empty now" \
+    "Assigned t-stray to main on workspace 3; t-main gave it up; $empty is empty now. Ctrl+S saves." "$(smoke message)"
   if [[ $(assignment_of "$main") != '{"slot":"main","workspace":3}' ]]; then pass "t-main is out of main: $(assignment_of "$main")"
   else fail "t-main still holds main"; fi
+  # the slot it left is cleared with the move: empty, not Missing t-stray
+  expect_eq "workspace 3 no longer says what fills $empty" "null" "$(api_state | jq -c --arg s "$empty" '.specs["3"][$s]')"
+  if [[ -n $(smoke rows | awk -v RS='; ' -F'|' -v s="$empty" '$1 == s && $2 == "—" && $3 == "—"') ]]; then pass "the $empty row is empty again, not Missing"
+  else fail "the $empty row: $(smoke rows)"; fi
 
   # let go on the slot it is in: nothing (a drag clears the band, as a
   # prompt does, and says nothing new)
@@ -1200,13 +1204,8 @@ mouse_drops() {
   wait "$SMOKE_DRAG_PID" 2>/dev/null
   eventually 5 bash -c "[[ \$($watch message) == Unassigned* ]]" || fail "after the drop on the other windows: $(smoke message)"
   eventually 5 smoke_idle || true
-  # (u's own message: t-stray's spec is side's too since a moved it, so
-  # clearing main's re-routes it there first, and the api names that slot)
-  if [[ $(smoke message) == 'Unassigned t-stray from '*' on workspace 3: the slot is empty. Ctrl+S saves.' ]]; then
-    pass "the message is u's: $(smoke message)"
-  else
-    fail "message: $(smoke message)"
-  fi
+  expect_eq "the message is u's, naming the slot it was in" \
+    "Unassigned t-stray from main on workspace 3: the slot is empty. Ctrl+S saves." "$(smoke message)"
   if unassigned "$stray"; then pass "t-stray is unassigned"
   else fail "t-stray: $(assignment_of "$stray")"; fi
   expect_eq "workspace 3 no longer says what fills main" "null" "$(api_state | jq -c '.specs["3"].main')"
