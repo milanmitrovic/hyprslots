@@ -60,7 +60,7 @@ test("a desk row has its monitors, whether each is connected and which monitor i
   const rows = plain(D.rows(fixture()));
   assert.deepEqual(rows[0], {
     kind: "desk", key: "desk:docked", name: "docked", active: true, auto: false, readOnly: false, layout: "docked",
-    screens: 2,
+    screens: 2, geometry: [],
     monitors: [
       { selector: "eDP-1", connected: true, connector: "eDP-1", description: "BOE 0x0BCA", display: "Built-in", label: "" },
       { selector: SAMSUNG, connected: true, connector: "DP-2", description: SAMSUNG, display: "Odyssey G95NC", label: "" },
@@ -270,4 +270,60 @@ test("an action a read-only row refuses looks unavailable: a desk's a, r, x; a l
   const desk = { ...rows[0], readOnly: true };
   assert.deepEqual(off(desk), ["a", "r", "x"]);
   assert.deepEqual(off(rows[6]), ["r", "x"], "layout wide is set in the config; it may still go on the active desk");
+});
+
+// The Desk tab's mini-maps: each desk's monitors as the engine reports them
+// (state.desks[].geometry: one box per selector, its screen number), fitted
+// into the map's box at their own shape.
+const DUAL_GEOMETRY = [
+  { x: 2400, y: 135, w: 1920, h: 1080, screen: 2 },
+  { x: 0, y: 0, w: 2400, h: 1350, screen: 1 },
+];
+
+function mapState() {
+  const state = fixture();
+  state.desks.docked.monitors = ["HEADLESS-3", "HEADLESS-2"];
+  state.desks.docked.displays = ["HEADLESS-3", "HEADLESS-2"];
+  state.desks.docked.connected = [false, true];
+  state.desks.docked.geometry = DUAL_GEOMETRY;
+  return state;
+}
+
+test("a desk's map fits its monitors' boxes into the map's box at their shape, screen by screen", () => {
+  const row = D.rows(mapState())[0];
+  const map = plain(D.deskMap(row, 72, 36));
+  // 4320 x 1350 logical: 72 px across, 22.5 (23) down
+  assert.deepEqual([map.w, map.h], [72, 23]);
+  assert.deepEqual(map.screens.map((s) => [s.screen, s.x, s.y, s.w, s.h, s.connected, s.display]), [
+    [1, 0, 0, 40, 23, true, "HEADLESS-2"],
+    [2, 40, 2, 32, 18, false, "HEADLESS-3"],
+  ]);
+});
+
+test("a desk's map is as tall as the box allows when the desk is narrow", () => {
+  const state = fixture();
+  state.desks.laptop.geometry = [{ x: 0, y: 0, w: 1080, h: 1920, screen: 1 }];
+  const map = plain(D.deskMap(D.rows(state)[1], 72, 36));
+  assert.deepEqual([map.w, map.h], [20, 36]);
+  assert.deepEqual(map.screens.map((s) => [s.screen, s.x, s.y, s.w, s.h]), [[1, 0, 0, 20, 36]]);
+});
+
+test("two equal screens side by side share the width; boxes meet without a gap or an overlap", () => {
+  const state = fixture();
+  state.desks.office.geometry = [{ x: 0, y: 0, w: 1600, h: 900, screen: 1 }, { x: 1600, y: 0, w: 1600, h: 900, screen: 2 }];
+  const map = plain(D.deskMap(D.rows(state)[2], 72, 36));
+  assert.deepEqual([map.w, map.h], [72, 20]);
+  assert.deepEqual(map.screens.map((s) => [s.screen, s.x, s.w]), [[1, 0, 36], [2, 36, 36]]);
+});
+
+test("a desk the state gives no geometry is its monitors as equal boxes side by side", () => {
+  const row = D.rows(fixture())[0];
+  const map = plain(D.deskMap(row, 72, 36));
+  assert.deepEqual(map.screens.map((s) => [s.screen, s.x, s.w, s.display]),
+    [[1, 0, 36, "Built-in"], [2, 36, 36, "Odyssey G95NC"]]);
+});
+
+test("a desk's map tip names its screens by number and display name, saying which are not connected", () => {
+  assert.equal(D.deskMapTip(D.rows(mapState())[0]), "1 HEADLESS-2 · 2 HEADLESS-3 (not connected)");
+  assert.equal(D.deskMapTip(D.rows(fixture())[1]), "1 Built-in");
 });

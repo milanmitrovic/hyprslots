@@ -9,7 +9,8 @@
 // (editor/tests/desks-layouts.test.mjs).
 //
 // A row is a desk { kind: "desk", key, name, active, auto, readOnly, layout,
-// screens (its monitor count), monitors: [{ selector, connected,
+// screens (its monitor count), geometry (state's: one { x, y, w, h, screen }
+// per monitor, deskMap draws it), monitors: [{ selector, connected,
 // connector, description, display (the name shown: the user's label, else
 // Built-in, the model...; the engine's), label (the user's, "" when none)
 // }] } or a layout { kind: "layout", key, name,
@@ -52,6 +53,7 @@ function deskRow(state, name) {
     readOnly: !!d.read_only,
     layout: d.layout || "",
     screens: selectors.length,
+    geometry: Array.isArray(d.geometry) ? d.geometry.slice() : [],
     monitors: selectors.map(function(selector, i) {
       var on = connected[i] === true
       var m = on ? findMonitor(selector, list) : null
@@ -110,6 +112,46 @@ function deskCells(row) {
     monitors: row.monitors.map(monitorText).join(" + "),
     layout: "→ " + row.layout,
   }
+}
+
+// A desk's mini-map (the Desk tab's leading column, ui/DeskMap): its
+// monitors' boxes (row.geometry, the engine's: the live ones on the active
+// desk, else those recorded when it last was, else equal boxes; equal boxes
+// here too when state has none) fitted into maxW x maxH at their own shape:
+// { w, h (the fitted size), screens: [{ screen, x, y, w, h, connected,
+// display }] } by screen number, the layout's (1 the left-most). Edges are
+// rounded, not sizes, so screens that meet still meet.
+function deskMap(row, maxW, maxH) {
+  var n = row.monitors.length
+  var boxes = row.geometry.length === n && n > 0 ? row.geometry : row.monitors.map(function(m, i) {
+    return { x: i * 1600, y: 0, w: 1600, h: 900, screen: i + 1 }
+  })
+  if (n === 0) return { w: 0, h: 0, screens: [] }
+  var left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity
+  boxes.forEach(function(b) {
+    left = Math.min(left, b.x)
+    top = Math.min(top, b.y)
+    right = Math.max(right, b.x + b.w)
+    bottom = Math.max(bottom, b.y + b.h)
+  })
+  var width = right - left, height = bottom - top
+  var scale = Math.min(maxW / width, maxH / height)
+  var screens = boxes.map(function(b, i) {
+    var x0 = Math.round((b.x - left) * scale), y0 = Math.round((b.y - top) * scale)
+    var x1 = Math.round((b.x + b.w - left) * scale), y1 = Math.round((b.y + b.h - top) * scale)
+    var m = row.monitors[i]
+    return { screen: b.screen, x: x0, y: y0, w: x1 - x0, h: y1 - y0, connected: m.connected, display: m.display }
+  })
+  screens.sort(function(a, b) { return a.screen - b.screen })
+  return { w: Math.round(width * scale), h: Math.round(height * scale), screens: screens }
+}
+
+// What hovering a desk's mini-map says: its screens by number and display
+// name, "1 Built-in · 2 Odyssey G95NC (not connected)".
+function deskMapTip(row) {
+  return deskMap(row, 1, 1).screens.map(function(s) {
+    return s.screen + " " + s.display + (s.connected ? "" : " (not connected)")
+  }).join(" · ")
 }
 
 // The column titles over a section's rows ("desk" or "layout"), keyed as
