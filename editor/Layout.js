@@ -807,6 +807,288 @@ function paneAt(x, count, width, gap) {
   return Math.max(0, Math.min(count - 1, i))
 }
 
+// --- dragging a slot ----------------------------------------------------------
+
+// A tile's edge band, as a share of the tile across that axis: a drop
+// there puts the dragged slot beside the tile on that side; nearer the
+// middle it swaps the two.
+var EDGE_BAND = 0.25
+
+// Where on tile `rect` ({ x, y, w, h }) the point x, y is: "centre", or the
+// side ("left", "right", "up", "down") whose edge band holds it; in a corner
+// the nearer edge, as a share of the tile.
+function tileZone(rect, x, y) {
+  var fx = rect.w > 0 ? (x - rect.x) / rect.w : 0.5
+  var fy = rect.h > 0 ? (y - rect.y) / rect.h : 0.5
+  var sides = [["left", fx], ["right", 1 - fx], ["up", fy], ["down", 1 - fy]]
+  var best = sides[0]
+  for (var i = 1; i < sides.length; i++) if (sides[i][1] < best[1]) best = sides[i]
+  return best[1] < EDGE_BAND ? best[0] : "centre"
+}
+
+// The leaf (slot or other windows' place) of `rects` (rects()) under x, y,
+// or null: a container's box is never one.
+function leafAt(rects, x, y) {
+  for (var i = 0; i < (rects || []).length; i++) {
+    var r = rects[i]
+    if ((r.kind === "slot" || r.kind === "overflow") && x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h) return r
+  }
+  return null
+}
+
+// The part of tile `rect` a drop in `zone` lights: the half on that side,
+// the whole tile for the centre.
+function zoneRect(rect, zone) {
+  var hw = Math.round(rect.w / 2)
+  var hh = Math.round(rect.h / 2)
+  if (zone === "left") return { x: rect.x, y: rect.y, w: hw, h: rect.h }
+  if (zone === "right") return { x: rect.x + rect.w - hw, y: rect.y, w: hw, h: rect.h }
+  if (zone === "up") return { x: rect.x, y: rect.y, w: rect.w, h: hh }
+  if (zone === "down") return { x: rect.x, y: rect.y + rect.h - hh, w: rect.w, h: hh }
+  return { x: rect.x, y: rect.y, w: rect.w, h: rect.h }
+}
+
+// The gap between a filmstrip's columns (filmstrip().columns, in order)
+// nearest x: 0 before the first, n after the last.
+function stripGap(columns, x) {
+  var gap = 0
+  for (var i = 0; i < (columns || []).length; i++) if (columns[i].x + columns[i].w / 2 < x) gap = i + 1
+  return gap
+}
+
+// Where gap `index` of a filmstrip is along it (its insertion marker's x).
+function stripGapX(columns, index) {
+  if (!columns || columns.length === 0) return 0
+  if (index >= columns.length) return columns[columns.length - 1].x + columns[columns.length - 1].w
+  return columns[Math.max(0, index)].x
+}
+
+// The leaf as a node of its own, its share kept or `weight`.
+function leafNode(leaf, weight) {
+  var out = { kind: leaf.kind, weight: weight === undefined ? leaf.weight : weight }
+  if (leaf.kind === "slot") out.slot = leaf.slot
+  return out
+}
+
+// The two leaves `a` and `b` of one tree trade places, each keeping its
+// share (×n) as h/l's swap does. { node, changed } or { error }.
+function swapLeaves(root, a, b) {
+  var out = copy(root)
+  if (a === b) return { node: out, changed: false }
+  var pa = pathTo(out, a)
+  var pb = pathTo(out, b)
+  if (!pa || !pb) return { error: "There is no " + (pa ? b : a) + " in this tree." }
+  var la = pa[pa.length - 1].node
+  var lb = pb[pb.length - 1].node
+  pa[pa.length - 2].node.children[pa[pa.length - 1].index] = lb
+  pb[pb.length - 2].node.children[pb[pb.length - 1].index] = la
+  return { node: out, changed: true }
+}
+
+// `leaf` (a node in no tree) put beside the leaf `target` of `root`, on
+// `side`: along the target's split, a child beside it there (its share
+// kept); across it, the target's tile split in two that way (the target's
+// share the new split's); a tree of one tile becomes a split that way.
+// { node } or { error }.
+function placeBeside(root, leaf, target, side) {
+  var out = copy(root)
+  var path = pathTo(out, target)
+  if (!path) return { error: "There is no " + target + " in this tree." }
+  var axis = AXIS[side]
+  var before = STEP[side] < 0
+  if (path.length < 2) {
+    var alone = leafNode(out, 1)
+    var moved = leafNode(leaf, 1)
+    return { node: rooted({ kind: axis, weight: 1, children: before ? [moved, alone] : [alone, moved] }) }
+  }
+  var parent = path[path.length - 2].node
+  var index = path[path.length - 1].index
+  if (axisOf(parent) === axis) {
+    parent.children.splice(before ? index : index + 1, 0, copy(leaf))
+    return { node: rooted(out) }
+  }
+  if (parent.kind === "scroll") return { error: SCROLL_SLOTS }
+  var tile = parent.children[index]
+  var mine = leafNode(leaf, 1)
+  var theirs = leafNode(tile, 1)
+  parent.children[index] = { kind: axis, weight: tile.weight, children: before ? [mine, theirs] : [theirs, mine] }
+  return { node: rooted(out) }
+}
+
+// The leaf `key` dragged onto the `side` edge of the leaf `target` of the
+// same tree: beside it there (placeBeside), out of where it was, which
+// closes up. Next to the target in its split and dropped across it, the
+// two are paired in a new split that way taking both their shares (HJKL's
+// pair). { node, changed } or { error }.
+function insertBeside(root, key, target, side) {
+  if (key === target) return { node: copy(root), changed: false }
+  var out = copy(root)
+  var pk = pathTo(out, key)
+  var pt = pathTo(out, target)
+  if (!pk || !pt) return { error: "There is no " + (pk ? target : key) + " in this tree." }
+  var axis = AXIS[side]
+  var parent = pk.length > 1 ? pk[pk.length - 2].node : null
+  var result
+  if (parent && pt.length > 1 && pt[pt.length - 2].node === parent && axisOf(parent) !== axis) {
+    if (parent.kind === "scroll") return { error: SCROLL_SLOTS }
+    var leaf = pk[pk.length - 1].node
+    var tile = pt[pt.length - 1].node
+    var pair = { kind: axis, weight: leaf.weight + tile.weight, children: STEP[side] < 0 ? [leaf, tile] : [tile, leaf] }
+    parent.children[pt[pt.length - 1].index] = pair
+    parent.children.splice(pk[pk.length - 1].index, 1)
+    result = { node: rooted(out) }
+  } else {
+    result = placeBeside(takeOut(out, key).node, pk[pk.length - 1].node, target, side)
+    if (result.error) return result
+  }
+  return { node: result.node, changed: format(result.node) !== format(root) }
+}
+
+// The columns of a scroll tree as the picture shows them (picture: o's
+// other windows or not), in order; null for a tree that is no filmstrip.
+function stripKeys(node, showOther) {
+  var shown = picture(node, showOther)
+  return shown && shown.kind === "scroll" ? shown.children.map(keyOf) : null
+}
+
+// `leaf` (in no tree) into scroll tree `root` at gap `gap` of its shown
+// columns (`keys`): before the column after the gap, else after the last.
+// { node } or { error }.
+function placeInStrip(root, leaf, keys, gap) {
+  if (!keys || keys.length === 0) {
+    var all = copy(root)
+    all.children.push(copy(leaf))
+    return { node: all }
+  }
+  return gap < keys.length ? placeBeside(root, leaf, keys[gap], "left")
+    : placeBeside(root, leaf, keys[keys.length - 1], "right")
+}
+
+var OTHER_STAYS = "other windows stay on their screen: every screen's tree has its own place for them"
+
+// What letting a dragged slot go does: `from` { screen, key } (the leaf
+// dragged, "*" for other windows' place), `to` the place under the pointer
+// on a pane: { screen, key, zone } a tile (tileZone: "centre" swaps the
+// two, a side puts it beside the tile there), { screen, gap } a gap of a
+// filmstrip (its shown columns', stripGap), { screen } a screen with no
+// tree. On its own screen the tree is edited as the keys would (other
+// windows' place written in first when it is either end); on another
+// screen the slot leaves its tree (closing up) and lands in that one, a
+// share of 1 (the keys' cross-screen move), or a centre drop trades the
+// two slots between the screens. Other windows' place never leaves its
+// screen, and a screen's only slot only goes in a trade. `opts`: {
+// showOther (o: whether the picture shows other windows' place) }.
+// { drafts, screen (where the slot is now), changed } or { error }.
+function slotDrop(drafts, from, to, opts) {
+  opts = opts || {}
+  var a = String(from.screen)
+  var b = String(to.screen)
+  var src = drafts && drafts[a]
+  if (!src || !src.node) return { error: "Screen " + a + " has no tree here." }
+  var out = {}
+  for (var k in drafts) out[k] = drafts[k]
+  var key = from.key
+  var result
+  if (a === b) {
+    var node = key === OVERFLOW || to.key === OVERFLOW ? withOther(src.node) : src.node
+    if (to.gap !== undefined && to.gap !== null) {
+      var keys = stripKeys(node, opts.showOther)
+      if (!keys) return { error: "Screen " + a + "'s tree is no filmstrip." }
+      var anchor = to.gap < keys.length ? keys[to.gap] : keys[keys.length - 1]
+      if (anchor === key) return { drafts: out, screen: a, changed: false }
+      var leaf = pathTo(node, key)
+      if (!leaf) return { error: "There is no " + key + " in this tree." }
+      var rest = takeOut(node, key).node
+      result = placeInStrip(rest, leaf[leaf.length - 1].node, keys.filter(function(k2) { return k2 !== key }),
+        to.gap > keys.indexOf(key) ? to.gap - 1 : to.gap)
+    } else if (to.key === undefined || to.key === null) {
+      return { drafts: out, screen: a, changed: false }
+    } else if (to.zone === "centre") {
+      result = swapLeaves(node, key, to.key)
+    } else {
+      result = insertBeside(node, key, to.key, to.zone)
+    }
+    if (result.error) return { error: result.error }
+    if (format(result.node) === format(node)) return { drafts: out, screen: a, changed: false }
+    out[a] = { node: result.node, base: src.base }
+    return { drafts: out, screen: a, changed: true }
+  }
+
+  if (key === OVERFLOW || (to.key === OVERFLOW && to.zone === "centre")) return { error: OTHER_STAYS }
+  var dst = drafts[b] || { node: null, base: null }
+  var path = pathTo(src.node, key)
+  if (!path) return { error: "There is no " + key + " in this tree." }
+  var dragged = path[path.length - 1].node
+  if (to.zone === "centre" && to.key !== undefined && to.key !== null) {
+    if (!dst.node) return { error: "Screen " + b + " has no tree here." }
+    var there = pathTo(dst.node, to.key)
+    if (!there) return { error: "There is no " + to.key + " on screen " + b + "." }
+    var theirs = there[there.length - 1].node
+    var mine = copy(src.node)
+    var yours = copy(dst.node)
+    var pm = pathTo(mine, key)
+    var py = pathTo(yours, to.key)
+    if (pm.length < 2) mine = leafNode(theirs, 1)
+    else pm[pm.length - 2].node.children[pm[pm.length - 1].index] = leafNode(theirs)
+    if (py.length < 2) yours = leafNode(dragged, 1)
+    else py[py.length - 2].node.children[py[py.length - 1].index] = leafNode(dragged)
+    out[a] = { node: mine, base: src.base }
+    out[b] = { node: yours, base: dst.base }
+    return { drafts: out, screen: b, changed: true }
+  }
+  if (isLeaf(src.node)) return { error: key + " is the only window on this screen; moving it would leave the screen empty" }
+  var moved = leafNode(dragged, 1)
+  var landed
+  if (!dst.node) {
+    landed = { node: moved }
+  } else if (to.gap !== undefined && to.gap !== null) {
+    var strip = stripKeys(dst.node, opts.showOther)
+    if (!strip) return { error: "Screen " + b + "'s tree is no filmstrip." }
+    landed = placeInStrip(dst.node, moved, strip, to.gap)
+  } else if (to.key === undefined || to.key === null) {
+    return { error: "Let go on a tile of screen " + b + " to put " + key + " there." }
+  } else {
+    landed = placeBeside(to.key === OVERFLOW ? withOther(dst.node) : dst.node, moved, to.key, to.zone)
+  }
+  if (landed.error) return { error: landed.error }
+  out[a] = { node: takeOut(src.node, key).node, base: src.base }
+  out[b] = { node: landed.node, base: dst.base }
+  return { drafts: out, screen: b, changed: true }
+}
+
+var SIDE_LABEL = { left: "Put left of ", right: "Put right of ", up: "Put above ", down: "Put below " }
+
+function leafLabel(key) {
+  return key === OVERFLOW ? "other windows" : key
+}
+
+// What letting go there does (slotDrop's arguments), for the ghost's label
+// and the drop preview: { kind: "swap" | "insert", label } ("Swap with
+// main", "Put left of main", "Put between side and chat", "Put on screen
+// 2"), or { kind: "none" } where it changes nothing, with the `reason`
+// when it is refused (said on letting go).
+function slotDropAction(drafts, from, to, opts) {
+  var result = slotDrop(drafts, from, to, opts)
+  if (result.error) return { kind: "none", reason: result.error }
+  if (!result.changed) return { kind: "none" }
+  if (to.gap !== undefined && to.gap !== null) {
+    // the columns either side of the gap, the dragged one (when it is in
+    // this strip) left out
+    var shown = stripKeys(drafts[String(to.screen)].node, (opts || {}).showOther) || []
+    var at = String(to.screen) === String(from.screen) ? shown.indexOf(from.key) : -1
+    var keys = shown.filter(function(k) { return k !== from.key })
+    var gap = at >= 0 && to.gap > at ? to.gap - 1 : to.gap
+    var left = gap > 0 ? keys[gap - 1] : null
+    var right = gap < keys.length ? keys[gap] : null
+    var label = left && right ? "Put between " + leafLabel(left) + " and " + leafLabel(right)
+      : right ? "Put before " + leafLabel(right) : "Put after " + leafLabel(left)
+    return { kind: "insert", label: label }
+  }
+  if (to.key === undefined || to.key === null) return { kind: "insert", label: "Put on screen " + to.screen }
+  if (to.zone === "centre") return { kind: "swap", label: "Swap with " + leafLabel(to.key) }
+  return { kind: "insert", label: SIDE_LABEL[to.zone] + leafLabel(to.key) }
+}
+
 // The slot `key` taken out of a tree, tidied ({ node: null } when it was
 // all of it): an edited draft following the slot list's delete. Never the
 // place for other windows. { node } or { error }.
