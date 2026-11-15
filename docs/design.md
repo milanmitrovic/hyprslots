@@ -798,7 +798,11 @@ workspaces renumbered. When the
 re-route is done it asks for the scroll pass (§6), so scroll columns are
 put in order on the workspaces the windows now sit on, and every workspace
 of the desk is laid out again (a window merged into a workspace before the
-desk changed was placed under the old desk's trees). Keyboard-resized
+desk changed was placed under the old desk's trees): a zero resize of one
+of its windows, which lua:slots takes as a relayout. Never on a workspace on
+Hyprland's scrolling layout, where that resize collapses the window's column
+to 1 px and the scroll pass, having seen the column, would leave it so; the
+scroll pass arranges those (an edit's relayout skips them the same way). Keyboard-resized
 trees are kept per layout, so returning to a desk using that layout brings
 its nudges back. Hotplug never changes a connected screen's view, with one
 exception: a **screen that is plugged (back) in shows the active

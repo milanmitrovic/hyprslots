@@ -484,9 +484,15 @@ end
 --   window.swap             { window, target }: the two trade places
 --   layout "colresize all W" / "colresize W"  on the focused window's
 --                           workspace / column; "fit_into_view" is recorded
+--   window.resize           a relative resize of a window in a column, even
+--                           by 0, 0, collapses that column to its least
+--                           width, 1 px (MIN_WIDTH: Hyprland 0.56.2 does so,
+--                           measured on the e2e host: a full-width column of
+--                           a 2400 px screen became 1 px wide)
 -- New columns are DEFAULT_WIDTH (0.49, Omarchy's side-by-side) wide.
 function M.scrolling(hl)
   local DEFAULT_WIDTH = 0.49
+  local MIN_WIDTH = 1 / 2400
   hl.columns, hl.widths = {}, {}
 
   local function workspace(id)
@@ -633,6 +639,11 @@ function M.scrolling(hl)
       local window = hl.get_window(args.window)
       if window then
         insert(window, false)
+      end
+    elseif dispatcher.dsp == "window.resize" and args.relative then
+      local address = args.window and args.window:match("^address:(.+)$")
+      if address and hl.widths[address] then
+        hl.widths[address] = MIN_WIDTH
       end
     elseif dispatcher.dsp == "window.swap" then
       local a, b = args.window and args.window:match("^address:(.+)$"), args.target and args.target:match("^address:(.+)$")

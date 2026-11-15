@@ -12,6 +12,7 @@
 # x and y scroll on side in full-width columns (0.99 of 1920 = 1901 px, gaps
 # and borders off) in slot order; with side gone, big's workspace 3 goes from
 # lua:slots to scrolling and holds main, x and y in that order, 2376 px each;
+# a reload (an edit's relayout) leaves them so;
 # with side back, x and y return to side in order and main fills big again on
 # lua:slots. No window is ever in a Hyprland group.
 
@@ -119,6 +120,13 @@ test_body() {
   expect_eq "big's workspace 3 scrolls" "scrolling" "$(tiled_layout 3)"
   expect_eq "main, x and y in slot order on big" "t-main t-x t-y" "$(columns 3)"
   expect_eq "full-width columns on big" "2376 2376 2376" "$(widths 3)"
+
+  # An edit's relayout (here a reload: the same config again) leaves them
+  # full width: no zero resize reaches a scrolling workspace, where it would
+  # collapse a column to 1 px.
+  expect_eq "reload" "true" "$(repl 'return hyprslots.api.call("reload", "{}")' | jq -r .ok)"
+  settle 5
+  expect_eq "full-width columns on big after a reload" "2376 2376 2376" "$(widths 3)"
 
   # When side comes back, x and y return to it in order and main fills big
   # again.

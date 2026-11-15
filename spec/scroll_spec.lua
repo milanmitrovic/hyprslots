@@ -381,6 +381,23 @@ describe("a scroll branch", function()
     assert.are.same({ "colresize all 0.99", "fit_into_view" }, layout_msgs())
   end)
 
+  -- An edit relayouts every workspace of the desk with a zero resize (a
+  -- lua layout's relayout); on the scrolling layout that resize collapses
+  -- the column (the stub, as Hyprland does), and the pass, which has seen
+  -- the column already, would never widen it again.
+  it("keeps its columns full width through an edit's relayout", function()
+    setup()
+    local main = open(1, "t-main", 3)
+    focus(main)
+    local left = open(2, "t-left", 3)
+    hl.run_timers()
+    assert.are.equal(0.99, hl.widths[left.address])
+    assert.is_true(call("reload").ok)
+    hl.run_timers()
+    assert.are.equal(0.99, hl.widths[main.address])
+    assert.are.equal(0.99, hl.widths[left.address])
+  end)
+
   it("leaves a column the user resized alone on later passes", function()
     setup()
     local main = open(1, "t-main", 3)

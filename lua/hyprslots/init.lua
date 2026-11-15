@@ -510,15 +510,23 @@ function Engine:changed()
   adapter.emit_event("hyprslots changed " .. self.seq)
 end
 
--- Make Hyprland lay out every workspace of the active desk again
--- (one zero resize per workspace holding a tiled window).
+-- Make Hyprland lay out every workspace of the active desk again (one zero
+-- resize per workspace holding a tiled window), except those on Hyprland's
+-- scrolling layout: a zero resize is a relayout on lua:slots
+-- (CLuaTiledAlgorithm discards the delta), but on the scrolling layout it
+-- collapses the window's column to 1 px, which the scroll pass, having seen
+-- that column, never widens again (a scroll workspace's first window, after
+-- a replug or an edit). A scroll workspace is the scroll pass's to arrange
+-- (scroll.lua).
 function Engine:relayout()
   local nudged = {}
   for _, window in ipairs(adapter.windows()) do
     local id = window.workspace_id
     if id and self.workspaces[id] and not nudged[id] and not window.floating and window.address then
       nudged[id] = true
-      adapter.nudge(window.address)
+      if adapter.workspace_tiled_layout(id) ~= "scrolling" then
+        adapter.nudge(window.address)
+      end
     end
   end
 end
