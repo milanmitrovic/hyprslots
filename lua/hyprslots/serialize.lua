@@ -4,8 +4,9 @@
 -- table literal under a header comment, two-space indentation, one entry per
 -- line with a trailing comma; a desk's `monitors` list of
 -- scalars go on one line (`monitors = { "eDP-1", "DP-1" },`), trees stay one
--- screen per line. Key order is fixed (slots, specs, desks, layouts, then a
--- desk's monitors and layout and a layout's screens, default,
+-- screen per line, a box ({ x, y, w, h }: a desk's geometry) on one line.
+-- Key order is fixed (slots, specs, desks, layouts, then a
+-- desk's monitors, layout and geometry and a layout's screens, default,
 -- workspaces, then integer keys ascending, then string keys sorted), strings
 -- are written with %q, so the same data always gives the same bytes and
 -- load(dump(x)) == x.
@@ -57,8 +58,23 @@ M.HEADER = [[
 ]]
 
 -- Keys that come first, in this order, wherever they appear.
-local KEY_ORDER = { slots = 1, specs = 2, desks = 3, layouts = 4, monitors = 5, layout = 6, key = 7, screens = 8,
-  default = 9, workspaces = 10 }
+local KEY_ORDER = { slots = 1, specs = 2, desks = 3, layouts = 4, monitors = 5, layout = 6, geometry = 7, key = 8,
+  screens = 9, default = 10, workspaces = 11 }
+
+-- A box (a desk's geometry: exactly x, y, w and h, numbers) goes on one
+-- line in that order.
+local BOX = { "x", "y", "w", "h" }
+
+local function box(value)
+  local count = 0
+  for key, item in pairs(value) do
+    count = count + 1
+    if type(item) ~= "number" or (key ~= "x" and key ~= "y" and key ~= "w" and key ~= "h") then
+      return nil
+    end
+  end
+  return count == 4 and value or nil
+end
 
 -- Keys whose list of scalars is written on one line.
 local INLINE = { monitors = true }
@@ -149,6 +165,14 @@ local function emit(value, indent, out, seen, inline)
   end
   if type(value) ~= "table" then
     out[#out + 1] = scalar(value)
+    return
+  end
+  if box(value) then
+    local items = {}
+    for i, key in ipairs(BOX) do
+      items[i] = key .. " = " .. scalar(value[key])
+    end
+    out[#out + 1] = "{ " .. table.concat(items, ", ") .. " }"
     return
   end
   if seen[value] then

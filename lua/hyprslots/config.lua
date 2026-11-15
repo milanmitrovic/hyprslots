@@ -343,7 +343,49 @@ local function validate_layout(name, raw, slots, fail, count)
   return layout
 end
 
--- The desks: name -> { monitors = { selector, ... }, layout = name }. A desk is a monitor setup; it uses a layout for as
+local BOX_KEYS = { x = true, y = true, w = true, h = true }
+
+-- A desk's recorded geometry (docs/design.md §8: the engine writes it):
+-- selector -> { x, y, w, h }, a logical box per monitor of the desk, the
+-- desk's top-left at 0, 0. Absent is none. Returns a copy, or nil.
+local function validate_geometry(path, raw, selectors, fail)
+  if raw == nil then
+    return nil
+  end
+  if type(raw) ~= "table" then
+    fail(path, "must be a table of monitor -> { x, y, w, h }")
+    return nil
+  end
+  local listed = {}
+  for _, selector in ipairs(selectors) do
+    listed[selector] = true
+  end
+  local out = {}
+  for _, selector in ipairs(sorted_keys(raw)) do
+    local box_path = key_path(path, selector)
+    local box = raw[selector]
+    if type(selector) ~= "string" or not listed[selector] then
+      fail(box_path, "'" .. tostring(selector) .. "' is none of the desk's monitors")
+    else
+      local good = type(box) == "table"
+      for key, value in pairs(good and box or {}) do
+        if not BOX_KEYS[key] or type(value) ~= "number" or value ~= value then
+          good = false
+        end
+      end
+      good = good and type(box.x) == "number" and type(box.y) == "number" and type(box.w) == "number"
+        and type(box.h) == "number" and box.w > 0 and box.h > 0
+      if good then
+        out[selector] = { x = box.x, y = box.y, w = box.w, h = box.h }
+      else
+        fail(box_path, "must be { x, y, w, h }: the monitor's logical box, w and h above 0")
+      end
+    end
+  end
+  return out
+end
+
+-- The desks: name -> { monitors = { selector, ... }, layout = name, geometry? }. A desk is a monitor setup; it uses a layout for as
 -- many screens as it has monitors.
 local function validate_desk(name, raw, layouts, fail)
   local path = key_path("desks", name)
@@ -352,7 +394,7 @@ local function validate_desk(name, raw, layouts, fail)
     return nil
   end
   for key in pairs(raw) do
-    if key ~= "monitors" and key ~= "layout" then
+    if key ~= "monitors" and key ~= "layout" and key ~= "geometry" then
       fail(path, "unknown key '" .. tostring(key) .. "'")
     end
   end
@@ -392,6 +434,7 @@ local function validate_desk(name, raw, layouts, fail)
     end
     desk.layout = raw.layout
   end
+  desk.geometry = validate_geometry(path .. ".geometry", raw.geometry, desk.monitors, fail)
   return desk
 end
 

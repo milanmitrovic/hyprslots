@@ -188,6 +188,23 @@ return {
     assert.are.same(data, load_text(text))
   end)
 
+  it("writes a desk's geometry after its layout, a box per monitor on one line", function()
+    local data = { desks = { docked = { monitors = { "eDP-1", "DP-2" }, layout = "dual",
+      geometry = { ["eDP-1"] = { x = 0, y = 360, w = 1440, h = 900 }, ["DP-2"] = { x = 1440, y = 0, w = 5120, h = 1440 } } } } }
+    local text = serialize.dump(data)
+    assert.matches([[
+    docked = {
+      monitors = { "eDP-1", "DP-2" },
+      layout = "dual",
+      geometry = {
+        ["DP-2"] = { x = 1440, y = 0, w = 5120, h = 1440 },
+        ["eDP-1"] = { x = 0, y = 360, w = 1440, h = 900 },
+      },
+    },
+]], text, 1, true)
+    assert.are.same(data, load_text(text))
+  end)
+
   it("keeps numbers, booleans and lists", function()
     local data = { extra = { list = { "a", "b", "c" }, n = 3, f = 1.5, yes = true, no = false } }
     assert.are.same(data, load_text(serialize.dump(data)))

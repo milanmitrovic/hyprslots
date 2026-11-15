@@ -468,6 +468,28 @@ describe("config.validate", function()
     rejects(raw, "desks%.solo%.layout: layout 'solo' is for 1 screen, and the desk has 2 monitors")
   end)
 
+  it("takes a desk's recorded geometry (absent: none)", function()
+    local raw = valid()
+    assert.is_nil(assert(config.validate(raw)).desks.solo.geometry)
+    raw.desks.solo.geometry = { ["HEADLESS-2"] = { x = 0, y = 0, w = 1920, h = 1080 } }
+    assert.are.same({ ["HEADLESS-2"] = { x = 0, y = 0, w = 1920, h = 1080 } },
+      assert(config.validate(raw)).desks.solo.geometry)
+  end)
+
+  it("rejects a desk's geometry that is no box per monitor of the desk", function()
+    local raw = valid()
+    raw.desks.solo.geometry = "wide"
+    rejects(raw, "desks%.solo%.geometry: must be a table of monitor %-> { x, y, w, h }")
+    raw.desks.solo.geometry = { ["DP-9"] = { x = 0, y = 0, w = 1920, h = 1080 } }
+    rejects(raw, "desks%.solo%.geometry%[DP%-9%]: 'DP%-9' is none of the desk's monitors")
+    raw.desks.solo.geometry = { ["HEADLESS-2"] = { x = 0, y = 0, w = 0, h = 1080 } }
+    rejects(raw, "desks%.solo%.geometry%[HEADLESS%-2%]: must be { x, y, w, h }")
+    raw.desks.solo.geometry = { ["HEADLESS-2"] = { x = 0, y = 0, w = 1920 } }
+    rejects(raw, "desks%.solo%.geometry%[HEADLESS%-2%]: must be { x, y, w, h }")
+    raw.desks.solo.geometry = { ["HEADLESS-2"] = { x = 0, y = 0, w = 1920, h = 1080, z = 1 } }
+    rejects(raw, "desks%.solo%.geometry%[HEADLESS%-2%]: must be { x, y, w, h }")
+  end)
+
   it("lets several desks use one layout", function()
     local raw = valid()
     raw.desks.office = { monitors = { "DP-1" }, layout = "solo" }
