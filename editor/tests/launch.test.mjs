@@ -85,10 +85,15 @@ test("Launch missing's reply in a sentence: what launched, what can't", () => {
   { text: "Launched foot for main, firefox for web.", error: false });
   assert.deepEqual(plain(L.missingText({ workspace: 2, launched: [], open: [], pending: ["main"], cannot: [] })),
     { text: "The app for main is on the way already.", error: false });
+  // open[]: slots whose app is open elsewhere already (no slot holds its
+  // window); a slot its window fills is not listed at all.
+  assert.deepEqual(plain(L.missingText({ workspace: 2, launched: [], open: ["main"], pending: [], cannot: [] })),
+    { text: "Nothing to launch on workspace 2: the app for main is open already.", error: false });
   assert.deepEqual(plain(L.missingText({ workspace: 2, launched: [], open: ["main", "web"], pending: [], cannot: [] })),
-    { text: "Nothing to launch on workspace 2: its apps are open.", error: false });
+    { text: "Nothing to launch on workspace 2: the apps for main, web are open already.", error: false });
   assert.deepEqual(plain(L.missingText({ workspace: 2, launched: [], open: [], pending: [], cannot: [] })),
-    { text: "Nothing to launch on workspace 2: no slot there waits for an app.", error: false });
+    { text: "Nothing to launch on workspace 2: no empty slot there waits for an app.", error: false },
+    "every slot with an app filled, or none with one");
   assert.deepEqual(plain(L.missingText({ workspace: 2, launched: [], open: [], pending: [], cannot: [{ slot: "notes", reason: "can't launch: set a command" }] })),
     { text: "Can't launch notes: set a command.", error: true });
 });

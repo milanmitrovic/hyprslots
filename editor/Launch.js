@@ -100,8 +100,12 @@ function missingText(reply) {
   }
   cannot.forEach(function(c) { parts.push(cannotText(c)) })
   if (parts.length === 0) {
+    // open[] names only slots whose app is open elsewhere; a slot its
+    // window fills is not listed, so nothing listed may mean all are full.
     return { text: "Nothing to launch on workspace " + reply.workspace + ": "
-      + (open.length ? "its apps are open." : "no slot there waits for an app."), error: false }
+      + (open.length ? "the app" + (open.length === 1 ? " for " : "s for ") + open.join(", ")
+        + (open.length === 1 ? " is" : " are") + " open already."
+        : "no empty slot there waits for an app."), error: false }
   }
   var text = parts.join("; ") + "."
   return { text: text.charAt(0).toUpperCase() + text.slice(1), error: launched.length === 0 && pending.length === 0 }
