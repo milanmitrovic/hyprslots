@@ -49,7 +49,7 @@ case ${1:-} in
       ([.pending[]] | if length > 0 then "on its way already: " + join(", ") else empty end),
       ([.cannot[] | .slot] | if length > 0 then "cannot launch " + join(", ") + ": set a command" else empty end),
       (if (.launched | length) + (.pending | length) + (.cannot | length) == 0
-        then "Nothing to launch: every slot of workspace \(.workspace) is filled" else empty end)' <<<"$reply" |
+        then "Nothing to launch" else empty end)' <<<"$reply" |
       paste -sd ';' | sed 's/;/; /g') (workspace $(jq -r .workspace <<<"$reply"))."
     ;;
   -h | --help | '') sed -n '2,10s/^# \{0,1\}//p' "${BASH_SOURCE[0]}" ;;
