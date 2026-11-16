@@ -646,8 +646,9 @@ desks_layouts_edits() {
 # stand-in bar: its label follows the engine's state through the shared
 # service (no poller of its own), a dot while edits are unsaved; a left
 # click opens and closes the panel; the right-click menu's Save saves and
-# Re-apply lays the workspace out again; with the hyprslots global gone the
-# widget turns red and says why, and comes back with it.
+# Re-apply lays the workspace out again; with the hyprslots global gone and
+# the loader's error set the widget turns red and says why, with neither it
+# asks to enable the engine, and it comes back with it.
 bar_widget() {
   local watch="qs ipc --pid $SMOKE_QS_PID call smoke"
   expect_eq "the widget loads" "ok" "$(smoke bar)"
@@ -712,24 +713,32 @@ bar_widget() {
   expect_eq "nothing applied" "false" "$(api_state | jq -r .dirty)"
   expect_eq "the panel closed" "no" "$(smoke ready)"
 
-  # hyprslots not loaded: the next state read fails, the widget turns red.
-  repl 'hyprslots_smoke = hyprslots; hyprslots = nil; return "gone"' >/dev/null
+  # hyprslots failed to load (its loader kept the error): the next state
+  # read finds no engine, the widget turns red and names the error.
+  repl 'hyprslots_smoke = hyprslots; hyprslots = nil; hyprslots_load_error = "smoke: boom"; return "gone"' >/dev/null
   repl 'hl.dispatch(hl.dsp.event("hyprslots changed 900")); return "ok"' >/dev/null
   if eventually 5 bash -c "[[ \$($watch barLabel) == 'error '* ]]"; then
-    pass "with hyprslots gone the widget is an error"
+    pass "with hyprslots failed the widget is an error"
   else
     fail "the widget shows $(smoke barLabel)"
   fi
   local tooltip
   tooltip=$(smoke barTooltip)
-  if [[ $tooltip == "Hyprslots: "*"attempt to index a nil value (global 'hyprslots')"* ]]; then
+  if [[ $tooltip == "Hyprslots: the hyprslots engine failed to load: smoke: boom"* ]]; then
     pass "its tooltip names the error"
   else
     fail "tooltip: $tooltip"
   fi
-  expect_eq "only Reload is offered" "closed: arrange off, record off, save off, reload on" "$(smoke barMenu)"
+  expect_eq "nothing is offered without an engine" "closed: arrange off, record off, save off, reload off" "$(smoke barMenu)"
   sleep 0.3
   shot 23-bar-error
+  # Not loaded at all (not enabled): the widget asks to enable it.
+  repl 'hyprslots_load_error = nil; hl.dispatch(hl.dsp.event("hyprslots changed 900")); return "ok"' >/dev/null
+  if eventually 5 bash -c "[[ \$($watch barLabel) == 'setup 󰕰 enable' ]]"; then
+    pass "with no engine the widget asks to enable it"
+  else
+    fail "the widget shows $(smoke barLabel)"
+  fi
   repl 'hyprslots = hyprslots_smoke; hyprslots_smoke = nil; return "back"' >/dev/null
   repl 'hl.dispatch(hl.dsp.event("hyprslots changed 901")); return "ok"' >/dev/null
   if eventually 5 bash -c "[[ \$($watch barLabel) == 'normal 󰕰 solo-2' ]]"; then
