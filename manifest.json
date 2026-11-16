@@ -11,9 +11,9 @@
     "bar-widget"
   ],
   "entryPoints": {
-    "panel": "Panel.qml",
-    "service": "Engine.qml",
-    "barWidget": "BarWidget.qml"
+    "panel": "editor/Panel.qml",
+    "service": "editor/Engine.qml",
+    "barWidget": "editor/BarWidget.qml"
   },
   "barWidget": {
     "displayName": "Hyprslots",

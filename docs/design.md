@@ -909,7 +909,8 @@ the running engine only through Hyprland:
 
 ### The plugin
 
-`editor/` is the plugin folder (manifest `kinds: ["panel", "service", "bar-widget"]`):
+The repo is the plugin folder: `manifest.json` at its root (`kinds:
+["panel", "service", "bar-widget"]`), its entry points in `editor/`:
 
 | File | Role |
 |---|---|
