@@ -896,7 +896,7 @@ nothing laid out to change yet.
 
 ## 9. Editor
 
-An Omarchy shell plugin, `milan.hyprslots` (QML), with full aerolayout TUI
+An Omarchy shell plugin, `io.github.milanmitrovic.hyprslots` (QML), with full aerolayout TUI
 parity (Assignment, Layout and Desk views, the logical slots
 made in the Layout view's slot list, every one in every tree; record). It talks to
 the running engine only through Hyprland:
@@ -1529,11 +1529,11 @@ engine's error, is a notification (`notify-send` through `bar.run`).
 **Install** (the user's machine; not done by the slices):
 
 ```sh
-ln -s ~/.local/share/hyprslots/editor ~/.config/omarchy/plugins/milan.hyprslots
+ln -s ~/.local/share/hyprslots/editor ~/.config/omarchy/plugins/io.github.milanmitrovic.hyprslots
 omarchy-shell shell rescanPlugins
-omarchy plugin enable milan.hyprslots
-omarchy-shell shell toggle milan.hyprslots       # open / close
-omarchy bar put milan.hyprslots --after milan.layout   # the bar widget
+omarchy plugin enable io.github.milanmitrovic.hyprslots
+omarchy-shell shell toggle io.github.milanmitrovic.hyprslots       # open / close
+omarchy bar put io.github.milanmitrovic.hyprslots --after milan.layout   # the bar widget
 ```
 
 (`omarchy bar put` writes the widget into `~/.config/omarchy/shell.json`'s
@@ -1542,7 +1542,7 @@ was added after the shell started needs `omarchy-shell shell rescanPlugins`
 first.)
 
 and a key in `~/.config/hypr/bindings.lua`:
-`o.bind("SUPER + CTRL + Y", "Hyprslots", { panel = "milan.hyprslots" })` (any free key;
+`o.bind("SUPER + CTRL + Y", "Hyprslots", { panel = "io.github.milanmitrovic.hyprslots" })` (any free key;
 Omarchy uses SUPER + CTRL + S for Share)
 (third-party panels go through `omarchy-shell shell toggle`). Validate with
 `omarchy plugin validate <the real editor/ path>` (it refuses symlinks).

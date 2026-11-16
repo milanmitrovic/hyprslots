@@ -29,14 +29,14 @@ editor; hyprmoncfg's workspace planner, if you use it, Off).
    (`~/.config/hypr/bindings.lua`):
 
    ```sh
-   ln -s ~/.local/share/hyprslots/editor ~/.config/omarchy/plugins/milan.hyprslots
+   ln -s ~/.local/share/hyprslots/editor ~/.config/omarchy/plugins/io.github.milanmitrovic.hyprslots
    omarchy-shell shell rescanPlugins
-   omarchy plugin enable milan.hyprslots
-   omarchy bar put milan.hyprslots   # placement: --after <widget id>, as omarchy bar --help says
+   omarchy plugin enable io.github.milanmitrovic.hyprslots
+   omarchy bar put io.github.milanmitrovic.hyprslots   # placement: --after <widget id>, as omarchy bar --help says
    ```
 
    ```lua
-   o.bind("SUPER + CTRL + Y", "Hyprslots", { panel = "milan.hyprslots" })
+   o.bind("SUPER + CTRL + Y", "Hyprslots", { panel = "io.github.milanmitrovic.hyprslots" })
    ```
 
 3. Reload Hyprland (`hyprctl reload`). On its first start hyprslots writes

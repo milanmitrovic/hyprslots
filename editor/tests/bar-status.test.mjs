@@ -70,8 +70,8 @@ test("no editor service: an error that says so", () => {
   const view = B.view({ engine: false, error: "", state: null, workspaceId: 3 });
   assert.equal(view.status, "error");
   assert.equal(view.label, "󰕰 hyprslots");
-  assert.equal(view.error, "the milan.hyprslots service is not running");
-  assert.equal(view.tooltip, "Hyprslots: the milan.hyprslots service is not running\nClick: editor · Right-click: menu");
+  assert.equal(view.error, "the io.github.milanmitrovic.hyprslots service is not running");
+  assert.equal(view.tooltip, "Hyprslots: the io.github.milanmitrovic.hyprslots service is not running\nClick: editor · Right-click: menu");
 });
 
 test("a failed state read (hyprslots not loaded) is an error, even over an older state", () => {

@@ -80,7 +80,7 @@ function view(input) {
     desk: desk, dirty: dirty }
 
   if (!input.engine) {
-    out.error = "the milan.hyprslots service is not running"
+    out.error = "the io.github.milanmitrovic.hyprslots service is not running"
   } else if (input.error) {
     // The state is older than the failure, or there is none.
     out.error = String(input.error)

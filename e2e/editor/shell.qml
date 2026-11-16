@@ -28,7 +28,7 @@ ShellRoot {
   Editor.Panel {
     id: panel
     service: engine
-    manifest: ({ id: "milan.hyprslots" })
+    manifest: ({ id: "io.github.milanmitrovic.hyprslots" })
   }
 
   // The shell's facade for the plugin's bar entry as a replacement bar (a
@@ -39,18 +39,18 @@ ShellRoot {
   QtObject {
     id: fakeShell
     function toggle(id, payloadJson) {
-      if (id !== "milan.hyprslots") return false
+      if (id !== "io.github.milanmitrovic.hyprslots") return false
       if (panel.opened) panel.close()
       else panel.open(payloadJson || "{}")
       return true
     }
     function summon(id, payloadJson) {
-      if (id !== "milan.hyprslots") return false
+      if (id !== "io.github.milanmitrovic.hyprslots") return false
       panel.open(payloadJson || "{}")
       return true
     }
     function hide(id) {
-      if (id !== "milan.hyprslots") return false
+      if (id !== "io.github.milanmitrovic.hyprslots") return false
       panel.close()
       return true
     }
@@ -62,8 +62,8 @@ ShellRoot {
 
   PluginBarApi {
     id: fakeBar
-    pluginId: "milan.hyprslots"
-    moduleName: "milan.hyprslots"
+    pluginId: "io.github.milanmitrovic.hyprslots"
+    moduleName: "io.github.milanmitrovic.hyprslots"
     shell: fakeShell
     foreground: Commons.Color.bar.text
     barForeground: Commons.Color.bar.text

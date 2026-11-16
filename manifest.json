@@ -1,10 +1,13 @@
 {
   "schemaVersion": 1,
-  "id": "milan.hyprslots",
+  "id": "io.github.milanmitrovic.hyprslots",
   "name": "Hyprslots",
-  "version": "0.2.0",
-  "author": "milan",
-  "description": "Editor for hyprslots: which window fills which slot, the layout trees, the slots, the desks and their layouts",
+  "version": "1.0.0",
+  "author": "Milan Mitrovic",
+  "license": "MIT",
+  "description": "Named slots for your windows: every app finds its place on every workspace, on every screen, at every desk. The engine and its editor.",
+  "homepage": "https://github.com/milanmitrovic/hyprslots",
+  "repository": "https://github.com/milanmitrovic/hyprslots",
   "kinds": [
     "panel",
     "service",
@@ -19,6 +22,7 @@
     "displayName": "Hyprslots",
     "description": "The active layout; click for the editor, right-click to re-apply, record, save or reload",
     "category": "Compositor",
-    "allowMultiple": false
+    "allowMultiple": false,
+    "defaultSection": "right"
   }
 }

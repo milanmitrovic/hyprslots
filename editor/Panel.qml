@@ -33,8 +33,8 @@ import "ui"
 // The Assignment view's rows also drag: onto a slot (a), onto the other
 // windows (u).
 //
-//   omarchy-shell shell toggle milan.hyprslots
-//   omarchy-shell shell call milan.hyprslots press a   (a key, for scripts and tests)
+//   omarchy-shell shell toggle io.github.milanmitrovic.hyprslots
+//   omarchy-shell shell call io.github.milanmitrovic.hyprslots press a   (a key, for scripts and tests)
 Item {
   id: root
 
@@ -47,7 +47,7 @@ Item {
   // The host's toggle reads this.
   property bool opened: false
 
-  readonly property string pluginId: manifest && manifest.id ? manifest.id : "milan.hyprslots"
+  readonly property string pluginId: manifest && manifest.id ? manifest.id : "io.github.milanmitrovic.hyprslots"
   // The service, or an engine of the panel's own when it runs without one.
   readonly property var engine: service ? service : (ownEngine.item ? ownEngine.item : null)
 
@@ -210,7 +210,7 @@ Item {
 
   // A key by name ("a", "Tab", "Escape", "Down", ...), or with "Ctrl+" before
   // it ("Ctrl+s"), as if pressed: for `omarchy-shell shell call
-  // milan.hyprslots press <key>` and the e2e smoke.
+  // io.github.milanmitrovic.hyprslots press <key>` and the e2e smoke.
   function press(name) {
     var named = {
       Tab: Qt.Key_Tab, Backtab: Qt.Key_Backtab, Escape: Qt.Key_Escape, Return: Qt.Key_Return,
@@ -506,7 +506,7 @@ Item {
   OverlayWindow {
     id: window
     shown: root.opened
-    WlrLayershell.namespace: "milan-hyprslots"
+    WlrLayershell.namespace: "hyprslots"
 
     Rectangle {
       anchors.fill: parent

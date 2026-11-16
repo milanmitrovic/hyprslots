@@ -22,9 +22,9 @@ import "Services.js" as Services
 // Reload config. The model is BarStatus.js.
 BarWidget {
   id: root
-  moduleName: "milan.hyprslots"
+  moduleName: "io.github.milanmitrovic.hyprslots"
 
-  readonly property string pluginId: "milan.hyprslots"
+  readonly property string pluginId: "io.github.milanmitrovic.hyprslots"
 
   // The plugin's service: from the bar's facade (Omarchy's own bar), else
   // where the service registered itself (a replacement bar's facade has no
