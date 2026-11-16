@@ -19,8 +19,8 @@ import "Services.js" as Services
 // it to follow events (watch / unwatch), it never polls of its own.
 //
 // Left click toggles the editor panel; right click opens a menu: Re-apply
-// layout, Record workspace (the panel's Layout tab, R), Save (with unsaved edits),
-// Reload config. The model is BarStatus.js.
+// layout, Record workspace (the panel's Layout tab, R), Capture this workspace
+// (the panel's Layout tab, c), Save (with unsaved edits), Reload config. The model is BarStatus.js.
 BarWidget {
   id: root
   moduleName: "io.github.milanmitrovic.hyprslots"
@@ -112,8 +112,10 @@ BarWidget {
   function choose(id) {
     root.menuOpen = false
     var shell = root.bar ? root.bar.shell : null
-    if (id === "record") {
-      if (shell && typeof shell.summon === "function") shell.summon(root.pluginId, JSON.stringify({ record: true }))
+    // Record and Capture open the panel on their flows (BarStatus.summon).
+    var payload = BarStatus.summon(id)
+    if (payload) {
+      if (shell && typeof shell.summon === "function") shell.summon(root.pluginId, JSON.stringify(payload))
       return
     }
     if (!root.engine) return
