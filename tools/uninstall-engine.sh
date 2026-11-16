@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Disable the hyprslots engine: remove its loader (zz-hyprslots.lua) from
-# Omarchy's workspace-layouts folder and reload Hyprland, which then runs
-# without hyprslots (Omarchy's own Super+1..9 and resize keys come back).
+# Omarchy's workspace-layouts folder, and its Omarchy menu entries, and
+# reload Hyprland, which then runs without hyprslots (Omarchy's own
+# Super+1..9 and resize keys come back, the editor's keys go).
 # Your hyprslots config (~/.config/hyprslots) is kept. Undo: install-engine.sh.
 #
 #   uninstall-engine.sh              remove, reload Hyprland, check
@@ -34,6 +35,8 @@ if [[ -e $loader ]]; then
 else
   echo "The hyprslots loader is not installed ($loader)."
 fi
+# Its Omarchy menu entries (and keys, which the loader bound) go with it.
+"$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/menu-entries.sh" remove
 
 ((reload)) || exit 0
 if ! hyprctl version >/dev/null 2>&1; then
