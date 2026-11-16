@@ -3,6 +3,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import Quickshell.Hyprland
+import "Install.js" as Install
 import "Protocol.js" as Protocol
 import "Services.js" as Services
 
@@ -41,6 +42,9 @@ Item {
   // or its loader failed (`loadError`, "" when it did not run).
   property bool absent: false
   property string loadError: ""
+  // The panel's Enable (enable()): its script runs; its last run's error.
+  property bool enabling: false
+  property string enableError: ""
   property string lastError: "" // the last failed call's error
   // Also while a re-read is pending (the debounce after a reply or event):
   // until it lands, a view's state lags what the engine already did.
@@ -138,6 +142,96 @@ Item {
       if (reply.ok) refresh()
     }
     Qt.callLater(_pump)
+  }
+
+  // Enable the engine, on the user's say-so (the panel's Enable): run the
+  // plugin's tools/install-engine.sh, which installs the loader, reloads
+  // Hyprland and checks the engine runs (Install.js). `done(result)` gets
+  // Install.outcome's { ok, message }. The service never runs it by itself.
+  function enable(done) {
+    if (enabling) return
+    enabling = true
+    enableError = ""
+    var proc = enableComponent.createObject(root, {
+      command: Install.enableCommand(Qt.resolvedUrl("../tools/install-engine.sh")),
+      done: done || null,
+      running: true,
+    })
+    enableWatchdog.proc = proc
+    enableWatchdog.restart()
+  }
+
+  function _enabled(proc, result) {
+    if (!enabling || proc.finished) return
+    proc.finished = true
+    enableWatchdog.stop()
+    enabling = false
+    if (!result.ok) enableError = result.message
+    refresh()
+    if (proc.done) {
+      try {
+        proc.done(result)
+      } catch (e) {
+        console.warn("hyprslots: enable handler failed: " + e)
+      }
+    }
+    proc.destroy()
+  }
+
+  Component {
+    id: enableComponent
+
+    Process {
+      id: enableProc
+
+      property var done: null
+      property bool finished: false
+      property string out: ""
+      property string err: ""
+      property bool outDone: false
+      property bool errDone: false
+      property bool exited: false
+      property int code: -1
+
+      // It reports three times (its output, its errors, its exit); settle
+      // on all of them.
+      function settle() {
+        if (outDone && errDone && exited) root._enabled(enableProc, Install.outcome(code, out, err))
+      }
+
+      stdout: StdioCollector {
+        onStreamFinished: {
+          enableProc.out = text
+          enableProc.outDone = true
+          enableProc.settle()
+        }
+      }
+      stderr: StdioCollector {
+        onStreamFinished: {
+          enableProc.err = text
+          enableProc.errDone = true
+          enableProc.settle()
+        }
+      }
+      onExited: function(exitCode, exitStatus) {
+        enableProc.code = exitCode
+        enableProc.exited = true
+        enableProc.settle()
+      }
+    }
+  }
+
+  // The script polls the engine for a few seconds after the reload; one that
+  // never returns fails instead of leaving Enable waiting.
+  Timer {
+    id: enableWatchdog
+    property var proc: null
+    interval: 30000
+    onTriggered: {
+      if (!proc) return
+      proc.running = false
+      root._enabled(proc, { ok: false, message: "tools/install-engine.sh did not finish within 30 s" })
+    }
   }
 
   Component {

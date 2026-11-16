@@ -13,6 +13,7 @@ import "Assignment.js" as Assignment
 import "Messages.js" as Messages
 import "Help.js" as Help
 import "Guide.js" as Guide
+import "Install.js" as Install
 import "ui"
 
 // The hyprslots editor panel (docs/design.md §9): aerolayout's `edit` TUI as
@@ -53,6 +54,19 @@ Item {
 
   readonly property var tabs: ["Assignment", "Layout", "Desk"]
   property int tab: 0
+
+  // While no engine runs, the panel asks to enable it (Install.js): over the
+  // whole page while there is nothing to show (`card`), else as a banner
+  // over the views' last state. Enable (e, Return, the button) is the only
+  // thing that writes: the service never does by itself.
+  readonly property var enablePrompt: root.engine ? Install.prompt({
+    absent: root.engine.absent,
+    loadError: root.engine.loadError,
+    stale: root.engine.state !== null,
+    enabling: root.engine.enabling,
+    error: root.engine.enableError,
+  }) : null
+  readonly property bool enableCard: !!root.enablePrompt && root.enablePrompt.mode === "card"
 
   property color background: Commons.Color.menu.background
   property color foreground: Commons.Color.menu.text
@@ -165,6 +179,16 @@ Item {
   // panel used it.
   function handleKey(key, text, modifiers) {
     if (Messages.dismissedByKey(root.bandKind)) root.dismissedKey = root.messageKey
+    // No engine: e (or Return) enables it; the tabs and closing work as
+    // ever; the views' keys would only reach a missing engine.
+    if (root.enablePrompt) {
+      if (text === "e" || key === Qt.Key_Return || key === Qt.Key_Enter) {
+        root.enableEngine()
+        return true
+      }
+      var passes = key === Qt.Key_Tab || key === Qt.Key_Backtab || key === Qt.Key_Escape || text === "q"
+      if (!passes) return false
+    }
     // a prompt, or a row or a screen held in a drag (Esc cancels it), owns the keyboard
     if ((assignmentView.prompting || assignmentView.dragging) && root.tab === 0) return assignmentView.handleKey(key, text, modifiers)
     if ((layoutView.prompting || layoutView.screenDragging || layoutView.slotDragging) && root.tab === 1) return layoutView.handleKey(key, text, modifiers)
@@ -191,6 +215,25 @@ Item {
     if (root.tab === 1) return layoutView.handleKey(key, text, modifiers)
     if (root.tab === 2) return desksView.handleKey(key, text, modifiers)
     return false
+  }
+
+  // Enable the engine (Engine.enable: the plugin's tools/install-engine.sh),
+  // and say how it went in the current view; a failure stays in the prompt.
+  function enableEngine() {
+    if (!root.engine || root.engine.enabling) return
+    root.engine.enable(function(result) {
+      if (result.ok && root.currentView) root.currentView.say(result.message, false)
+    })
+  }
+
+  // The enable prompt as one line, " | " between its parts ("card | Enable
+  // the hyprslots engine? | … | [e] Enable"), its error last; "" for none:
+  // for the e2e smoke.
+  function enablePromptText() {
+    var p = root.enablePrompt
+    if (!p) return ""
+    return [p.mode, p.title].concat(p.lines).concat(["[" + p.action.key + "] " + p.action.label])
+      .concat(p.error ? [p.error] : []).join(" | ")
   }
 
   // Ctrl+S, one save for every view: the engine's `save`, said in the current
@@ -480,7 +523,8 @@ Item {
   }
 
   // The current view's controls strip, as StyledText (its keys highlighted).
-  readonly property string helpText: root.tab === 0 ? assignmentView.helpText
+  readonly property string helpText: root.enablePrompt ? Help.row(Install.helpGroups(), String(Commons.Color.accent))
+    : root.tab === 0 ? assignmentView.helpText
     : root.tab === 1 ? layoutView.helpText
     : desksView.helpText
 
@@ -637,16 +681,132 @@ Item {
           color: root.background
           radius: Style.cornerRadius
 
+          // No engine, over the views' last state: what is wrong, and Enable.
+          Rectangle {
+            id: enableBanner
+            visible: !!root.enablePrompt && !root.enableCard
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.margins: root.pagePadding
+            height: visible ? bannerRow.implicitHeight + Style.spacing.md * 2 : 0
+            radius: Tokens.radius
+            color: Commons.Util.alpha(Commons.Color.accent, 0.12)
+            border.width: Math.max(1, Style.spacing.hairline)
+            border.color: Commons.Util.alpha(Commons.Color.accent, 0.5)
+
+            Row {
+              id: bannerRow
+              anchors.left: parent.left
+              anchors.right: parent.right
+              anchors.verticalCenter: parent.verticalCenter
+              anchors.leftMargin: Style.spacing.lg
+              anchors.rightMargin: Style.spacing.lg
+              spacing: Style.spacing.lg
+              Column {
+                width: parent.width - bannerButton.width - parent.spacing
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: Style.spacing.xxs
+                Text {
+                  width: parent.width
+                  wrapMode: Text.WordWrap
+                  textFormat: Text.PlainText
+                  text: root.enablePrompt ? root.enablePrompt.title : ""
+                  color: Tokens.text
+                  font.family: Tokens.fontFamily
+                  font.pixelSize: Style.font.body
+                  font.bold: true
+                }
+                InfoText {
+                  width: parent.width
+                  wrapMode: Text.WordWrap
+                  text: root.enablePrompt ? root.enablePrompt.lines.join(" ") : ""
+                }
+                InfoText {
+                  width: parent.width
+                  wrapMode: Text.WordWrap
+                  visible: text !== ""
+                  urgent: true
+                  text: root.enablePrompt ? root.enablePrompt.error : ""
+                }
+              }
+              ActionButton {
+                id: bannerButton
+                objectName: enableBanner.visible ? "enable:engine" : ""
+                anchors.verticalCenter: parent.verticalCenter
+                accented: true
+                available: !!root.enablePrompt && !root.enablePrompt.busy
+                keyText: root.enablePrompt ? root.enablePrompt.action.key : ""
+                text: root.enablePrompt ? root.enablePrompt.action.label : ""
+                pixelSize: Style.font.body
+                padX: Style.spacing.xl
+                padY: Style.spacing.sm
+                onClicked: root.enableEngine()
+              }
+            }
+          }
+
           Item {
             id: body
             anchors.fill: parent
             anchors.margins: root.pagePadding
+            anchors.topMargin: root.pagePadding + (enableBanner.visible ? enableBanner.height + Style.spacing.md : 0)
             anchors.bottomMargin: root.pagePadding + band.height + Style.spacing.md
+
+            // No engine and nothing read yet: in the views' place, what
+            // enabling it does and leaves alone, and Enable.
+            Column {
+              id: enableCard
+              visible: root.enableCard
+              anchors.centerIn: parent
+              width: Math.min(parent.width - Style.spacing.xxl * 2, Style.space(620))
+              spacing: Style.spacing.lg
+
+              Placeholder {
+                width: parent.width
+                color: Tokens.text
+                font.bold: true
+                font.pixelSize: Style.font.subtitle
+                text: root.enablePrompt ? root.enablePrompt.title : ""
+              }
+              Repeater {
+                model: root.enablePrompt ? root.enablePrompt.lines : []
+                delegate: Placeholder {
+                  required property string modelData
+                  width: enableCard.width
+                  text: modelData
+                }
+              }
+              Item {
+                width: parent.width
+                height: cardButton.height + Style.spacing.sm
+                ActionButton {
+                  id: cardButton
+                  objectName: root.enableCard ? "enable:engine" : ""
+                  anchors.horizontalCenter: parent.horizontalCenter
+                  anchors.bottom: parent.bottom
+                  accented: true
+                  available: !!root.enablePrompt && !root.enablePrompt.busy
+                  keyText: root.enablePrompt ? root.enablePrompt.action.key : ""
+                  text: root.enablePrompt ? root.enablePrompt.action.label : ""
+                  pixelSize: Style.font.body
+                  padX: Style.spacing.xl
+                  padY: Style.spacing.sm
+                  onClicked: root.enableEngine()
+                }
+              }
+              Placeholder {
+                width: parent.width
+                visible: text !== ""
+                color: Tokens.urgent
+                text: root.enablePrompt ? root.enablePrompt.error : ""
+              }
+            }
 
             AssignmentView {
               id: assignmentView
               anchors.fill: parent
-              visible: root.tab === 0
+              visible: root.tab === 0 && !root.enableCard
               onPressKey: function(name) { root.press(name) }
               engine: root.engine
               foreground: root.foreground
@@ -658,7 +818,7 @@ Item {
             LayoutView {
               id: layoutView
               anchors.fill: parent
-              visible: root.tab === 1
+              visible: root.tab === 1 && !root.enableCard
               onPressKey: function(name) { root.press(name) }
               engine: root.engine
               foreground: root.foreground
@@ -670,7 +830,7 @@ Item {
             DesksLayoutsView {
               id: desksView
               anchors.fill: parent
-              visible: root.tab === 2
+              visible: root.tab === 2 && !root.enableCard
               onPressKey: function(name) { root.press(name) }
               engine: root.engine
               foreground: root.foreground
@@ -735,7 +895,8 @@ Item {
             anchors.rightMargin: root.pagePadding
             anchors.bottom: parent.bottom
             anchors.bottomMargin: -Style.spacing.xxs
-            cells: root.currentView ? Help.buttons(root.currentView.helpGroups, String(Commons.Color.accent)) : []
+            cells: root.enablePrompt ? Help.buttons(Install.helpGroups(), String(Commons.Color.accent))
+              : root.currentView ? Help.buttons(root.currentView.helpGroups, String(Commons.Color.accent)) : []
             onPressed: function(key) { root.press(key) }
           }
         }
