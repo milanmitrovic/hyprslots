@@ -22,6 +22,7 @@ local monitor_name = require("hyprslots.monitor_name")
 local resize = require("hyprslots.resize")
 local router = require("hyprslots.router")
 local scroll = require("hyprslots.scroll")
+local spec = require("hyprslots.spec")
 local starter = require("hyprslots.starter")
 local tree = require("hyprslots.tree")
 local window_rules = require("hyprslots.window_rules")
@@ -313,11 +314,40 @@ function Engine:assign(window)
   if not self.cfg or not window.address or self.unassigned[window.address] then
     return nil
   end
-  local assignment = assign.claim(self.cfg, self.assignments, window)
+  local assignment = self.assignments[window.address] or self:launched_for(window)
+    or assign.claim(self.cfg, self.assignments, window)
   if assignment and not self.assignments[window.address] then
     self.assignments[window.address] = assignment
   end
   return assignment
+end
+
+-- The slot an app was launched for (api launch_missing, at login) that this
+-- window, opening, is: one still on its way, empty, whose spec matches it.
+-- The claim is used up. Nil for none.
+function Engine:launched_for(window)
+  if not self.launching or next(self.launching) == nil then
+    return nil
+  end
+  local keys = {}
+  for key in pairs(self.launching) do
+    keys[#keys + 1] = key
+  end
+  table.sort(keys)
+  local taken = {}
+  for _, a in pairs(self.assignments) do
+    taken[a.workspace .. "/" .. a.slot] = true
+  end
+  for _, key in ipairs(keys) do
+    local n, slot = key:match("^(%d+)/(.+)$")
+    n = tonumber(n)
+    local entry = n and self.cfg.specs[n] and self.cfg.specs[n][slot]
+    if entry and not taken[key] and spec.match(entry, window) then
+      self.launching[key] = nil
+      return { workspace = n, slot = slot }
+    end
+  end
+  return nil
 end
 
 -- The slot of an HL.Window, for recalculate.

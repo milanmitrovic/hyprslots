@@ -193,6 +193,17 @@ return { slots = data.slots, specs = data.specs, desks = data.desks, layouts = d
       assert.same({ { cmd = "foot", rules = { workspace = "5 silent" } } }, launched())
     end)
 
+    it("the window that opens goes into the slot it was launched for, though another workspace's comes first", function()
+      setup()
+      hl.emit("hyprland.start")
+      hl.run_timers()
+      local window = hl_stub.window(7, "foot", { workspace = 1 })
+      hl.windows = { window }
+      hl.emit("window.open", window)
+      -- Workspace 3's main waits for foot too, and workspace 3 comes first.
+      assert.same({ workspace = 5, slot = "main" }, call("state").assignments["0x1007"])
+    end)
+
     it("not on a config reload", function()
       setup()
       hl.emit("config.reloaded")
