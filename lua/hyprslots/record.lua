@@ -137,7 +137,7 @@ local function extent(group, axis)
   return high - low
 end
 
-local function build(items)
+local function build(items, weights)
   if #items == 1 then
     return { slot = items[1].slot, weight = 1 }
   end
@@ -146,14 +146,14 @@ local function build(items)
     if #groups > 1 then
       local children, extents = {}, {}
       for i, group in ipairs(groups) do
-        local child = build(group)
+        local child = build(group, weights)
         if not child then
           return nil
         end
         children[i] = child
         extents[i] = extent(group, axis)
       end
-      for i, weight in ipairs(M.weights(extents)) do
+      for i, weight in ipairs(weights(extents)) do
         children[i].weight = weight
       end
       return { split = axis, weight = 1, children = children }
@@ -162,8 +162,10 @@ local function build(items)
   return nil -- no cut line on either axis: not a tiled partition
 end
 
--- A tree from slot -> { x, y, w, h }. Returns the root node, or nil and why.
-function M.tree(boxes)
+-- A tree from slot -> { x, y, w, h }, each split's weights from
+-- `weights(extents)` (default M.weights). Returns the root node, or nil and
+-- why.
+function M.tree(boxes, weights)
   local items = {}
   for slot, box in pairs(boxes) do
     items[#items + 1] = { slot = slot, box = box }
@@ -172,7 +174,7 @@ function M.tree(boxes)
     return nil, "no windows to record"
   end
   table.sort(items, function(a, b) return a.slot < b.slot end)
-  local root = build(items)
+  local root = build(items, weights or M.weights)
   if not root then
     return nil, "the windows overlap, so there are no cut lines to record"
   end
