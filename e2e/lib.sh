@@ -157,7 +157,7 @@ expect_eq() {
   fi
 }
 
-# The error hyprland-test.lua caught while loading hyprslots, or empty.
+# The error the loader (tools/loader.lua) caught loading hyprslots, or empty.
 # (`hyprctl repl` answers an empty string with "unknown request", so the
 # no-error case travels as a sentinel.)
 hyprslots_load_error() {

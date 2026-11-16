@@ -110,7 +110,6 @@ run_test() (
   unset WAYLAND_DISPLAY HYPRLAND_INSTANCE_SIGNATURE DISPLAY SWAYSOCK DBUS_SESSION_BUS_ADDRESS NOTIFY_SOCKET
   export XDG_RUNTIME_DIR=$E2E_RUNTIME_DIR
   export XDG_CONFIG_HOME=$E2E_CONFIG_HOME XDG_STATE_HOME=$E2E_STATE_HOME XDG_CACHE_HOME=$E2E_CACHE_HOME
-  export HYPRSLOTS_ROOT=$E2E_ROOT
   export E2E_DIR E2E_CONFIG_HOME E2E_STATE_HOME
 
   # shellcheck source=e2e/lib.sh
@@ -120,6 +119,15 @@ run_test() (
   declare -F test_body >/dev/null || die "$test_file defines no test_body"
 
   printf '%s\n' "$name"
+  # hyprslots installed as a user has it: the plugin in Omarchy's plugin
+  # folder (the worktree, linked) and its loader in Omarchy's
+  # workspace-layouts folder. A test_setup may undo either.
+  E2E_PLUGIN_DIR=$E2E_CONFIG_HOME/omarchy/plugins/io.github.milanmitrovic.hyprslots
+  E2E_LOADER=$E2E_STATE_HOME/omarchy/workspace-layouts/zz-hyprslots.lua
+  export E2E_PLUGIN_DIR E2E_LOADER
+  mkdir -p "${E2E_PLUGIN_DIR%/*}" "${E2E_LOADER%/*}"
+  ln -s "$E2E_ROOT" "$E2E_PLUGIN_DIR"
+  cp "$E2E_ROOT/tools/loader.lua" "$E2E_LOADER"
   if declare -F test_setup >/dev/null; then test_setup; fi
 
   # The host compositor.

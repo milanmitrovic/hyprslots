@@ -1,12 +1,14 @@
 -- Hyprland config for the e2e harness. run.sh starts Hyprland with
 --   -c e2e/hyprland-test.lua
 -- and these environment variables:
---   HYPRSLOTS_ROOT   the worktree, whose lua/ dir hyprslots loads from
---   XDG_CONFIG_HOME  per-test temp dir holding hyprslots/config.lua and,
+--   XDG_CONFIG_HOME  per-test temp dir holding hyprslots/config.lua,
+--                    omarchy/plugins/io.github.milanmitrovic.hyprslots (the
+--                    plugin: run.sh links it to the worktree) and,
 --                    optionally, hypr/test-extra.lua (per-test monitor rules)
---   XDG_STATE_HOME   per-test temp dir (Omarchy's monitor-workspace blocks)
+--   XDG_STATE_HOME   per-test temp dir (Omarchy's monitor-workspace blocks,
+--                    and its workspace-layouts folder with hyprslots' loader
+--                    in it, which run.sh puts there)
 
-local root = assert(os.getenv("HYPRSLOTS_ROOT"), "HYPRSLOTS_ROOT is not set")
 local config_home = assert(os.getenv("XDG_CONFIG_HOME"), "XDG_CONFIG_HOME is not set")
 local omarchy = os.getenv("OMARCHY_PATH") or "/usr/share/omarchy"
 
@@ -38,11 +40,10 @@ if file then
   dofile(extra)
 end
 
--- Load hyprslots the way the user's shim does. A failure is kept, not
--- raised, so the harness still comes up and the test reports it.
-package.path = root .. "/lua/?.lua;" .. root .. "/lua/?/init.lua;" .. package.path
-local ok, err = pcall(function()
-  hyprslots = require("hyprslots")
-  hyprslots.setup()
-end)
-hyprslots_load_error = (not ok) and tostring(err) or nil
+-- Load hyprslots the way an installed one loads: Omarchy requires every file
+-- in its workspace-layouts folder ($XDG_STATE_HOME/omarchy/workspace-layouts,
+-- saved workspace modes and hyprslots' loader, tools/loader.lua), last in
+-- the config as from default.hypr.toggles. The loader keeps a failure in
+-- `hyprslots_load_error`, so the harness still comes up and the test
+-- reports it.
+require("default.hypr.workspace-layouts")
