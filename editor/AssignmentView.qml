@@ -7,6 +7,8 @@ import "Workspaces.js" as Workspaces
 import "Prompts.js" as Prompts
 import "Help.js" as Help
 import "Guide.js" as Guide
+import "Launch.js" as Launch
+import "Layout.js" as Layout
 import "ui"
 
 // Which live window fills which slot (aerolayout's AssignmentView). A table
@@ -33,6 +35,13 @@ import "ui"
 // is the answer), anywhere else, or on Esc, nothing (Assignment.dropAction).
 // Each slot row leads with a mini-map of its screen's tree, the slot lit
 // (ui/MiniMap).
+//
+// c captures the page's workspace (the Layout tab's capture flow, there).
+// Under the header, quietly, the page's launch setting (Launch.js): m
+// cycles it (never, on demand, at login; api set_launch), L launches the
+// apps its empty slots wait for (api launch_missing); while it is not
+// never, a Launch column says what each slot's app launches with, or why it
+// can't.
 Item {
   id: root
 
@@ -95,12 +104,20 @@ Item {
   // toolbar, what the view would refuse now dimmed) and the same as
   // StyledText (each trigger key highlighted).
   readonly property string accent: String(Commons.Color.accent)
-  readonly property var helpGroups: Assignment.helpGroups(state, selectedRow, Workspaces.jumpKeys(Workspaces.count(state)))
+  readonly property int pageWorkspace: currentPage ? currentPage.workspace : 0
+  readonly property bool captures: !!state && !state.config_error && Layout.editBlock(state, state.layout || "") === ""
+  readonly property var helpGroups: Assignment.helpGroups(state, selectedRow, Workspaces.jumpKeys(Workspaces.count(state)),
+    { capture: captures, launch: Launch.helpItems(state, pageWorkspace) })
+  // The page's launch setting, and whether its slots show their commands.
+  readonly property string launchLine: state ? Launch.line(state, pageWorkspace) : ""
+  readonly property bool showLaunch: !!state && Launch.shows(state, pageWorkspace)
   readonly property string helpText: prompting ? Help.escape(Prompts.help(prompt)) : Help.row(helpGroups, accent)
 
   // A key by name, for the panel to feed as if pressed (Panel.press): a
   // double-click on a row runs the view's primary action, a.
   signal pressKey(string name)
+  // c: capture workspace n, in the Layout tab (the panel switches to it).
+  signal captureWorkspace(int n)
 
   function keyOf(row) {
     if (!row) return ""
@@ -214,6 +231,53 @@ Item {
       else if (plan.clear) root.clearSpec(plan.clear)
       else root.unassign(row, plan)
     })
+  }
+
+  // m: the page's launch setting, the next of never, on demand, at login.
+  function cycleLaunch() {
+    if (!engine || !state) return
+    var n = pageWorkspace
+    if (Launch.readOnly(state, n)) {
+      say("Workspace " + n + "'s launch setting is set in your config: change it there.", true)
+      return
+    }
+    engine.call("set_launch", { workspace: n, mode: Launch.next(Launch.mode(state, n)) }, function(reply) {
+      if (!reply.ok) root.say(reply.error, true)
+      else root.say(Launch.setText(reply), false)
+    })
+  }
+
+  // L: launch the apps the page's empty slots wait for.
+  function launchMissing() {
+    if (!engine || !state) return
+    var n = pageWorkspace
+    if (!Launch.canLaunch(state, n)) {
+      say("Workspace " + n + " launches no apps: press m to launch them on demand or at login.", true)
+      return
+    }
+    say("Launching the missing apps of workspace " + n + "…", false)
+    engine.call("launch_missing", { workspace: n }, function(reply) {
+      if (!reply.ok) {
+        root.say(reply.error, true)
+        return
+      }
+      var said = Launch.missingText(reply)
+      root.say(said.text, said.error)
+    })
+  }
+
+  // The launch line and each slot row's status, for the e2e smoke.
+  function launchText() {
+    if (!state) return ""
+    var cells = []
+    if (showLaunch) {
+      for (var i = 0; i < rows.length; i++) {
+        if (!Assignment.isSlotRow(rows[i])) continue
+        var st = Launch.status(state, pageWorkspace, rows[i].slot)
+        if (st) cells.push(rows[i].slot + ": " + (st.urgent ? "! " : "") + st.text)
+      }
+    }
+    return launchLine + (cells.length ? " | " + cells.join("; ") : "")
   }
 
   function clearSpec(target) {
@@ -333,6 +397,12 @@ Item {
     else if (Workspaces.ofDigit(text, Workspaces.count(state)) !== null) goWorkspace(Workspaces.ofDigit(text, Workspaces.count(state)))
     else if (text === "a") startAssign()
     else if (text === "u") startUnassign()
+    else if (text === "c") {
+      if (captures) captureWorkspace(pageWorkspace)
+      else say("Capture needs a layout the editor may change: see the Layout tab.", true)
+    }
+    else if (text === "m") cycleLaunch()
+    else if (text === "L") launchMissing()
     else return false
     return true
   }
@@ -341,9 +411,10 @@ Item {
   // Title, sized by share of the width.
   readonly property real miniMapColumn: Tokens.miniMapWidth + Tokens.cellPadding
   readonly property real screenWidth: showScreen ? width * 0.1 : 0
-  readonly property real slotWidth: width * 0.18
-  readonly property real appWidth: width * 0.18
-  readonly property real titleWidth: width - Tokens.stripeWidth - miniMapColumn - screenWidth - slotWidth - appWidth
+  readonly property real slotWidth: width * (showLaunch ? 0.16 : 0.18)
+  readonly property real appWidth: width * (showLaunch ? 0.16 : 0.18)
+  readonly property real launchWidth: showLaunch ? width * 0.26 : 0
+  readonly property real titleWidth: width - Tokens.stripeWidth - miniMapColumn - screenWidth - slotWidth - appWidth - launchWidth
 
   Column {
     anchors.fill: parent
@@ -372,6 +443,17 @@ Item {
       }
     }
 
+    // The page's launch setting, quietly (m cycles it, L launches).
+    InfoText {
+      id: launchNote
+      objectName: "launch:line"
+      width: parent.width
+      leftPadding: Tokens.textInset
+      visible: root.launchLine !== "" && !root.empty
+      elide: Text.ElideRight
+      text: root.launchLine
+    }
+
     // What to do next on a workspace with nothing assigned.
     InfoText {
       id: hintLine
@@ -394,6 +476,7 @@ Item {
         { text: "Slot", width: root.slotWidth },
         { text: "App", width: root.appWidth },
         { text: "Title", width: root.titleWidth },
+        { text: "Launch", width: root.launchWidth },
       ]
     }
 
@@ -406,7 +489,8 @@ Item {
       width: parent.width
       height: parent.height - headerBox.height - (titles.visible ? titles.height + parent.spacing : 0)
         - (problem.visible ? problem.height + parent.spacing : 0)
-        - (hintLine.visible ? hintLine.height + parent.spacing : 0) - parent.spacing
+        - (hintLine.visible ? hintLine.height + parent.spacing : 0)
+        - (launchNote.visible ? launchNote.height + parent.spacing : 0) - parent.spacing
 
       ListView {
         id: list
@@ -488,6 +572,18 @@ Item {
               color: rowItem.missing && !rowItem.empty && !rowItem.current ? Commons.Color.urgent : rowItem.ink
               opacity: rowItem.empty ? Tokens.faint : 1
               font.italic: rowItem.missing
+            }
+            // What the slot's app launches with (from your config, said so),
+            // or why it can't, in the urgent colour; while the page launches.
+            TableCell {
+              readonly property var launch: root.showLaunch && rowItem.slotRow
+                ? Launch.status(root.state, root.pageWorkspace, rowItem.modelData.slot) : null
+              width: root.launchWidth
+              visible: root.showLaunch
+              rightPadding: Tokens.cellPadding
+              text: launch ? launch.text : ""
+              color: launch && launch.urgent && !rowItem.current ? Commons.Color.urgent : rowItem.ink
+              opacity: launch && !launch.urgent ? 0.8 : 1
             }
           }
         }

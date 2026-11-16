@@ -364,18 +364,32 @@ function assignedText(state, cls, reply) {
 // a puts a window into a slot (not on an empty or Missing row), u takes out
 // what unassignPlan can; what the view would refuse now is marked
 // `enabled: false` (the toolbar dims it). `jumpKeys` is Workspaces.jumpKeys.
-function helpGroups(state, row, jumpKeys) {
+//
+// opts (optional): { capture (whether c, capture the page's workspace in
+// the Layout tab, would go ahead: false dims it), launch (the page's launch
+// items, Launch.js's, a group of their own) }.
+function helpGroups(state, row, jumpKeys, opts) {
+  opts = opts || {}
   var assign = { key: "a", label: "assign" }
   if (!row || row.kind !== "window") assign.enabled = false
   var unassign = { key: "u", label: "unassign" }
   if (unassignPlan(state, row).error) unassign.enabled = false
-  return [
+  var edits = [assign, unassign]
+  if (opts.capture !== undefined) {
+    var capture = { key: "c", label: "capture" }
+    if (!opts.capture) capture.enabled = false
+    edits.push(capture)
+  }
+  var groups = [
     [{ key: "↑/↓", label: "select" }],
     { title: "Workspace", items: [{ key: "←/→ [ ]", label: "prev/next" }, { key: jumpKeys, label: "jump" }] },
-    [assign, unassign],
+    edits,
+  ]
+  if (opts.launch && opts.launch.length) groups.push(opts.launch)
+  return groups.concat([
     [{ key: "Ctrl+S", label: "save" }],
     [{ key: "Tab", label: "switch view" }, { key: "q", label: "close" }],
-  ]
+  ])
 }
 
 // --- drag and drop ---------------------------------------------------------

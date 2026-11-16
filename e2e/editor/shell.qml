@@ -137,6 +137,16 @@ ShellRoot {
       return panel.layoutText()
     }
 
+    // The Layout view's capture preview ("1: h[a:2, b]; 2: -"), "" for none.
+    function capturePreview(): string {
+      return panel.capturePreviewText()
+    }
+
+    // The Assignment page's launch line and its slots' command status.
+    function launch(): string {
+      return panel.launchText()
+    }
+
     // The panel's tabs, and the current one: "Assignment Layout Desk | Layout".
     function tabs(): string {
       return panel.tabs.join(" ") + " | " + panel.tabs[panel.tab]
@@ -232,6 +242,11 @@ ShellRoot {
     // "" for none.
     function enablePrompt(): string {
       return panel.enablePromptText()
+    }
+
+    // Its choices, "[ ] k Also bind …; [x] m Add …".
+    function enableChoices(): string {
+      return panel.enableChoicesText()
     }
 
     // What stands in the current tab while it is empty, and its line on

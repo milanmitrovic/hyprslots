@@ -9,12 +9,20 @@
 # workspaces 1 to 9 (the default; the strip ends at 9). The bar widget asks to be set up (an accent dot,
 # "Click to set up your slots"). The panel opens on the Layout tab, whose
 # picture explains slots; the Assignment tab sends you back there by a
-# button; the button "Create your first slot", clicked with the real
-# pointer, makes the first slot through the create prompt; the picture then
+# button; its first button, "Capture my windows", clicked with the real
+# pointer, asks whom the capture is for and previews the window there as a
+# slot, and n leaves everything as it was; the button "Create your first
+# slot", clicked with the real pointer, makes the first slot through the
+# create prompt; the picture then
 # shows it and a line says what comes next; the bar's set-up state is gone;
 # Ctrl+S saves the slot without touching config.lua; and the panel next
 # opens on the Assignment tab, which says how to put the window there into a
-# slot. Screenshots go to .e2e-tmp/editor-first-run[-<theme>]-*.png
+# slot. Then two windows arranged by hand on workspace 4 (a saved Omarchy
+# dwindle mode keeps it Hyprland's own tiling), 2:1, are captured from the
+# Layout tab: c, o (only workspace 4), the preview, y: two new slots, the
+# workspace's own tree h[t-left:2, t-right], each window's app assigned
+# there, unsaved until Ctrl+S. Screenshots go to
+# .e2e-tmp/editor-first-run[-<theme>]-*.png
 # (SMOKE_THEME=<an Omarchy theme dir> runs it in that theme, as the smoke).
 #
 # Screen: HEADLESS-2, 1920x1080, Omarchy block 0.
@@ -34,6 +42,9 @@ end)
 LUA
   smoke_theme_look
   seed_workspace_blocks HEADLESS-2
+  # Workspace 4 keeps Hyprland's own tiling (Super+L's choice, saved), so
+  # its windows are arranged by hand.
+  printf 'o.workspace_mode({ workspace = "4", mode = "dwindle" })\n' >"${E2E_LOADER%/*}/4.lua"
   # No $E2E_CONFIG_HOME/hyprslots: a fresh install.
 }
 
@@ -129,16 +140,36 @@ test_body() {
     pass "nothing unsaved in the header"
   fi
   expect_eq "the strip shows workspaces 1 to 9" "[All workspaces] · 1 2 3 4 5 6 7 8 9" "$(smoke layoutStrip)"
-  expect_eq "the picture explains slots and offers the first" \
-    "Start with your slots | Slots are named places on your screens, like left, main and right. Each app you assign goes into its slot. | You choose the names, and how many. Arrange them here, then put windows into them in the Assignment tab. | [a] Create your first slot" \
+  expect_eq "the picture explains slots and offers capturing your windows first, then the first slot" \
+    "Start with your slots | Slots are named places on your screens, like left, main and right. Each app you assign goes into its slot. | Quickest: arrange your windows on a workspace the way you like them, then capture. Each window becomes a slot, and the arrangement is remembered. | Or make them one by one: you choose the names, and how many. Arrange them here, then put windows into them in the Assignment tab. | [c] Capture my windows | [a] Create your first slot" \
     "$(smoke empty)"
-  if [[ $(smoke help) == 'cre<b><font color="#'*'">a</font></b>te your first slot'* ]]; then
-    pass "the help row offers it too"
+  if [[ $(smoke help) == *'">c</font></b>apture my windows'*'cre<b><font color="#'*'">a</font></b>te your first slot'* ]]; then
+    pass "the help row offers them too"
   else
     fail "help row: $(smoke help)"
   fi
   sleep 0.5
   shot 2-layout-empty
+
+  # "Capture my windows", clicked with the real pointer: whom it is for,
+  # then the preview, t-first as a slot of its own; n leaves it all as it was.
+  smoke_click welcome:capture
+  eventually 5 bash -c "[[ \$($watch message) == 'Capture workspace 1:'* ]]" || true
+  expect_eq "it asks whom the capture of the focused workspace is for" \
+    "Capture workspace 1: apply to (a)ll workspaces or (o)nly workspace 1? [Esc] cancel" "$(smoke message)"
+  expect_eq "a" "ok" "$(smoke press a)"
+  eventually 5 bash -c "[[ -n \$($watch capturePreview) ]]" || true
+  expect_eq "the picture previews the capture" "1: t-first" "$(smoke capturePreview)"
+  expect_eq "and asks y/n, naming the slot it makes and its key" \
+    "Capture workspace 1 for all workspaces: makes slot t-first (t), puts 1 window into its slot. Apply it? (y/n)" "$(smoke message)"
+  sleep 0.5
+  shot 2b-capture-preview
+  expect_eq "n" "ok" "$(smoke press n)"
+  expect_eq "it says nothing changed" "Capture cancelled: nothing changed." "$(smoke message)"
+  expect_eq "the preview is gone" "" "$(smoke capturePreview)"
+  expect_eq "still zero slots" "0" "$(api_state | jq -r '.slots | length')"
+  expect_eq "nothing unsaved" "false" "$(api_state | jq -r .dirty)"
+  if [[ $(smoke empty) == "Start with your slots"* ]]; then pass "the explanation is back"; else fail "empty: $(smoke empty)"; fi
 
   # The Assignment tab points back to the Layout tab, by a button.
   smoke_click tab:Assignment
@@ -233,6 +264,74 @@ test_body() {
   fi
   eventually 5 bash -c "[[ -z \$($watch hint) ]]" || true
   expect_eq "the hint is gone" "" "$(smoke hint)"
+  [[ $(smoke press Ctrl+s) == ok ]] || fail "Ctrl+S"
+  eventually 5 state_is .dirty false || fail "unsaved after Ctrl+S: $(smoke message)"
+  [[ $(smoke press Escape) == ok ]] || fail "Escape"
+
+  # Two windows arranged by hand on workspace 4 (Hyprland's own tiling
+  # there, Super+L's saved choice): t-left two thirds, t-right one.
+  hc dispatch "hl.dsp.focus({ workspace = '4' })" >/dev/null
+  spawn_and_wait t-left
+  spawn_and_wait t-right
+  settle
+  hc dispatch 'hl.dsp.focus({ window = "class:t-left" })' >/dev/null
+  hc dispatch 'hl.dsp.window.resize({ x = 320, y = 0, relative = true })' >/dev/null
+  settle
+  expect_client t-left 4 0 0 1280 1080
+  expect_client t-right 4 1280 0 640 1080
+
+  # The Layout tab's c captures the focused workspace from All workspaces:
+  # o (only workspace 4), the preview, y.
+  expect_eq "left click" "ok" "$(smoke barClick left)"
+  eventually 10 smoke_ready || fail "the panel never reopened: $(smoke errors)"
+  smoke_click tab:Layout
+  eventually 5 tab_is Layout || fail "the Layout tab did not open: $(smoke tabs)"
+  if [[ $(smoke help) == *'">c</font></b>apture'* ]]; then pass "the help row offers c capture"; else fail "help row: $(smoke help)"; fi
+  expect_eq "c" "ok" "$(smoke press c)"
+  expect_eq "c asks whom the capture of workspace 4 is for" \
+    "Capture workspace 4: apply to (a)ll workspaces or (o)nly workspace 4? [Esc] cancel" "$(smoke message)"
+  expect_eq "o" "ok" "$(smoke press o)"
+  eventually 5 bash -c "[[ -n \$($watch capturePreview) ]]" || true
+  expect_eq "the preview: the windows as they are arranged" "1: h[t-left:2, t-right]" "$(smoke capturePreview)"
+  local preview
+  preview=$(smoke message)
+  if [[ $preview == "Capture workspace 4 for workspace 4 only: makes slots t-left ("?") and t-right ("?"), puts 2 windows into their slots. Apply it? (y/n)" ]]; then
+    pass "it asks y/n, naming the new slots and their keys: $preview"
+  else
+    fail "preview message: $preview"
+  fi
+  expect_eq "the strip shows workspace 4" "All workspaces · 1 2 3 [4] 5 6 7 8 9" "$(smoke layoutStrip)"
+  expect_eq "nothing applied yet" "false" "$(api_state | jq -r .dirty)"
+  sleep 0.5
+  shot 7-capture-preview
+  expect_eq "y" "ok" "$(smoke press y)"
+  if eventually 5 state_is '.specs["4"]["t-left"]' t-left; then
+    pass "y captured workspace 4"
+  else
+    fail "not captured: $(api_state | jq -c '.specs'); $(smoke message); errors: $(smoke errors)"
+  fi
+  local layout
+  layout=$(api_state | jq -r .layout)
+  expect_eq "workspace 4's own tree" "h[t-left:2, t-right]" "$(api_state | jq -r --arg l "$layout" '.layouts[$l].workspaces["4"]["1"].tree')"
+  expect_eq "the slots" "main t-left t-right" "$(api_state | jq -r '[.slots[].name] | sort | join(" ")')"
+  expect_eq "t-right's app on workspace 4" "t-right" "$(api_state | jq -r '.specs["4"]["t-right"]')"
+  expect_eq "unsaved" "true" "$(api_state | jq -r .dirty)"
+  eventually 5 smoke_idle || true
+  if [[ $(smoke message) == "Captured workspace 4 for workspace 4 only: made slots t-left ("?") and t-right ("?"); 2 windows are in their slots. Ctrl+S saves." ]]; then
+    pass "it says what it made: $(smoke message)"
+  else
+    fail "message: $(smoke message)"
+  fi
+  if [[ $(smoke header) == *"unsaved"* ]]; then pass "the header says unsaved"; else fail "header: $(smoke header)"; fi
+  expect_eq "the picture shows the tree in force" "1: h[t-left:2, t-right]" "$(smoke layout)"
+  expect_client t-left 4 0 0 1280 1080
+  expect_client t-right 4 1280 0 640 1080
+  sleep 0.5
+  shot 8-captured
+  [[ $(smoke press Ctrl+s) == ok ]] || fail "Ctrl+S"
+  if eventually 5 state_is .dirty false; then pass "Ctrl+S saved the capture"; else fail "unsaved after Ctrl+S: $(smoke message)"; fi
+  grep -q 't-left' "$dir/slots.lua" || fail "slots.lua lacks t-left: $(cat "$dir/slots.lua")"
+  expect_eq "config.lua is never written" "$starter" "$(sha256sum <"$dir/config.lua")"
   [[ $(smoke press Escape) == ok ]] || fail "Escape"
 
   log "qs log (warnings):"

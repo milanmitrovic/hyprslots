@@ -1763,6 +1763,9 @@ function workspaceHelp(jumpKeys) {
 // ("default": R records a workspace, not the shared trees), screens (the
 // layout's screen count: p, swap with the next, on more than one) }. A key the
 // picture would refuse now is marked `enabled: false` (the toolbar dims it).
+// c captures the workspace's windows (Capture.js; from All workspaces the
+// focused one), so it needs no tree; the arrows go unlabelled, to keep the
+// row one line with it.
 function pictureHelp(opts) {
   var tiles = scrollMode(opts.node) === "tiles"
   var ro = !!opts.readOnly
@@ -1771,14 +1774,14 @@ function pictureHelp(opts) {
     if (!on) item.enabled = false
     return item
   }
-  var tree = [{ key: "←↑↓→", label: "select" }, off({ key: "hjkl/HJKL", label: "move" }, edits)]
+  var tree = [{ key: "←↑↓→", label: "" }, off({ key: "hjkl/HJKL", label: "move" }, edits)]
   if (tiles) tree.push(off({ key: "/", label: "flip" }, edits))
   tree.push(off({ key: "t", label: cycleLabel(opts.node), before: true }, edits))
   if (tiles) tree.push(off({ key: "r", label: "ratios" }, edits))
   if ((opts.screens || 0) > 1) tree.push(off({ key: "p", label: "swap" }, edits))
   tree.push({ key: "o", label: "others" })
   var layout = [off({ key: "w", label: "apply" }, !ro && opts.edited !== false), off({ key: "d", label: "revert" }, !ro),
-    off({ key: "R", label: "record" }, !ro && opts.workspace !== "default")]
+    off({ key: "R", label: "record" }, !ro && opts.workspace !== "default"), off({ key: "c", label: "capture" }, !ro)]
   if (opts.hasOwn) layout.push(off({ key: "u", label: "use shared" }, !ro))
   return [tree, layout, [{ key: "s", label: "slots" }]].concat(workspaceHelp(opts.jumpKeys))
 }

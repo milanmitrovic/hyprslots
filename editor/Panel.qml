@@ -59,12 +59,16 @@ Item {
   // whole page while there is nothing to show (`card`), else as a banner
   // over the views' last state. Enable (e, Return, the button) is the only
   // thing that writes: the service never does by itself.
+  // What Enable also does, as chosen in the prompt (k and m, or a click):
+  // the editor's keys (off unless asked), the Omarchy menu's entries (on).
+  property var enableOptions: Install.defaults()
   readonly property var enablePrompt: root.engine ? Install.prompt({
     absent: root.engine.absent,
     loadError: root.engine.loadError,
     stale: root.engine.state !== null,
     enabling: root.engine.enabling,
     error: root.engine.enableError,
+    options: root.enableOptions,
   }) : null
   readonly property bool enableCard: !!root.enablePrompt && root.enablePrompt.mode === "card"
 
@@ -101,8 +105,11 @@ Item {
   property int cardHeight: Math.min(Style.space(640), window.height - Style.gapsOut * 2)
 
   // `{"record": true}` (the bar widget's Record) opens on the Layout tab and
-  // starts its record flow (R) once the state is read.
+  // starts its record flow (R) once the state is read; `{"capture": true}`
+  // (the bar's Capture, the Omarchy menu's and the keybind's) its capture
+  // flow (c) on the focused workspace.
   property bool pendingRecord: false
+  property bool pendingCapture: false
   // The tab it opens on is Guide.openingTab's: the Layout tab while there
   // are no slots, else Assignment; one the payload asks for wins. Chosen
   // again on the first state read after opening (the state it had may be
@@ -134,6 +141,10 @@ Item {
       root.pendingRecord = true
       Qt.callLater(root.startPendingRecord)
     }
+    if (payload.capture === true) {
+      root.pendingCapture = true
+      Qt.callLater(root.startPendingCapture)
+    }
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
@@ -141,6 +152,18 @@ Item {
     if (!root.pendingRecord || !root.opened || !root.engine || root.engine.state === null) return
     root.pendingRecord = false
     if (!layoutView.prompting) layoutView.recordFocused()
+  }
+
+  function startPendingCapture() {
+    if (!root.pendingCapture || !root.opened || !root.engine || root.engine.state === null) return
+    root.pendingCapture = false
+    if (!layoutView.prompting) layoutView.captureFocused()
+  }
+
+  // The Assignment tab's c: the Layout tab, capturing that page's workspace.
+  function captureWorkspace(n) {
+    root.pickTab(1)
+    if (!layoutView.prompting) layoutView.startCapture(n)
   }
 
   // The first state read after opening settles the opening tab.
@@ -160,6 +183,7 @@ Item {
   function close() {
     root.opened = false
     root.pendingRecord = false
+    root.pendingCapture = false
     root.pendingTab = false
     if (root.engine) root.engine.active = false
   }
@@ -184,6 +208,10 @@ Item {
     if (root.enablePrompt) {
       if (text === "e" || key === Qt.Key_Return || key === Qt.Key_Enter) {
         root.enableEngine()
+        return true
+      }
+      if (Install.toggles(text)) {
+        if (!root.enablePrompt.busy) root.enableOptions = Install.toggle(root.enableOptions, text)
         return true
       }
       var passes = key === Qt.Key_Tab || key === Qt.Key_Backtab || key === Qt.Key_Escape || text === "q"
@@ -223,17 +251,24 @@ Item {
     if (!root.engine || root.engine.enabling) return
     root.engine.enable(function(result) {
       if (result.ok && root.currentView) root.currentView.say(result.message, false)
-    })
+    }, root.enableOptions)
   }
 
   // The enable prompt as one line, " | " between its parts ("card | Enable
   // the hyprslots engine? | … | [e] Enable"), its error last; "" for none:
-  // for the e2e smoke.
+  // for the e2e smoke. enableChoicesText: its choices, "[x] k Also bind …;
+  // [ ] m Add …".
   function enablePromptText() {
     var p = root.enablePrompt
     if (!p) return ""
     return [p.mode, p.title].concat(p.lines).concat(["[" + p.action.key + "] " + p.action.label])
       .concat(p.error ? [p.error] : []).join(" | ")
+  }
+
+  function enableChoicesText() {
+    var p = root.enablePrompt
+    if (!p) return ""
+    return p.options.map(function(o) { return (o.checked ? "[x] " : "[ ] ") + o.key + " " + o.label }).join("; ")
   }
 
   // Ctrl+S, one save for every view: the engine's `save`, said in the current
@@ -314,10 +349,11 @@ Item {
   // (Guide.js), " | " between its parts, the action last as "[key] label";
   // "" when nothing does: for the e2e smoke.
   function emptyText() {
-    var e = root.tab === 1 ? layoutView.welcome : root.tab === 0 ? assignmentView.empty : null
+    var e = root.tab === 1 ? (layoutView.preview ? null : layoutView.welcome) : root.tab === 0 ? assignmentView.empty : null
     if (!e) return ""
     var parts = e.title ? [e.title].concat(e.lines) : [e.text]
-    return parts.concat(["[" + e.action.key + "] " + e.action.label]).join(" | ")
+    var actions = e.actions || [e.action]
+    return parts.concat(actions.map(function(a) { return "[" + a.key + "] " + a.label })).join(" | ")
   }
 
   function deskIntroText() {
@@ -335,6 +371,19 @@ Item {
   // *): for the e2e smoke.
   function layoutText() {
     return layoutView.draftText()
+  }
+
+  // The Layout view's capture preview, "1: h[foot:2, t-term]; 2: -", ""
+  // when none shows: for the e2e smoke.
+  function capturePreviewText() {
+    return layoutView.previewText()
+  }
+
+  // The Assignment page's launch line and each slot row's command status,
+  // "Launch apps: on demand | main: foot; notes: ! can't launch: set a
+  // command" (urgent ones marked !): for the e2e smoke.
+  function launchText() {
+    return assignmentView.launchText()
   }
 
   // A divider being dragged in the Layout view: "<screen> <tree as it
@@ -534,6 +583,7 @@ Item {
       if (!ok) return
       root.settleTab()
       root.startPendingRecord()
+      root.startPendingCapture()
     }
   }
 
@@ -722,6 +772,19 @@ Item {
                   wrapMode: Text.WordWrap
                   text: root.enablePrompt ? root.enablePrompt.lines.join(" ") : ""
                 }
+                Repeater {
+                  model: root.enablePrompt && !root.enableCard ? root.enablePrompt.options : []
+                  delegate: CheckRow {
+                    required property var modelData
+                    objectName: "enable:" + modelData.id
+                    width: parent.width
+                    text: modelData.label
+                    keyText: modelData.key
+                    checked: modelData.checked
+                    available: !root.enablePrompt.busy
+                    onClicked: root.press(modelData.key)
+                  }
+                }
                 InfoText {
                   width: parent.width
                   wrapMode: Text.WordWrap
@@ -777,6 +840,26 @@ Item {
                   text: modelData
                 }
               }
+              // What Enable also does: the editor's keys, the Omarchy menu.
+              Column {
+                width: Math.min(parent.width, Style.space(560))
+                anchors.horizontalCenter: parent.horizontalCenter
+                spacing: Style.spacing.sm
+                Repeater {
+                  model: root.enableCard && root.enablePrompt ? root.enablePrompt.options : []
+                  delegate: CheckRow {
+                    required property var modelData
+                    objectName: "enable:" + modelData.id
+                    width: parent.width
+                    text: modelData.label
+                    keyText: modelData.key
+                    checked: modelData.checked
+                    available: !root.enablePrompt.busy
+                    pixelSize: Style.font.body
+                    onClicked: root.press(modelData.key)
+                  }
+                }
+              }
               Item {
                 width: parent.width
                 height: cardButton.height + Style.spacing.sm
@@ -808,6 +891,7 @@ Item {
               anchors.fill: parent
               visible: root.tab === 0 && !root.enableCard
               onPressKey: function(name) { root.press(name) }
+              onCaptureWorkspace: function(n) { root.captureWorkspace(n) }
               engine: root.engine
               foreground: root.foreground
               selectedBackground: root.selectedBackground

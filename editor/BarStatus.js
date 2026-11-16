@@ -121,28 +121,41 @@ function view(input) {
 }
 
 // The right-click menu for the same input as view(): [{ id, label, enabled }]
-// with ids "arrange", "record", "save", "reload". Re-apply and record need
-// the bar's screen to show a workspace of a running engine (a config error leaves
-// the last good config running); save needs unsaved edits; reload needs
-// only the service and an engine (it is how a fixed config error is picked
-// up). With no engine nothing is offered: a click opens the editor's Enable.
+// with ids "arrange", "record", "capture", "save", "reload". Re-apply,
+// record and capture need the bar's screen to show a workspace of a running
+// engine (a config error leaves the last good config running); record also
+// needs slots to record into (a fresh install has none), capture makes them;
+// save needs unsaved edits; reload needs only the service and an engine (it
+// is how a fixed config error is picked up). With no engine nothing is
+// offered: a click opens the editor's Enable.
 function menu(input) {
   var v = view(input)
   var state = input.state
   var live = !!(input.engine && !input.error && !input.absent && state && !state.refused)
   var onWorkspace = live && v.workspace !== null
+  var noSlots = !!state && Array.isArray(state.slots) && state.slots.length === 0
   return [
     { id: "arrange", label: "Re-apply layout" + (v.workspace !== null ? " (workspace " + v.workspace + ")" : ""),
       enabled: onWorkspace },
     { id: "record", label: "Record workspace" + (v.workspace !== null ? " " + v.workspace : "") + "…",
-      enabled: onWorkspace },
+      enabled: onWorkspace && !noSlots },
+    { id: "capture", label: "Capture this workspace…", enabled: onWorkspace },
     { id: "save", label: "Save", enabled: live && v.dirty },
     { id: "reload", label: "Reload config", enabled: !!input.engine && !input.absent },
   ]
 }
 
-// The api calls a menu entry makes, in order ([] for record, which opens
-// the panel's Layout tab on its record flow instead). Re-apply is the
+// The open payload a menu entry summons the panel with (Record: its R
+// flow, Capture: its c flow, both on the Layout tab), or null for an entry
+// that calls the engine (calls).
+function summon(id) {
+  if (id === "record") return { record: true }
+  if (id === "capture") return { capture: true }
+  return null
+}
+
+// The api calls a menu entry makes, in order ([] for record and capture,
+// which open the panel's Layout tab on their flows instead). Re-apply is the
 // workspace's Super+N (`workspace`: every screen of the desk shows it
 // again, scroll branches back in slot order) and then `arrange` (the scroll
 // pass now, the focused scroll workspace's columns widened).

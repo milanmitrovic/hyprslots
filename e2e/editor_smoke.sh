@@ -662,7 +662,7 @@ bar_widget() {
   shot 19-bar-widget
 
   expect_eq "right click" "ok" "$(smoke barClick right)"
-  expect_eq "opens the menu, Save on with unsaved edits" "open: arrange on, record on, save on, reload on" \
+  expect_eq "opens the menu, Save on with unsaved edits" "open: arrange on, record on, capture on, save on, reload on" \
     "$(smoke barMenu)"
   sleep 0.5
   shot 20-bar-menu
@@ -672,7 +672,7 @@ bar_widget() {
   else
     fail "after Save the widget shows $(smoke barLabel); dirty $(api_state | jq -r .dirty)"
   fi
-  expect_eq "the menu closed" "closed: arrange on, record on, save off, reload on" "$(smoke barMenu)"
+  expect_eq "the menu closed" "closed: arrange on, record on, capture on, save off, reload on" "$(smoke barMenu)"
   eventually 5 bash -c "[[ \$($watch barRun) == *Saved* ]]" || true
   expect_eq "and the outcome is a notification" \
     "notify-send -a Hyprslots Hyprslots 'Saved.'" "$(smoke barRun)"
@@ -713,6 +713,19 @@ bar_widget() {
   expect_eq "nothing applied" "false" "$(api_state | jq -r .dirty)"
   expect_eq "the panel closed" "no" "$(smoke ready)"
 
+  # Capture opens it on the Layout tab's capture flow (c) on the focused
+  # workspace: whom it is for first; Esc cancels, nothing applied.
+  expect_eq "Capture this workspace" "ok" "$(smoke barChoose capture)"
+  if eventually 5 bash -c "[[ \$($watch message) == 'Capture workspace '*'? [Esc] cancel' ]]"; then
+    pass "Capture opened the panel on the capture question: $(smoke message)"
+  else
+    fail "Capture: ready $(smoke ready), message $(smoke message)"
+  fi
+  expect_eq "on the Layout tab" "Layout" "$(smoke tabs | sed 's/.* | //')"
+  press_keys Escape Escape
+  expect_eq "nothing applied" "false" "$(api_state | jq -r .dirty)"
+  expect_eq "the panel closed" "no" "$(smoke ready)"
+
   # hyprslots failed to load (its loader kept the error): the next state
   # read finds no engine, the widget turns red and names the error.
   repl 'hyprslots_smoke = hyprslots; hyprslots = nil; hyprslots_load_error = "smoke: boom"; return "gone"' >/dev/null
@@ -729,7 +742,7 @@ bar_widget() {
   else
     fail "tooltip: $tooltip"
   fi
-  expect_eq "nothing is offered without an engine" "closed: arrange off, record off, save off, reload off" "$(smoke barMenu)"
+  expect_eq "nothing is offered without an engine" "closed: arrange off, record off, capture off, save off, reload off" "$(smoke barMenu)"
   sleep 0.3
   shot 23-bar-error
   # Not loaded at all (not enabled): the widget asks to enable it.
@@ -1355,12 +1368,20 @@ test_body() {
   shot 3-unassigned
 
   # u on a Missing row (a spec whose window is not open) clears that spec;
-  # side waits for t-side again (set through the api), u, y clears it. c is
-  # no key any more.
+  # side waits for t-side again (set through the api), u, y clears it. c
+  # captures the page's workspace in the Layout tab (Esc there cancels it).
   repl 'return hyprslots.api.call("set_spec", "{\"workspace\": 3, \"slot\": \"side\", \"spec\": \"t-side\"}")' >/dev/null
   eventually 5 bash -c "[[ \$($watch selection) == 'missing side t-side' ]]" || true
   expect_eq "side is Missing t-side" "missing side t-side" "$(smoke selection)"
-  expect_eq "c is no key" "ignored" "$(smoke press c)"
+  expect_eq "c" "ok" "$(smoke press c)"
+  expect_eq "c goes to the Layout tab" "Layout" "$(smoke tabs | sed 's/.* | //')"
+  expect_eq "and asks whom the capture of the page's workspace is for" \
+    "Capture workspace 3: apply to (a)ll workspaces or (o)nly workspace 3? [Esc] cancel" "$(smoke message)"
+  expect_eq "Esc" "ok" "$(smoke press Escape)"
+  expect_eq "Esc cancels it" "Cancelled." "$(smoke message)"
+  expect_eq "nothing previewed" "" "$(smoke capturePreview)"
+  expect_eq "back to Assignment" "ok" "$(smoke press Backtab)"
+  expect_eq "on the same row" "missing side t-side" "$(smoke selection)"
   if [[ $(smoke help) == *'">u</font></b>nassign  '* ]]; then
     pass "the help row's u is unassign on a Missing row too"
   else

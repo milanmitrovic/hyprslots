@@ -96,7 +96,7 @@ test("an engine not enabled yet asks to be, as a quiet set-up nudge, not an erro
     assert.equal(view.tooltip, "Hyprslots: the engine is not enabled\nClick to enable it");
   }
   assert.deepEqual(menuOf({ ...absent, state: state() }).map((line) => line.split(" ").slice(0, 2).join(" ")),
-    ["arrange off", "record off", "save off", "reload off"]);
+    ["arrange off", "record off", "capture off", "save off", "reload off"]);
 });
 
 test("an engine that failed to load is an error that says why", () => {
@@ -128,16 +128,18 @@ test("the right-click menu: re-apply and record name the workspace, save only wi
   assert.deepEqual(menuOf(running()), [
     "arrange on Re-apply layout (workspace 3)",
     "record on Record workspace 3…",
+    "capture on Capture this workspace…",
     "save off Save",
     "reload on Reload config",
   ]);
-  assert.deepEqual(menuOf(running({ dirty: true })).slice(2, 3), ["save on Save"]);
+  assert.deepEqual(menuOf(running({ dirty: true })).slice(3, 4), ["save on Save"]);
 });
 
 test("without a workspace, re-apply and record are off", () => {
   assert.deepEqual(menuOf(running({}, 7)), [
     "arrange off Re-apply layout",
     "record off Record workspace…",
+    "capture off Capture this workspace…",
     "save off Save",
     "reload on Reload config",
   ]);
@@ -147,6 +149,7 @@ test("a config error still lets the running config be used and the files reloade
   assert.deepEqual(menuOf(running({ config_error: "bad", dirty: true })).map((l) => l.split(" ").slice(0, 2).join(" ")), [
     "arrange on",
     "record on",
+    "capture on",
     "save on",
     "reload on",
   ]);
@@ -158,9 +161,9 @@ test("an engine that is off or unreachable offers only a reload", () => {
     { engine: true, error: "hyprslots did not answer", state: state({ dirty: true }), workspaceId: 3 },
   ];
   for (const input of states) {
-    assert.deepEqual(menuOf(input).map((l) => l.split(" ").slice(0, 2).join(" ")), ["arrange off", "record off", "save off", "reload on"]);
+    assert.deepEqual(menuOf(input).map((l) => l.split(" ").slice(0, 2).join(" ")), ["arrange off", "record off", "capture off", "save off", "reload on"]);
   }
-  assert.deepEqual(menuOf({ engine: false, error: "", state: null, workspaceId: 3 }).map((l) => l.split(" ")[1]), ["off", "off", "off", "off"]);
+  assert.deepEqual(menuOf({ engine: false, error: "", state: null, workspaceId: 3 }).map((l) => l.split(" ")[1]), ["off", "off", "off", "off", "off"]);
 });
 
 test("re-apply shows the workspace again on every screen (as Super+N does), then runs the scroll pass", () => {
@@ -171,6 +174,7 @@ test("re-apply shows the workspace again on every screen (as Super+N does), then
   assert.deepEqual(plain(B.calls("save", 3)), [{ name: "save", args: {} }]);
   assert.deepEqual(plain(B.calls("reload", null)), [{ name: "reload", args: {} }]);
   assert.deepEqual(plain(B.calls("record", 3)), []);
+  assert.deepEqual(plain(B.calls("capture", 3)), [], "capture opens the panel's capture flow instead");
 });
 
 test("each call's outcome in a sentence, a failure in the engine's words", () => {
@@ -210,4 +214,17 @@ test("an error wins over the set-up state", () => {
   assert.equal(view.status, "error");
   assert.equal(view.setup, false);
   assert.equal(B.view({ engine: true, error: "", state: null, workspaceId: 3 }).setup, false, "nothing read yet");
+});
+
+test("with zero slots Capture is offered and Record is not: capture makes the slots, record needs them", () => {
+  assert.deepEqual(menuOf(running({ slots: [] })).map((l) => l.split(" ").slice(0, 2).join(" ")),
+    ["arrange on", "record off", "capture on", "save off", "reload on"]);
+  assert.deepEqual(menuOf(running({ slots: [{ name: "main", key: "m" }] })).map((l) => l.split(" ").slice(0, 2).join(" ")),
+    ["arrange on", "record on", "capture on", "save off", "reload on"]);
+});
+
+test("Capture opens the panel with { capture: true }, as Record does with { record: true }", () => {
+  assert.deepEqual(plain(B.summon("capture")), { capture: true });
+  assert.deepEqual(plain(B.summon("record")), { record: true });
+  assert.equal(B.summon("save"), null, "the other entries call the engine");
 });

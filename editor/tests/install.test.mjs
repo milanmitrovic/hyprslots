@@ -64,9 +64,50 @@ test("a run's outcome: its last line when it worked, its error output when not",
   assert.deepEqual(plain(I.outcome(127, "", "")), { ok: false, message: "tools/install-engine.sh failed (exit 127)" });
 });
 
-test("the help row while it asks: enable, the tabs, close", () => {
+test("the help row while it asks: enable, the two choices, the tabs, close", () => {
   assert.deepEqual(plain(I.helpGroups()), [
     [{ key: "e", label: "enable" }],
+    [{ key: "k", label: "keys" }, { key: "m", label: "menu" }],
     [{ key: "Tab", label: "view" }, { key: "q", label: "close" }],
   ]);
+});
+
+test("it offers two choices: the editor's keys (off unless asked) and Omarchy's menu (on)", () => {
+  const p = plain(I.prompt({ absent: true, loadError: "", stale: false, enabling: false, error: "", options: I.defaults() }));
+  assert.deepEqual(p.options, [
+    { id: "keys", key: "k", label: "Also bind Super+Ctrl+Y to open the editor and Super+Ctrl+Shift+C to capture", checked: false },
+    { id: "menu", key: "m", label: "Add hyprslots to the Omarchy menu (Open editor, Capture this workspace, Launch missing apps)", checked: true },
+  ]);
+  const banner = plain(I.prompt({ absent: true, loadError: "", stale: true, enabling: false, error: "", options: { keys: true, menu: false } }));
+  assert.deepEqual(banner.options.map((o) => o.checked), [true, false], "the banner offers them too, as chosen");
+  const missing = plain(I.prompt({ absent: true, loadError: "", stale: false, enabling: false, error: "" }));
+  assert.deepEqual(missing.options.map((o) => o.checked), [false, true], "the defaults when none are given");
+});
+
+test("k and m toggle the choices; any other key changes nothing", () => {
+  assert.deepEqual(plain(I.toggle({ keys: false, menu: true }, "k")), { keys: true, menu: true });
+  assert.deepEqual(plain(I.toggle({ keys: true, menu: true }, "m")), { keys: true, menu: false });
+  assert.deepEqual(plain(I.toggle({ keys: true, menu: false }, "x")), { keys: true, menu: false });
+  assert.equal(I.toggles("k"), true);
+  assert.equal(I.toggles("m"), true);
+  assert.equal(I.toggles("e"), false);
+});
+
+test("Enable passes the choices on to the script: --keys and --menu where chosen", () => {
+  const url = "file:///p/tools/install-engine.sh";
+  assert.deepEqual(Array.from(I.enableCommand(url, { keys: false, menu: true })), ["bash", "/p/tools/install-engine.sh", "--menu"]);
+  assert.deepEqual(Array.from(I.enableCommand(url, { keys: true, menu: true })), ["bash", "/p/tools/install-engine.sh", "--keys", "--menu"]);
+  assert.deepEqual(Array.from(I.enableCommand(url, { keys: true, menu: false })), ["bash", "/p/tools/install-engine.sh", "--keys"]);
+  assert.deepEqual(Array.from(I.enableCommand(url, { keys: false, menu: false })), ["bash", "/p/tools/install-engine.sh"]);
+});
+
+test("success says what the script did about the keys and the menu, then its last line", () => {
+  const out = "Installed the hyprslots loader: /x\n"
+    + "Super+Ctrl+Y is bound already (Hyprslots): left as it is\n"
+    + "Bound Super+Ctrl+Shift+C: capture this workspace\n"
+    + "Added 3 entries to the Omarchy menu\n"
+    + "Reloaded Hyprland: the hyprslots engine is running.\n";
+  assert.deepEqual(plain(I.outcome(0, out, "")), { ok: true, message:
+    "Super+Ctrl+Y is bound already (Hyprslots): left as it is. Bound Super+Ctrl+Shift+C: capture this workspace."
+    + " Added 3 entries to the Omarchy menu. Reloaded Hyprland: the hyprslots engine is running." });
 });
