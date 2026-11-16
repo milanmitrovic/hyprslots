@@ -623,6 +623,26 @@ function M.bind_resize_keys()
   resize.bind_keys()
 end
 
+-- The editor's keys (install-engine.sh --keys writes them into the loader,
+-- each only where it was free): `editor` toggles the editor panel,
+-- `capture` opens it on the focused workspace's capture.
+local PANEL = "io.github.milanmitrovic.hyprslots"
+local EDITOR_KEYS = {
+  { name = "editor", description = "Hyprslots: open the editor",
+    command = "omarchy-shell shell toggle " .. PANEL },
+  { name = "capture", description = "Hyprslots: capture this workspace",
+    command = "omarchy-shell shell summon " .. PANEL .. " '{\"capture\":true}'" },
+}
+
+function M.bind_editor_keys(keys)
+  for _, key in ipairs(EDITOR_KEYS) do
+    local combo = type(keys) == "table" and keys[key.name]
+    if type(combo) == "string" and combo ~= "" then
+      adapter.bind_command(combo, key.description, key.command)
+    end
+  end
+end
+
 -- One rebound resize key's action (what the keybindings menu replays).
 function M.resize_key(dx, dy)
   return resize.key_action(dx, dy)

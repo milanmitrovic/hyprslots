@@ -298,6 +298,16 @@ function M.rebind(keys, description, action)
   return hl().bind(keys, action, { description = description })
 end
 
+-- Bind keys to a shell command: through Omarchy's o.bind when it is loaded
+-- (the keybindings menu lists the description), else hl directly.
+function M.bind_command(keys, description, command)
+  local o = rawget(_G, "o")
+  if type(o) == "table" and type(o.bind) == "function" then
+    return o.bind(keys, description, command)
+  end
+  return hl().bind(keys, hl().dsp.exec_cmd(command), { description = description })
+end
+
 -- Register a bind action's replay expression with Omarchy's keybindings menu.
 function M.bind_expression(action, expression)
   local o = rawget(_G, "o")

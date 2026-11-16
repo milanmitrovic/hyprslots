@@ -15,8 +15,19 @@ return {
   setup = function() calls[#calls + 1] = "setup" end,
   bind_workspace_keys = function() calls[#calls + 1] = "bind_workspace_keys" end,
   bind_resize_keys = function() calls[#calls + 1] = "bind_resize_keys" end,
+  bind_editor_keys = function(keys)
+    local list = {}
+    for name, key in pairs(keys) do
+      list[#list + 1] = name .. "=" .. key
+    end
+    table.sort(list)
+    calls[#calls + 1] = "bind_editor_keys " .. table.concat(list, " ")
+  end,
 }
 ]]
+
+-- What install-engine.sh --keys writes over the loader's KEYS line.
+local KEYS_LINE = 'local KEYS = { editor = "SUPER + CTRL + Y", capture = "SUPER + CTRL + SHIFT + C" }'
 
 describe("the engine loader", function()
   local root, config_home, loader_path, plugin, hl
@@ -91,6 +102,19 @@ describe("the engine loader", function()
     assert.are.equal(first, package.path:sub(1, #first))
   end)
 
+  it("binds the editor's keys install-engine.sh wrote into it, after the rest", function()
+    write(plugin .. "/lua/hyprslots/init.lua", ENGINE)
+    local file = assert(io.open(loader_path, "r"))
+    local text = file:read("a")
+    file:close()
+    local replaced, count = text:gsub("\nlocal KEYS = {}\n", "\n" .. KEYS_LINE .. "\n")
+    assert.are.equal(1, count, "the loader has one KEYS line for install-engine.sh to write")
+    write(loader_path, replaced)
+    load()
+    assert.are.same({ "setup", "bind_workspace_keys", "bind_resize_keys",
+      "bind_editor_keys capture=SUPER + CTRL + SHIFT + C editor=SUPER + CTRL + Y" }, _G.loader_spec_calls)
+  end)
+
   it("puts the plugin's lua folder on the search path once, however often the config loads", function()
     write(plugin .. "/lua/hyprslots/init.lua", ENGINE)
     load()
@@ -111,7 +135,20 @@ describe("the engine loader", function()
   end)
 
   it("does nothing, and removes itself, once the plugin is removed", function()
+    local menu = config_home .. "/omarchy/extensions/omarchy-menu.jsonc"
+    write(menu, table.concat({
+      "{",
+      '  "mine": {"label":"Mine"},',
+      "  // >>> hyprslots (io.github.milanmitrovic.hyprslots): tools/menu-entries.sh remove takes this out",
+      '  "trigger.hyprslots-editor": {"label":"hyprslots: Open editor"},',
+      "  // <<< hyprslots",
+      "}",
+      "",
+    }, "\n"))
     load()
+    local file = assert(io.open(menu, "r"))
+    assert.are.equal('{\n  "mine": {"label":"Mine"},\n}\n', file:read("a"), "its Omarchy menu entries go too")
+    file:close()
     assert.are.same({}, _G.loader_spec_calls)
     assert.is_nil(_G.hyprslots)
     assert.is_nil(_G.hyprslots_load_error)

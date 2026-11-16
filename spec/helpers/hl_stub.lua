@@ -231,6 +231,7 @@ function M.new(opts)
     exit = dispatcher("exit"),
     event = dispatcher("event"),
     layout = dispatcher("layout"),
+    exec_cmd = dispatcher("exec_cmd"),
     window = { move = dispatcher("window.move"), resize = dispatcher("window.resize"), swap = dispatcher("window.swap") },
     workspace = { move = dispatcher("workspace.move"), change_id = dispatcher("workspace.change_id") },
   }
