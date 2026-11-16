@@ -107,18 +107,19 @@ end
 --   input.command      fn(parsed spec) -> M.command's reply
 --
 -- A slot with a spec there and no window in it, by slot name. Never twice:
--- not for a window already open that its spec matches (overflowing, or
--- anywhere but in another slot of the workspace; each such window counts
--- for one slot), nor while one launched for it is on its way. Returns
+-- not for a window already open that its spec matches and no slot holds
+-- (overflowing, or opened anywhere; each such window counts for one slot;
+-- one in another slot, of any workspace, is that slot's), nor while one
+-- launched for it is on its way. Returns
 -- { launch = { { slot, spec, command } }, open = { slots }, pending =
 -- { slots }, cannot = { { slot, spec, reason } } }.
 function M.missing(input)
   local n = input.workspace
   local filled, holding = {}, {}
   for address, a in pairs(input.assignments or {}) do
+    holding[address] = true
     if a.workspace == n then
       filled[a.slot] = true
-      holding[address] = true
     end
   end
   local spare = {}

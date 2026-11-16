@@ -72,7 +72,14 @@ describe("launch.missing", function()
       out.launch)
   end)
 
-  it("never for a window already open that the spec matches and no slot of the workspace holds", function()
+  it("for a slot whose app is open only in another workspace's slot: each slot its own window", function()
+    local out = plan({ specs = { main = parsed("foot") },
+      assignments = { ["0x9"] = { workspace = 5, slot = "main" } },
+      windows = { { address = "0x9", class = "foot", title = "foot" } } })
+    assert.same({ { slot = "main", spec = "foot", command = "foot" } }, out.launch)
+  end)
+
+  it("never for a window already open that the spec matches and no slot holds", function()
     local held = plan({ specs = { main = parsed("foot"), aside = parsed("foot") },
       assignments = { ["0x9"] = { workspace = 3, slot = "main" } },
       windows = { { address = "0x9", class = "foot", title = "foot" } } })
