@@ -508,6 +508,35 @@ function M.clear_spec(data, workspace, slot)
   return out
 end
 
+-- The data with workspace `workspace`'s launch setting set: "on_demand" or
+-- "at_login"; "never" (the default) takes the workspace out, and an empty
+-- `launch` goes with its last one.
+function M.set_launch(data, workspace, mode)
+  local ok, err = check_workspace(workspace)
+  if not ok then
+    return nil, err
+  end
+  if mode ~= "never" and mode ~= "on_demand" and mode ~= "at_login" then
+    return nil, "a launch setting is never, on_demand or at_login, got '" .. tostring(mode) .. "'"
+  end
+  local out = M.copy(data)
+  local launch = type(out.launch) == "table" and out.launch or {}
+  launch[workspace] = mode ~= "never" and mode or nil
+  out.launch = next(launch) ~= nil and launch or nil
+  return out
+end
+
+-- The data with app `class`'s desktop entry (its id) recorded.
+function M.set_desktop_id(data, class, id)
+  if type(class) ~= "string" or class == "" or type(id) ~= "string" or id == "" then
+    return nil, "a desktop id is recorded for an app's class"
+  end
+  local out = M.copy(data)
+  out.desktop_ids = type(out.desktop_ids) == "table" and out.desktop_ids or {}
+  out.desktop_ids[class] = id
+  return out
+end
+
 -- Desks and layouts -----------------------------------------------------------
 
 local MAX_SCREENS = 10

@@ -129,6 +129,12 @@ function M.move_window(address, workspace_id)
   }))
 end
 
+-- Run a shell command, its windows opening on workspace `workspace_id`
+-- without being shown (Hyprland's exec rules).
+function M.exec(command, workspace_id)
+  return hl().exec_cmd(command, { workspace = tostring(workspace_id) .. " silent" })
+end
+
 -- Print to Hyprland's log.
 function M.print(text)
   print(text)

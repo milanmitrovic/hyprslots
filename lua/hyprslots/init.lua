@@ -452,6 +452,7 @@ workspace_rules = function(self, runtime)
 end
 
 local function start(self, opts)
+  self.desktop_dirs = opts.desktop_dirs -- the applications folders (tests); else the XDG ones
   adapter.register_layout(LAYOUT, layout.provider(self))
 
   if adapter.omarchy_workspaces() == nil then
@@ -473,7 +474,11 @@ local function start(self, opts)
       window_rules.sync(self)
     end)
   end
-  adapter.on("hyprland.start", on_start)
+  adapter.on("hyprland.start", function()
+    on_start()
+    -- Apps launched at login: on Hyprland's start only, never on a reload.
+    self:guard("launch at login", api.launch_at_login, self)
+  end)
   adapter.on("config.reloaded", on_start)
 
   hotplug.attach(self)

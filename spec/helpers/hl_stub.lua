@@ -299,6 +299,12 @@ function M.new(opts)
     return { is_enabled = function() return spec.enabled ~= false end, set_enabled = function() end }
   end
 
+  -- hl.exec_cmd(cmd, rules): every launch, as { cmd, rules } in hl.execs.
+  hl.execs = {}
+  function hl.exec_cmd(cmd, rules)
+    hl.execs[#hl.execs + 1] = { cmd = cmd, rules = rules }
+  end
+
   hl.layout = {
     register = function(name, provider)
       hl.layouts[name] = provider

@@ -520,7 +520,87 @@ local function validate_scroll(raw, fail)
 end
 
 local KNOWN = { slots = true, specs = true, desks = true, layouts = true, title_matching = true,
-  scroll = true, workspaces = true, monitor_names = true }
+  scroll = true, workspaces = true, monitor_names = true, launch = true, launch_commands = true, desktop_ids = true }
+
+local LAUNCH_MODES = { never = true, on_demand = true, at_login = true }
+
+-- Each workspace's launch setting (docs/design.md §9, Launching apps):
+-- workspace -> "never" | "on_demand" | "at_login" (absent: never).
+local function validate_launch(raw, fail, count)
+  local out = {}
+  if raw == nil then
+    return out
+  end
+  if type(raw) ~= "table" then
+    fail("launch", "must be a table of workspace -> \"never\", \"on_demand\" or \"at_login\"")
+    return out
+  end
+  for _, key in ipairs(sorted_keys(raw)) do
+    local path = key_path("launch", key)
+    if not is_workspace(key, count) then
+      fail(path, "a workspace must be an integer from 1 to " .. count .. " (workspaces = " .. count .. ")")
+    elseif not LAUNCH_MODES[raw[key]] then
+      fail(path, "must be \"never\", \"on_demand\" or \"at_login\", got " .. tostring(raw[key]))
+    elseif raw[key] ~= "never" then
+      out[key] = raw[key]
+    end
+  end
+  return out
+end
+
+-- The commands specs launch with where their app's own will not do
+-- (config.lua's): spec text -> a shell command.
+local function validate_launch_commands(raw, fail, title_matching)
+  local out = {}
+  if raw == nil then
+    return out
+  end
+  if type(raw) ~= "table" then
+    fail("launch_commands", "must be a table of spec -> command")
+    return out
+  end
+  for _, key in ipairs(sorted_keys(raw)) do
+    local path = key_path("launch_commands", key)
+    local parsed, err = type(key) == "string" and spec.parse(key, title_matching) or nil, nil
+    if type(key) ~= "string" then
+      err = "must be keyed by a spec (an app, app/title, [Tag] or [Tag]/Profile)"
+    elseif not parsed then
+      err = select(2, spec.parse(key, title_matching))
+    end
+    if err then
+      fail(path, err)
+    elseif type(raw[key]) ~= "string" or raw[key]:match("^%s*$") then
+      fail(path, "must be a command (text)")
+    else
+      out[parsed.text] = raw[key]
+    end
+  end
+  return out
+end
+
+-- The desktop entry each app class launches from, as the engine found it
+-- when a spec was made of one of its windows: class -> desktop id.
+local function validate_desktop_ids(raw, fail)
+  local out = {}
+  if raw == nil then
+    return out
+  end
+  if type(raw) ~= "table" then
+    fail("desktop_ids", "must be a table of app class -> desktop id")
+    return out
+  end
+  for _, key in ipairs(sorted_keys(raw)) do
+    local id = raw[key]
+    if type(key) ~= "string" or key == "" then
+      fail(key_path("desktop_ids", key), "must be keyed by an app's class")
+    elseif type(id) ~= "string" or id == "" or id:find("/", 1, true) then
+      fail(key_path("desktop_ids", key), "must be a desktop id (its file's name without .desktop)")
+    else
+      out[key] = id
+    end
+  end
+  return out
+end
 
 -- The user's labels for monitors: selector (a description, serial or
 -- connector, as a desk names a monitor) -> a short name the editor shows
@@ -601,6 +681,9 @@ function M.validate(raw, monitors)
     layouts = {},
     layout_names = {},
     monitor_names = validate_monitor_names(raw.monitor_names, fail),
+    launch = validate_launch(raw.launch, fail, count),
+    launch_commands = validate_launch_commands(raw.launch_commands, fail, title_matching),
+    desktop_ids = validate_desktop_ids(raw.desktop_ids, fail),
   }
   validate_scroll(raw.scroll, fail) -- of before: config.load wrote it into the trees
 
@@ -691,12 +774,15 @@ function M.load(dir, opts)
     end
   end
 
-  -- The monitors' labels are the data file's where config.lua (written
-  -- before there were any) does not return its own.
-  if raw.monitor_names == nil then
-    for _, file in pairs(loaded) do
-      if type(file.given) == "table" and file.given.monitor_names ~= nil then
-        raw.monitor_names = file.given.monitor_names
+  -- The monitors' labels, the launch settings and the apps' desktop
+  -- entries are the data file's where config.lua (written before there
+  -- were any) does not return its own.
+  for _, key in ipairs({ "monitor_names", "launch", "launch_commands", "desktop_ids" }) do
+    if raw[key] == nil then
+      for _, file in pairs(loaded) do
+        if type(file.given) == "table" and file.given[key] ~= nil then
+          raw[key] = file.given[key]
+        end
       end
     end
   end

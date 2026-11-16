@@ -19,6 +19,8 @@ local adapter = require("hyprslots.hl_adapter")
 local capture = require("hyprslots.capture")
 local config = require("hyprslots.config")
 local desk = require("hyprslots.desk")
+local desktop = require("hyprslots.desktop")
+local launch = require("hyprslots.launch")
 local workspaces = require("hyprslots.workspaces")
 local workspace_count = workspaces.count -- snapshot shadows `workspaces`
 local edit = require("hyprslots.edit")
@@ -320,6 +322,89 @@ local function failure(message)
   return json.encode(object({ ok = false, error = message }))
 end
 
+-- Launching apps ----------------------------------------------------------
+
+-- How long an app launched for a slot counts as on its way (no second
+-- launch for the slot meanwhile).
+local LAUNCH_WAIT_MS = 20000
+-- At login: the wait after Hyprland's start, and between two apps.
+local LOGIN_WAIT_MS = 1500
+local LOGIN_STAGGER_MS = 400
+
+-- fn(class) -> desktop id, command: the entry the data recorded for the
+-- class, else the one desktop.resolve finds; cached for the Lua state.
+local function desktop_resolver(engine)
+  engine.desktop_cache = engine.desktop_cache or {}
+  return function(class)
+    local stored = engine.cfg and engine.cfg.desktop_ids and engine.cfg.desktop_ids[class]
+    local key = class .. "\0" .. (stored or "")
+    if engine.desktop_cache[key] == nil then
+      local dirs = engine.desktop_dirs or desktop.dirs()
+      local id, command
+      if stored then
+        id, command = stored, desktop.command(stored, dirs)
+      end
+      if not command then
+        id, command = desktop.resolve(class, dirs)
+      end
+      engine.desktop_cache[key] = command and { id = id, command = command } or false
+    end
+    local hit = engine.desktop_cache[key]
+    if hit then
+      return hit.id, hit.command
+    end
+    return nil
+  end
+end
+
+local function launch_command(engine, entry)
+  return launch.command(entry, engine.cfg and engine.cfg.launch_commands, desktop_resolver(engine))
+end
+
+-- The data with the desktop id of the app of each spec of `texts` that
+-- names a class recorded, where one is found, it is new and the data's to
+-- hold (a title spec's too: its app is known, though launching it takes a
+-- command of config.lua's).
+local function with_desktop_ids(engine, data, texts)
+  if not edit.editable(read_only_paths(engine.cfg), "desktop_ids") then
+    return data
+  end
+  local resolve = desktop_resolver(engine)
+  for _, text in ipairs(texts) do
+    local entry = spec.parse(text, engine.cfg and engine.cfg.title_matching)
+    if entry and entry.class then
+      local id = resolve(entry.class)
+      local known = type(data.desktop_ids) == "table" and data.desktop_ids[entry.class]
+      if id and known ~= id then
+        data = edit.set_desktop_id(data, entry.class, id) or data
+      end
+    end
+  end
+  return data
+end
+
+local function launch_info(engine)
+  local modes, status = object(), object()
+  local cfg = engine.cfg
+  for n = 1, workspace_count(engine) do
+    modes[tostring(n)] = cfg and cfg.launch[n] or launch.DEFAULT
+  end
+  -- Only where it launches: finding an app's desktop entry reads the disk.
+  for n, entries in pairs(cfg and cfg.specs or {}) do
+    if (cfg.launch[n] or launch.DEFAULT) == "never" then
+      goto next_workspace
+    end
+    local slots = object()
+    for slot, entry in pairs(entries) do
+      local ok, how = pcall(launch_command, engine, entry)
+      slots[slot] = object(ok and how or { reason = launch.NO_COMMAND })
+    end
+    status[tostring(n)] = slots
+    ::next_workspace::
+  end
+  return modes, status
+end
+
 -- The engine's state as a plain table.
 function M.snapshot(engine)
   local screens, workspaces, assignments, overflow = array(), object(), object(), object()
@@ -344,6 +429,7 @@ function M.snapshot(engine)
   local dir = engine.config_dir or config.dir()
   local ok, monitors = pcall(adapter.monitors)
   monitors = ok and desk.usable(monitors) or {}
+  local launch_modes, launch_status = launch_info(engine)
   return {
     ok = true,
     seq = engine.seq,
@@ -369,6 +455,8 @@ function M.snapshot(engine)
     dirty = engine.dirty == true or next(engine.resized or {}) ~= nil,
     resized = resized_info(engine),
     scroll = scroll_info(engine),
+    launch = launch_modes,
+    launch_status = launch_status,
     config = object({
       dir = dir,
       data_file = dir .. "/" .. DATA_FILE,
@@ -1152,6 +1240,7 @@ function handlers.take_spec(engine, args)
   if left then
     data = edit.clear_spec(data, left.workspace, left.slot)
   end
+  data = with_desktop_ids(engine, data, { text })
   local cfg, load_err = config.load(engine.config_dir, { data = { [DATA_FILE] = data } })
   if cfg and (workspace_spec(cfg, workspace, args.slot) ~= text
       or (left and workspace_spec(cfg, left.workspace, left.slot) ~= nil)) then
@@ -1305,6 +1394,11 @@ function handlers.capture(engine, args)
       return fail(err)
     end
   end
+  local spec_texts = {}
+  for _, slot in ipairs(sorted_keys(plan.specs)) do
+    spec_texts[#spec_texts + 1] = plan.specs[slot]
+  end
+  data = with_desktop_ids(engine, data, spec_texts)
   local texts, trees = {}, object()
   for screen, node in pairs(plan.trees) do
     if node then
@@ -1374,6 +1468,151 @@ function handlers.capture(engine, args)
   reply.applied = true
   reply.seq = engine.seq
   return reply
+end
+
+-- Launching apps (docs/design.md §9) -----------------------------------------
+
+-- The workspace id slot `slot` of workspace n is on: its screen's, else
+-- the first screen's.
+local function slot_workspace_id(engine, n, slot)
+  for id, entry in pairs(engine.workspaces) do
+    if entry.workspace == n then
+      for _, s in ipairs(tree.slots(entry.branch)) do
+        if s == slot then
+          return id
+        end
+      end
+    end
+  end
+  if engine.active and engine.active.monitors[1] then
+    return adapter.workspace_id(engine.active.monitors[1], n)
+  end
+  return n
+end
+
+-- Launch the apps workspace n's empty slots wait for (launch.missing), each
+-- onto its slot's workspace, silently; `stagger` ms apart when given.
+-- Returns launch.missing's plan.
+local function launch_workspace(engine, n, stagger)
+  engine.launching = engine.launching or {}
+  local pending = {}
+  for key in pairs(engine.launching) do
+    local ws, slot = key:match("^(%d+)/(.+)$")
+    if tonumber(ws) == n then
+      pending[slot] = true
+    end
+  end
+  local plan = launch.missing({
+    workspace = n,
+    specs = engine.cfg.specs[n] or {},
+    assignments = engine.assignments,
+    windows = adapter.windows(),
+    pending = pending,
+    command = function(entry) return launch_command(engine, entry) end,
+  })
+  for i, item in ipairs(plan.launch) do
+    local key = n .. "/" .. item.slot
+    local id = slot_workspace_id(engine, n, item.slot)
+    engine.launching[key] = true
+    engine.log:info("launch %s for %s on workspace %d: %s", item.spec, item.slot, n, item.command)
+    local function run()
+      engine:guard("launch " .. item.command, adapter.exec, item.command, id)
+    end
+    if stagger and i > 1 then
+      adapter.defer(run, (i - 1) * stagger)
+    else
+      run()
+    end
+    adapter.defer(function() engine.launching[key] = nil end, LAUNCH_WAIT_MS)
+  end
+  return plan
+end
+
+-- set_launch { workspace, mode }: whether hyprslots launches the apps the
+-- workspace's empty slots wait for: "never" (the default), "on_demand" (the
+-- editor's Launch missing) or "at_login" (also when Hyprland starts).
+function handlers.set_launch(engine, args)
+  if not engine.data then
+    return fail(NO_DATA)
+  end
+  local n = as_integer(args.workspace)
+  local count = workspaces.count(engine)
+  if not workspaces.valid(n, count) then
+    return fail("a workspace must be an integer from 1 to " .. count .. ", got " .. tostring(args.workspace))
+  end
+  local data, err = edit.set_launch(engine.data, n, args.mode)
+  if not data then
+    return fail(err)
+  end
+  local cfg, apply_err = apply_edit(engine, data, function(c)
+    if (c.launch[n] or launch.DEFAULT) ~= args.mode then
+      return not_taken("the launch settings")
+    end
+  end)
+  if not cfg then
+    return fail(apply_err)
+  end
+  return { workspace = n, mode = args.mode, seq = engine.seq }
+end
+
+-- launch_missing { workspace? (default the focused one) }: launch the apps
+-- its empty slots wait for (never one already open, nor twice while one is
+-- on its way), on a workspace whose launch setting is not never. Reply:
+-- workspace, launched[] ({ slot, command }), open[], pending[] (slots),
+-- cannot[] ({ slot, reason }), seq.
+function handlers.launch_missing(engine, args)
+  if engine.refused then
+    return fail("hyprslots is off: " .. engine.refused)
+  end
+  if not engine.cfg then
+    return fail("hyprslots has no config running")
+  end
+  local n = args.workspace ~= nil and as_integer(args.workspace) or focused_workspace(engine)
+  local count = workspaces.count(engine)
+  if not workspaces.valid(n, count) then
+    return fail("a workspace must be an integer from 1 to " .. count .. ", got " .. tostring(args.workspace or n))
+  end
+  if (engine.cfg.launch[n] or launch.DEFAULT) == "never" then
+    return fail("workspace " .. n .. " launches no apps: its launch setting is never")
+  end
+  local plan = launch_workspace(engine, n)
+  local launched, cannot = array(), array()
+  for i, item in ipairs(plan.launch) do
+    launched[i] = object({ slot = item.slot, command = item.command })
+  end
+  for i, item in ipairs(plan.cannot) do
+    cannot[i] = object({ slot = item.slot, reason = item.reason })
+  end
+  return { workspace = n, launched = launched, open = array(plan.open), pending = array(plan.pending),
+    cannot = cannot, seq = engine.seq }
+end
+
+-- At Hyprland's start (never on a config reload): after a wait, the
+-- missing apps of every workspace set to launch at login, one after
+-- another.
+function M.launch_at_login(engine)
+  adapter.defer(function()
+    if not engine.cfg or engine.refused then
+      return
+    end
+    local list = {}
+    for n, mode in pairs(engine.cfg.launch) do
+      if mode == "at_login" then
+        list[#list + 1] = n
+      end
+    end
+    table.sort(list)
+    for i, n in ipairs(list) do
+      local function run()
+        engine:guard("launch at login", launch_workspace, engine, n, LOGIN_STAGGER_MS)
+      end
+      if i == 1 then
+        run()
+      else
+        adapter.defer(run, (i - 1) * LOGIN_STAGGER_MS * 4)
+      end
+    end
+  end, LOGIN_WAIT_MS)
 end
 
 -- Desks and layouts (the Desk view) --------------------------------
