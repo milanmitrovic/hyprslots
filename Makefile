@@ -8,7 +8,13 @@ NODE ?= $(shell command -v node 2>/dev/null)
 .PHONY: test lua-test editor-test editor-lint e2e e2e-editor e2e-editor-multimon
 test: lua-test editor-test
 
+# Hyprland runs Lua 5.5 (a for loop's variables are constants there):
+# every file compiles under luac5.5 too, where it is installed.
+LUAC55 ?= $(shell command -v luac5.5 2>/dev/null)
 lua-test:
+ifneq ($(LUAC55),)
+	@for f in lua/hyprslots/*.lua tools/loader.lua; do $(LUAC55) -p "$$f" || exit 1; done
+endif
 	$(BUSTED)
 
 editor-test:

@@ -45,8 +45,8 @@ function M.exec_line(text)
     return nil
   end
   local group, exec, hidden, terminal
-  for line in (text .. "\n"):gmatch("([^\n]*)\n") do
-    line = line:gsub("\r$", "")
+  for raw in (text .. "\n"):gmatch("([^\n]*)\n") do
+    local line = raw:gsub("\r$", "")
     local name = line:match("^%[(.-)%]%s*$")
     if name then
       group = name

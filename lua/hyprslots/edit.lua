@@ -903,8 +903,8 @@ function M.replace_trees(data, layout, n, trees, drop)
     return nil, ws_err
   end
   local set = {}
-  for screen, text in pairs(trees) do
-    screen = as_screen(screen)
+  for key, text in pairs(trees) do
+    local screen = as_screen(key)
     local fits, screen_err = check_screen(layout, entry, screen)
     if not fits then
       return nil, screen_err
