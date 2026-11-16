@@ -17,7 +17,10 @@ pinned screens are gone (§3, §4, §6, §9); then **first run**: a fresh
 install starts on a starter config and zero slots, and the editor guides a
 newcomer from there (§4, §9); then **desk maps**: the engine records each
 desk's monitor geometry in slots.lua and the Desk tab draws every desk's
-monitors (§4, §8, §9).
+monitors (§4, §8, §9); then **publishing**: the repo is the Omarchy plugin
+`io.github.milanmitrovic.hyprslots` (one `omarchy plugin add`), whose engine
+loads from a loader file in Omarchy's workspace-layouts folder that the
+editor installs only when asked (§9, §10).
 Targets Hyprland 0.56.2 (Lua config) on Omarchy 4.5.
 
 ## 1. Purpose
@@ -404,7 +407,7 @@ rebinds `SUPER + code:10..18` to `hyprslots.workspace(1..9)` by default, up
 to `code:19` and workspace 10 (as many as config `workspaces` says, §4, read
 when it is called) through
 `o.rebind` (so the keybindings menu keeps a description, "Switch to workspace
-N on every screen"); the user's shim calls it (`bind_desk_keys` is a
+N on every screen"); the loader calls it (§10) (`bind_desk_keys` is a
 deprecated alias).
 
 **hyprmoncfg.** hyprmoncfg keeps owning monitor modes and positions, but its
@@ -914,13 +917,13 @@ The repo is the plugin folder: `manifest.json` at its root (`kinds:
 
 | File | Role |
 |---|---|
-| `Engine.qml` | the service: runs the api through `hyprctl repl` (one `Process` per command, in order, 3 s watchdog), reads `state` debounced (60 ms) on `custom>>hyprslots changed` and on window events (`openwindow`, `closewindow`, `movewindowv2`, `windowtitlev2`, monitor events, `configreloaded`) via `Quickshell.Hyprland`'s `rawEvent`, only while someone follows it (`active`: the panel is open; `watchers`: bar widgets, from `watch()` / `unwatch()`); keeps `error` (last state read) and `lastError` (last call); `busy` while a call runs or the re-read after it is pending |
+| `Engine.qml` | the service: runs the api through `hyprctl repl` (one `Process` per command, in order, 3 s watchdog), reads `state` debounced (60 ms) on `custom>>hyprslots changed` and on window events (`openwindow`, `closewindow`, `movewindowv2`, `windowtitlev2`, monitor events, `configreloaded`) via `Quickshell.Hyprland`'s `rawEvent`, only while someone follows it (`active`: the panel is open; `watchers`: bar widgets, from `watch()` / `unwatch()`); keeps `error` (last state read) and `lastError` (last call), `absent` / `loadError` (no engine, and why); `busy` while a call runs or the re-read after it is pending; `enable()` runs `tools/install-engine.sh` (the panel's Enable) |
 | `Panel.qml` | the panel: an `OverlayWindow` card (`qs.Ui`), themed through `qs.Commons` (`Color.menu.*`, `Color.muted`, `Style`) like Omarchy's own panels; folder tabs Assignment, Layout, Desk (Tab / Shift+Tab) over the page, the active desk and layout beside them, the message band (`MessageBand.qml`, `Messages.js`) at the page's foot and the help row under it; Ctrl+S saves, Esc or q closes (Esc in the Layout tab's slot list goes back to its picture); `press(key)` feeds a key by name (`Ctrl+s` with the modifier) |
 | `BarWidget.qml` | the bar widget (below): glyph and active layout; left click toggles the panel, right click a menu |
 | `Services.js` | where the service registers itself, for a bar widget whose bar hands it no `serviceFor` |
 | `AssignmentView.qml`, `LayoutView.qml`, `DesksLayoutsView.qml` | aerolayout's Assignment, Layout (with its logical slots as a list beside the screens) and monitors views (below) |
 | `ui/` (`qmldir`) | the editor's design system, one component per kind of element, all from the theme (below): `Tokens` (a singleton: colours, spacing, the Layout picture's divider band and line, the ratio label by the pointer, drag and drop's outline and fill, the mini-map's box), `SectionHeader`, `WorkspaceSwitcher`, `InfoText`, `ProblemText`, `Placeholder`, `TableHeader`, `TableRow` (`dropTarget`: outlined where a drag would land), `TableCell`, `PaneTitle`, `KeyCap`, `ActionButton`, `Toolbar`, `MiniMap` (a slot's place on its screen), `DeskMap` (a desk's monitors, the Desk tab), `DragGhost` (what a drag carries, and the label of what letting go does) |
-| `Protocol.js`, `Assignment.js`, `Layout.js`, `Slots.js`, `DesksLayouts.js`, `Prompts.js`, `Workspaces.js`, `BarStatus.js`, `Help.js`, `Messages.js`, `Guide.js` | pure logic, tested under node (`editor/tests/`); `Slots.js` is the slot list's, `Workspaces.js` the workspace keys', `DesksLayouts.js` the Desk view's and the panel header's, `Help.js` the help rows', `Messages.js` the message band's, `Guide.js` the opening tab's and every empty state's (below) |
+| `Protocol.js`, `Assignment.js`, `Layout.js`, `Slots.js`, `DesksLayouts.js`, `Prompts.js`, `Workspaces.js`, `BarStatus.js`, `Help.js`, `Messages.js`, `Guide.js`, `Install.js` | pure logic, tested under node (`editor/tests/`); `Slots.js` is the slot list's, `Workspaces.js` the workspace keys', `DesksLayouts.js` the Desk view's and the panel header's, `Help.js` the help rows', `Messages.js` the message band's, `Guide.js` the opening tab's and every empty state's, `Install.js` the enable prompt's (below) |
 
 **Opening tab.** The panel opens on the Layout tab while there are no
 global slots (that is where they are made), else on the Assignment tab
@@ -964,6 +967,39 @@ the next step, in plain words (no "spec", "overflow" or "tree"):
 - **Bar widget, zero slots**: `󰕰 set up` with a small accent dot at the
   glyph's top right, the tooltip `Hyprslots: no slots yet` / `Click to set
   up your slots`; gone once a slot exists.
+- **No engine** (the plugin added, its engine not enabled): the panel asks
+  first (below, "Enabling the engine"); the bar widget shows `󰕰 enable`
+  with the same accent dot, the tooltip `Hyprslots: the engine is not
+  enabled` / `Click to enable it`.
+
+**Enabling the engine** (`Install.js`, `Engine.enable`). The plugin's
+service never writes anything by itself (the marketplace's "does not
+overwrite user configuration without explicit consent"). While a state read
+finds no engine (`Protocol.parseReply`'s `absent`: the state command returns
+`hyprslots-absent <the loader's error>` when the `hyprslots` global is nil),
+the panel asks:
+
+- nothing read yet: in the views' place, **Enable the hyprslots engine?**,
+  what enabling does (one file, `zz-hyprslots.lua`, in Omarchy's
+  workspace-layouts folder, which Omarchy loads with its own saved layouts,
+  and a Hyprland reload), that the Hyprland config is not edited, and how to
+  undo it (`tools/uninstall-engine.sh`); a button `[e] Enable`;
+- a state read before (the engine went away under an open panel): a banner
+  over the views' last state, `The hyprslots engine is not running: what
+  shows here is from before.`, with the same button;
+- the loader ran and failed (`loadError`): `The hyprslots engine failed to
+  load`, the error, `[e] Try again`.
+
+`e`, Return or the button run the plugin's own `tools/install-engine.sh`
+(`Qt.resolvedUrl("../tools/install-engine.sh")` beside `Engine.qml`, through
+`bash`), which installs the loader, reloads Hyprland and waits for the
+engine (§10); the button reads `Enabling…` meanwhile, a failure's first
+line of error output stays under it, success is said in the current view
+and the next state read takes the prompt away (the opening tab settles
+then: Layout with no slots). While it asks, the views' keys are not
+handled (they would only reach a missing engine): Tab, Esc and q still are;
+the help row is `enable · Tab view  q close`. Disabling is the command
+line's (`tools/uninstall-engine.sh`).
 
 **Every view.** The panel's keys come first: Tab / Shift+Tab cycle the
 tabs (Assignment, Layout, Desk), **Ctrl+S saves** (api
@@ -1506,9 +1542,10 @@ from Quickshell's Hyprland objects, with no state read.
 | State | Shows |
 |---|---|
 | normal | `󰕰 scroll` in the bar's foreground |
+| no engine (not enabled) | `󰕰 enable` and the accent dot; the tooltip "the engine is not enabled", "Click to enable it" (a click opens the panel, which asks); the menu offers nothing |
 | zero slots (a fresh install) | `󰕰 set up` and an accent dot at the glyph's top right; the tooltip "no slots yet", "Click to set up your slots" (a click opens the panel on its Layout tab); no unsaved dot meanwhile |
 | unsaved edits (`dirty`) | `󰕰 scroll •`, the tooltip says "unsaved edits" |
-| error | the bar's urgent colour, the error first in the tooltip: the service missing, a state read failing (hyprctl, `hyprslots` not loaded: `󰕰 hyprslots` until a state was read, else the last one), `refused` (`󰕰 off`), `config_error` (the running config still shown) |
+| error | the bar's urgent colour, the error first in the tooltip: the service missing, a state read failing (hyprctl, the loader's error: `󰕰 hyprslots` until a state was read, else the last one), `refused` (`󰕰 off`), `config_error` (the running config still shown) |
 
 Left click toggles the panel (`shell.toggle`). Right click opens a menu
 (Omarchy's `PopupCard`, laid out like the tray's menu; outside click
@@ -1526,30 +1563,33 @@ Re-apply and Record need the bar's screen on a hyprslots workspace of a running 
 off or unreachable only Reload is offered. Each call's outcome, or the
 engine's error, is a notification (`notify-send` through `bar.run`).
 
-**Install** (the user's machine; not done by the slices):
+**Install.** The repo is the plugin folder (`manifest.json` at its root),
+so one command installs the editor, the service and the bar widget:
 
 ```sh
-ln -s ~/.local/share/hyprslots/editor ~/.config/omarchy/plugins/io.github.milanmitrovic.hyprslots
-omarchy-shell shell rescanPlugins
-omarchy plugin enable io.github.milanmitrovic.hyprslots
-omarchy-shell shell toggle io.github.milanmitrovic.hyprslots       # open / close
-omarchy bar put io.github.milanmitrovic.hyprslots --after milan.layout   # the bar widget
+omarchy plugin add https://github.com/milanmitrovic/hyprslots --enable
 ```
 
-(`omarchy bar put` writes the widget into `~/.config/omarchy/shell.json`'s
-bar layout; `omarchy bar move` places it elsewhere. A widget whose plugin
-was added after the shell started needs `omarchy-shell shell rescanPlugins`
-first.)
-
-and a key in `~/.config/hypr/bindings.lua`:
+It clones the default branch into
+`~/.config/omarchy/plugins/io.github.milanmitrovic.hyprslots`, validates it,
+enables it and (enabling a bar widget does) puts the widget in the bar's
+`barWidget.defaultSection`, `right`; `omarchy plugin update` fast-forwards
+it. Omarchy has no post-install hook, so the engine waits for the editor's
+Enable (above) or `tools/install-engine.sh`. `omarchy bar put` / `omarchy
+bar move` place the widget elsewhere; `omarchy-shell shell toggle
+io.github.milanmitrovic.hyprslots` opens and closes the panel, and a key in
+`~/.config/hypr/bindings.lua` does it from the keyboard:
 `o.bind("SUPER + CTRL + Y", "Hyprslots", { panel = "io.github.milanmitrovic.hyprslots" })` (any free key;
-Omarchy uses SUPER + CTRL + S for Share)
-(third-party panels go through `omarchy-shell shell toggle`). Validate with
-`omarchy plugin validate <the real editor/ path>` (it refuses symlinks).
-Caveats: the shell's plugin watcher does not follow a symlinked folder, so
-after editing run `omarchy-shell shell rescanPlugins`; an imported `.js`
-can stay cached across that reload, and then only `omarchy-restart-shell`
-picks it up.
+Omarchy uses SUPER + CTRL + S for Share).
+
+A development install links the plugin folder to a checkout (`ln -s
+~/Projects/hyprslots/live ~/.config/omarchy/plugins/io.github.milanmitrovic.hyprslots`;
+`omarchy plugin update` leaves a link alone). `omarchy plugin validate`
+refuses symlinks inside the folder, so validate a clean clone, not a
+worktree whose ignored `.e2e-tmp/` holds the harness's links. Caveats: the
+shell's plugin watcher does not follow a symlinked folder, so after editing
+run `omarchy-shell shell rescanPlugins`; an imported `.js` can stay cached
+across that reload, and then only `omarchy-restart-shell` picks it up.
 
 ### Api contract
 
@@ -1828,21 +1868,58 @@ Under `lua/hyprslots/`:
 | adapter | `api` | `state()` / `call(name, json)` for the editor |
 | adapter | `log` | ring buffer; `hyprslots.dump()` prints it with the state |
 
-Other top-level directories: `editor/` (QML plugin, §9), `spec/` (busted specs and
+Other top-level files and directories: `manifest.json` (the Omarchy plugin's
+manifest, §9), `editor/` (its QML, §9), `tools/` (the loader and the
+scripts that install and remove it), `spec/` (busted specs and
 `spec/helpers/hl_stub.lua`), `e2e/` (headless Hyprland harness).
 
-**Loading.** A shim `~/.config/hypr/hyprslots.lua` prepends the repo's
-`lua/?.lua;lua/?/init.lua` to `package.path`, then runs
-`hyprslots = require("hyprslots")` and `hyprslots.setup()`; the `hyprslots`
-global is what `hyprctl repl` and the editor address. It is
-required from `hyprland.lua` right after `require("hypr.autostart")`; it
-cannot go after hyprmoncfg's `dofile`, which stays last. On the user's
-machine the shim reads the code from `~/.local/share/hyprslots`, a symlink
-to the checkout in use (`ln -sfn ~/Projects/hyprslots/master
-~/.local/share/hyprslots` once the branch lands), and, being after
-Omarchy's and the user's bindings, also calls `bind_workspace_keys()` and
-`bind_resize_keys()`; all of it inside `pcall`, with a notification on
-failure.
+**Loading.** Nothing in the user's Hyprland config names hyprslots. Omarchy
+4.5's `default/hypr/toggles.lua` (line 23), which the stock `hyprland.lua`
+requires after the user's `hypr.*` modules (after `hypr.autostart`),
+requires `default/hypr/workspace-layouts.lua`; that puts
+`$XDG_STATE_HOME/?.lua` on `package.path` (line 15) and requires every
+`*.lua` file in `$XDG_STATE_HOME/omarchy/workspace-layouts`, sorted, with
+`reload = true` (line 17, `require_all.lua` lines 16-37: `find -maxdepth 1
+-type f -name '*.lua' | sort`, `package.loaded` cleared first), then calls
+`workspace_modes.apply()` (line 21). Omarchy keeps its saved workspace
+modes there (`default.lua`, `<N>.lua`, written by
+`omarchy-hyprland-workspace-layout-toggle` and `-default`), and hyprslots'
+loader joins them as `zz-hyprslots.lua`, `tools/loader.lua` copied by
+`tools/install-engine.sh` (or the editor's Enable):
+
+- *Order.* It loads after Omarchy's defaults (`default.hypr.omarchy`: its
+  bindings and `monitor-workspaces`), the user's bindings and autostart, so
+  Super+1..9 and the resize keys can be rebound, and after the saved modes
+  (`zz-` sorts after digits and `default`), so the engine leaves a
+  workspace with a saved tiled mode alone itself (§6, Super+L). It loads
+  before the user's lines after `toggles` and hyprmoncfg's `dofile`, which
+  stays last (hence the deferred `o.workspaces.enabled` check, §5).
+- *Reloads.* Every config load runs it again: Hyprland 0.56 discards the Lua
+  state on reload (a global set before `hyprctl reload` is nil after it,
+  checked in the nested harness), and Hyprland watches the files it
+  required, so removing the loader reloads by itself.
+- *Omarchy's own scripts.* `omarchy-hyprland-workspace-layout-toggle` writes
+  and removes only `<N>.lua`; `-default` writes `default.lua` and removes
+  `[0-9]*.lua`; `-current` reads those; migration `1787679775.sh` removes
+  `-*.lua` and `1791698594.sh` rewrites only lines of the old
+  `hl.workspace_rule({ workspace = "N", layout = "x" })` form. None touches
+  `zz-hyprslots.lua`.
+
+The loader resolves the plugin folder
+(`${XDG_CONFIG_HOME:-~/.config}/omarchy/plugins/io.github.milanmitrovic.hyprslots`),
+prepends its `lua/?.lua;lua/?/init.lua` to `package.path` (once), then runs
+`hyprslots = require("hyprslots")`, `setup()`, `bind_workspace_keys()` and
+`bind_resize_keys()`, all inside `pcall`: a failure is a notification
+(`hyprslots failed to load: …`) and the global `hyprslots_load_error`, which
+the editor's state read reports, and the rest of the config loads on. The
+`hyprslots` global is what `hyprctl repl` and the editor address. With the
+plugin folder gone (`omarchy plugin remove`) it does nothing and removes
+itself; a folder without the engine in it is a failure, not a removal.
+`tools/install-engine.sh` refuses without the plugin in place, writes the
+loader beside its place and renames it in (a config load never reads half a
+file), reloads Hyprland and waits up to 5 s for the engine;
+`tools/uninstall-engine.sh` removes it, reloads and checks the engine is
+gone. Both take `--no-reload`.
 
 **Gaps.** Hyprland hands a lua layout `ctx.area` already inside
 `gaps_out`, and `place` takes the border and `gaps_in` off each box edge
@@ -1874,6 +1951,7 @@ with Omarchy's gaps (5/10, border 2).
 | Monitor names | display names for monitors (Built-in, the model from the description less make and serial, the user's label in slots.lua `monitor_names`) everywhere the editor shows one; the Desk tab's `m`; api `set_monitor_name`, `display` / `displays[]`; new desks named after them (`built-in+odyssey-g95nc`) | done 2026-11-11 |
 | First run | a fresh install: the starter config.lua and empty slots.lua (`starter.lua`), zero slots running; the panel opening on Layout with no slots, else Assignment; every empty state pointing to the next step (`Guide.js`: the Layout tab's explanation and "Create your first slot", the Assignment tab's way back to it, a workspace's how-to-assign line, the Desk tab's opening line); the bar's set-up state; README's Getting started | done 2026-11-15 |
 | Desk maps | the active desk's geometry recorded in slots.lua (quietly: saved when nothing else is unsaved, else with the next save), `state.desks[].geometry`; the Desk tab's rows led by a map of each desk's monitors (`ui/DeskMap`); moving a window to another slot clears the spec of the one it left (`take_spec` `left`), `unassign` naming the slot the window was in | done 2026-11-15 |
+| Publishing | the repo as the Omarchy plugin `io.github.milanmitrovic.hyprslots` (root `manifest.json`, 1.0.0, MIT); the engine loaded by `tools/loader.lua` from Omarchy's workspace-layouts folder instead of a shim required from `hyprland.lua`; a saved tiled Omarchy mode left alone at load too; `tools/install-engine.sh` / `uninstall-engine.sh`; the editor asking before it enables the engine (`Install.js`), the bar's `enable`; README for the marketplace, `preview.png` | done 2026-11-16 |
 | Assignment by mouse | Assignment rows dragged and dropped (onto a slot: `a`; onto the other windows: `u`; Esc or elsewhere: nothing; a ghost, the target outlined, its label); each slot row's mini-map of its screen's tree, the slot lit (the Layout picture's geometry, `ui/MiniMap`) | done 2026-11-15 |
 
 Slices 2 to 6 were built in parallel on top of slices 1 and 2 and
@@ -1897,7 +1975,7 @@ Parked:
 
 - mouse-resize workaround, and an upstream Hyprland PR for a resize hook;
 - spanning windows;
-- public release / AUR package;
+- an AUR package (the marketplace's `omarchy plugin add` is the release);
 - QML tests (the views' QML is covered only by the editor smoke; their
   logic is in the node-tested `.js` models);
 - the Layout view's parked overflow leaf lives only while the panel is open
@@ -1921,7 +1999,18 @@ Parked:
   asserting on `hyprctl -j` output with jq via `e2e/lib.sh`. Never touches
   the live session.
 - **S2 — engine**: `hyprslots.setup()` and `api.call` run against a stubbed
-  `hl` (`spec/helpers/hl_stub.lua`) under busted.
+  `hl` (`spec/helpers/hl_stub.lua`) under busted; `spec/loader_spec.lua`
+  runs `tools/loader.lua` as Omarchy does, from a workspace-layouts folder,
+  against a plugin folder on disk.
+- **Install** (`e2e/install_engine_test.sh`, in `make e2e`): every e2e test
+  loads hyprslots as installed (run.sh links the plugin folder to the
+  worktree and copies the loader in; `e2e/hyprland-test.lua` requires
+  Omarchy's `default.hypr.workspace-layouts`); this one starts from a copy
+  of the repo as `omarchy plugin add` leaves it, with no loader, and drives
+  `tools/install-engine.sh` and `uninstall-engine.sh`, the loader removing
+  itself with the plugin, and the refusal without one.
+  `e2e/editor_install.sh` (in `make e2e-editor`) does it through the
+  editor's prompt and Enable.
 - **S3 — pure modules**: busted specs; aerolayout's unittest cases are ported
   where the logic carries over (tree parsing, weights, assignment, record).
 - **Editor**: the api it relies on is S2 (`spec/assignment_api_spec.lua`,
