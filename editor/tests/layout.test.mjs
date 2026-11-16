@@ -686,22 +686,22 @@ const ONE_LINE = 150;
 
 test("the picture's help row: no add, take out or fork; d reverts; t says what it makes next", () => {
   const line = helpLine(L.pictureHelp({ node: tree("h[a, b]"), hasOwn: true, jumpKeys: "1–9 0" }));
-  assert.equal(line, "←↑↓→ select hjkl/HJKL move / flip t scroll half ratios others · w apply d revert Record "
-    + "use shared · slots · [ ] 1–9 0 - workspace · Tab view");
+  assert.equal(line, "←↑↓→ hjkl/HJKL move / flip t scroll half ratios others · w apply d revert Record "
+    + "capture use shared · slots · [ ] 1–9 0 - workspace · Tab view");
   assert.ok(line.length <= ONE_LINE, `${line.length} characters: ${line}`);
   assert.doesNotMatch(line, /add|take out|fork|\.lua/);
 });
 
 test("on a desk of two screens p, swap, joins the row, still one line", () => {
   const line = helpLine(L.pictureHelp({ node: tree("h[a, b]"), hasOwn: true, jumpKeys: "1–9 0", screens: 2 }));
-  assert.equal(line, "←↑↓→ select hjkl/HJKL move / flip t scroll half ratios swap others · w apply d revert "
-    + "Record use shared · slots · [ ] 1–9 0 - workspace · Tab view");
+  assert.equal(line, "←↑↓→ hjkl/HJKL move / flip t scroll half ratios swap others · w apply d revert "
+    + "Record capture use shared · slots · [ ] 1–9 0 - workspace · Tab view");
   assert.ok(line.length <= ONE_LINE, `${line.length} characters: ${line}`);
 });
 
 test("/ flip and r ratios show on tiles only; t names the next of tiles, scroll half, scroll full", () => {
   const half = helpLine(L.pictureHelp({ node: tree("scroll:0.5[a, b]"), hasOwn: false, jumpKeys: "1–9" }));
-  assert.equal(half, "←↑↓→ select hjkl/HJKL move t scroll full others · w apply d revert Record · slots · "
+  assert.equal(half, "←↑↓→ hjkl/HJKL move t scroll full others · w apply d revert Record capture · slots · "
     + "[ ] 1–9 - workspace · Tab view");
   const full = helpLine(L.pictureHelp({ node: tree("scroll[a, b]"), hasOwn: false, jumpKeys: "1–9" }));
   assert.match(full, / t tiles /);
@@ -713,7 +713,7 @@ test("the trigger keys are highlighted in the help row", () => {
   const styled = H.row(L.pictureHelp({ node: tree("h[a, b]"), hasOwn: true, jumpKeys: "1–9" }), "#fff");
   const k = (key) => `<b><font color="#fff">${key}</font></b>`;
   for (const part of [k("t") + " scroll half", k("r") + "atios", k("o") + "thers", k("d") + " revert",
-    k("R") + "ecord", k("u") + "se shared", k("s") + "lots", k("hjkl/HJKL") + " move", k("[ ] 1–9 -") + " workspace"]) {
+    k("R") + "ecord", k("c") + "apture", k("u") + "se shared", k("s") + "lots", k("hjkl/HJKL") + " move", k("[ ] 1–9 -") + " workspace"]) {
     assert.ok(styled.includes(part), `${part} in ${styled}`);
   }
 });
@@ -739,7 +739,9 @@ test("the help row marks what the picture would refuse: edits when read only or 
   assert.deepEqual(off({ edited: false }), ["w"]);
   assert.deepEqual(off({ workspace: "default" }), ["R"]);
   assert.deepEqual(off({ node: null }), ["hjkl/HJKL", "/", "t", "r"]);
-  assert.deepEqual(off({ readOnly: true }), ["hjkl/HJKL", "/", "t", "r", "w", "d", "R", "u"]);
+  assert.deepEqual(off({ readOnly: true }), ["hjkl/HJKL", "/", "t", "r", "w", "d", "R", "c", "u"]);
+  assert.deepEqual(off({ node: null, workspace: "default" }), ["hjkl/HJKL", "/", "t", "r", "R"],
+    "capture needs no tree, and takes the focused workspace from All workspaces");
 });
 
 test("the slot list's help row marks what it would refuse: edits when read only, a slot's keys with none", () => {
