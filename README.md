@@ -16,7 +16,11 @@ workspace. From then on:
   the monitors now connected and the **layout** it uses, and puts every
   window back where that layout says;
 - Omarchy's resize keys resize the slots, and Super+L still cycles a
-  workspace out of slots and back.
+  workspace out of slots and back;
+- **capture**: arrange your windows by hand, then capture them, and each
+  one becomes a slot (named after its app) in the arrangement you made;
+- **launch missing apps**: a workspace can open the apps its empty slots
+  wait for, on demand or at login (never by default).
 
 Everything is set up in an editor in Omarchy's shell, with a bar widget: the
 **Layout** tab (slots and how they split each screen), the **Assignment**
@@ -54,10 +58,17 @@ is no daemon.
    adds one file, `zz-hyprslots.lua`, to Omarchy's workspace-layouts folder
    (`~/.local/state/omarchy/workspace-layouts`), which Omarchy loads with its
    own saved workspace layouts on every Hyprland config load, and reloads
-   Hyprland. Your Hyprland config is not edited. Or, from a terminal:
+   Hyprland. Your Hyprland config is not edited. Two choices sit under it:
+   **Add hyprslots to the Omarchy menu** (on: three entries under
+   Trigger, *hyprslots: Open editor*, *Capture this workspace* and *Launch
+   missing apps*, added to your `~/.config/omarchy/extensions/omarchy-menu.jsonc`
+   between marker lines) and **Also bind Super+Ctrl+Y to open the editor
+   and Super+Ctrl+Shift+C to capture** (off; each key only where it is
+   free, bound by the engine, not in your `bindings.lua`). Or, from a
+   terminal:
 
    ```sh
-   ~/.config/omarchy/plugins/io.github.milanmitrovic.hyprslots/tools/install-engine.sh
+   ~/.config/omarchy/plugins/io.github.milanmitrovic.hyprslots/tools/install-engine.sh --menu --keys
    ```
 
    Nothing is written until you do one of these.
@@ -65,15 +76,20 @@ is no daemon.
 3. Make your slots. On its first start hyprslots writes
    `~/.config/hyprslots/config.lua` (yours: commented, real Lua) and an empty
    `slots.lua` (the editor's), and the bar widget shows **set up**. Click it:
-   the editor opens on the **Layout** tab. **Create your first slot** (a name
+   the editor opens on the **Layout** tab. Quickest: arrange your windows on
+   a workspace the way you like them and **Capture my windows** (`c`): each
+   window becomes a slot named after its app, the arrangement its layout
+   (a preview first, then `y`). Or **Create your first slot** (a name
    such as `main`), add more (`s`, then `a`) and arrange them on your screens.
    Then, in the **Assignment** tab, select a window and press `a` to put it
    into a slot (or drag its row onto the slot's row): from now on that app
    opens there on that workspace. **Ctrl+S** saves.
 
 The bar widget's place: `omarchy bar put io.github.milanmitrovic.hyprslots`
-(`--after <widget id>`, or `omarchy bar move`; see `omarchy bar --help`). A
-key for the editor, in `~/.config/hypr/bindings.lua` (any free key):
+(`--after <widget id>`, or `omarchy bar move`; see `omarchy bar --help`).
+Keys and menu entries later: run `tools/install-engine.sh --keys` or
+`--menu` again (`--no-keys`, `--no-menu` take them away); or a key of your
+own in `~/.config/hypr/bindings.lua`:
 
 ```lua
 o.bind("SUPER + CTRL + Y", "Hyprslots", { panel = "io.github.milanmitrovic.hyprslots" })
@@ -90,19 +106,30 @@ o.bind("SUPER + CTRL + Y", "Hyprslots", { panel = "io.github.milanmitrovic.hyprs
 - **Assignment tab**: the windows on a workspace and the slot each one is
   in. `a` (or a drag onto a slot) assigns, `u` unassigns. An assignment is a
   spec such as `kitty` or `firefox/Mail` (class, optionally a title match).
+  `m` sets whether the workspace launches its missing apps (never, on
+  demand, at login) and `L` launches them now, each onto its workspace
+  and into its slot, never one already open. An app's command comes from
+  its desktop entry; a title spec (`ghostty/deltaf`) needs one of yours in
+  `config.lua`: `launch_commands = { ["ghostty/deltaf"] = "ghostty
+  --working-directory ~/Projects/deltaf" }`.
+- **Capture** (`c` in the Layout and Assignment tabs, the bar's menu, the
+  Omarchy menu, Super+Ctrl+Shift+C): the windows of a workspace, on every
+  screen, become slots and their arrangement the layout, for that
+  workspace or all of them; previewed, then an unsaved edit like any.
 - **Desk tab**: every monitor setup hyprslots has seen, drawn to scale, and
   the layout each uses. Two desks can share a layout (docked at home and at
   the office, say); fork one to change it for that desk only.
 - The **bar widget** names the active layout; a dot means unsaved edits.
-  Right-click it to re-apply the layout, record the windows on a workspace
-  as its layout, save, or reload the config.
+  Right-click it to re-apply the layout, capture or record the windows on
+  a workspace as its layout, save, or reload the config.
 
 `~/.config/hyprslots/config.lua` is plain Lua and wins over the editor for
 whatever it sets. docs/design.md describes everything in detail.
 
 ## Removal
 
-1. Disable the engine: this removes `zz-hyprslots.lua` and reloads Hyprland,
+1. Disable the engine: this removes `zz-hyprslots.lua` (and with it the
+   editor's keys) and hyprslots' Omarchy menu entries, and reloads Hyprland,
    which brings back Omarchy's own Super+1..9 and resize keys.
 
    ```sh
@@ -116,7 +143,7 @@ whatever it sets. docs/design.md describes everything in detail.
    ```
 
    Removing the plugin first is fine too: the loader then finds no plugin at
-   the next config load and removes itself.
+   the next config load and removes itself and the menu entries.
 
 3. Optionally, your configuration: `rm -r ~/.config/hyprslots`.
 

@@ -949,12 +949,14 @@ The repo is the plugin folder: `manifest.json` at its root (`kinds:
 | `Services.js` | where the service registers itself, for a bar widget whose bar hands it no `serviceFor` |
 | `AssignmentView.qml`, `LayoutView.qml`, `DesksLayoutsView.qml` | aerolayout's Assignment, Layout (with its logical slots as a list beside the screens) and monitors views (below) |
 | `ui/` (`qmldir`) | the editor's design system, one component per kind of element, all from the theme (below): `Tokens` (a singleton: colours, spacing, the Layout picture's divider band and line, the ratio label by the pointer, drag and drop's outline and fill, the mini-map's box), `SectionHeader`, `WorkspaceSwitcher`, `InfoText`, `ProblemText`, `Placeholder`, `TableHeader`, `TableRow` (`dropTarget`: outlined where a drag would land), `TableCell`, `PaneTitle`, `KeyCap`, `ActionButton`, `Toolbar`, `MiniMap` (a slot's place on its screen), `DeskMap` (a desk's monitors, the Desk tab), `DragGhost` (what a drag carries, and the label of what letting go does) |
-| `Protocol.js`, `Assignment.js`, `Layout.js`, `Slots.js`, `DesksLayouts.js`, `Prompts.js`, `Workspaces.js`, `BarStatus.js`, `Help.js`, `Messages.js`, `Guide.js`, `Install.js` | pure logic, tested under node (`editor/tests/`); `Slots.js` is the slot list's, `Workspaces.js` the workspace keys', `DesksLayouts.js` the Desk view's and the panel header's, `Help.js` the help rows', `Messages.js` the message band's, `Guide.js` the opening tab's and every empty state's, `Install.js` the enable prompt's (below) |
+| `Protocol.js`, `Assignment.js`, `Layout.js`, `Slots.js`, `DesksLayouts.js`, `Prompts.js`, `Workspaces.js`, `BarStatus.js`, `Help.js`, `Messages.js`, `Guide.js`, `Install.js`, `Capture.js`, `Launch.js` | pure logic, tested under node (`editor/tests/`); `Slots.js` is the slot list's, `Workspaces.js` the workspace keys', `DesksLayouts.js` the Desk view's and the panel header's, `Help.js` the help rows', `Messages.js` the message band's, `Guide.js` the opening tab's and every empty state's, `Install.js` the enable prompt's (below), `Capture.js` the capture flow's question, preview and messages, `Launch.js` the Assignment page's launch setting, Launch column and Launch missing's reply |
 
 **Opening tab.** The panel opens on the Layout tab while there are no
 global slots (that is where they are made), else on the Assignment tab
 (`Guide.openingTab`); a tab the open payload asks for wins (the bar's
-Record: `{"record": true}`, the Layout tab; `{"tab": "Desk"}` by name). The
+Record: `{"record": true}`, the Layout tab; `{"capture": true}`, the Omarchy
+menu's and the capture key's, the Layout tab on the focused workspace, its
+capture flow started once state is read; `{"tab": "Desk"}` by name). The
 choice is made again on the first state read after opening (the state the
 panel had may be older, or none), unless a tab was picked meanwhile.
 
@@ -964,11 +966,15 @@ the next step, in plain words (no "spec", "overflow" or "tree"):
 
 - **Layout tab, zero slots**: in the picture's place, `Start with your
   slots`, then `Slots are named places on your screens, like left, main and
-  right. Each app you assign goes into its slot.` and `You choose the names,
-  and how many. Arrange them here, then put windows into them in the
-  Assignment tab.`, and one button, `[a] Create your first slot` (the
-  picture's `a` while it shows; the help row is `create your first slot ·
-  slots · Tab view q close`): the slot list's create prompt (a name,
+  right. Each app you assign goes into its slot.`, `Quickest: arrange your
+  windows on a workspace the way you like them, then capture. Each window
+  becomes a slot, and the arrangement is remembered.` and `Or make them one
+  by one: you choose the names, and how many. Arrange them here, then put
+  windows into them in the Assignment tab.`, and two buttons, the primary
+  one first and accented: `[c] Capture my windows` (the capture flow,
+  below, on the focused workspace) and `[a] Create your first slot` (the
+  picture's `c` and `a` while it shows; the help row is `capture my
+  windows  create your first slot · slots · Tab view q close`). Create: the slot list's create prompt (a name,
   `Name your first slot (main, left, notes…)`, then an optional
   description; the key is picked from the name, §4), `Made slot 'main': it
   shows in the picture. Ctrl+S saves.` No starter set of slots is offered.
@@ -1016,15 +1022,26 @@ the panel asks:
 - the loader ran and failed (`loadError`): `The hyprslots engine failed to
   load`, the error, `[e] Try again`.
 
+Under the card's (and the banner's) text two check rows (`ui/CheckRow`: a
+box, its key cap, the label), toggled by their key or a click: **`k` Also
+bind Super+Ctrl+Y to open the editor and Super+Ctrl+Shift+C to capture**
+(off by default) and **`m` Add hyprslots to the Omarchy menu (Open
+editor, Capture this workspace, Launch missing apps)** (on by default);
+consent for what §9's Keys and the Omarchy menu describe.
+
 `e`, Return or the button run the plugin's own `tools/install-engine.sh`
 (`Qt.resolvedUrl("../tools/install-engine.sh")` beside `Engine.qml`, through
-`bash`), which installs the loader, reloads Hyprland and waits for the
-engine (§10); the button reads `Enabling…` meanwhile, a failure's first
-line of error output stays under it, success is said in the current view
+`bash`; with `--keys` and `--menu` for the rows checked, nothing for one
+unchecked, so what an earlier install did stays), which installs the
+loader, reloads Hyprland and waits for the engine (§10); the button reads
+`Enabling…` meanwhile, a failure's first line of error output stays under
+it, success is said in the current view (the script's lines about the
+keys and the menu, then its last: `Super+Ctrl+Y is bound already
+(Hyprslots): left as it is.`)
 and the next state read takes the prompt away (the opening tab settles
 then: Layout with no slots). While it asks, the views' keys are not
 handled (they would only reach a missing engine): Tab, Esc and q still are;
-the help row is `enable · Tab view  q close`. Disabling is the command
+the help row is `enable · keys menu · Tab view  q close`. Disabling is the command
 line's (`tools/uninstall-engine.sh`).
 
 **Every view.** The panel's keys come first: Tab / Shift+Tab cycle the
@@ -1178,6 +1195,9 @@ workspace × slot table.
 | ←/→, h/l (p), [ / ] | previous / next workspace's page (1 to N, round) |
 | 1–9, 0 | workspace 1–9, 10's page (0 only when ten are managed) |
 | a | `Assign kitty to a slot on workspace 3: (m)ain, (r)ight, m(o)re? [Esc] cancel`: every global slot, the workspace's own first, each by its key (§4); then `take_spec`: the window takes the slot and its spec (`spec.from_window`) becomes the workspace's for it, replacing the one it had, and the message says so (`Assigned kitty to main on workspace 3 (instead of foot)`); the slot is in the trees already, so nothing is placed. A window moving out of another slot leaves it empty, not Missing it: that slot's spec goes in the same edit when it is the window's (`; right is empty now`) |
+| c | capture this page's workspace: the Layout tab, its capture flow (below) |
+| m | the page's launch setting, round: never → on demand → at login (`set_launch`; `Workspace 3 launches its missing apps when you press L. Ctrl+S saves.`, `...at login, and when you press L.`, `Workspace 3 launches no apps.`); dim where config.lua sets it |
+| L | Launch missing (`launch_missing` for the page's workspace): `Launched foot for main; can't launch notes: set a command.`, `The app for main is on the way already.`, `Nothing to launch on workspace 3: its apps are open.`; dim while the setting is never (`press m to launch them on demand or at login`) |
 | u | on a window in a slot: `Unassign kitty from main on workspace 3? The slot is left empty. (y/n)`, then `unassign` with `clear_spec`: the window leaves the slot and the workspace no longer says what fills it, so the row is empty, not Missing that window; on an overflowing window, or one in a slot the workspace has no spec for, `unassign` alone; on a red Missing row (a window assigned but not open): `Unassign kitty/deltaf from main on workspace 3? It is not open; the slot is left empty. (y/n)`, then `clear_spec`. The editor's words are assign and unassign; "spec" is the api's |
 
 As aerolayout's `a` did, `a` writes the window's spec into the slot, and
@@ -1185,6 +1205,31 @@ As aerolayout's `a` did, `a` writes the window's spec into the slot, and
 edits"), for a window that is open or one that is only Missing, on the
 page's workspace. aerolayout's `n` (name a workspace) has no counterpart:
 workspaces have no names.
+
+**Launching, on the page** (`Launch.js`). Under the header a quiet line
+says the page's setting, `Launch apps: never` (`on demand`, `at login`;
+` (set in your config)` where config.lua sets it). While it is not never,
+each slot row with a spec there has a **Launch** cell: the command it
+launches with (` (from your config)` for config.lua's, which the editor
+never edits), or why it cannot in the urgent colour (`can't launch: set a
+command`).
+
+**Capture, in the editor** (`Capture.js`, the Layout view). `c` (the
+toolbar's `capture`; the Assignment tab's `c`, the first-run button, the
+bar's menu, the Omarchy menu and Super+Ctrl+Shift+C lead here too) first
+asks whom it is for, `Capture workspace 3: apply to (a)ll workspaces or
+(o)nly workspace 3? [Esc] cancel`, then previews (`capture` without
+`apply`): the panes draw the captured trees, slots not made yet included,
+each window's title in its tile (`Nothing to capture on this screen` for
+one left with none), on All workspaces for `a` started there, else on
+the workspace, and the band asks `Capture workspace 3 for all workspaces:
+makes slots foot (f) and chrome (c), puts 3 windows into their slots.
+Apply it? (y/n)` (`uses the slots there are` when it makes none). `y`
+applies it (`capture` with `apply` and the scope): `Captured workspace 3
+for all workspaces: made slots foot and chrome; 3 windows are in their
+slots. Ctrl+S saves.`, the header's `● unsaved`; `n` or Esc, `Capture
+cancelled: nothing changed.`, the picture as it was. A refusal (windows
+that overlap, no desk) shows in the band.
 
 **Mini-maps** (`ui/MiniMap.qml`, `Layout.miniMap`, `Layout.miniMapSize`,
 `Assignment.miniMapSource`). Every slot row leads with a thumbnail of
@@ -1428,6 +1473,7 @@ each with its key and its description and nothing else (below).
 | w | apply the edited panes (`set_trees`) |
 | Ctrl+S | apply the edited panes, then `save` (the panel's key) |
 | d | revert: `Revert workspace 3's tree on screen 1 to how it was last saved? Its unsaved edits go. (y/n)`, then `reset` (the draft and the applied but unsaved edits of that tree go) |
+| c | capture (below): the workspace shown, or the focused one from All workspaces; refused while panes have unapplied edits (`Apply (w) or revert (d) your edits first: a capture replaces the arrangement.`) and dim where the layout is read only |
 | R | `record` the pane's workspace, show the tree, its ratio and what it would drop (`missing`), apply after y/n (not on All workspaces; on a workspace using the shared trees, to whichever its first edit's question chose) |
 | u | on a workspace with trees of its own: after y/n, drop them (`drop_override`), so it uses the shared trees again |
 | [ / ] | previous / next workspace, round from the last managed one to 1 (the arrows stay the picture's) |
@@ -1436,9 +1482,11 @@ each with its key and its description and nothing else (below).
 | s | the keys go to the slot list (its border lights up; s or Esc back) |
 
 The help row is one line at the panel's width (`Layout.pictureHelp`), the
-keys grouped, the trigger keys highlighted: `←↑↓→ select  hjkl/HJKL move
+keys grouped, the trigger keys highlighted: `←↑↓→  hjkl/HJKL move
 / flip  t scroll half  r ratios  p swap  o others · w apply  d revert
-R record  u use shared · s slots · [ ] 1–9 - workspace · Tab view`
+R record  c capture  u use shared · s slots · [ ] 1–9 - workspace · Tab
+view` (the arrows unlabelled: what they do shows, and the row stays one
+line)
 (`t`'s label names the next mode,
 `/` and `r` only on tiles, `p` only on a layout of more than one screen,
 `u` only on a workspace with trees of its own; `o`'s label is `others` to
@@ -1580,7 +1628,8 @@ closes it):
 | Entry | Does |
 |---|---|
 | Re-apply layout (workspace N) | `workspace {workspace: N}` (its Super+N: every screen of the desk shows it again, scroll branches back in slot order), then `arrange` (the scroll pass now, the focused scroll workspace's columns widened) |
-| Record workspace N… | opens the panel with `{"record": true}`: the Layout tab on the focused workspace, its `R` flow (preview, then y/n) |
+| Record workspace N… | opens the panel with `{"record": true}`: the Layout tab on the focused workspace, its `R` flow (preview, then y/n); only with slots |
+| Capture this workspace… | opens the panel with `{"capture": true}`: the capture flow on the focused workspace (zero slots too: a first run's quickest start) |
 | Save | `save`; only with unsaved edits |
 | Reload config | `reload` (drops unsaved edits; how a fixed config error is picked up) |
 
@@ -2182,7 +2231,18 @@ Parked:
   file, under node). S2: `spec/capture_api_spec.lua`,
   `spec/launch_api_spec.lua`, `spec/editor_keys_spec.lua`,
   `spec/loader_spec.lua`; S3: `spec/capture_spec.lua`, `spec/launch_spec.lua`,
-  `spec/desktop_spec.lua`.
+  `spec/desktop_spec.lua`. The editor: `e2e/editor_capture.sh` (in `make
+  e2e-editor`: a 2:1 split captured for its workspace only and a scrolling
+  workspace for all workspaces from the Assignment page, by keys, preview
+  screenshots, Ctrl+S, a Hyprland reload keeping them; then the launch
+  setting cycled, the Launch column and `L` launching the app again in
+  the nested Hyprland, from a desktop entry in the test's
+  `XDG_DATA_HOME` and a `launch_commands` command), `e2e/editor_first_run.sh`
+  (Capture my windows, previewed and declined, then two windows
+  arranged by hand captured), `e2e/editor_install.sh` (the enable prompt's
+  choices toggled by key and click, the script run with `--keys --menu`),
+  the smoke (Assignment `c`, the bar's Capture); node:
+  `editor/tests/capture.test.mjs`, `launch.test.mjs`.
 - **S3 — pure modules**: busted specs; aerolayout's unittest cases are ported
   where the logic carries over (tree parsing, weights, assignment, record).
 - **Editor**: the api it relies on is S2 (`spec/assignment_api_spec.lua`,
