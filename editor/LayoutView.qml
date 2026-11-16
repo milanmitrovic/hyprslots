@@ -11,6 +11,7 @@ import "DesksLayouts.js" as DesksLayouts
 import "Help.js" as Help
 import "Guide.js" as Guide
 import "Assignment.js" as Assignment
+import "Capture.js" as Capture
 import "ui"
 
 // One workspace's trees in the active desk's layout, edited (aerolayout's
@@ -31,7 +32,9 @@ import "ui"
 // the two screens' trees (Layout.swapScreens). Edits go to a draft; `w` applies it (api set_trees), Ctrl+S
 // (the panel's) applies it and saves (api save), `d` reverts a screen's tree
 // to how it was last saved (api reset), `R` records the windows on screen
-// (api record, previewed). It opens on "All workspaces" (`-`): the layout's
+// (api record, previewed), `c` captures a workspace's windows, arranged by
+// hand, as slots and trees in one edit (api capture: asked whom it is for,
+// previewed in the picture, applied on y; Capture.js). It opens on "All workspaces" (`-`): the layout's
 // shared (default) trees, which every workspace with none of its own uses;
 // [ ] and the digits change the workspace (Workspaces.js; a dot marks one
 // with trees of its own). A workspace on the shared trees shows them, and
@@ -94,6 +97,8 @@ Item {
   // Assignment and Desk views.
   property var prompt: null
   property var _answer: null
+  // What Esc on the prompt does instead of saying "Cancelled.", or null.
+  property var _cancel: null
   readonly property bool prompting: prompt !== null
   property string message: ""
   property bool messageIsError: false
@@ -127,6 +132,13 @@ Item {
   property var slotDrag: null
   readonly property bool slotDragging: slotDrag !== null
 
+  // A capture previewed (c, before its y/n is answered): { reply (the api's
+  // capture without apply), trees (screen key -> the captured tree, parsed,
+  // or null), titles (slot -> the title of its window), back (where the
+  // view was: workspace, scope, screen, selectedKey) }; the panes draw its
+  // trees, slots not made yet included. null otherwise.
+  property var preview: null
+
   readonly property var activeDraft: drafts[screen] || null
   readonly property var activeNode: activeDraft ? activeDraft.node : null
 
@@ -151,7 +163,7 @@ Item {
   readonly property var helpGroups: {
     var jump = Workspaces.jumpKeys(Workspaces.count(state))
     if (slotFocus) return Layout.slotListHelp({ jumpKeys: jump, readOnly: slotsReadOnly !== "", hasSlot: !!slotRow })
-    if (welcome) return Guide.welcomeHelp()
+    if (welcome && !preview) return Guide.welcomeHelp()
     return Layout.pictureHelp({ node: activeNode, hasOwn: Layout.hasOwn(state, layout, workspace), jumpKeys: jump,
       readOnly: block !== "", edited: editedScreens().length > 0, workspace: workspace, screens: paneList.length })
   }
@@ -198,6 +210,8 @@ Item {
     slotDrag = null
     prompt = null
     _answer = null
+    _cancel = null
+    preview = null
     message = ""
     drafts = ({})
     selectedKey = ""
@@ -422,9 +436,11 @@ Item {
 
   function handlePictureKey(key, text) {
     if (welcome) {
-      // Nothing to arrange yet: a makes the first slot.
-      if (text !== "a") return false
-      startNewSlot(null, true)
+      // Nothing to arrange yet: c captures the windows as slots, a makes
+      // the first slot by hand.
+      if (text === "c") startCapture(null)
+      else if (text === "a") startNewSlot(null, true)
+      else return false
       return true
     }
     var arrow = arrowOf(key)
@@ -447,6 +463,7 @@ Item {
     else if (text === "w") apply(null)
     else if (text === "d") scoped(startRevert, false)
     else if (text === "R") scoped(startRecord, false)
+    else if (text === "c") startCapture(null)
     else return false
     return true
   }
@@ -917,6 +934,7 @@ Item {
   // The tree screen `k`'s pane draws: the dragged one while a divider of it
   // is held, else its draft's.
   function shownNode(k, draft) {
+    if (preview) return preview.trees[k] || null
     if (dragging && dragging.screen === k) return dragging.node
     return draft ? draft.node : null
   }
@@ -930,10 +948,12 @@ Item {
       : "Other windows hidden from the picture; they still go where the tree puts them.", false)
   }
 
-  // Open a prompt; answer(value) runs on its answer.
-  function ask(p, answer) {
+  // Open a prompt; answer(value) runs on its answer, cancel() (if given)
+  // on Esc.
+  function ask(p, answer, cancel) {
     prompt = p
     _answer = answer
+    _cancel = cancel || null
     message = ""
   }
 
@@ -999,10 +1019,15 @@ Item {
   function handlePrompt(key, text, modifiers) {
     var out = Prompts.key(prompt, Prompts.keyName(key, modifiers, Qt), Prompts.typed(text))
     var answer = _answer
+    var cancel = _cancel
     prompt = out.prompt
     if (!out.result) return true
     _answer = null
-    if (out.result.cancel) say("Cancelled.", false)
+    _cancel = null
+    if (out.result.cancel) {
+      if (cancel) cancel()
+      else say("Cancelled.", false)
+    }
     else if (answer) answer(out.result.value)
     return true // the prompt owns the keyboard
   }
@@ -1146,6 +1171,106 @@ Item {
     })
   }
 
+  // --- capture ----------------------------------------------------------------
+
+  // c (also the Assignment tab's, the bar's Capture, the first run's
+  // "Capture my windows"): workspace n's windows, arranged by hand, as the
+  // layout's slots and trees (api capture). It asks whom it is for, as the
+  // other edits do (all workspaces: the shared trees; only workspace n: its
+  // own), shows what it would make in the picture and asks y/n; n or Esc
+  // puts the picture back. `n` defaults to the workspace shown, on All
+  // workspaces the focused one (Capture.workspaceFor).
+  function startCapture(n) {
+    if (refuseEdit() || !engine || !state) return
+    if (editedScreens().length > 0) {
+      say("Apply (w) or revert (d) your edits first: a capture replaces the arrangement.", true)
+      return
+    }
+    var target = n !== null && n !== undefined ? n : Capture.workspaceFor(state, workspace, focusedWorkspace)
+    var q = Capture.question(target)
+    ask(Prompts.choice(q.label, q.options, { inline: true }), function(scope) { root.previewCapture(target, scope) })
+  }
+
+  // The bar's Capture and the open payload's: c on the focused workspace.
+  function captureFocused() {
+    startCapture(state ? Capture.workspaceFor(state, "default", focusedWorkspace) : null)
+  }
+
+  function previewCapture(n, scope) {
+    say("Capturing workspace " + n + "…", false)
+    engine.call("capture", { workspace: n, scope: scope }, function(reply) {
+      if (!reply.ok) {
+        root.say(reply.error, true)
+        return
+      }
+      root.showCapture(reply)
+    })
+  }
+
+  // The preview: the panes draw the captured trees on the workspace they
+  // are for (Capture.previewWorkspace), and the band asks y/n.
+  function showCapture(reply) {
+    var back = { workspace: workspace, scope: scope, screen: screen, selectedKey: selectedKey }
+    var to = Capture.previewWorkspace(workspace, reply.scope, reply.workspace)
+    if (to !== workspace) {
+      workspace = to
+      scope = ""
+      drafts = ({})
+      screen = ""
+      sync()
+    }
+    var texts = Capture.previewTrees(reply)
+    var trees = {}
+    for (var k in texts) trees[k] = texts[k] !== null ? Layout.parse(texts[k]).node || null : null
+    selectedKey = ""
+    preview = { reply: reply, trees: trees, titles: Capture.titles(reply), back: back }
+    var cancelled = function() { root.endCapture("Capture cancelled: nothing changed.", false) }
+    ask(Prompts.confirm(Capture.previewText(reply)), function(yes) {
+      if (yes) root.applyCapture(reply)
+      else cancelled()
+    }, cancelled)
+  }
+
+  // The picture as it was before the preview, and `text` said.
+  function endCapture(text, isError) {
+    var back = preview ? preview.back : null
+    preview = null
+    if (back && back.workspace !== workspace) {
+      workspace = back.workspace
+      drafts = ({})
+      screen = back.screen
+      sync()
+    }
+    if (back) {
+      scope = back.scope
+      selectedKey = back.selectedKey
+    }
+    keepSelection()
+    if (text) say(text, isError)
+  }
+
+  // y: the capture applied (one edit, unsaved: Ctrl+S saves), the picture
+  // on the trees it made.
+  function applyCapture(reply) {
+    say("Capturing workspace " + reply.workspace + "…", false)
+    engine.call("capture", { workspace: reply.workspace, scope: reply.scope, apply: true }, function(done) {
+      if (!done.ok) {
+        root.endCapture(done.error, true)
+        return
+      }
+      root.preview = null
+      root.scope = ""
+      var next = {}
+      for (var k in done.trees) {
+        var t = done.trees[k] && done.trees[k].tree ? String(done.trees[k].tree) : null
+        next[k] = { node: t !== null ? Layout.parse(t).node || null : null, base: t }
+      }
+      root.drafts = Object.assign({}, root.drafts, next)
+      root.keepSelection()
+      root.say(Capture.appliedText(done), false)
+    })
+  }
+
   // --- for scripts and the e2e smoke ----------------------------------------
 
   // "<screen> <leaf>", or "slots <name>" while the keys are the slot list's.
@@ -1158,6 +1283,15 @@ Item {
     return currentPanes().map(function(p) {
       var d = root.drafts[p.key]
       return p.key + ": " + (d && d.node ? Layout.format(d.node) : "-") + (root.edited(p.key) ? " *" : "")
+    }).join("; ")
+  }
+
+  // The capture previewed, "1: h[foot:2, t-term]; 2: -", "" for none.
+  function previewText() {
+    if (!preview) return ""
+    return currentPanes().map(function(p) {
+      var node = root.preview.trees[p.key]
+      return p.key + ": " + (node ? Layout.format(node) : "-")
     }).join("; ")
   }
 
@@ -1316,7 +1450,7 @@ Item {
       // happens next, and the one thing to do now (a, or the button).
       Item {
         id: welcomeBox
-        visible: !!root.welcome
+        visible: !!root.welcome && !root.preview
         width: body.width - slotPanel.width - body.spacing
         height: body.height
 
@@ -1340,21 +1474,30 @@ Item {
               text: modelData
             }
           }
+          // c: capture (the first, quickest), a: the first slot by hand.
           Item {
             width: parent.width
-            height: createButton.height + Style.spacing.sm
-            ActionButton {
-              id: createButton
-              objectName: root.welcome ? "welcome:create" : ""
+            height: welcomeButtons.height + Style.spacing.sm
+            Row {
+              id: welcomeButtons
               anchors.horizontalCenter: parent.horizontalCenter
               anchors.bottom: parent.bottom
-              accented: true
-              keyText: root.welcome ? root.welcome.action.key : ""
-              text: root.welcome ? root.welcome.action.label : ""
-              pixelSize: Style.font.body
-              padX: Style.spacing.xl
-              padY: Style.spacing.sm
-              onClicked: root.pressKey(root.welcome.action.key)
+              spacing: Style.spacing.lg
+              Repeater {
+                model: root.welcome ? root.welcome.actions : []
+                delegate: ActionButton {
+                  required property var modelData
+                  required property int index
+                  objectName: "welcome:" + (modelData.key === "c" ? "capture" : "create")
+                  accented: index === 0
+                  keyText: modelData.key
+                  text: modelData.label
+                  pixelSize: Style.font.body
+                  padX: Style.spacing.xl
+                  padY: Style.spacing.sm
+                  onClicked: root.pressKey(modelData.key)
+                }
+              }
             }
           }
         }
@@ -1365,7 +1508,7 @@ Item {
       // its filmstrip), placed by root.paneGeometry.
       Item {
         id: paneRow
-        visible: !root.welcome
+        visible: !root.welcome || !!root.preview
         width: body.width - slotPanel.width - body.spacing
         height: body.height
 
@@ -1505,11 +1648,12 @@ Item {
               // the tree as drawn (o: with other windows' place or not)
               readonly property var picture: pane.node ? Layout.picture(pane.node, root.showOther) : null
               readonly property bool scrolls: !!picture && picture.kind === "scroll"
-              readonly property var titles: Layout.titles(root.state, root.workspace, pane.info.screen)
+              readonly property var titles: root.preview ? root.preview.titles
+                : Layout.titles(root.state, root.workspace, pane.info.screen)
               // the tiles' layout, inside the screen box's 4 px margin
               readonly property var area: ({ x: 0, y: 0, w: screenBox.width - 8, h: screenBox.height - 8 })
               readonly property var boxOpts: ({ pad: 5, title: Style.font.bodySmall + 6,
-                selected: pane.active ? root.selectedKey : "", titles: frame.titles })
+                selected: pane.active && !root.preview ? root.selectedKey : "", titles: frame.titles })
               readonly property var boxes: picture && !scrolls ? Layout.rects(picture, area, boxOpts) : []
               readonly property var dividers: picture && !scrolls ? Layout.dividers(picture, area, boxOpts) : []
               // the drag on this pane, else null: every binding below reads
@@ -1557,7 +1701,8 @@ Item {
                   anchors.centerIn: parent
                   width: parent.width - Style.spacing.md * 2
                   visible: pane.node === null
-                  text: root.workspace === "default" || !Layout.hasOwn(root.state, root.layout, root.workspace)
+                  text: root.preview ? "Nothing to capture on this screen"
+                    : root.workspace === "default" || !Layout.hasOwn(root.state, root.layout, root.workspace)
                     ? "No shared tree on this screen"
                     : "No tree for workspace " + root.workspace + " here"
                 }
@@ -1848,7 +1993,7 @@ Item {
                   ? Layout.filmstrip(frame.picture, { x: 0, y: 0, w: pane.geo.w, h: pane.geo.screen.h }, {
                     aspect: pane.geo.screen.w / Math.max(1, pane.geo.screen.h),
                     span: pane.geo.w / pane.geo.screen.w,
-                    selected: pane.active ? root.selectedKey : "",
+                    selected: pane.active && !root.preview ? root.selectedKey : "",
                     titles: frame.titles,
                   })
                   : null
