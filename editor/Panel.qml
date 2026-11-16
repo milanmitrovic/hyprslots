@@ -115,6 +115,8 @@ Item {
   // again on the first state read after opening (the state it had may be
   // older), unless a tab was picked meanwhile.
   property bool pendingTab: false
+  // Enable's outcome, said in the view the panel settles on (onStateRead).
+  property string enableNews: ""
 
   function open(payloadJson) {
     var payload = {}
@@ -250,7 +252,9 @@ Item {
   function enableEngine() {
     if (!root.engine || root.engine.enabling) return
     root.engine.enable(function(result) {
-      if (result.ok && root.currentView) root.currentView.say(result.message, false)
+      // Said once the engine's state is read: that read takes the prompt
+      // away and may settle the opening tab, whose view then says it.
+      if (result.ok) root.enableNews = result.message
     }, root.enableOptions)
   }
 
@@ -582,6 +586,10 @@ Item {
     function onStateRead(ok) {
       if (!ok) return
       root.settleTab()
+      if (root.enableNews !== "" && !root.enablePrompt && root.currentView) {
+        root.currentView.say(root.enableNews, false)
+        root.enableNews = ""
+      }
       root.startPendingRecord()
       root.startPendingCapture()
     }
@@ -781,7 +789,7 @@ Item {
                     text: modelData.label
                     keyText: modelData.key
                     checked: modelData.checked
-                    available: !root.enablePrompt.busy
+                    available: !!root.enablePrompt && !root.enablePrompt.busy
                     onClicked: root.press(modelData.key)
                   }
                 }
@@ -854,7 +862,7 @@ Item {
                     text: modelData.label
                     keyText: modelData.key
                     checked: modelData.checked
-                    available: !root.enablePrompt.busy
+                    available: !!root.enablePrompt && !root.enablePrompt.busy
                     pixelSize: Style.font.body
                     onClicked: root.press(modelData.key)
                   }
