@@ -243,6 +243,22 @@ describe("a scroll branch", function()
     assert.are.equal("lua:slots", rule_for(4))
   end)
 
+  -- The loader runs from Omarchy's workspace-layouts folder after the saved
+  -- mode files there, so a tiled saved mode must win by hyprslots leaving
+  -- the workspace alone, as it did when the mode file loaded last.
+  it("leaves a workspace with a saved tiled Omarchy mode alone at load", function()
+    saved_mode(3, "dwindle")
+    setup()
+    assert.is_nil(rule_for(3))
+    assert.are.equal("lua:slots", rule_for(4))
+  end)
+
+  it("still gives a workspace saved as floating its layout at load, underneath the floating", function()
+    saved_mode(3, "floating")
+    setup()
+    assert.are.equal("scrolling", rule_for(3))
+  end)
+
   it("keeps a workspace's saved Omarchy mode when the desk changes at runtime", function()
     hl.monitors = {}
     setup()

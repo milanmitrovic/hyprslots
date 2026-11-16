@@ -663,8 +663,13 @@ before the cutover.
 
 Verified at cutover: a saved mode file for a hyprslots workspace wins over
 hyprslots' load-time rule. Omarchy loads the saved modes from
-`default.hypr.toggles`, after the user's requires (hyprslots included), and
-each calls `hl.workspace_rule` with its layout. So leaving slots for a mode
+`default.hypr.toggles`, and each calls `hl.workspace_rule` with its layout.
+hyprslots' loader (§10) is a file in that same folder, sorted after them
+(`zz-hyprslots.lua` after `default.lua` and `<N>.lua`), so hyprslots itself
+leaves a workspace with a saved tiled mode alone at load
+(`hl_adapter.omarchy_saved_mode`); one saved as floating still gets the
+slots rule, the tiled layout under the floating, as when the mode files
+loaded last. So leaving slots for a mode
 keeps that mode across reloads until Super+L enters slots again (which
 removes the file), and Omarchy's default-layout command, which saves busy
 workspaces' current mode, takes those workspaces out of slots too. The cutover

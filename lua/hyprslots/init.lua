@@ -413,9 +413,12 @@ end
 -- everywhere else. Workspace rules apply when a workspace is created, so
 -- they are set up front, and again when the desk or the trees change, for
 -- the workspaces whose layout
--- changed. At load Omarchy's saved modes load afterwards and win; later
--- (`runtime`), a workspace with a saved mode is left as it is, so Super+L's
--- choice stands until Super+L brings slots back.
+-- changed. A workspace with a saved Omarchy mode is left as it is, so
+-- Super+L's choice stands until Super+L brings slots back. At load (the
+-- loader runs from Omarchy's workspace-layouts folder, after its saved mode
+-- files) a floating mode still gets the rule: floating keeps the tiled layout
+-- underneath, which is the slots one, as when the mode files loaded last.
+-- Later (`runtime`) any saved mode is left alone.
 workspace_rules = function(self, runtime)
   local cfg, ruled = self.cfg, self.ruled
   local with_trees = {}
@@ -437,7 +440,8 @@ workspace_rules = function(self, runtime)
       local layout = scroll.layout_for(self, id)
       if ruled[id] ~= layout then
         ruled[id] = layout
-        if runtime and adapter.omarchy_mode_saved(id) then
+        local saved = adapter.omarchy_saved_mode(id)
+        if saved ~= nil and (runtime or saved ~= "floating") then
           self.log:info("workspace %d: kept its saved Omarchy mode (hyprslots would give it %s)", id, layout)
         else
           adapter.workspace_layout(id, layout)

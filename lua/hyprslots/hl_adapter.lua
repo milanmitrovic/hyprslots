@@ -324,16 +324,24 @@ local function state_home()
   return base
 end
 
--- Whether Omarchy has a saved mode for workspace `id`: the file its
--- workspace-layout toggle (and the user's Super+L cycle) writes, which its
--- workspace-layouts.lua loads after hyprslots on every config load.
-function M.omarchy_mode_saved(id)
+-- Omarchy's saved mode for workspace `id`: the file its workspace-layout
+-- toggle (and the user's Super+L cycle) writes into its workspace-layouts
+-- folder, `o.workspace_mode({ workspace = "3", mode = "dwindle" })`. The
+-- mode ("dwindle", "scrolling", "floating"), "" for a file that names none,
+-- nil for no file.
+function M.omarchy_saved_mode(id)
   local file = io.open(string.format("%s/omarchy/workspace-layouts/%s.lua", state_home(), tostring(id)), "r")
-  if file then
-    file:close()
-    return true
+  if not file then
+    return nil
   end
-  return false
+  local text = file:read("a") or ""
+  file:close()
+  return text:match('mode%s*=%s*"([%a]+)"') or ""
+end
+
+-- Whether Omarchy has a saved mode for workspace `id`.
+function M.omarchy_mode_saved(id)
+  return M.omarchy_saved_mode(id) ~= nil
 end
 
 -- The tiled windows on workspace `id` that Hyprland's scrolling layout has a
