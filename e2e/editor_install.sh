@@ -7,7 +7,11 @@
 # folder, so no engine runs, and the plugin's service writes nothing by
 # itself. The bar widget asks to be enabled; the panel asks "Enable the
 # hyprslots engine?", saying what that writes and that the Hyprland config
-# is not edited. Its Enable, clicked with the real pointer, writes the
+# is not edited, and offers two choices: the editor's keys (off) and the
+# Omarchy menu's entries (on), toggled by k and m or a click. Its Enable,
+# clicked with the real pointer, runs tools/install-engine.sh with the
+# choices made (--keys, --menu: the run's arguments are logged by a wrapper
+# around the plugin's script), writes the
 # loader, reloads Hyprland and finds the engine running: the prompt is gone
 # and the panel settles on the Layout tab (no slots yet), Super+1 is
 # hyprslots'. Uninstalled again (tools/uninstall-engine.sh), the open panel
@@ -26,6 +30,20 @@ LUA
   seed_workspace_blocks HEADLESS-2
   install_plugin_copy
   rm -f "$E2E_LOADER"
+  # The plugin's install script, wrapped to log the arguments the editor
+  # runs it with; a script that knows no --keys / --menu yet gets the run
+  # without them.
+  local tools=$E2E_PLUGIN_DIR/tools
+  mv "$tools/install-engine.sh" "$tools/install-engine.real.sh"
+  cat >"$tools/install-engine.sh" <<WRAP
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >>"$E2E_DIR/install-args"
+real=\$(dirname "\${BASH_SOURCE[0]}")/install-engine.real.sh
+if grep -q -- '--menu' "\$real"; then exec bash "\$real" "\$@"; fi
+args=()
+for a in "\$@"; do case \$a in --keys | --no-keys | --menu | --no-menu) ;; *) args+=("\$a") ;; esac; done
+exec bash "\$real" "\${args[@]}"
+WRAP
 }
 
 # shellcheck source=e2e/editor/lib.sh
@@ -77,11 +95,25 @@ test_body() {
   expect_eq "the panel asks to enable the engine, saying what that does" \
     "card | Enable the hyprslots engine? | hyprslots puts your windows into their slots from inside Hyprland. Enabling it adds one file, zz-hyprslots.lua, to Omarchy's workspace-layouts folder (~/.local/state/omarchy/workspace-layouts), which Omarchy loads with its own saved layouts, and reloads Hyprland. | It doesn't edit your Hyprland config. Super+1..9 then switch every screen at once. To undo, run tools/uninstall-engine.sh from the plugin's folder. | [e] Enable" \
     "$(smoke enablePrompt)"
-  if [[ $(smoke help) == *'<font color="#'*'">e</font></b>nable'* ]]; then
-    pass "the help row offers e"
+  if [[ $(smoke help) == *'<font color="#'*'">e</font></b>nable'*'">k</font></b>eys'*'">m</font></b>enu'* ]]; then
+    pass "the help row offers e, k and m"
   else
     fail "help row: $(smoke help)"
   fi
+  local keys_off="[ ] k Also bind Super+Ctrl+Y to open the editor and Super+Ctrl+Shift+C to capture"
+  local keys_on="[x] k Also bind Super+Ctrl+Y to open the editor and Super+Ctrl+Shift+C to capture"
+  local menu_on="[x] m Add hyprslots to the Omarchy menu (Open editor, Capture this workspace, Launch missing apps)"
+  local menu_off="[ ] m Add hyprslots to the Omarchy menu (Open editor, Capture this workspace, Launch missing apps)"
+  expect_eq "its choices: no keys, the menu" "$keys_off; $menu_on" "$(smoke enableChoices)"
+  # k toggles the keys; a click on the menu's choice toggles it, twice back.
+  expect_eq "k" "ok" "$(smoke press k)"
+  expect_eq "k binds the keys" "$keys_on; $menu_on" "$(smoke enableChoices)"
+  smoke_click enable:menu
+  eventually 5 bash -c "[[ \$($watch enableChoices) == *'[ ] m'* ]]" || true
+  expect_eq "a click leaves the menu alone" "$keys_on; $menu_off" "$(smoke enableChoices)"
+  smoke_click enable:menu
+  eventually 5 bash -c "[[ \$($watch enableChoices) == *'[x] m'* ]]" || true
+  expect_eq "and another adds it again" "$keys_on; $menu_on" "$(smoke enableChoices)"
   sleep 0.5
   shot 1-enable
   if [[ -e $E2E_LOADER ]]; then fail "asking wrote the loader"; else pass "still nothing written"; fi
@@ -93,6 +125,7 @@ test_body() {
   else
     fail "no engine after Enable: $(engine); prompt: $(smoke enablePrompt); qs log: $(tail -n 5 "$E2E_DIR/qs.log")"
   fi
+  expect_eq "Enable ran the script with the choices" "--keys --menu" "$(head -n1 "$E2E_DIR/install-args")"
   if cmp -s "$E2E_PLUGIN_DIR/tools/loader.lua" "$E2E_LOADER"; then
     pass "the loader is in Omarchy's workspace-layouts folder"
   else
@@ -122,7 +155,10 @@ test_body() {
   sleep 0.5
   shot 3-banner
 
-  # e enables it from the keyboard.
+  expect_eq "the banner offers the choices too, as made" "$keys_on; $menu_on" "$(smoke enableChoices)"
+
+  # k leaves the keys alone this time; e enables it from the keyboard.
+  expect_eq "k" "ok" "$(smoke press k)"
   expect_eq "e" "ok" "$(smoke press e)"
   if eventually 15 engine_is running; then
     pass "e started the engine"
@@ -131,6 +167,7 @@ test_body() {
   fi
   eventually 5 bash -c "[[ -z \$($watch enablePrompt) ]]" || true
   expect_eq "the banner is gone" "" "$(smoke enablePrompt)"
+  expect_eq "e ran it with the menu alone" "--menu" "$(sed -n 2p "$E2E_DIR/install-args")"
 
   # And uninstalled once more: the loader is gone, and the engine with it.
   out=$("$E2E_PLUGIN_DIR/tools/uninstall-engine.sh" 2>&1) || fail "uninstall-engine.sh: $out"
