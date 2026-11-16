@@ -25,6 +25,9 @@
 test_setup() {
   cat >"$E2E_CONFIG_HOME/hypr/test-extra.lua" <<'LUA'
 hl.monitor({ output = "HEADLESS-2", mode = "1920x1080@60", position = "0x0", scale = 1 })
+-- Hyprland's own tiling puts a new window right of the one it splits,
+-- wherever the pointer is: the windows arranged by hand stand as spawned.
+hl.config({ dwindle = { force_split = 2 } })
 LUA
   smoke_theme_look
   seed_workspace_blocks HEADLESS-2
@@ -153,7 +156,8 @@ test_body() {
   fi
   expect_eq "the slots" "foot t-term" "$(api_state | jq -r '[.slots[].name] | sort | join(" ")')"
   expect_eq "workspace 1's own tree" "h[foot:2, t-term]" "$(tree_of '.layouts[$l].workspaces["1"]["1"].tree')"
-  expect_eq "no shared tree yet" "null" "$(tree_of '.layouts[$l].default["1"].tree')"
+  # Every tree holds every slot, and no layout is treeless (design §4).
+  expect_eq "the shared tree holds the new slots" "h[foot, t-term]" "$(tree_of '.layouts[$l].default["1"].tree')"
   expect_eq "notes is foot's app on workspace 1" "foot/notes" "$(api_state | jq -r '.specs["1"].foot')"
   expect_eq "the windows in their slots" "foot:foot t-term:t-term" \
     "$(api_state | jq -r '[.windows[] | select(.workspace == 1) | "\(.class):\(.slot)"] | sort | join(" ")')"
@@ -193,7 +197,7 @@ test_body() {
   eventually 5 bash -c "[[ -n \$($watch capturePreview) ]]" || true
   local scrolled
   scrolled=$(smoke capturePreview)
-  if [[ $scrolled == "1: scroll"*"[t-scroll]" ]]; then pass "the preview: a filmstrip of t-scroll: $scrolled"; else fail "preview: $scrolled"; fi
+  if [[ $scrolled == "1: scroll:0.5[t-scroll, foot, t-term]" ]]; then pass "the preview: a filmstrip of t-scroll: $scrolled"; else fail "preview: $scrolled"; fi
   expect_eq "shown on workspace 2" "All workspaces · 1• [2] 3 4 5 6 7 8 9" "$(smoke layoutStrip)"
   sleep 0.5
   shot 4-preview-scroll
@@ -205,8 +209,8 @@ test_body() {
   fi
   local shared
   shared=$(tree_of '.layouts[$l].default["1"].tree')
-  if [[ $shared == "scroll"*"[t-scroll]" ]]; then pass "the shared tree: $shared"; else fail "shared tree: $shared"; fi
-  expect_eq "workspace 2 has none of its own" "null" "$(tree_of '.layouts[$l].workspaces["2"]')"
+  if [[ $shared == "scroll:0.5[t-scroll, foot, t-term]" ]]; then pass "the shared tree: $shared"; else fail "shared tree: $shared"; fi
+  expect_eq "workspace 2 has none of its own" "false" "$(tree_of '.layouts[$l].own | any(. == 2)')"
   expect_eq "workspace 1 keeps its own" "h[foot:2, t-term]" "$(tree_of '.layouts[$l].workspaces["1"]["1"].tree')"
   [[ $(smoke press Ctrl+s) == ok ]] || fail "Ctrl+S"
   if eventually 5 state_is .dirty false; then pass "Ctrl+S saved"; else fail "unsaved after Ctrl+S: $(smoke message)"; fi
@@ -218,7 +222,7 @@ test_body() {
   expect_eq "after a reload: the slots" "foot t-scroll t-term" "$(api_state | jq -r '[.slots[].name] | sort | join(" ")')"
   expect_eq "workspace 1's tree" "h[foot:2, t-term]" "$(tree_of '.layouts[$l].workspaces["1"]["1"].tree')"
   shared=$(tree_of '.layouts[$l].default["1"].tree')
-  if [[ $shared == "scroll"*"[t-scroll]" ]]; then pass "the shared tree after a reload: $shared"; else fail "shared tree: $shared"; fi
+  if [[ $shared == "scroll:0.5[t-scroll, foot, t-term]" ]]; then pass "the shared tree after a reload: $shared"; else fail "shared tree: $shared"; fi
   expect_eq "workspace 1's apps" "foot/notes t-term" "$(api_state | jq -r '[.specs["1"][]] | sort | join(" ")')"
   expect_eq "nothing unsaved" "false" "$(api_state | jq -r .dirty)"
   settle
@@ -271,7 +275,7 @@ test_body() {
   shot 6-launch-cannot
   expect_eq "L" "ok" "$(smoke press L)"
   eventually 5 bash -c "[[ \$($watch message) == Nothing* ]]" || true
-  expect_eq "nothing to launch: its app is open" "Nothing to launch on workspace 2: its apps are open." "$(smoke message)"
+  expect_eq "nothing to launch: every slot filled" "Nothing to launch on workspace 2: no empty slot there waits for an app." "$(smoke message)"
   [[ $(smoke press Ctrl+s) == ok ]] || fail "Ctrl+S"
   eventually 5 state_is .dirty false || fail "unsaved after Ctrl+S"
   grep -q 'on_demand' "$dir/slots.lua" || fail "slots.lua lacks the launch settings: $(cat "$dir/slots.lua")"

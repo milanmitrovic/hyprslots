@@ -20,7 +20,8 @@
 # slot. Then two windows arranged by hand on workspace 4 (a saved Omarchy
 # dwindle mode keeps it Hyprland's own tiling), 2:1, are captured from the
 # Layout tab: c, o (only workspace 4), the preview, y: two new slots, the
-# workspace's own tree h[t-left:2, t-right], each window's app assigned
+# workspace's own tree h[t-left:2, t-right, main] (every tree holds every
+# slot: main, empty there, takes no room), each window's app assigned
 # there, unsaved until Ctrl+S. Screenshots go to
 # .e2e-tmp/editor-first-run[-<theme>]-*.png
 # (SMOKE_THEME=<an Omarchy theme dir> runs it in that theme, as the smoke).
@@ -30,6 +31,9 @@
 test_setup() {
   cat >"$E2E_CONFIG_HOME/hypr/test-extra.lua" <<'LUA'
 hl.monitor({ output = "HEADLESS-2", mode = "1920x1080@60", position = "0x0", scale = 1 })
+-- Hyprland's own tiling puts a new window right of the one it splits,
+-- wherever the pointer is: the windows arranged by hand stand as spawned.
+hl.config({ dwindle = { force_split = 2 } })
 -- Every notification's text, for the test to read (none on a first run).
 e2e_notifications = {}
 e2e_notifications_seen = pcall(function()
@@ -292,7 +296,8 @@ test_body() {
     "Capture workspace 4: apply to (a)ll workspaces or (o)nly workspace 4? [Esc] cancel" "$(smoke message)"
   expect_eq "o" "ok" "$(smoke press o)"
   eventually 5 bash -c "[[ -n \$($watch capturePreview) ]]" || true
-  expect_eq "the preview: the windows as they are arranged" "1: h[t-left:2, t-right]" "$(smoke capturePreview)"
+  expect_eq "the preview: the windows as they are arranged, main (empty here) at the end" \
+    "1: h[t-left:2, t-right, main]" "$(smoke capturePreview)"
   local preview
   preview=$(smoke message)
   if [[ $preview == "Capture workspace 4 for workspace 4 only: makes slots t-left ("?") and t-right ("?"), puts 2 windows into their slots. Apply it? (y/n)" ]]; then
@@ -312,7 +317,7 @@ test_body() {
   fi
   local layout
   layout=$(api_state | jq -r .layout)
-  expect_eq "workspace 4's own tree" "h[t-left:2, t-right]" "$(api_state | jq -r --arg l "$layout" '.layouts[$l].workspaces["4"]["1"].tree')"
+  expect_eq "workspace 4's own tree" "h[t-left:2, t-right, main]" "$(api_state | jq -r --arg l "$layout" '.layouts[$l].workspaces["4"]["1"].tree')"
   expect_eq "the slots" "main t-left t-right" "$(api_state | jq -r '[.slots[].name] | sort | join(" ")')"
   expect_eq "t-right's app on workspace 4" "t-right" "$(api_state | jq -r '.specs["4"]["t-right"]')"
   expect_eq "unsaved" "true" "$(api_state | jq -r .dirty)"
@@ -323,7 +328,7 @@ test_body() {
     fail "message: $(smoke message)"
   fi
   if [[ $(smoke header) == *"unsaved"* ]]; then pass "the header says unsaved"; else fail "header: $(smoke header)"; fi
-  expect_eq "the picture shows the tree in force" "1: h[t-left:2, t-right]" "$(smoke layout)"
+  expect_eq "the picture shows the tree in force" "1: h[t-left:2, t-right, main]" "$(smoke layout)"
   expect_client t-left 4 0 0 1280 1080
   expect_client t-right 4 1280 0 640 1080
   sleep 0.5

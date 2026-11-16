@@ -31,18 +31,13 @@ LUA
   install_plugin_copy
   rm -f "$E2E_LOADER"
   # The plugin's install script, wrapped to log the arguments the editor
-  # runs it with; a script that knows no --keys / --menu yet gets the run
-  # without them.
+  # runs it with.
   local tools=$E2E_PLUGIN_DIR/tools
   mv "$tools/install-engine.sh" "$tools/install-engine.real.sh"
   cat >"$tools/install-engine.sh" <<WRAP
 #!/usr/bin/env bash
 printf '%s\n' "\$*" >>"$E2E_DIR/install-args"
-real=\$(dirname "\${BASH_SOURCE[0]}")/install-engine.real.sh
-if grep -q -- '--menu' "\$real"; then exec bash "\$real" "\$@"; fi
-args=()
-for a in "\$@"; do case \$a in --keys | --no-keys | --menu | --no-menu) ;; *) args+=("\$a") ;; esac; done
-exec bash "\$real" "\${args[@]}"
+exec bash "\$(dirname "\${BASH_SOURCE[0]}")/install-engine.real.sh" "\$@"
 WRAP
 }
 
@@ -126,16 +121,29 @@ test_body() {
     fail "no engine after Enable: $(engine); prompt: $(smoke enablePrompt); qs log: $(tail -n 5 "$E2E_DIR/qs.log")"
   fi
   expect_eq "Enable ran the script with the choices" "--keys --menu" "$(head -n1 "$E2E_DIR/install-args")"
-  if cmp -s "$E2E_PLUGIN_DIR/tools/loader.lua" "$E2E_LOADER"; then
+  if [[ -f $E2E_LOADER ]]; then
     pass "the loader is in Omarchy's workspace-layouts folder"
   else
     fail "no loader at $E2E_LOADER"
+  fi
+  expect_eq "it binds the editor's keys (both free here)" \
+    'local KEYS = { editor = "SUPER + CTRL + Y", capture = "SUPER + CTRL + SHIFT + C" }' \
+    "$(grep -m1 '^local KEYS = ' "$E2E_LOADER" 2>/dev/null)"
+  if grep -q 'hyprslots: Open editor' "$E2E_CONFIG_HOME/omarchy/extensions/omarchy-menu.jsonc" 2>/dev/null; then
+    pass "hyprslots is in the Omarchy menu"
+  else
+    fail "no menu entries in $E2E_CONFIG_HOME/omarchy/extensions/omarchy-menu.jsonc"
   fi
   eventually 10 smoke_ready || fail "the panel never read state: $(smoke errors)"
   eventually 5 bash -c "[[ -z \$($watch enablePrompt) ]]" || true
   expect_eq "the prompt is gone" "" "$(smoke enablePrompt)"
   eventually 5 tab_is Layout || true
   expect_eq "no slots yet: the panel settles on the Layout tab" "Layout" "$(smoke_tab)"
+  # Where it settles, it says what the script did with the keys and the menu.
+  eventually 5 bash -c "[[ \$($watch message) == *Reloaded* ]]" || true
+  expect_eq "it says so" \
+    "Super+Ctrl+Y: open the editor. Super+Ctrl+Shift+C: capture this workspace. Added hyprslots to the Omarchy menu (Trigger): Open editor, Capture this workspace, Launch missing apps. Reloaded Hyprland: the hyprslots engine is running." \
+    "$(smoke message)"
   expect_eq "Super+1 is hyprslots'" hyprslots "$(super_1)"
   expect_eq "no config errors" "" "$(hc configerrors -j | jq -r '.[] | select(. != "")')"
   eventually 5 bash -c "[[ \$($watch barLabel) == 'setup 󰕰 set up' ]]" || true
