@@ -34,7 +34,9 @@ start_editor() {
   SMOKE_QS_DIR=$E2E_DIR/qs
   mkdir -p "$SMOKE_QS_DIR"
   cp "$E2E_ROOT/e2e/editor/shell.qml" "$SMOKE_QS_DIR/shell.qml"
-  ln -s "$E2E_ROOT/editor" "$SMOKE_QS_DIR/editor"
+  # The plugin folder as the shell has it (run.sh's link to the worktree, or
+  # a test's copy), so the editor finds the plugin's tools/ beside it.
+  ln -s "$E2E_PLUGIN_DIR" "$SMOKE_QS_DIR/hyprslots"
   # qs.Commons / qs.Ui resolve against the config root, as in the shell.
   ln -s "$omarchy/shell/Commons" "$SMOKE_QS_DIR/Commons"
   ln -s "$omarchy/shell/Ui" "$SMOKE_QS_DIR/Ui"

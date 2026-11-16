@@ -6,14 +6,14 @@ import Quickshell.Wayland
 import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
-import "editor" as Editor
+import "hyprslots/editor" as Editor
 
 // A minimal Quickshell config that runs the editor plugin's service and panel
 // standalone, for e2e/editor_smoke.sh. It stands in for the Omarchy shell:
 // it injects the service and manifest the way the shell's loader does, and
 // adds an IPC target the smoke drives with `qs ipc -p <dir> call smoke ...`.
-// `editor`, `Commons` and `Ui` next to this file are links the smoke makes
-// to the plugin and to Omarchy's shell modules (qs.Commons is the config
+// `hyprslots`, `Commons` and `Ui` next to this file are links the smoke makes
+// to the plugin folder and to Omarchy's shell modules (qs.Commons is the config
 // root's Commons/). The bar widget is loaded on demand (`smoke bar`), in a
 // strip at the top standing in for Omarchy's bar: a PluginBarApi like the
 // one the bar hands an installed widget, whose shell toggles the panel as
@@ -226,6 +226,12 @@ ShellRoot {
 
     function press(key: string): string {
       return panel.press(key)
+    }
+
+    // The panel's enable prompt while no engine runs (Panel.enablePromptText),
+    // "" for none.
+    function enablePrompt(): string {
+      return panel.enablePromptText()
     }
 
     // What stands in the current tab while it is empty, and its line on
