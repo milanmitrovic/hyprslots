@@ -59,12 +59,16 @@ Item {
   // whole page while there is nothing to show (`card`), else as a banner
   // over the views' last state. Enable (e, Return, the button) is the only
   // thing that writes: the service never does by itself.
+  // What Enable also does, as chosen in the prompt (k and m, or a click):
+  // the editor's keys (off unless asked), the Omarchy menu's entries (on).
+  property var enableOptions: Install.defaults()
   readonly property var enablePrompt: root.engine ? Install.prompt({
     absent: root.engine.absent,
     loadError: root.engine.loadError,
     stale: root.engine.state !== null,
     enabling: root.engine.enabling,
     error: root.engine.enableError,
+    options: root.enableOptions,
   }) : null
   readonly property bool enableCard: !!root.enablePrompt && root.enablePrompt.mode === "card"
 
@@ -186,6 +190,10 @@ Item {
         root.enableEngine()
         return true
       }
+      if (Install.toggles(text)) {
+        if (!root.enablePrompt.busy) root.enableOptions = Install.toggle(root.enableOptions, text)
+        return true
+      }
       var passes = key === Qt.Key_Tab || key === Qt.Key_Backtab || key === Qt.Key_Escape || text === "q"
       if (!passes) return false
     }
@@ -223,17 +231,24 @@ Item {
     if (!root.engine || root.engine.enabling) return
     root.engine.enable(function(result) {
       if (result.ok && root.currentView) root.currentView.say(result.message, false)
-    })
+    }, root.enableOptions)
   }
 
   // The enable prompt as one line, " | " between its parts ("card | Enable
   // the hyprslots engine? | … | [e] Enable"), its error last; "" for none:
-  // for the e2e smoke.
+  // for the e2e smoke. enableChoicesText: its choices, "[x] k Also bind …;
+  // [ ] m Add …".
   function enablePromptText() {
     var p = root.enablePrompt
     if (!p) return ""
     return [p.mode, p.title].concat(p.lines).concat(["[" + p.action.key + "] " + p.action.label])
       .concat(p.error ? [p.error] : []).join(" | ")
+  }
+
+  function enableChoicesText() {
+    var p = root.enablePrompt
+    if (!p) return ""
+    return p.options.map(function(o) { return (o.checked ? "[x] " : "[ ] ") + o.key + " " + o.label }).join("; ")
   }
 
   // Ctrl+S, one save for every view: the engine's `save`, said in the current
@@ -722,6 +737,19 @@ Item {
                   wrapMode: Text.WordWrap
                   text: root.enablePrompt ? root.enablePrompt.lines.join(" ") : ""
                 }
+                Repeater {
+                  model: root.enablePrompt && !root.enableCard ? root.enablePrompt.options : []
+                  delegate: CheckRow {
+                    required property var modelData
+                    objectName: "enable:" + modelData.id
+                    width: parent.width
+                    text: modelData.label
+                    keyText: modelData.key
+                    checked: modelData.checked
+                    available: !root.enablePrompt.busy
+                    onClicked: root.press(modelData.key)
+                  }
+                }
                 InfoText {
                   width: parent.width
                   wrapMode: Text.WordWrap
@@ -775,6 +803,26 @@ Item {
                   required property string modelData
                   width: enableCard.width
                   text: modelData
+                }
+              }
+              // What Enable also does: the editor's keys, the Omarchy menu.
+              Column {
+                width: Math.min(parent.width, Style.space(560))
+                anchors.horizontalCenter: parent.horizontalCenter
+                spacing: Style.spacing.sm
+                Repeater {
+                  model: root.enableCard && root.enablePrompt ? root.enablePrompt.options : []
+                  delegate: CheckRow {
+                    required property var modelData
+                    objectName: "enable:" + modelData.id
+                    width: parent.width
+                    text: modelData.label
+                    keyText: modelData.key
+                    checked: modelData.checked
+                    available: !root.enablePrompt.busy
+                    pixelSize: Style.font.body
+                    onClicked: root.press(modelData.key)
+                  }
                 }
               }
               Item {

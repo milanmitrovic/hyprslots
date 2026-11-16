@@ -146,14 +146,16 @@ Item {
 
   // Enable the engine, on the user's say-so (the panel's Enable): run the
   // plugin's tools/install-engine.sh, which installs the loader, reloads
-  // Hyprland and checks the engine runs (Install.js). `done(result)` gets
+  // Hyprland and checks the engine runs (Install.js); `options` are the
+  // prompt's choices ({ keys, menu }: --keys binds the editor's keys,
+  // --menu adds hyprslots to the Omarchy menu). `done(result)` gets
   // Install.outcome's { ok, message }. The service never runs it by itself.
-  function enable(done) {
+  function enable(done, options) {
     if (enabling) return
     enabling = true
     enableError = ""
     var proc = enableComponent.createObject(root, {
-      command: Install.enableCommand(Qt.resolvedUrl("../tools/install-engine.sh")),
+      command: Install.enableCommand(Qt.resolvedUrl("../tools/install-engine.sh"), options || Install.defaults()),
       done: done || null,
       running: true,
     })

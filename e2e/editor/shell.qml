@@ -234,6 +234,11 @@ ShellRoot {
       return panel.enablePromptText()
     }
 
+    // Its choices, "[ ] k Also bind …; [x] m Add …".
+    function enableChoices(): string {
+      return panel.enableChoicesText()
+    }
+
     // What stands in the current tab while it is empty, and its line on
     // what to do next (Guide.js).
     function empty(): string {
