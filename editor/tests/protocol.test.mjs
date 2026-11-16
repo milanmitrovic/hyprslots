@@ -14,8 +14,30 @@ test("a call is one hyprctl repl returning hyprslots.api.call with the JSON as a
   ]);
 });
 
-test("state is read with hyprslots.api.state()", () => {
-  assert.deepEqual(Array.from(P.stateCommand()), ["hyprctl", "repl", "return hyprslots.api.state()"]);
+test("state is read with hyprslots.api.state(), or a marker with the load error when no engine runs", () => {
+  assert.deepEqual(Array.from(P.stateCommand()), [
+    "hyprctl",
+    "repl",
+    'if hyprslots then return hyprslots.api.state() end return "hyprslots-absent " .. (hyprslots_load_error or "")',
+  ]);
+});
+
+test("no engine loaded is a failure that says so, marked absent", () => {
+  assert.deepEqual({ ...P.parseReply("hyprslots-absent \n", 0) }, {
+    ok: false,
+    absent: true,
+    loadError: "",
+    error: "the hyprslots engine is not running",
+  });
+});
+
+test("an engine that failed to load is absent too, and says why", () => {
+  assert.deepEqual({ ...P.parseReply("hyprslots-absent no engine in /p (lua/hyprslots is missing)", 0) }, {
+    ok: false,
+    absent: true,
+    loadError: "no engine in /p (lua/hyprslots is missing)",
+    error: "the hyprslots engine failed to load: no engine in /p (lua/hyprslots is missing)",
+  });
 });
 
 test("backslashes, quotes and control characters cannot break out of the Lua string", () => {

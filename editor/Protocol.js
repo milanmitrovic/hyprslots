@@ -31,9 +31,15 @@ function callCommand(name, args) {
   return ["hyprctl", "repl", "return hyprslots.api.call(" + luaString(name) + ", " + luaString(json) + ")"]
 }
 
+// What the state read answers when no engine runs: the loader did not run
+// (the engine is not enabled, or Hyprland has not reloaded since), or it
+// failed, its error after the marker (tools/loader.lua).
+var ABSENT = "hyprslots-absent"
+
 // The argv that reads the engine's state.
 function stateCommand() {
-  return ["hyprctl", "repl", "return hyprslots.api.state()"]
+  return ["hyprctl", "repl",
+    'if hyprslots then return hyprslots.api.state() end return "' + ABSENT + ' " .. (hyprslots_load_error or "")']
 }
 
 function failure(message) {
@@ -46,7 +52,7 @@ function excerpt(text) {
 }
 
 // The reply to one command: the engine's JSON object, or a failure saying
-// what went wrong (hyprctl failed, hyprslots is not loaded, garbage).
+// what went wrong (hyprctl failed, no engine runs: `absent`, garbage).
 function parseReply(text, exitCode) {
   var body = String(text || "").trim()
   if (exitCode !== 0) {
@@ -54,6 +60,15 @@ function parseReply(text, exitCode) {
   }
   if (body === "") {
     return failure("hyprslots did not answer: empty reply")
+  }
+  if (body === ABSENT || body.indexOf(ABSENT + " ") === 0) {
+    var loadError = body.slice(ABSENT.length).trim()
+    return {
+      ok: false,
+      absent: true,
+      loadError: loadError,
+      error: loadError ? "the hyprslots engine failed to load: " + loadError : "the hyprslots engine is not running",
+    }
   }
   var value
   try {

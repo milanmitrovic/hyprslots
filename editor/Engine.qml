@@ -9,7 +9,8 @@ import "Services.js" as Services
 // The editor's link to the running hyprslots engine (docs/design.md §9), as
 // the plugin's service. It talks to the engine only through Hyprland:
 //
-//   read   hyprctl repl 'return hyprslots.api.state()'
+//   read   hyprctl repl 'return hyprslots.api.state()' (or, with no engine
+//          loaded, a marker: `absent`, below)
 //   write  hyprctl repl 'return hyprslots.api.call(name, json)'
 //   push   custom>>hyprslots changed <seq> on socket2 (Hyprland.rawEvent)
 //
@@ -36,6 +37,10 @@ Item {
 
   property var state: null // the last state reply that read fine
   property string error: "" // why the last state read failed, "" when it worked
+  // The last state read found no engine (Protocol.parseReply): not enabled,
+  // or its loader failed (`loadError`, "" when it did not run).
+  property bool absent: false
+  property string loadError: ""
   property string lastError: "" // the last failed call's error
   // Also while a re-read is pending (the debounce after a reply or event):
   // until it lands, a view's state lags what the engine already did.
@@ -115,6 +120,8 @@ Item {
       } else {
         error = reply.error
       }
+      absent = reply.absent === true
+      loadError = absent ? String(reply.loadError || "") : ""
       stateRead(reply.ok)
     } else {
       if (!reply.ok) lastError = reply.error

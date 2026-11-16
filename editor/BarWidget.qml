@@ -12,9 +12,10 @@ import "Services.js" as Services
 // the active layout's name, a dot
 // while edits are unsaved; "set up" with an accent dot by the glyph while
 // there are no slots (a fresh install; a click opens the editor on its
-// Layout tab, where the first is made); red with the error in the tooltip when the engine
-// has a config error, refused to run, is not loaded, or the plugin's service
-// is missing. The state is the service's (Engine.qml): the widget only asks
+// Layout tab, where the first is made), and "enable" while no engine runs
+// (a click opens the editor's Enable); red with the error in the tooltip
+// when the engine has a config error, refused to run, failed to load, or
+// the plugin's service is missing. The state is the service's (Engine.qml): the widget only asks
 // it to follow events (watch / unwatch), it never polls of its own.
 //
 // Left click toggles the editor panel; right click opens a menu: Re-apply
@@ -74,6 +75,8 @@ BarWidget {
   readonly property var input: ({
     engine: root.engine !== null,
     error: root.engine ? root.engine.error : "",
+    absent: root.engine ? root.engine.absent : false,
+    loadError: root.engine ? root.engine.loadError : "",
     state: root.engine ? root.engine.state : null,
     workspaceId: root.workspaceId,
   })

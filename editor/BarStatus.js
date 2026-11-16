@@ -28,6 +28,7 @@ function hasTree(state, entry) {
 
 var HINT = "Click: editor · Right-click: menu"
 var SETUP_HINT = "Click to set up your slots"
+var ENABLE_HINT = "Click to enable it"
 
 // The display name of the monitor a workspace entry is on (" on Built-in"),
 // "" when the engine names none.
@@ -60,8 +61,9 @@ function layoutLine(state) {
 
 // input: { engine (whether the service is there), error (its last state
 // read's error, "" when fine), state (the last state that read fine, or
-// null), workspaceId (the bar's monitor's active Hyprland workspace id, -1 if
-// none) }. Returns { label, status: "normal" | "dirty" | "setup" | "error",
+// null), absent and loadError (no engine runs, and the loader's error if it
+// failed: Protocol.parseReply), workspaceId (the bar's monitor's active
+// Hyprland workspace id, -1 if none) }. Returns { label, status: "normal" | "dirty" | "setup" | "error",
 // tooltip, error, workspace (its number 1 to 10, or null), desk ("" when
 // none), dirty, setup (zero slots: the widget asks to be set up, an accent
 // dot by its glyph) }. The label is the active layout's name ("none" without
@@ -90,6 +92,17 @@ function view(input) {
   } else if (state && state.config_error) {
     out.error = "config error: " + state.config_error
   }
+  // The engine not enabled (a fresh install: the plugin added, its loader
+  // not yet; or taken away since): the same quiet nudge, to the editor's
+  // Enable. One that failed to load stays an error.
+  if (input.absent && !input.loadError) {
+    out.setup = true
+    out.status = "setup"
+    out.error = ""
+    out.label = GLYPH + " enable"
+    out.tooltip = "Hyprslots: the engine is not enabled\n" + ENABLE_HINT
+    return out
+  }
   // Zero slots (a fresh install): a quiet nudge to set them up, until the
   // first slot is made. An auto desk's unsaved dot waits until then.
   out.setup = !out.error && !!state && Array.isArray(state.slots) && state.slots.length === 0
@@ -111,11 +124,12 @@ function view(input) {
 // with ids "arrange", "record", "save", "reload". Re-apply and record need
 // the bar's screen to show a workspace of a running engine (a config error leaves
 // the last good config running); save needs unsaved edits; reload needs
-// only the service (it is how a fixed config error is picked up).
+// only the service and an engine (it is how a fixed config error is picked
+// up). With no engine nothing is offered: a click opens the editor's Enable.
 function menu(input) {
   var v = view(input)
   var state = input.state
-  var live = !!(input.engine && !input.error && state && !state.refused)
+  var live = !!(input.engine && !input.error && !input.absent && state && !state.refused)
   var onWorkspace = live && v.workspace !== null
   return [
     { id: "arrange", label: "Re-apply layout" + (v.workspace !== null ? " (workspace " + v.workspace + ")" : ""),
@@ -123,7 +137,7 @@ function menu(input) {
     { id: "record", label: "Record workspace" + (v.workspace !== null ? " " + v.workspace : "") + "…",
       enabled: onWorkspace },
     { id: "save", label: "Save", enabled: live && v.dirty },
-    { id: "reload", label: "Reload config", enabled: !!input.engine },
+    { id: "reload", label: "Reload config", enabled: !!input.engine && !input.absent },
   ]
 }
 

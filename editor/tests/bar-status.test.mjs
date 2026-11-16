@@ -86,6 +86,27 @@ test("a failed state read (hyprslots not loaded) is an error, even over an older
   assert.equal(stale.tooltip, "Hyprslots: hyprctl exited 1: no\nClick: editor · Right-click: menu");
 });
 
+test("an engine not enabled yet asks to be, as a quiet set-up nudge, not an error", () => {
+  const absent = { engine: true, error: "the hyprslots engine is not running", absent: true, loadError: "", workspaceId: 3 };
+  for (const view of [B.view({ ...absent, state: null }), B.view({ ...absent, state: state() })]) {
+    assert.equal(view.status, "setup");
+    assert.equal(view.setup, true);
+    assert.equal(view.label, "󰕰 enable");
+    assert.equal(view.error, "");
+    assert.equal(view.tooltip, "Hyprslots: the engine is not enabled\nClick to enable it");
+  }
+  assert.deepEqual(menuOf({ ...absent, state: state() }).map((line) => line.split(" ").slice(0, 2).join(" ")),
+    ["arrange off", "record off", "save off", "reload off"]);
+});
+
+test("an engine that failed to load is an error that says why", () => {
+  const view = B.view({ engine: true, error: "the hyprslots engine failed to load: boom", absent: true, loadError: "boom",
+    state: null, workspaceId: 3 });
+  assert.equal(view.status, "error");
+  assert.equal(view.setup, false);
+  assert.equal(view.error, "the hyprslots engine failed to load: boom");
+});
+
 test("an engine that refused to run is an error", () => {
   const view = B.view(running({ refused: "hyprmoncfg's workspace planner is on", desk: null, layout: null, workspaces: {} }));
   assert.equal(view.status, "error");
