@@ -92,3 +92,12 @@ test("Launch missing's reply in a sentence: what launched, what can't", () => {
   assert.deepEqual(plain(L.missingText({ workspace: 2, launched: [], open: [], pending: [], cannot: [{ slot: "notes", reason: "can't launch: set a command" }] })),
     { text: "Can't launch notes: set a command.", error: true });
 });
+
+test("the page's launch keys: m cycles the setting (dim where it is code's), L launches (dim while never)", () => {
+  assert.deepEqual(plain(L.helpItems(state(), 2)), [{ key: "m", label: "launch mode" }, { key: "L", label: "launch missing" }]);
+  assert.deepEqual(plain(L.helpItems(state(), 1)),
+    [{ key: "m", label: "launch mode" }, { key: "L", label: "launch missing", enabled: false }]);
+  assert.deepEqual(plain(L.helpItems(state({ config: { editable: true, read_only: ["launch.2"] } }), 2)),
+    [{ key: "m", label: "launch mode", enabled: false }, { key: "L", label: "launch missing" }]);
+  assert.deepEqual(plain(L.helpItems(null, 2)).map((i) => i.enabled), [false, false], "no state read yet");
+});

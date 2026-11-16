@@ -274,3 +274,15 @@ test("the help row: a only on a window, u only where there is something to unass
   const keys = plain(A.helpGroups(state, rows[0], "1–9 0").flatMap((g) => (Array.isArray(g) ? g : g.items)).map((i) => i.key));
   assert.deepEqual(keys, ["↑/↓", "←/→ [ ]", "1–9 0", "a", "u", "Ctrl+S", "Tab", "q"]);
 });
+
+test("the help row: c captures the page's workspace, and the page's launch keys after it", () => {
+  const state = fixture();
+  const rows = A.rows(state, 3);
+  const items = (opts) => plain(A.helpGroups(state, rows[0], "1–9 0", opts).flatMap((g) => (Array.isArray(g) ? g : g.items)));
+  const launch = [{ key: "m", label: "launch mode" }, { key: "L", label: "launch missing", enabled: false }];
+  const all = items({ capture: true, launch });
+  assert.deepEqual(all.map((i) => i.key), ["↑/↓", "←/→ [ ]", "1–9 0", "a", "u", "c", "m", "L", "Ctrl+S", "Tab", "q"]);
+  assert.deepEqual(all.find((i) => i.key === "c"), { key: "c", label: "capture" });
+  assert.equal(all.find((i) => i.key === "L").enabled, false, "the launch items as given");
+  assert.equal(items({ capture: false, launch }).find((i) => i.key === "c").enabled, false, "capture dim where it would be refused");
+});

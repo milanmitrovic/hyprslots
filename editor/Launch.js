@@ -106,3 +106,14 @@ function missingText(reply) {
   var text = parts.join("; ") + "."
   return { text: text.charAt(0).toUpperCase() + text.slice(1), error: launched.length === 0 && pending.length === 0 }
 }
+
+// The page's launch keys for its help row (Help.js items): m cycles the
+// setting (dim where config.lua sets it), L launches the missing apps (dim
+// while the setting is never).
+function helpItems(state, n) {
+  var cycle = { key: "m", label: "launch mode" }
+  if (!state || readOnly(state, n)) cycle.enabled = false
+  var missing = { key: "L", label: "launch missing" }
+  if (!state || !canLaunch(state, n)) missing.enabled = false
+  return [cycle, missing]
+}
