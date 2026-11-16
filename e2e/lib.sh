@@ -166,3 +166,14 @@ hyprslots_load_error() {
   [[ $reply == "<none>" ]] && reply=''
   printf '%s' "$reply"
 }
+
+# Replace the linked plugin (run.sh links $E2E_PLUGIN_DIR to the worktree)
+# with a copy of the repo's files, as `omarchy plugin add` clones it: what
+# git tracks or would track, no .e2e-tmp. Call from test_setup.
+install_plugin_copy() {
+  rm -f "$E2E_PLUGIN_DIR"
+  mkdir -p "$E2E_PLUGIN_DIR"
+  (cd "$E2E_ROOT" && git ls-files -z --cached --others --exclude-standard |
+    while IFS= read -r -d '' file; do [[ -e $file ]] && printf '%s\0' "$file"; done |
+    tar --null -T - -cf -) | tar -C "$E2E_PLUGIN_DIR" -xf - || harness_fail "could not copy the plugin to $E2E_PLUGIN_DIR"
+}
