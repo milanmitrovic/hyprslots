@@ -858,6 +858,51 @@ function M.set_trees(data, layout, n, trees)
   return out
 end
 
+-- The data with workspace n's (or "default") whole set of trees in a
+-- layout replaced by `trees` (screen -> text, a screen left out having no
+-- tree), as a capture records them: unlike set_trees, a screen can lose
+-- its tree. With n "default" and `drop` a workspace number, that
+-- workspace's own trees go too, so it shows the new shared ones. Returns
+-- the new data, or nil and why not.
+function M.replace_trees(data, layout, n, trees, drop)
+  local entry, err = layout_entry(data, layout)
+  if not entry then
+    return nil, err
+  end
+  local ok, ws_err = check_workspace_or_default(n)
+  if not ok then
+    return nil, ws_err
+  end
+  local set = {}
+  for screen, text in pairs(trees) do
+    screen = as_screen(screen)
+    local fits, screen_err = check_screen(layout, entry, screen)
+    if not fits then
+      return nil, screen_err
+    end
+    local node, parse_err = tree.parse(text)
+    if not node then
+      return nil, parse_err
+    end
+    set[screen] = serialize.tree(node)
+  end
+  local out = M.copy(data)
+  local target = out.layouts[layout]
+  if n == "default" then
+    target.default = next(set) ~= nil and set or nil
+    if drop ~= nil and type(target.workspaces) == "table" then
+      target.workspaces[drop] = nil
+      if next(target.workspaces) == nil then
+        target.workspaces = nil
+      end
+    end
+  else
+    target.workspaces = type(target.workspaces) == "table" and target.workspaces or {}
+    target.workspaces[n] = set
+  end
+  return out
+end
+
 -- The slots a set of trees (screen -> text) places, as a set.
 local function placed_slots(trees)
   local out = {}
