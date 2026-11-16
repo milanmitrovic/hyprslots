@@ -43,6 +43,9 @@ test("a tab asked for wins: Record's Layout tab, or one named", () => {
   assert.equal(G.openingTab(fresh(), { tab: "Assignment" }), ASSIGNMENT);
   assert.equal(G.openingTab(oneSlot(), { tab: "Nope" }), ASSIGNMENT, "an unknown name is no request");
   assert.equal(G.asksForTab({ record: true }), true);
+  assert.equal(G.openingTab(oneSlot(), { capture: true }), LAYOUT, "Capture: the Layout tab");
+  assert.equal(G.openingTab(null, { capture: true }), LAYOUT);
+  assert.equal(G.asksForTab({ capture: true }), true);
   assert.equal(G.asksForTab({ tab: "Desk" }), true);
   assert.equal(G.asksForTab({}), false);
 });
@@ -62,14 +65,22 @@ test("the Layout tab explains slots in place of its picture while there are none
   assert.equal(w.title, "Start with your slots");
   assert.deepEqual(w.lines, [
     "Slots are named places on your screens, like left, main and right. Each app you assign goes into its slot.",
-    "You choose the names, and how many. Arrange them here, then put windows into them in the Assignment tab.",
+    "Quickest: arrange your windows on a workspace the way you like them, then capture. Each window becomes a slot, and the arrangement is remembered.",
+    "Or make them one by one: you choose the names, and how many. Arrange them here, then put windows into them in the Assignment tab.",
   ]);
-  assert.deepEqual(w.action, { key: "a", label: "Create your first slot" });
+});
+
+test("it offers capturing your windows first, then making the first slot by hand", () => {
+  const w = plain(G.layoutWelcome(fresh()));
+  assert.deepEqual(w.actions, [
+    { key: "c", label: "Capture my windows" },
+    { key: "a", label: "Create your first slot" },
+  ]);
 });
 
 test("the explanation uses plain words", () => {
   const w = G.layoutWelcome(fresh());
-  const text = [w.title, ...w.lines, w.action.label].join(" ").toLowerCase();
+  const text = [w.title, ...w.lines, ...w.actions.map((a) => a.label)].join(" ").toLowerCase();
   for (const word of ["spec", "overflow", "tree", "default"]) assert.ok(!text.includes(word), word);
 });
 
@@ -130,9 +141,9 @@ test("the Desk tab's opening line says what desks and layouts are", () => {
     + " The other tabs edit the active desk's (●).");
 });
 
-test("while the Layout tab explains slots, its help row offers making the first one", () => {
+test("while the Layout tab explains slots, its help row offers capturing and making the first one", () => {
   assert.deepEqual(plain(G.welcomeHelp()), [
-    [{ key: "a", label: "create your first slot" }],
+    [{ key: "c", label: "capture my windows" }, { key: "a", label: "create your first slot" }],
     [{ key: "s", label: "slots" }],
     [{ key: "Tab", label: "view" }, { key: "q", label: "close" }],
   ]);
