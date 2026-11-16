@@ -20,7 +20,11 @@ desk's monitor geometry in slots.lua and the Desk tab draws every desk's
 monitors (§4, §8, §9); then **publishing**: the repo is the Omarchy plugin
 `io.github.milanmitrovic.hyprslots` (one `omarchy plugin add`), whose engine
 loads from a loader file in Omarchy's workspace-layouts folder that the
-editor installs only when asked (§9, §10).
+editor installs only when asked (§9, §10); then **capture and launching**:
+the windows arranged on screen captured as slots and a layout in one edit,
+each workspace launching the apps its empty slots wait for (never, on
+demand or at login), and hyprslots' entries in the Omarchy menu and its
+keys, both only with consent (§4, §9, §10).
 Targets Hyprland 0.56.2 (Lua config) on Omarchy 4.5.
 
 ## 1. Purpose
@@ -152,6 +156,11 @@ return {
   layouts = data.layouts,             -- name -> { screens, default?, workspaces? }
   title_matching = { ... },           -- per-class title extraction (§7a)
   workspaces = 10,                    -- optional: manage workspaces 1 to 10 (default 9)
+  launch = data.launch,               -- optional: workspace -> "on_demand" | "at_login" (§9)
+  desktop_ids = data.desktop_ids,     -- optional: app class -> desktop id (the engine's record)
+  launch_commands = {                 -- optional, config.lua's own: spec -> command (§9)
+    ["ghostty/deltaf"] = "ghostty --working-directory ~/Projects/deltaf",
+  },
 }
 ```
 
@@ -228,6 +237,23 @@ the editor's workspace strips, digit keys (`0` is no key with fewer than
 ten) and `[` / `]` wrapping follow it. It is config.lua's (a value there, or
 `data.workspaces` passed through from slots.lua); the editor never changes
 it.
+
+**Launching** (§9, Launching apps). `launch` (optional): workspace ->
+`"never"`, `"on_demand"` or `"at_login"`, absent being never (the
+editor's; never takes the workspace out). `launch_commands` (optional,
+config.lua's own; the editor shows them, read only): spec text -> a shell
+command its app is launched with (`["ghostty/deltaf"] = "ghostty
+--working-directory ~/Projects/deltaf"`). `desktop_ids` (optional, the
+engine's): app class -> the desktop entry (its file name less
+`.desktop`) its app launches from, recorded when a spec is made of one of
+its windows (`take_spec`, `capture`), so it is not looked for again. A
+value of none of those shapes is a config error with its path
+(`launch[3]: must be "never", "on_demand" or "at_login", got always`,
+`launch_commands[foot/]: spec 'foot/': ...`, `desktop_ids.foot: must be a
+desktop id`). As with `monitor_names`, config.lua need not pass `launch`,
+`desktop_ids` or `launch_commands` on: where it returns none of its own,
+the data file's are used (so a config.lua written before them keeps
+working, and the editor may set `launch`).
 
 A spec may only name a slot defined under `slots`; anything else is a
 config error with its path (`specs[3].mian: no slot 'mian' (define it
@@ -1639,6 +1665,9 @@ left-most; as an object key, `"1"`).
 | `save` | — | `path, seq` |
 | `reload` | — | `desk, layout, seq` |
 | `arrange` | — | `swaps, widened[]` (workspace ids): the scroll pass now, every column of the focused scroll workspace widened (Super+L entering slots) |
+| `capture` | `workspace?` (default the focused one), `scope` (`"all"`: the layout's shared trees, `"workspace"`: its own; needed with `apply`), `apply?` | `workspace, scope, layout, trees` (screen -> `{tree, ratio}`, or `false` for a screen left with none), `new_slots[]` (`{slot, key}`), `windows[]` (`{address, class, title, slot, spec, new}`), `applied, seq`: without `apply` a preview that changes nothing; with it one edit (Capture, below) |
+| `set_launch` | `workspace`, `mode` (`never`, `on_demand`, `at_login`) | `workspace, mode, seq` |
+| `launch_missing` | `workspace?` (default the focused one) | `workspace, launched[]` (`{slot, command}`), `open[]`, `pending[]` (slots), `cannot[]` (`{slot, reason}`), `seq`; refused on a workspace whose setting is never |
 
 `state`: `seq`, `workspace_count` (config `workspaces`: how many
 workspaces hyprslots manages, 9 by default), `dirty` (unsaved edits, keyboard-resized trees, a new desk
@@ -1676,7 +1705,11 @@ description?`), `specs` ("3" -> slot -> spec text), `used_workspaces[]`
 workspace?, slot?, overflow?{workspace, slot}, unassigned?`), `config`
 (`dir, data_file, editable, read_only[]` (`"desks.work"`, `"layouts.x"`,
 `"specs.4"`, `"slots"`), `migrated`), `refused`, `config_error`,
-`log_seq`.
+`log_seq`, `launch` ("1".."N" -> its launch setting, `never` by default),
+`launch_status` (only for the workspaces that launch: "3" -> slot ->
+`{command, source}` (`source` `config` or `desktop`, with `desktop`, the
+entry's id) or `{reason}` (`can't launch: set a command`), for every slot
+with a spec there).
 
 **Assignment by hand** (the Assignment view). `assign` puts an open
 window into a slot of a workspace whatever the slot's spec says, and moves it to
@@ -1820,6 +1853,123 @@ column is full width; a `*` among tiles is refused). The `ratio` in `state` is a
 and can be sent back unchanged. This `*` is the ratio grammar's own and is
 unrelated to the overflow leaf `*` of tree text.
 
+**Capture** (`capture.lua`, pure, and api `capture`; "turn what is on
+screen into a layout"). It reads workspace N's tiled windows on every
+screen of the active desk (floating ones are left out) and plans, in one
+edit:
+
+- **A slot for each window.** In order: the slot the window holds on N;
+  else a free slot whose spec on N matches it; else a slot named after its
+  app (`capture.slot_name`: the class's last dot-separated part, lower
+  case, a vendor before it or `-browser` after it dropped, made a valid
+  slot name, at most 16 letters: `com.mitchellh.ghostty` is `ghostty`,
+  `google-chrome` `chrome`, `brave-browser` `brave`), then `-2`, `-3`... :
+  an existing slot of that name N neither fills nor gives a spec is
+  reused, else it is made (its key picked as the slot list's `a` picks
+  it, §4). A slot is free while no window outside the capture (a floating
+  one) holds it on N. Windows are named left to right, then top to bottom
+  (a scrolling screen's in column order).
+- **A tree per screen.** A tiled screen is `record.lua`'s guillotine cuts
+  over the windows' boxes, each split's weights snapped to the editor's
+  arrangements (whole weights 1 to 5, as a divider drag snaps,
+  `capture.weights`) when one puts every child within 3% of the split of
+  where it was measured, else `record.lua`'s own snapping (a 7:1 stays
+  7:1); windows that overlap cannot be captured. A screen whose workspace
+  is on Hyprland's scrolling layout is a scroll branch of its windows in
+  column order, as wide as the tree it had says, else half the screen
+  (`scroll:0.5[...]`) when its columns are at most three quarters of it,
+  else full. The slots the screen's tree had that no window fills follow
+  at its end (every tree holds every slot, §4); a screen with no windows
+  keeps its tree less the slots captured, or none.
+- **Each window's spec on N** for its slot (`spec.from_window`), except
+  where N's spec there already matches it, and each window into its slot
+  (as `take_spec` puts it there), and the desktop id of each app whose
+  class a spec names (`desktop_ids`, below).
+
+`scope` says whose trees they are: `"workspace"` N's own (an override),
+`"all"` the layout's shared ones, which also drops N's own trees so N
+shows them. It is one edit (re-run config.lua, refused with nothing
+changed when it does not take it: slots, specs or the layout set by code),
+one change event, unsaved until `save`, and the trees replaced lose their
+keyboard-resized copies. Without `apply` the same plan is checked and
+returned, changing nothing: the editor's preview.
+
+**Launching apps** (`launch.lua`, pure; `desktop.lua`; api `set_launch`,
+`launch_missing`). Each workspace's `launch` setting (§4) says whether
+hyprslots opens the apps its empty slots wait for: **never** (the
+default), **on demand** (the editor's Launch missing, the Omarchy menu's
+entry, `tools/hyprslots launch-missing`) or **at login** (on demand, and
+on Hyprland's start: `hyprland.start`, never `config.reloaded`; 1.5 s
+after it, the workspaces in order, their apps 0.4 s apart).
+
+- **The command** of a spec (`launch.command`): config.lua's
+  `launch_commands[<spec>]` first; else, for a spec of a class alone, its
+  app's desktop entry's `Exec` (`launch.exec_line`: the `[Desktop Entry]`
+  group's, field codes such as `%U` dropped; none for a `Hidden` entry or
+  one with `Terminal=true`); else none: `can't launch: set a command`,
+  never a guess (a title or tag spec, `ghostty/deltaf` or `[Mail]`, is a
+  window the app alone would not open).
+- **The desktop entry** of a class (`desktop.resolve`, the applications
+  folder of `$XDG_DATA_HOME`, then each of `$XDG_DATA_DIRS`, the first
+  holding an id winning): the one `desktop_ids` recorded for it, else
+  `<class>.desktop`, `<class in lower case>.desktop`, the entry whose
+  `StartupWMClass` is the class (any case), or one whose id ends in
+  `.<class>` (`org.gnome.Nautilus` for `nautilus`). The folders are listed
+  once per Lua state (two processes) and each class's answer is kept;
+  `take_spec` and `capture` record the id in `desktop_ids` with the spec
+  they make, so a launch later need not look again (and still launches
+  that entry if the app's own goes).
+- **Which slots** (`launch.missing`): each slot with a spec on the
+  workspace and no window in it, by slot name; **never a duplicate**: not
+  for a window already open that its spec matches and no slot holds
+  (overflowing, or opened anywhere; each such window counts for one slot;
+  a window in another slot, of any workspace, is that slot's, so `foot`
+  in main on workspaces 3 and 5 is two windows), nor while one launched
+  for the slot is on its way (20 s, or until it arrives).
+- **Where.** `hl.exec_cmd(command, { workspace = "<id> silent" })`: on
+  the slot's screen's workspace, not shown. The window that opens takes the
+  slot it was launched for (`Engine:launched_for`: the first, by
+  workspace and slot, still on its way, empty, whose spec matches it), even
+  where another workspace's slot with the same spec comes first in the
+  router's precedence (§7); else it is routed as any window opening (a
+  title spec once its title is quiet).
+
+`state` says each workspace's setting and, for those that launch, each
+spec's command or why there is none (`launch_status`).
+
+**Keys and the Omarchy menu** (both only with consent: the editor's
+enable prompt asks, or `tools/install-engine.sh --keys`, `--menu`).
+
+- **Keys.** `--keys` binds **Super+Ctrl+Y** (open the editor:
+  `omarchy-shell shell toggle io.github.milanmitrovic.hyprslots`) and
+  **Super+Ctrl+Shift+C** (capture this workspace: the panel summoned with
+  `{"capture": true}`), each only where no other bind has it
+  (`hyprctl binds -j` before the reload; Super+Ctrl+Y is free in a stock
+  Omarchy, whose Super+Ctrl+C is its Capture menu, and Super+Ctrl+Shift+C
+  is free too), saying which it bound and which it left (`Super+Ctrl+Y is
+  bound already (Hyprslots): left as it is.`). The keys go into the
+  loader's `KEYS` line, and the loader binds them on every config load
+  (`hyprslots.bind_editor_keys`, through `o.bind`, so the keybindings menu
+  lists them, `Hyprslots: open the editor`, `Hyprslots: capture this
+  workspace`): never the user's `bindings.lua`, so removing the loader
+  removes them. Installing again without `--keys` / `--no-keys` keeps the
+  loader's keys; `--no-keys` drops them.
+- **The Omarchy menu.** Omarchy builds its menu from its own file and one
+  of the user's, `~/.config/omarchy/extensions/omarchy-menu.jsonc`
+  (watched by the shell; there is no way for a plugin to add rows of its
+  own). `tools/menu-entries.sh install` (`--menu`) adds three rows under
+  Trigger to it, between marker lines (`// >>> hyprslots ...`, `// <<<
+  hyprslots`), leaving every other line as it was (the entry before them
+  given a comma where it has none): **hyprslots: Open editor**,
+  **hyprslots: Capture this workspace** (both summon the panel, the
+  second with `{"capture": true}`) and **hyprslots: Launch missing apps**
+  (`tools/hyprslots launch-missing`: the focused workspace's, its outcome
+  a notification). Each has a `when` that hides it while the plugin
+  folder is gone. `remove` takes out the marked lines alone;
+  `uninstall-engine.sh` runs it, and the loader does the same when it
+  finds the plugin removed. It refuses a menu file that is a symlink or
+  not a plain file; it is the `$XDG_CONFIG_HOME` one when that is set.
+
 **Record** (`record.lua`, from aerolayout's record.py): guillotine cuts
 over the windows' boxes (3 px epsilon), weights snapped to integers (8%
 snap, else a small integer multiple within 2%, else hundredths); windows
@@ -1853,6 +2003,9 @@ Under `lua/hyprslots/`:
 | pure | `monitor_name` | a monitor's display name: the user's label, Built-in, the model (PNP vendor names read once) |
 | pure | `assign` | windows → slots |
 | pure | `serialize` | write `slots.lua` and tree text deterministically |
+| pure | `capture` | a capture's plan: slot names from apps, trees (ratios snapped to 1 to 5), specs, assignments |
+| pure | `launch` | a spec's launch command, a desktop entry's `Exec`, which empty slots to launch for |
+| adapter | `desktop` | the desktop entry a window class stands for, in the XDG data dirs |
 | pure | `slot_key` | each global slot's key: check one, pick a new slot's, fill the ones missing (§4) |
 | adapter | `starter` | a fresh install's starter `config.lua` and empty `slots.lua`, written only where missing (§4) |
 | pure | `dkjson` | vendored JSON |
@@ -1869,8 +2022,10 @@ Under `lua/hyprslots/`:
 | adapter | `log` | ring buffer; `hyprslots.dump()` prints it with the state |
 
 Other top-level files and directories: `manifest.json` (the Omarchy plugin's
-manifest, §9), `editor/` (its QML, §9), `tools/` (the loader and the
-scripts that install and remove it), `spec/` (busted specs and
+manifest, §9), `editor/` (its QML, §9), `tools/` (the loader, the
+scripts that install and remove it, `menu-entries.sh` (the Omarchy menu's
+rows, §9) and `hyprslots` (the command line the menu runs: `editor`,
+`capture`, `launch-missing [N]`)), `spec/` (busted specs and
 `spec/helpers/hl_stub.lua`), `e2e/` (headless Hyprland harness).
 
 **Loading.** Nothing in the user's Hyprland config names hyprslots. Omarchy
@@ -1952,6 +2107,7 @@ with Omarchy's gaps (5/10, border 2).
 | First run | a fresh install: the starter config.lua and empty slots.lua (`starter.lua`), zero slots running; the panel opening on Layout with no slots, else Assignment; every empty state pointing to the next step (`Guide.js`: the Layout tab's explanation and "Create your first slot", the Assignment tab's way back to it, a workspace's how-to-assign line, the Desk tab's opening line); the bar's set-up state; README's Getting started | done 2026-11-15 |
 | Desk maps | the active desk's geometry recorded in slots.lua (quietly: saved when nothing else is unsaved, else with the next save), `state.desks[].geometry`; the Desk tab's rows led by a map of each desk's monitors (`ui/DeskMap`); moving a window to another slot clears the spec of the one it left (`take_spec` `left`), `unassign` naming the slot the window was in | done 2026-11-15 |
 | Publishing | the repo as the Omarchy plugin `io.github.milanmitrovic.hyprslots` (root `manifest.json`, 1.0.0, MIT); the engine loaded by `tools/loader.lua` from Omarchy's workspace-layouts folder instead of a shim required from `hyprland.lua`; a saved tiled Omarchy mode left alone at load too; `tools/install-engine.sh` / `uninstall-engine.sh`; the editor asking before it enables the engine (`Install.js`), the bar's `enable`; README for the marketplace, `preview.png` | done 2026-11-16 |
+| Capture and launching | api `capture` (`capture.lua`: a workspace's windows as new or reused slots named after their apps, each screen's tree with ratios snapped to 1 to 5, the windows' specs, one edit, previewed first) and the editor's `c`, first-run action, bar menu entry and `{"capture": true}` payload; each workspace's launch setting (never, on demand, at login; `launch.lua`, `desktop.lua`, api `set_launch`, `launch_missing`, `state.launch_status`), the launch at Hyprland's start, desktop ids recorded with the specs; the editor's keys and Omarchy menu entries through the loader and `tools/menu-entries.sh`, only with consent (the enable prompt's checkboxes, `install-engine.sh --keys --menu`) | done 2026-11-17 |
 | Assignment by mouse | Assignment rows dragged and dropped (onto a slot: `a`; onto the other windows: `u`; Esc or elsewhere: nothing; a ghost, the target outlined, its label); each slot row's mini-map of its screen's tree, the slot lit (the Layout picture's geometry, `ui/MiniMap`) | done 2026-11-15 |
 
 Slices 2 to 6 were built in parallel on top of slices 1 and 2 and
@@ -2011,6 +2167,22 @@ Parked:
   itself with the plugin, and the refusal without one.
   `e2e/editor_install.sh` (in `make e2e-editor`) does it through the
   editor's prompt and Enable.
+- **Capture and launching** (in `make e2e`): `e2e/capture_test.sh` (a
+  first run: three foot windows arranged by hand on dwindle, one widened
+  to two thirds, captured for all workspaces after a preview that changes
+  nothing; two on a scrolling workspace captured for itself, reusing the
+  slots it leaves empty, as `scroll:0.5[...]`; saved, and a Hyprland
+  config reload brings back the slots, trees, assignments and geometry),
+  `e2e/launch_test.sh` (a desktop entry in the test's `XDG_DATA_HOME`:
+  workspace 5's app launched at login onto workspace 5 into its slot,
+  workspace 3's on demand, not twice while it is on its way, none for a
+  slot without a command, none on a config reload, refused at never);
+  `e2e/install_engine_test.sh` covers `--keys` (a key the user has bound
+  left alone) and `--menu` (Omarchy's own `MenuModel.js` parses the menu
+  file, under node). S2: `spec/capture_api_spec.lua`,
+  `spec/launch_api_spec.lua`, `spec/editor_keys_spec.lua`,
+  `spec/loader_spec.lua`; S3: `spec/capture_spec.lua`, `spec/launch_spec.lua`,
+  `spec/desktop_spec.lua`.
 - **S3 — pure modules**: busted specs; aerolayout's unittest cases are ported
   where the logic carries over (tree parsing, weights, assignment, record).
 - **Editor**: the api it relies on is S2 (`spec/assignment_api_spec.lua`,
