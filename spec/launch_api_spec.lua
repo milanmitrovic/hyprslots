@@ -213,6 +213,70 @@ return { slots = data.slots, specs = data.specs, desks = data.desks, layouts = d
     end)
   end)
 
+  describe("the window launched for a slot", function()
+    local function login()
+      hl.emit("hyprland.start")
+      hl.run_timers() -- the start's wait: foot is then on its way to 5's main
+    end
+
+    local function open(window)
+      hl.windows[#hl.windows + 1] = window
+      hl.emit("window.open", window)
+    end
+
+    local function close(window)
+      for i, w in ipairs(hl.windows) do
+        if w == window then
+          table.remove(hl.windows, i)
+          break
+        end
+      end
+      hl.emit("window.close", window)
+    end
+
+    local function slot_of(window)
+      return call("state").assignments[window.address]
+    end
+
+    it("is not one its spec does not match: that goes where it would, and the claim waits for the app", function()
+      setup()
+      login()
+      local aside = hl_stub.window(8, "t-aside", { workspace = 1 })
+      open(aside)
+      assert.same({ workspace = 3, slot = "aside" }, slot_of(aside))
+      local foot = hl_stub.window(7, "foot", { workspace = 1 })
+      open(foot)
+      assert.same({ workspace = 5, slot = "main" }, slot_of(foot))
+    end)
+
+    it("takes the slot once: the app's next window is routed as any window opening", function()
+      setup()
+      login()
+      local first = hl_stub.window(7, "foot", { workspace = 1 })
+      open(first)
+      assert.same({ workspace = 5, slot = "main" }, slot_of(first))
+      close(first)
+      local second = hl_stub.window(9, "foot", { workspace = 1 })
+      open(second)
+      -- Workspace 3's main comes first in the router's precedence.
+      assert.same({ workspace = 3, slot = "main" }, slot_of(second))
+    end)
+
+    it("is routed as any window opening where another window filled its slot while the app was on its way", function()
+      setup()
+      login()
+      local other = hl_stub.window(8, "t-aside", { workspace = 1 })
+      open(other)
+      local reply = call("assign", { address = other.address, workspace = 5, slot = "main" })
+      assert.is_nil(reply.error)
+      local foot = hl_stub.window(7, "foot", { workspace = 1 })
+      open(foot)
+      assert.same({ workspace = 3, slot = "main" }, slot_of(foot))
+      local held = slot_of(other)
+      assert.same({ 5, "main" }, { held.workspace, held.slot })
+    end)
+  end)
+
   describe("the desktop entry", function()
     it("is stored with the spec a window's assignment makes, so it need not be looked for again", function()
       hl.windows = { hl_stub.window(1, "foot", { workspace = 3 }) }
