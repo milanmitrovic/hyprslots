@@ -61,13 +61,8 @@ DESKTOP
 
 # shellcheck source=e2e/editor/lib.sh
 source "$E2E_ROOT/e2e/editor/lib.sh"
-SMOKE_SHOTS=$E2E_ROOT/.e2e-tmp
-SHOT_TAG=${SMOKE_THEME:+-$(basename "$SMOKE_THEME")}
+SHOT_NAME=capture
 
-api_state() { repl 'return hyprslots.api.state()'; }
-state_is() { [[ $(api_state | jq -r "$1") == "$2" ]]; }
-smoke_tab() { smoke tabs | sed 's/.* | //'; }
-tab_is() { [[ $(smoke_tab) == "$1" ]]; }
 layout_name() { api_state | jq -r .layout; }
 tree_of() { api_state | jq -r --arg l "$(layout_name)" "$1"; }
 
@@ -77,16 +72,6 @@ spawn_as() {
     sleep 3600 >>"$E2E_DIR/clients.log" 2>&1 &
   E2E_CLIENT_PIDS+=("$!")
   eventually 10 client_mapped "$1" || harness_fail "client $1 never mapped"
-}
-
-shot() {
-  local file=$SMOKE_SHOTS/editor-capture$SHOT_TAG-$1.png
-  rm -f "$file"
-  if WAYLAND_DISPLAY=$E2E_WAYLAND_DISPLAY grim -o HEADLESS-2 "$file" 2>>"$E2E_DIR/grim.log"; then
-    log "screenshot: $file"
-  else
-    fail "grim could not take $file (see $E2E_DIR/grim.log)"
-  fi
 }
 
 test_body() {

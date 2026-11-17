@@ -43,27 +43,14 @@ WRAP
 
 # shellcheck source=e2e/editor/lib.sh
 source "$E2E_ROOT/e2e/editor/lib.sh"
-SMOKE_SHOTS=$E2E_ROOT/.e2e-tmp
-SHOT_TAG=${SMOKE_THEME:+-$(basename "$SMOKE_THEME")}
+SHOT_NAME=install
 
 engine() { repl 'if hyprslots then return "running" end return "absent " .. tostring(hyprslots_load_error)'; }
 engine_is() { [[ $(engine) == "$1" ]]; }
-smoke_tab() { smoke tabs | sed 's/.* | //'; }
-tab_is() { [[ $(smoke_tab) == "$1" ]]; }
 prompt_starts() { [[ $(smoke enablePrompt) == "$1"* ]]; }
 super_1() {
   hc binds -j | jq -r 'if any(.[]; .modmask == 64 and .description == "Switch to workspace 1 on every screen")
     then "hyprslots" else "not hyprslots" end'
-}
-
-shot() {
-  local file=$SMOKE_SHOTS/editor-install$SHOT_TAG-$1.png
-  rm -f "$file"
-  if WAYLAND_DISPLAY=$E2E_WAYLAND_DISPLAY grim -o HEADLESS-2 "$file" 2>>"$E2E_DIR/grim.log"; then
-    log "screenshot: $file"
-  else
-    fail "grim could not take $file (see $E2E_DIR/grim.log)"
-  fi
 }
 
 test_body() {

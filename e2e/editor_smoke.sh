@@ -88,10 +88,7 @@ LUA
 # shellcheck source=e2e/editor/lib.sh
 source "$E2E_ROOT/e2e/editor/lib.sh"
 SMOKE_WTYPE_PID=''
-SMOKE_SHOTS=$E2E_ROOT/.e2e-tmp
-
-# The test instance's api state, as JSON.
-api_state() { repl 'return hyprslots.api.state()'; }
+SHOT_NAME=smoke
 
 address_of() { hc clients -j | jq -r --arg c "$1" 'first(.[] | select(.class == $c)) | .address'; }
 
@@ -118,16 +115,6 @@ keys_in_background() {
   E2E_CLIENT_PIDS+=("$SMOKE_WTYPE_PID")
 }
 
-shot() {
-  local file=$SMOKE_SHOTS/editor-smoke-$1.png
-  rm -f "$file"
-  if WAYLAND_DISPLAY=$E2E_WAYLAND_DISPLAY grim -o HEADLESS-2 "$file" 2>>"$E2E_DIR/grim.log"; then
-    log "screenshot: $file"
-  else
-    fail "grim could not take $file (see $E2E_DIR/grim.log)"
-  fi
-}
-
 # Milliseconds one repl round trip takes.
 time_ms() {
   local start end
@@ -151,8 +138,6 @@ press_keys() {
     [[ $(smoke press "$k") == ok ]] || fail "press $k was ignored"
   done
 }
-
-state_is() { [[ $(api_state | jq -r "$1") == "$2" ]]; }
 
 # The panel's header line without its unsaved-edits marker.
 header() { smoke header | sed 's/   ● unsaved edits (Ctrl+S)$//'; }

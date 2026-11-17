@@ -58,7 +58,8 @@ LUA
 source "$E2E_ROOT/e2e/editor/lib.sh"
 MULTIMON_SHOTS=${MULTIMON_SHOTS:-$E2E_ROOT/.e2e-tmp/multimon/latest}
 
-# Both outputs as one picture, and the one the panel is on.
+# Both outputs as one picture, and the one the panel is on (in place of
+# e2e/editor/lib.sh's shot, which takes the panel's screen alone).
 shot() {
   local all=$MULTIMON_SHOTS/$1.png panel=$MULTIMON_SHOTS/$1-panel.png
   mkdir -p "$MULTIMON_SHOTS"
@@ -71,8 +72,6 @@ shot() {
     fail "grim could not take $all (see $E2E_DIR/grim.log)"
   fi
 }
-
-api_state() { repl 'return hyprslots.api.state()'; }
 
 # Select leaves until one on screen $1 is selected ("<screen> <leaf>"),
 # pressing $2 (Left or Right), at most eight times.

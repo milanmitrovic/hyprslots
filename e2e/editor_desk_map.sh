@@ -46,23 +46,8 @@ LUA
 
 # shellcheck source=e2e/editor/lib.sh
 source "$E2E_ROOT/e2e/editor/lib.sh"
-SMOKE_SHOTS=$E2E_ROOT/.e2e-tmp
-SHOT_TAG=${SMOKE_THEME:+-$(basename "$SMOKE_THEME")}
-
-api_state() { repl 'return hyprslots.api.state()'; }
-state_is() { [[ $(api_state | jq -r "$1") == "$2" ]]; }
-smoke_tab() { smoke tabs | sed 's/.* | //'; }
-
-shot() {
-  local file=$SMOKE_SHOTS/editor-desk-map$SHOT_TAG-$1.png
-  rm -f "$file"
-  sleep 0.3
-  if WAYLAND_DISPLAY=$E2E_WAYLAND_DISPLAY grim -o HEADLESS-2 "$file" 2>>"$E2E_DIR/grim.log"; then
-    log "screenshot: $file"
-  else
-    fail "grim could not take $file (see $E2E_DIR/grim.log)"
-  fi
-}
+SHOT_NAME=desk-map
+SHOT_SETTLE=0.3
 
 # One desk's part of `smoke deskMaps`: "<n> solid|outlined <x>,<y> <w>x<h>, ...".
 desk_map() { smoke deskMaps | tr ';' '\n' | sed -n "s/^ *$1\**: //p"; }

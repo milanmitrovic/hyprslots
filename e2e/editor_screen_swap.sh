@@ -61,24 +61,9 @@ LUA
 
 # shellcheck source=e2e/editor/lib.sh
 source "$E2E_ROOT/e2e/editor/lib.sh"
-SMOKE_SHOTS=$E2E_ROOT/.e2e-tmp
-SHOT_TAG=${SMOKE_THEME:+-$(basename "$SMOKE_THEME")}
+SHOT_NAME=screen-swap
+SHOT_SETTLE=0.3
 
-api_state() { repl 'return hyprslots.api.state()'; }
-state_is() { [[ $(api_state | jq -r "$1") == "$2" ]]; }
-
-shot() {
-  local file=$SMOKE_SHOTS/editor-screen-swap$SHOT_TAG-$1.png
-  rm -f "$file"
-  sleep 0.3
-  if WAYLAND_DISPLAY=$E2E_WAYLAND_DISPLAY grim -o HEADLESS-2 "$file" 2>>"$E2E_DIR/grim.log"; then
-    log "screenshot: $file"
-  else
-    fail "grim could not take $file (see $E2E_DIR/grim.log)"
-  fi
-}
-
-workspace_of() { hc clients -j | jq -r --arg c "$1" 'first(.[] | select(.class == $c)) | .workspace.id'; }
 # "<class>@<workspace id>" for every test window, sorted by class.
 placement() {
   hc clients -j | jq -r '[.[] | select(.class | startswith("t-"))] | sort_by(.class) | map("\(.class)@\(.workspace.id)") | join(" ")'

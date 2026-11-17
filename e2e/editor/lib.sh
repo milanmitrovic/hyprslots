@@ -1,8 +1,8 @@
 # shellcheck shell=bash
-# Helpers for the editor scenarios (e2e/editor_smoke.sh,
-# e2e/editor_multimon.sh), sourced after e2e/lib.sh: the plugin runs in
-# Quickshell on the TEST instance (e2e/editor/shell.qml), never in the live
-# shell, and is driven through its `smoke` IPC target.
+# Helpers for the editor scenarios (e2e/editor_*.sh), sourced after
+# e2e/lib.sh: the plugin runs in Quickshell on the TEST instance
+# (e2e/editor/shell.qml), never in the live shell, and is driven through its
+# `smoke` IPC target.
 
 SMOKE_QS_DIR='' SMOKE_QS_PID='' SMOKE_VPOINTER='' SMOKE_VP_PID='' SMOKE_VP_IN='' SMOKE_VP_OUT=''
 
@@ -12,6 +12,32 @@ smoke() { qs ipc --pid "$SMOKE_QS_PID" call smoke "$@" 2>&1; }
 
 smoke_ready() { [[ $(smoke ready) == yes ]]; }
 smoke_idle() { [[ $(smoke busy) == no ]]; }
+
+# The panel's current tab, and whether it is $1.
+smoke_tab() { smoke tabs | sed 's/.* | //'; }
+tab_is() { [[ $(smoke_tab) == "$1" ]]; }
+
+# `shot NAME` saves the panel's screen (HEADLESS-2) as
+# $SMOKE_SHOTS/editor-$SHOT_NAME$SHOT_TAG-NAME.png. A scenario sets
+# SHOT_NAME after sourcing this file (and SHOT_SETTLE, the seconds to let
+# the panel paint first, when it needs that). SHOT_TAG names the
+# SMOKE_THEME a run is in, so its pictures sit beside the default theme's.
+SMOKE_SHOTS=$E2E_ROOT/.e2e-tmp
+SHOT_NAME=''
+SHOT_SETTLE=0
+SHOT_TAG=${SMOKE_THEME:+-$(basename "$SMOKE_THEME")}
+
+shot() {
+  [[ -n $SHOT_NAME ]] || harness_fail "shot $1: the scenario set no SHOT_NAME"
+  local file=$SMOKE_SHOTS/editor-$SHOT_NAME$SHOT_TAG-$1.png
+  rm -f "$file"
+  if [[ $SHOT_SETTLE != 0 ]]; then sleep "$SHOT_SETTLE"; fi
+  if WAYLAND_DISPLAY=$E2E_WAYLAND_DISPLAY grim -o HEADLESS-2 "$file" 2>>"$E2E_DIR/grim.log"; then
+    log "screenshot: $file"
+  else
+    fail "grim could not take $file (see $E2E_DIR/grim.log)"
+  fi
+}
 
 # SMOKE_THEME's own Hyprland look goes into the nested Hyprland as Omarchy
 # sources it: its corner rounding is the shell's Style.cornerRadius, which
