@@ -20,6 +20,7 @@ local hotplug = require("hyprslots.hotplug")
 local layout = require("hyprslots.layout")
 local log = require("hyprslots.log")
 local monitor_name = require("hyprslots.monitor_name")
+local persist = require("hyprslots.persist")
 local resize = require("hyprslots.resize")
 local router = require("hyprslots.router")
 local scroll = require("hyprslots.scroll")
@@ -152,7 +153,7 @@ function Engine:used_layout(name)
   self.recent_layouts = recent
 end
 
--- Record the active desk's geometry in slots.lua (api.record_geometry),
+-- Record the active desk's geometry in slots.lua (persist.record_geometry),
 -- deferred: reselect runs inside edits and saves.
 function Engine:want_geometry()
   if self.geometry_pending then
@@ -161,7 +162,7 @@ function Engine:want_geometry()
   self.geometry_pending = true
   adapter.defer(function()
     self.geometry_pending = false
-    self:guard("desk geometry", api.record_geometry, self)
+    self:guard("desk geometry", persist.record_geometry, self)
   end)
 end
 
@@ -268,7 +269,7 @@ function Engine:new_desk()
     -- to review, so the desk and its layout are saved straight away
     -- unless other edits wait for Ctrl+S.
     if made and not pending then
-      local saved = api.save(self)
+      local saved = persist.save(self)
       if saved.ok == false then
         self.log:error("new desk %s: not saved: %s", name, tostring(saved.error))
       end

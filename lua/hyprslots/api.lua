@@ -25,7 +25,6 @@ local util = require("hyprslots.util")
 local workspaces = require("hyprslots.workspaces")
 local workspace_count = workspaces.count -- snapshot shadows `workspaces`
 local edit = require("hyprslots.edit")
-local migrate = require("hyprslots.migrate")
 local monitor_name = require("hyprslots.monitor_name")
 local ratio = require("hyprslots.ratio")
 local record = require("hyprslots.record")
@@ -37,6 +36,7 @@ local spec = require("hyprslots.spec")
 local tree = require("hyprslots.tree")
 
 local edits = require("hyprslots.edits")
+local persist = require("hyprslots.persist")
 local DATA_FILE = edits.DATA_FILE
 local NO_DATA = edits.NO_DATA
 local read_only_paths = edits.read_only_paths
@@ -706,51 +706,9 @@ function handlers.record(engine, args)
     workspace_id = id, tree = serialize.tree(node), ratio = ratio.format(node), missing = missing, applied = false })
 end
 
--- save {}: write the running data to slots.lua (atomically).
+-- save {}: write the running data to slots.lua (atomically; persist.lua).
 function handlers.save(engine)
-  if not engine.data then
-    return fail("your config loads no editor data, so there is nothing to save")
-  end
-  local data = edit.copy(engine.data)
-  local read_only = read_only_paths(engine.cfg)
-  local written = {} -- override keys save makes part of the config
-  for _, o in ipairs(resize.overrides(engine)) do
-    local configured = engine.cfg.layouts[o.layout] and configured_tree(engine.cfg, o.layout, o.workspace, o.screen)
-    if configured and not rawequal(configured, o.tree) and edit.editable(read_only, "layouts", o.layout) then
-      local next_data = edit.set_tree(data, o.layout, o.workspace, o.screen, serialize.tree(o.tree))
-      if next_data then
-        data = next_data
-        written[#written + 1] = { o.layout, o.workspace, o.screen }
-      end
-    end
-  end
-  local path = (engine.config_dir or config.dir()) .. "/" .. DATA_FILE
-  local ok, err = serialize.write(path, data)
-  if not ok then
-    return fail(err)
-  end
-  engine.log:info("saved %s", path)
-  engine.auto_desks = {} -- the desks made for new monitors are slots.lua's now
-  engine.file_migrated = false
-  -- The written overrides are config now: run the saved data, then drop them.
-  local cfg = #written > 0 and config.load(engine.config_dir, { data = { [DATA_FILE] = data } })
-  if cfg then
-    for _, w in ipairs(written) do
-      resize.clear(engine, w[1], w[2], w[3])
-    end
-    engine:apply_config(cfg, data, false)
-  else
-    engine.data = data
-    engine.dirty = false
-    engine.since_save = {}
-    engine:changed()
-  end
-  return { path = path, seq = engine.seq }
-end
-
--- Save as the save call does: { path, seq }, or { ok = false, error }.
-function M.save(engine)
-  return handlers.save(engine)
+  return persist.save(engine)
 end
 
 -- reload {}: re-read config.lua and slots.lua, dropping unsaved edits.
@@ -2043,46 +2001,6 @@ function handlers.drop_override(engine, args)
     seq = engine.seq }
 end
 
--- slots.lua as it is on disk (data only, read in an empty environment, in
--- today's shape) and whether it is in a shape of before, or nil and why not.
-local function saved_data(engine)
-  local path = (engine.config_dir or config.dir()) .. "/" .. DATA_FILE
-  local chunk, err = loadfile(path, "t", {})
-  if not chunk then
-    return nil, "cannot read the editor's saved data: " .. tostring(err)
-  end
-  local ok, data = pcall(chunk)
-  if not ok or type(data) ~= "table" then
-    return nil, "cannot read the editor's saved data: " .. (ok and "it returns no table" or tostring(data))
-  end
-  local ok_monitors, monitors = pcall(adapter.monitors)
-  return migrate.data(data, ok_monitors and monitors or nil) -- read as load_data reads it
-end
-
--- The saved data through the renames and removals made since (slots,
--- layouts), so its trees name what the running data
--- names. An edit that does not apply to the file (it renames a slot added
--- since) is skipped.
-local function as_edited(engine, saved)
-  local out = saved
-  for _, e in ipairs(engine.since_save or {}) do
-    out = edit[e.op](out, table.unpack(e.args, 1, e.args.n)) or out
-  end
-  return out
-end
-
--- The data without the desks' recorded geometry (a copy): what an edit
--- compares, the geometry being no edit.
-local function without_geometry(data)
-  local out = edit.copy(data)
-  for _, entry in pairs(type(out.desks) == "table" and out.desks or {}) do
-    if type(entry) == "table" then
-      entry.geometry = nil
-    end
-  end
-  return out
-end
-
 -- reset { layout?, workspace (or "default"), screen }: a branch back to the
 -- tree slots.lua holds on disk (its own there, else the default one; no
 -- tree when it has neither), read through the slot and layout renames and
@@ -2098,12 +2016,12 @@ function handlers.reset(engine, args)
     return fail(NO_DATA)
   end
   local n, screen = as_workspace(args.workspace), as_screen(args.screen)
-  local saved, migrated_or_err = saved_data(engine)
+  local saved, migrated_or_err = persist.saved_data(engine)
   if not saved then
     return fail(migrated_or_err)
   end
   local migrated = migrated_or_err == true
-  local data, reset_err = edit.reset_tree(engine.data, as_edited(engine, saved), name, n, screen)
+  local data, reset_err = edit.reset_tree(engine.data, persist.as_edited(engine, saved), name, n, screen)
   if not data then
     return fail(reset_err)
   end
@@ -2115,10 +2033,11 @@ function handlers.reset(engine, args)
   -- a file in a shape of before differs from what runs until it is saved;
   -- a desk geometry recorded meanwhile is no edit (record_geometry): with
   -- nothing else left unsaved it is saved now, quietly
-  local differs = migrated or serialize.dump(without_geometry(data)) ~= serialize.dump(without_geometry(saved))
+  local differs = migrated
+    or serialize.dump(persist.without_geometry(data)) ~= serialize.dump(persist.without_geometry(saved))
   engine:apply_config(cfg, data, differs)
   if not differs and next(engine.resized or {}) == nil and serialize.dump(data) ~= serialize.dump(saved) then
-    local written = handlers.save(engine)
+    local written = persist.save(engine)
     if written.ok == false then
       engine.log:error("reset: desk geometry not saved: %s", tostring(written.error))
     end
@@ -2126,48 +2045,6 @@ function handlers.reset(engine, args)
   local node = configured_tree(cfg, name, n, screen)
   return { layout = name, workspace = n, screen = screen, tree = node and serialize.tree(node) or nil,
     ratio = node and ratio.format(node) or nil, seq = engine.seq }
-end
-
--- The active desk's geometry into slots.lua (docs/design.md §8): its
--- monitors' logical boxes (desk.geometry), when they differ from what the
--- data holds and the desk is the editor's. Not an edit: it never makes the
--- engine dirty. Saved at once while nothing else is unsaved (as a first
--- run's new desk is) and slots.lua on disk is still what runs, else it
--- waits in the data for the next save (never written over a file changed
--- since it was read: a hand edit, a reload that failed).
-function M.record_geometry(engine)
-  local active = engine.active
-  if not (engine.cfg and engine.data and active) or engine.refused then
-    return
-  end
-  local entry = type(engine.data.desks) == "table" and engine.data.desks[active.desk]
-  if type(entry) ~= "table" or type(entry.monitors) ~= "table"
-      or not edit.editable(read_only_paths(engine.cfg), "desks", active.desk) then
-    return
-  end
-  local geometry = desk.geometry(entry.monitors, adapter.monitors())
-  if not geometry or desk.same_geometry(geometry, entry.geometry) then
-    return
-  end
-  local pending = engine.dirty or next(engine.resized or {}) ~= nil
-  if not pending then
-    local on_disk = saved_data(engine)
-    pending = not on_disk or serialize.dump(without_geometry(on_disk)) ~= serialize.dump(without_geometry(engine.data))
-  end
-  entry.geometry = geometry -- the running data, which save writes
-  local running = engine.cfg.desks[active.desk]
-  if running then
-    running.geometry = geometry
-  end
-  engine.log:info("desk %s: geometry recorded%s", active.desk, pending and " (saved with the next save)" or "")
-  if pending then
-    engine:changed()
-    return
-  end
-  local saved = handlers.save(engine)
-  if saved.ok == false then
-    engine.log:error("desk %s: geometry not saved: %s", active.desk, tostring(saved.error))
-  end
 end
 
 return M
