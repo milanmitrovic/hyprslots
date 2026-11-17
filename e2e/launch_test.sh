@@ -95,6 +95,8 @@ test_body() {
   expect_eq "nothing more to launch once it is there" "" "$(jq -r '[.launched[].slot] | join(" ")' <<<"$reply")"
   expect_eq "the command line (the Omarchy menu's entry) says what is left" "cannot launch aside: set a command (workspace 3)." \
     "$("$E2E_PLUGIN_DIR/tools/hyprslots" launch-missing 3 2>&1)"
+  expect_eq "and Nothing to launch where every app is there" "Nothing to launch (workspace 5)." \
+    "$("$E2E_PLUGIN_DIR/tools/hyprslots" launch-missing 5 2>&1)"
 
   # A config reload launches nothing.
   hc reload >/dev/null
@@ -105,5 +107,10 @@ test_body() {
   expect_eq "launch set to never" true "$(api set_launch '{"workspace": 3, "mode": "never"}' | jq -r .ok)"
   expect_eq "then launch_missing is refused" "workspace 3 launches no apps: its launch setting is never" \
     "$(api launch_missing '{"workspace": 3}' | jq -r .error)"
+  local out status=0
+  out=$("$E2E_PLUGIN_DIR/tools/hyprslots" launch-missing 3 2>&1) || status=$?
+  expect_eq "the command line says so" \
+    "Launch missing apps: workspace 3 launches no apps: its launch setting is never" "$out"
+  expect_eq "and fails" 1 "$status"
   expect_eq "and nothing launched" 2 "$(launched_count)"
 }
