@@ -212,6 +212,41 @@ return { slots = {}, specs = data.specs, desks = data.desks, layouts = data.layo
     assert.matches("set by code", call("capture", { workspace = 3, scope = "all", apply = true }).error)
   end)
 
+  -- A config that passes slots.lua's tables straight through (so the editor
+  -- may edit them) but drops what the capture adds: the reload would not
+  -- keep the edit, so neither the preview nor the apply goes through.
+  local function refused_not_taken(config, what)
+    setup(EMPTY, config)
+    local before = call("state")
+    for _, args in ipairs({ { workspace = 3 }, { workspace = 3, scope = "all", apply = true } }) do
+      local reply = call("capture", args)
+      assert.is_false(reply.ok)
+      assert.matches("your config does not take " .. what .. " from the editor's data", reply.error, 1, true)
+    end
+    local state = call("state")
+    assert.equal(before.seq, state.seq, "nothing applied")
+    assert.is_false(state.dirty)
+    assert.same({}, state.slots)
+    assert.same({}, state.assignments)
+  end
+
+  it("refuses slots the config drops on load", function()
+    refused_not_taken([[
+local data = load_data("slots.lua")
+if data.slots then data.slots.ghostty = nil end
+if data.specs and data.specs[3] then data.specs[3].ghostty = nil end
+return { slots = data.slots, specs = data.specs, desks = data.desks, layouts = data.layouts }
+]], "the slots")
+  end)
+
+  it("refuses specs the config drops on load", function()
+    refused_not_taken([[
+local data = load_data("slots.lua")
+if data.specs and data.specs[3] then data.specs[3].ghostty = nil end
+return { slots = data.slots, specs = data.specs, desks = data.desks, layouts = data.layouts }
+]], "workspace 3's specs")
+  end)
+
   it("previews a plan token that names the edit, the same while nothing changes", function()
     setup(EMPTY)
     local first = call("capture", { workspace = 3, scope = "all" })
