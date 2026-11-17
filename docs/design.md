@@ -1647,9 +1647,10 @@ closes it):
 | Save | `save`; only with unsaved edits |
 | Reload config | `reload` (drops unsaved edits; how a fixed config error is picked up) |
 
-Re-apply and Record need the bar's screen on a hyprslots workspace of a running engine
-(a config error leaves the last good config running); with the engine
-off or unreachable only Reload is offered. Each call's outcome, or the
+Re-apply, Record and Capture need the bar's screen on a hyprslots workspace of a
+running engine (a config error leaves the last good config running), and
+Record also needs slots; with the engine off or unreachable only Reload is
+offered. Each call's outcome, or the
 engine's error, is a notification (`notify-send` through `bar.run`).
 
 **Install.** The repo is the plugin folder (`manifest.json` at its root),
