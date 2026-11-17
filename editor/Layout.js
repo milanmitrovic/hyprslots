@@ -1,4 +1,5 @@
 .pragma library
+.import "Workspaces.js" as Workspaces
 
 // The Layout view's model (docs/design.md §9): one workspace's trees, edited
 // as a draft before they are applied. Ported from aerolayout's
@@ -1309,12 +1310,9 @@ function editTarget(workspace, scope) {
 }
 
 // Where the view opens: the focused workspace's number and screen, else the
-// first used workspace on screen 1.
+// first used workspace on screen 1 (Workspaces.focusedOrFirst).
 function initialTarget(state, workspaceId) {
-  var ws = state && state.workspaces ? state.workspaces[String(workspaceId)] : null
-  if (ws && ws.workspace) return { workspace: ws.workspace, screen: ws.screen || 1 }
-  var used = state && Array.isArray(state.used_workspaces) ? state.used_workspaces : []
-  return { workspace: used.length ? used[0] : 1, screen: 1 }
+  return Workspaces.focusedOrFirst(state, workspaceId)
 }
 
 // Why the trees of a layout may not be edited, "" when they may.
@@ -1338,7 +1336,7 @@ function titles(state, workspace, screen) {
   for (var i = 0; i < windows.length; i++) {
     var w = windows[i]
     if (w.workspace !== workspace || !w.slot) continue
-    var ws = state.workspaces ? state.workspaces[String(w.workspace_id)] : null
+    var ws = Workspaces.entry(state, w.workspace_id)
     if (screen && ws && ws.screen !== screen) continue
     if (out[w.slot] === undefined) out[w.slot] = w.title || ""
   }

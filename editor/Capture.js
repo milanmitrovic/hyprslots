@@ -1,4 +1,5 @@
 .pragma library
+.import "Workspaces.js" as Workspaces
 
 // Capture in the editor (docs/design.md §9): the windows of a workspace,
 // arranged by hand, made into slots and the layout's trees in one edit (the
@@ -11,13 +12,10 @@
 
 // The workspace a capture takes: the one shown, or, on All workspaces,
 // the focused one (`focusedId`, a Hyprland workspace id; when that is none
-// of ours, the first workspace in use, else 1).
+// of ours, the first workspace in use, else 1: Workspaces.focusedOrFirst).
 function workspaceFor(state, workspace, focusedId) {
   if (workspace !== "default" && workspace !== null && workspace !== undefined) return workspace
-  var ws = state && state.workspaces ? state.workspaces[String(focusedId)] : null
-  if (ws && ws.workspace) return ws.workspace
-  var used = state && Array.isArray(state.used_workspaces) ? state.used_workspaces : []
-  return used.length ? used[0] : 1
+  return Workspaces.focusedOrFirst(state, focusedId).workspace
 }
 
 // The question it asks first, for Prompts.choice(label, options, { inline:

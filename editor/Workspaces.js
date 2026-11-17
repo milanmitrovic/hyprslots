@@ -84,3 +84,32 @@ function stripLine(entries) {
     return i > 0 && entries[i - 1].workspace === "default" ? "· " + text : text
   }).join(" ")
 }
+
+// The state's entry for a Hyprland workspace id on the active desk ({
+// workspace (1 to 10), screen, monitor }), or null: no state, no id, or an
+// id that is none of ours. The one lookup the Layout, Assignment and Capture
+// models and the bar widget share, so a state reads the same in each.
+function entry(state, id) {
+  if (!state || !state.workspaces || id === null || id === undefined) return null
+  var ws = state.workspaces[String(id)]
+  return ws && ws.workspace !== undefined && ws.workspace !== null ? ws : null
+}
+
+// The workspace and screen a view opens on: the focused one's (`id`, a
+// Hyprland workspace id; screen 1 when the entry names none), else, when
+// that is none of ours, the first workspace in use (state
+// `used_workspaces`) on screen 1, else workspace 1. Returns { workspace,
+// screen }.
+function focusedOrFirst(state, id) {
+  var ws = entry(state, id)
+  if (ws) return { workspace: ws.workspace, screen: ws.screen || 1 }
+  var used = state && Array.isArray(state.used_workspaces) ? state.used_workspaces : []
+  return { workspace: used.length ? used[0] : 1, screen: 1 }
+}
+
+// The active layout's entry (state.layouts[state.layout]), or null with no
+// state, no active layout or none by that name.
+function activeLayout(state) {
+  if (!state || !state.layouts || !state.layout) return null
+  return state.layouts[state.layout] || null
+}

@@ -1,4 +1,5 @@
 .pragma library
+.import "Workspaces.js" as Workspaces
 
 // The bar widget's model (docs/design.md §9): what BarWidget.qml shows for
 // the engine's state and the workspace its bar's monitor shows, and what its
@@ -7,21 +8,14 @@
 
 var GLYPH = "󰕰" // nf-md-view_grid, the grid glyph for slots
 
-// The workspace entry (workspace 1 to 10, screen) of a Hyprland workspace id
-// on the active desk, or null.
-function entryOf(state, id) {
-  var ws = state && state.workspaces ? state.workspaces[String(id)] : null
-  return ws && ws.workspace !== undefined && ws.workspace !== null ? ws : null
-}
-
 function workspaceOf(state, id) {
-  var ws = entryOf(state, id)
+  var ws = Workspaces.entry(state, id)
   return ws ? ws.workspace : null
 }
 
 // Whether the active layout has a tree for that workspace on that screen.
 function hasTree(state, entry) {
-  var layout = state && state.layouts && state.layout ? state.layouts[state.layout] : null
+  var layout = Workspaces.activeLayout(state)
   var trees = layout && layout.workspaces ? layout.workspaces[String(entry.workspace)] : null
   return !!(trees && trees[String(entry.screen)])
 }
@@ -54,7 +48,7 @@ function where(desk, entry, tree, workspaceId, state) {
 // "Layout: solo (also used by: office)", or "" with no layout.
 function layoutLine(state) {
   if (!state || !state.layout) return ""
-  var l = state.layouts ? state.layouts[state.layout] : null
+  var l = Workspaces.activeLayout(state)
   var others = (l && Array.isArray(l.used_by) ? l.used_by : []).filter(function(d) { return d !== state.desk })
   return "Layout: " + state.layout + (others.length ? " (also used by: " + others.join(", ") + ")" : "")
 }
@@ -70,7 +64,7 @@ function layoutLine(state) {
 // one), and a dot for unsaved edits; "set up" while there are no slots.
 function view(input) {
   var state = input.state
-  var entry = entryOf(state, input.workspaceId)
+  var entry = Workspaces.entry(state, input.workspaceId)
   var workspace = entry ? entry.workspace : null
   var tree = entry ? hasTree(state, entry) : false
   var desk = state && state.desk ? String(state.desk) : ""

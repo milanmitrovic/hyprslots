@@ -33,21 +33,11 @@ function pages(state) {
   return out
 }
 
-function workspaceEntry(state, id) {
-  if (!state || !state.workspaces || id === null || id === undefined) return null
-  return state.workspaces[String(id)] || null
-}
-
 // The workspace number (1 to 10) a Hyprland workspace id is on the active
 // desk, or null.
 function workspaceOf(state, id) {
-  var entry = workspaceEntry(state, id)
+  var entry = Workspaces.entry(state, id)
   return entry ? entry.workspace : null
-}
-
-function activeLayout(state) {
-  if (!state || !state.layouts || !state.layout) return null
-  return state.layouts[state.layout] || null
 }
 
 // The workspace's specs: slot -> spec text.
@@ -78,7 +68,7 @@ function slotOrder(state, workspace) {
   var out = []
   var seen = {}
   var specs = workspaceSpecs(state, workspace)
-  var layout = activeLayout(state)
+  var layout = Workspaces.activeLayout(state)
   var branches = layout && layout.workspaces ? layout.workspaces[String(workspace)] || {} : {}
   var count = layout ? layout.screens || 0 : 0
   for (var r = 1; r <= count; r++) {
@@ -103,7 +93,7 @@ function slotOrder(state, workspace) {
 // it: the workspace's own, else the default ones), that tree's text and the
 // active desk's monitor there; null when no tree places it.
 function miniMapSource(state, workspace, slot) {
-  var layout = activeLayout(state)
+  var layout = Workspaces.activeLayout(state)
   if (!layout || !layout.workspaces) return null
   var branches = layout.workspaces[String(workspace)] || {}
   for (var r = 1; r <= (layout.screens || 0); r++) {
@@ -126,7 +116,7 @@ function isManual(state, address) {
 }
 
 function windowRow(state, w) {
-  var entry = workspaceEntry(state, w.workspace_id)
+  var entry = Workspaces.entry(state, w.workspace_id)
   var row = {
     kind: "window",
     address: w.address,
