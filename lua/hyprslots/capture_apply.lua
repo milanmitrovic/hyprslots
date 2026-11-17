@@ -1,8 +1,9 @@
 -- Capture, the engine's half (docs/design.md §9, Capture): capture.lua
 -- plans from what it is given; this gathers it from the live windows of a
 -- workspace on every screen of the active desk, turns the plan into an edit
--- of the editor's data (edits.lua's pipeline checks it), fingerprints it so
--- an apply runs only the plan previewed, and applies it. The api's capture
+-- of the editor's data, fingerprints it so an apply runs only the plan
+-- previewed, and says how it checks and carries in-memory state through
+-- edits.lua's pipeline, which runs it. The api's capture
 -- call checks the arguments and shapes the reply.
 
 local adapter = require("hyprslots.hl_adapter")
@@ -145,22 +146,23 @@ function M.check(plan, n)
   end
 end
 
--- Run a capture's edit: each window into its slot first, so the re-solve
--- under the new specs keeps it there; the trees replaced lose their
--- keyboard-resized copies.
-function M.apply(engine, plan, cfg, data, name, n, scope)
-  for address, slot in pairs(plan.assign) do
-    engine.assignments[address] = { workspace = n, slot = slot }
-    engine.overflow[address] = nil
-    engine.unassigned[address] = nil
-  end
-  for screen = 1, cfg.layouts[name].screens do
-    resize.clear(engine, name, scope == "workspace" and n or "default", screen)
-    if scope ~= "workspace" then
-      resize.clear(engine, name, n, screen)
+-- edits.apply's carry of a capture: each window into its slot first, so the
+-- re-solve under the new specs keeps it there; the trees replaced lose
+-- their keyboard-resized copies. edits.apply undoes it when the edit fails.
+function M.carry(plan, name, n, scope)
+  return function(engine)
+    for address, slot in pairs(plan.assign) do
+      engine.assignments[address] = { workspace = n, slot = slot }
+      engine.overflow[address] = nil
+      engine.unassigned[address] = nil
+    end
+    for screen = 1, engine.cfg.layouts[name].screens do
+      resize.clear(engine, name, scope == "workspace" and n or "default", screen)
+      if scope ~= "workspace" then
+        resize.clear(engine, name, n, screen)
+      end
     end
   end
-  engine:apply_config(cfg, data, true)
 end
 
 return M

@@ -322,6 +322,39 @@ return { slots = data.slots, specs = data.specs, desks = data.desks, layouts = d
     assert.same({}, call("state").slots)
   end)
 
+  -- A refused apply has already carried its assignments through edits.apply,
+  -- which must put them back: a window taken out of its slot by hand stays
+  -- out, and none takes a slot.
+  it("a refused plan leaves the assignments and the windows taken out by hand as they were", function()
+    setup(EMPTY)
+    local preview = call("capture", { workspace = 3, scope = "workspace" })
+    assert.is_true(preview.ok, preview.error)
+    local out = preview.windows[1].address
+    assert.is_true(call("unassign", { address = out }).ok)
+    local before = call("state")
+    assert.same({ out }, before.unassigned)
+    local reply = call("capture", { workspace = 3, scope = "all", apply = true, plan = preview.plan })
+    assert.is_false(reply.ok)
+    assert.matches("capture again", reply.error)
+    local state = call("state")
+    assert.same({ out }, state.unassigned)
+    assert.same(before.assignments, state.assignments)
+    assert.same(before.overflow, state.overflow)
+    assert.equal(before.seq, state.seq, "nothing applied")
+  end)
+
+  it("an applied capture puts a window taken out by hand back into its slot", function()
+    setup(EMPTY)
+    local preview = call("capture", { workspace = 3, scope = "all" })
+    local out = preview.windows[1].address
+    assert.is_true(call("unassign", { address = out }).ok)
+    local reply = call("capture", { workspace = 3, scope = "all", apply = true, plan = preview.plan })
+    assert.is_true(reply.ok, reply.error)
+    local state = call("state")
+    assert.same({}, state.unassigned)
+    assert.same({ workspace = 3, slot = "foot" }, state.assignments[out])
+  end)
+
   it("takes a preview without a scope as one for all workspaces", function()
     setup(EMPTY)
     local preview = call("capture", { workspace = 3 })

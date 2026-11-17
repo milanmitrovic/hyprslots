@@ -1114,19 +1114,31 @@ function handlers.capture(engine, args)
   if not data then
     return fail(trees)
   end
-  local cfg, load_err = load_checked(engine, data, capture_apply.check(plan, n))
-  if not cfg then
-    return fail(load_err)
+  -- One check for both: the config took the edit, and an apply given a
+  -- preview's plan is that plan (the reply needs the config's slot keys).
+  local took, reply = capture_apply.check(plan, n), nil
+  local function check(cfg)
+    local err = took(cfg)
+    if err then
+      return err
+    end
+    reply = capture_reply(plan, cfg, n, scope, name, trees)
+    if args.apply == true and args.plan ~= nil and args.plan ~= reply.plan then
+      return "the windows changed since the preview: capture again"
+    end
   end
-  local reply = capture_reply(plan, cfg, n, scope, name, trees)
   if args.apply ~= true then
+    local cfg, load_err = load_checked(engine, data, check)
+    if not cfg then
+      return fail(load_err)
+    end
     reply.seq = engine.seq
     return reply
   end
-  if args.plan ~= nil and args.plan ~= reply.plan then
-    return fail("the windows changed since the preview: capture again")
+  local cfg, apply_err = apply_edit(engine, data, check, capture_apply.carry(plan, name, n, scope))
+  if not cfg then
+    return fail(apply_err)
   end
-  capture_apply.apply(engine, plan, cfg, data, name, n, scope)
   reply.applied = true
   reply.seq = engine.seq
   return reply
