@@ -5,7 +5,7 @@
 // right-click menu offers. Pure, so node can test it
 // (editor/tests/bar-status.test.mjs).
 
-var GLYPH = "󰕰" // the grid milan.layout shows for slots
+var GLYPH = "󰕰" // nf-md-view_grid, the grid glyph for slots
 
 // The workspace entry (workspace 1 to 10, screen) of a Hyprland workspace id
 // on the active desk, or null.

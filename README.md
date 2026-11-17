@@ -15,8 +15,8 @@ workspace. From then on:
 - plug in a monitor (or leave the dock) and hyprslots picks the **desk** for
   the monitors now connected and the **layout** it uses, and puts every
   window back where that layout says;
-- Omarchy's resize keys resize the slots, and Super+L still cycles a
-  workspace out of slots and back;
+- Omarchy's resize keys resize the slots (Super+L takes a workspace out
+  of slots; see [Super+L](#superl) for bringing it back);
 - **capture**: arrange your windows by hand, then capture them, and each
   one becomes a slot (named after its app) in the arrangement you made;
 - **launch missing apps**: a workspace can open the apps its empty slots
@@ -122,6 +122,28 @@ o.bind("SUPER + CTRL + Y", "Hyprslots", { panel = "io.github.milanmitrovic.hyprs
 - The **bar widget** names the active layout; a dot means unsaved edits.
   Right-click it to re-apply the layout, capture or record the windows on
   a workspace as its layout, save, or reload the config.
+
+### Super+L
+
+Omarchy's Super+L (and Super+Alt+L) cycles the focused workspace through
+tiling, scrolling and floating, and knows nothing of slots: the first press
+takes a hyprslots workspace out of slots, and the cycle never comes back to
+them. Every mode but Omarchy's default is saved in
+`~/.local/state/omarchy/workspace-layouts/<N>.lua`, and hyprslots leaves a
+workspace with a saved mode alone, so your choice outlasts reloads. To bring
+slots back to workspace N:
+
+1. Press Super+L until the workspace is in Omarchy's default layout (tiling,
+   unless you changed it), which removes its saved mode, or delete the file
+   yourself: `rm ~/.local/state/omarchy/workspace-layouts/<N>.lua`.
+2. Reload Hyprland (`hyprctl reload`): hyprslots gives the workspace its
+   slots again.
+
+`contrib/super-l/` has patches that add a slots stop to a customized cycle
+script (slots, tiling, side-by-side, full width, floating, slots). They
+patch the author's own scripts, which stock Omarchy does not have, so they
+are not installed and serve only as a starting point for your own cycle;
+docs/design.md §6 describes what a slots stop has to do.
 
 `~/.config/hyprslots/config.lua` is plain Lua and wins over the editor for
 whatever it sets. docs/design.md describes everything in detail.

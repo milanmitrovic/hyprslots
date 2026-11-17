@@ -657,10 +657,20 @@ it; the cutover's `bindings.lua` does, after Omarchy's bindings.
 
 ### Super+L: slots in the layout cycle (applied at cutover)
 
-`contrib/super-l/` holds patches (`patch -d ~ -p1 < …`) for the user's
-`~/.local/bin/workspace-layout-cycle`, `~/.local/bin/workspace-layout-current`
-and `~/.config/omarchy/plugins/milan.layout/Layout.qml`. They are not applied
-before the cutover.
+Not part of the plugin. Omarchy's own Super+L
+(`omarchy-hyprland-workspace-layout-toggle`) knows nothing of slots: from a
+slots workspace it goes to the next of tiling, scrolling and floating,
+saves that mode unless it is Omarchy's default, and never comes back to
+slots. hyprslots leaves a workspace with a saved mode alone (below), so
+slots come back only once the mode file is gone (Super+L onto the default
+layout, or `rm`) and Hyprland reloads; the README says this to users. The
+plugin installs no cycle of its own.
+
+`contrib/super-l/` holds patches (`patch -d ~ -p1 < …`) for the author's
+own `~/.local/bin/workspace-layout-cycle`, `~/.local/bin/workspace-layout-current`
+and a private bar plugin's `Layout.qml`, none of which stock Omarchy ships.
+Nothing installs or applies them; they were applied by hand at the cutover
+and stand as the reference for a cycle with a slots stop:
 
 - The cycle acts on the focused workspace only. On a hyprslots
   workspace (one in `hyprslots.api.call("state").workspaces`) it gains a
@@ -2142,7 +2152,7 @@ with Omarchy's gaps (5/10, border 2).
 | 2 Desks | desks across screens, synced Super+N, pinned screens (removed since), hotplug; turns the completion test green | done |
 | 3 Specs | full spec grammar, late titles, generated window rules | done |
 | 4 Containers | accordion (groups) and overflow | done; the accordion replaced by the scroll branch |
-| 5 Resize | keyboard resize via `layout_msg`; `lua:slots` in the Super+L layout cycle, focused screen only | done (Super+L patches applied at cutover) |
+| 5 Resize | keyboard resize via `layout_msg`; `lua:slots` in the Super+L layout cycle, focused screen only | done (Super+L patches applied by hand at cutover; not installed by the plugin, §6) |
 | 6 Protocol | record, api protocol, serializer, ratio grammar | done |
 | Editor D1 | plugin skeleton (Engine service, panel, tabs) + Assignment view; api `assign` / `unassign`, `overflow` in `state` | done |
 | Editor D2 | Layout view; api `set_trees` / `reset` | done |
