@@ -93,3 +93,43 @@ test("the Assignment tab's switcher: the managed workspaces by their keys, no Al
   assert.equal(W.stripLine(W.numbers(state, 3)), "1 2 [3] 4 5 6 7 8 9");
   assert.deepEqual(plain(W.numbers(null, 10)).map((w) => w.label).slice(-1), ["0"], "workspace 10's key is 0");
 });
+
+// Workspace 3 shows on screen 1 as Hyprland workspace 3, on screen 2 as 13;
+// the layout "dual" is active.
+const live = {
+  workspaces: { 3: { workspace: 3, screen: 1, monitor: "eDP-1" }, 13: { workspace: 3, screen: 2, monitor: "DP-1" }, 20: { screen: 1 } },
+  used_workspaces: [2, 3],
+  layout: "dual",
+  layouts: { dual: { screens: 2, own: [3] }, solo: { screens: 1 } },
+};
+
+test("entry: a Hyprland workspace id's workspace and screen on the active desk", () => {
+  assert.deepEqual(plain(W.entry(live, 3)), { workspace: 3, screen: 1, monitor: "eDP-1" });
+  assert.deepEqual(plain(W.entry(live, "13")), { workspace: 3, screen: 2, monitor: "DP-1" }, "an id as text reads the same");
+  assert.equal(W.entry(live, 77), null, "an id that is none of ours");
+  assert.equal(W.entry(live, 20), null, "an entry with no workspace number");
+  assert.equal(W.entry(live, -1), null, "no workspace focused");
+  assert.equal(W.entry(live, null), null);
+  assert.equal(W.entry(live, undefined), null);
+  assert.equal(W.entry({ workspaces: { null: { workspace: 4 } } }, null), null, "a null id is never the key \"null\"");
+  assert.equal(W.entry({}, 3), null, "a state with no workspaces");
+  assert.equal(W.entry(null, 3), null, "no state");
+});
+
+test("focusedOrFirst: the focused workspace and its screen, else the first in use on screen 1, else 1", () => {
+  assert.deepEqual(plain(W.focusedOrFirst(live, 3)), { workspace: 3, screen: 1 });
+  assert.deepEqual(plain(W.focusedOrFirst(live, 13)), { workspace: 3, screen: 2 }, "on any screen");
+  assert.deepEqual(plain(W.focusedOrFirst({ workspaces: { 5: { workspace: 5 } } }, 5)), { workspace: 5, screen: 1 }, "an entry with no screen: screen 1");
+  assert.deepEqual(plain(W.focusedOrFirst(live, 77)), { workspace: 2, screen: 1 }, "a focus that is none of ours: the first in use");
+  assert.deepEqual(plain(W.focusedOrFirst(live, 20)), { workspace: 2, screen: 1 }, "an entry with no workspace number: the first in use");
+  assert.deepEqual(plain(W.focusedOrFirst({ used_workspaces: [] }, 3)), { workspace: 1, screen: 1 }, "none in use: workspace 1");
+  assert.deepEqual(plain(W.focusedOrFirst(null, -1)), { workspace: 1, screen: 1 }, "no state: workspace 1");
+});
+
+test("activeLayout: the active layout's entry, or null", () => {
+  assert.deepEqual(plain(W.activeLayout(live)), { screens: 2, own: [3] });
+  assert.equal(W.activeLayout({ ...live, layout: "gone" }), null, "an active layout the state lists not");
+  assert.equal(W.activeLayout({ ...live, layout: "" }), null, "no active layout");
+  assert.equal(W.activeLayout({ layout: "dual" }), null, "no layouts");
+  assert.equal(W.activeLayout(null), null, "no state");
+});
