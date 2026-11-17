@@ -6,6 +6,7 @@ import { load } from "./load.mjs";
 
 const A = load("Assignment.js");
 const P = load("Prompts.js");
+const W = load("Workspaces.js");
 
 // Plain copies, so deepEqual does not trip over the vm context's prototypes.
 const plain = (value) => JSON.parse(JSON.stringify(value));
@@ -240,6 +241,15 @@ test("a workspace's page, for the digit keys; -1 for one not managed", () => {
 test("no state yet means pages 1 to 10, and no rows", () => {
   assert.deepEqual(plain(A.pages(null)).map((p) => p.workspace), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
   assert.deepEqual(plain(A.rows(null, 3)), []);
+});
+
+test("the pages are the workspaces Workspaces.count counts, out-of-range counts falling back to all of them", () => {
+  for (const workspace_count of [1, 4, 9, 10, 0, 11, 2.5, "9", undefined]) {
+    const state = { workspace_count };
+    const expected = Array.from({ length: W.count(state) }, (_, i) => i + 1);
+    assert.deepEqual(plain(A.pages(state)).map((p) => p.workspace), expected, `workspace_count ${workspace_count}`);
+  }
+  assert.equal(A.workspaceCount, undefined, "no count of its own");
 });
 
 test("the message after a says which slot the window took, whom it replaced and who gave it up; nothing of placing", () => {
