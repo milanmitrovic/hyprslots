@@ -180,6 +180,9 @@ make e2e-editor    # the editor in Quickshell on a nested Hyprland
 
 The tests need busted (`luarocks --local --lua-version 5.4 install busted`),
 node, Qt 6's qmltestrunner (skipped where missing), and, for the end-to-end ones, sway, foot, jq, gcc, qs, grim and wtype.
+`make test` fails without node, and its editor tests that check the JavaScript
+against the engine's Lua fail without a Lua interpreter; `make editor-test`
+alone skips them, saying so.
 For a development install, link the plugin folder to your checkout
 (`ln -s ~/src/hyprslots ~/.config/omarchy/plugins/io.github.milanmitrovic.hyprslots`)
 and run `tools/install-engine.sh`; `omarchy plugin update` does not update a

@@ -2,7 +2,11 @@
 # Install once: luarocks --local --lua-version 5.4 install busted
 BUSTED ?= $(shell command -v busted 2>/dev/null || echo $(HOME)/.luarocks/bin/busted)
 # The editor plugin's JavaScript (editor/*.js) is tested under node's own
-# test runner; `make test` skips it, saying so, where node is missing.
+# test runner. `make editor-test` alone skips it, saying so, where node is
+# missing; `make test` fails instead. Some of those tests run the engine's
+# Lua (lua5.4, lua5.5 or lua) to pin the JavaScript against it: alone they
+# skip without one, under `make test` (HYPRSLOTS_REQUIRE_LUA=1; busted needs
+# Lua anyway) they fail.
 NODE ?= $(shell command -v node 2>/dev/null)
 # Its QML (Engine.qml's queue, debounce and watchdog; OpenFlow.qml's opening
 # sequence) under Qt 6's qmltestrunner (/usr/bin/qmltestrunner may be Qt 5's),
@@ -12,6 +16,8 @@ QMLTESTRUNNER ?= $(shell test -x /usr/lib/qt6/bin/qmltestrunner && echo /usr/lib
 
 .PHONY: test lua-test editor-test editor-qml-test editor-lint e2e e2e-editor e2e-editor-multimon
 test: lua-test editor-test editor-qml-test
+test: export HYPRSLOTS_REQUIRE_LUA := 1
+test: REQUIRE_NODE := 1
 
 # Hyprland runs Lua 5.5 (a for loop's variables are constants there):
 # every file compiles under luac5.5 too, where it is installed.
@@ -22,9 +28,14 @@ ifneq ($(LUAC55),)
 endif
 	$(BUSTED)
 
+# REQUIRE_NODE is set only under `make test`, a target-specific variable, so
+# it is tested in the recipe's shell (ifeq is read before any target runs).
 editor-test:
 ifeq ($(NODE),)
-	@echo "editor-test: node not found, skipping editor/tests"
+	@if [ "$(REQUIRE_NODE)" = 1 ]; then \
+	  echo "editor-test: node not found; make test needs it for editor/tests" >&2; exit 1; \
+	fi; \
+	echo "editor-test: node not found, skipping editor/tests"
 else
 	$(NODE) --test editor/tests/
 endif
