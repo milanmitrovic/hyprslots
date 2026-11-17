@@ -12,22 +12,44 @@ local adapter = require("hyprslots.hl_adapter")
 
 local M = {}
 
--- How many workspaces the engine manages (config `workspaces`, default 9).
+-- Omarchy's workspaces per screen: the most hyprslots can manage (config
+-- `workspaces` is at most this; Super+1..0).
+M.MAX = 10
+-- How many it manages when config sets no `workspaces`: workspace 10
+-- (Super+0) stays Omarchy's unless config says otherwise.
+M.DEFAULT = 9
+
+-- How many workspaces the engine manages (config `workspaces`, default
+-- M.DEFAULT).
 function M.count(engine)
-  return engine and engine.cfg and engine.cfg.workspaces or 9
+  return engine and engine.cfg and engine.cfg.workspaces or M.DEFAULT
 end
 
--- Whether `workspace` is one of 1..count (default all ten of Omarchy's: the
+-- Whether `workspace` is one of 1..count (default all M.MAX of Omarchy's: the
 -- fallback to Omarchy's own switch while hyprslots is not running).
 function M.valid(workspace, count)
-  return math.type(workspace) == "integer" and workspace >= 1 and workspace <= (count or 10)
+  return math.type(workspace) == "integer" and workspace >= 1 and workspace <= (count or M.MAX)
+end
+
+-- true when `workspace` is one of 1..count (default M.MAX), else nil and why
+-- not. `given` is what the message says was given (default `workspace`):
+-- the raw argument, when `workspace` is it converted.
+function M.check(workspace, count, given)
+  count = count or M.MAX
+  if not M.valid(workspace, count) then
+    if given == nil then
+      given = workspace
+    end
+    return nil, "a workspace must be an integer from 1 to " .. count .. ", got " .. tostring(given)
+  end
+  return true
 end
 
 -- Activate workspace N. Returns true, or nil and why not.
 function M.activate(engine, workspace)
-  local count = M.count(engine)
-  if not M.valid(workspace, count) then
-    return nil, "a workspace must be an integer from 1 to " .. count .. ", got " .. tostring(workspace)
+  local ok, err = M.check(workspace, M.count(engine))
+  if not ok then
+    return nil, err
   end
   if engine.refused then
     return nil, "hyprslots is not running: " .. engine.refused

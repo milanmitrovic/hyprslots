@@ -16,10 +16,9 @@ local serialize = require("hyprslots.serialize")
 local slot_key = require("hyprslots.slot_key")
 local spec = require("hyprslots.spec")
 local tree = require("hyprslots.tree")
+local workspaces = require("hyprslots.workspaces")
 
 local M = {}
-
-local WORKSPACES = 10
 local SLOT_NAME = "^[%a_][%w_%-]*$" -- config.lua's rule for slot names
 
 local function sorted_keys(t)
@@ -85,11 +84,10 @@ function M.editable(read_only, section, name)
   return true
 end
 
+-- Any of Omarchy's workspaces (workspaces.MAX): the data may hold one config
+-- `workspaces` does not manage yet.
 local function check_workspace(workspace)
-  if math.type(workspace) ~= "integer" or workspace < 1 or workspace > WORKSPACES then
-    return nil, "a workspace must be an integer from 1 to " .. WORKSPACES .. ", got " .. tostring(workspace)
-  end
-  return true
+  return workspaces.check(workspace, workspaces.MAX)
 end
 
 local function check_name(name, what)

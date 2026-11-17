@@ -23,11 +23,12 @@ local migrate = require("hyprslots.migrate")
 local slot_key = require("hyprslots.slot_key")
 local spec = require("hyprslots.spec")
 local tree = require("hyprslots.tree")
+local workspaces = require("hyprslots.workspaces")
 
 local M = {}
 
-local WORKSPACES = 10 -- Omarchy's per screen: the most hyprslots can manage
-local DEFAULT_WORKSPACES = 9 -- workspace 10 (Super+0) stays Omarchy's unless config says otherwise
+local WORKSPACES = workspaces.MAX -- Omarchy's per screen: the most hyprslots can manage
+local DEFAULT_WORKSPACES = workspaces.DEFAULT -- workspace 10 (Super+0) stays Omarchy's unless config says otherwise
 local MAX_SCREENS = 10
 local SLOT_NAME = "^[%a_][%w_%-]*$"
 

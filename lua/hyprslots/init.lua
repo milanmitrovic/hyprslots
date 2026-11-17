@@ -31,7 +31,7 @@ local M = {}
 
 local LAYOUT = "slots"
 local BLOCKS = 10 -- Omarchy monitor blocks given lua:slots workspaces
-local WORKSPACES = 9 -- config `workspaces` when unset
+local WORKSPACES = workspaces.DEFAULT -- config `workspaces` when unset
 local NEW_DESK_DELAY = 1000 -- ms a monitor set no desk knows must hold before it gets a desk
 
 local engine = nil

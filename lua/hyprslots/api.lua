@@ -38,7 +38,7 @@ local tree = require("hyprslots.tree")
 local DATA_FILE = "slots.lua"
 -- Messages reach the editor, so they name no files.
 local NO_DATA = "your config loads no editor data, so there is nothing the editor may change"
-local WORKSPACES = 9 -- config `workspaces` when unset
+local WORKSPACES = workspaces.DEFAULT -- config `workspaces` when unset
 
 local M = {}
 
@@ -816,9 +816,9 @@ function handlers.assign(engine, args)
     return fail("no open window " .. tostring(args.address))
   end
   local workspace = as_integer(args.workspace)
-  local count = workspaces.count(engine)
-  if not workspaces.valid(workspace, count) then
-    return fail("a workspace must be an integer from 1 to " .. count .. ", got " .. tostring(args.workspace))
+  local ok_ws, ws_err = workspaces.check(workspace, workspaces.count(engine), args.workspace)
+  if not ok_ws then
+    return fail(ws_err)
   end
   if not (engine.cfg and type(args.slot) == "string" and engine.cfg.slots[args.slot]) then
     return fail(string.format("no slot '%s' (add it in the editor's Layout tab, s then a)", tostring(args.slot)))
@@ -1370,9 +1370,9 @@ function handlers.capture(engine, args)
     return fail("no desk is active: the monitors connected are no desk's yet")
   end
   local n = args.workspace ~= nil and as_integer(args.workspace) or focused_workspace(engine)
-  local count = workspaces.count(engine)
-  if not workspaces.valid(n, count) then
-    return fail("a workspace must be an integer from 1 to " .. count .. ", got " .. tostring(args.workspace or n))
+  local ok_ws, ws_err = workspaces.check(n, workspaces.count(engine), args.workspace or n)
+  if not ok_ws then
+    return fail(ws_err)
   end
   local scope = args.scope
   if args.apply == true and scope ~= "all" and scope ~= "workspace" then
@@ -1570,9 +1570,9 @@ function handlers.set_launch(engine, args)
     return fail(NO_DATA)
   end
   local n = as_integer(args.workspace)
-  local count = workspaces.count(engine)
-  if not workspaces.valid(n, count) then
-    return fail("a workspace must be an integer from 1 to " .. count .. ", got " .. tostring(args.workspace))
+  local ok_ws, ws_err = workspaces.check(n, workspaces.count(engine), args.workspace)
+  if not ok_ws then
+    return fail(ws_err)
   end
   local data, err = edit.set_launch(engine.data, n, args.mode)
   if not data then
@@ -1602,9 +1602,9 @@ function handlers.launch_missing(engine, args)
     return fail("hyprslots has no config running")
   end
   local n = args.workspace ~= nil and as_integer(args.workspace) or focused_workspace(engine)
-  local count = workspaces.count(engine)
-  if not workspaces.valid(n, count) then
-    return fail("a workspace must be an integer from 1 to " .. count .. ", got " .. tostring(args.workspace or n))
+  local ok_ws, ws_err = workspaces.check(n, workspaces.count(engine), args.workspace or n)
+  if not ok_ws then
+    return fail(ws_err)
   end
   if (engine.cfg.launch[n] or launch.DEFAULT) == "never" then
     return fail("workspace " .. n .. " launches no apps: its launch setting is never")
