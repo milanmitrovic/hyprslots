@@ -1320,6 +1320,32 @@ local function capture_screens(engine, n, scope)
   return screens
 end
 
+-- What a capture would do, as one short token: FNV-1a (32 bits, hex) over
+-- its workspace, scope (none counts as "all", as it previews), layout, each
+-- screen's tree and ratio, the slots it makes
+-- with their keys and each window's address, slot, spec and newness, in
+-- order. Two captures with the same token make the same edit.
+local function capture_fingerprint(n, scope, layout, trees, new_slots, windows)
+  local parts = { "workspace=" .. n, "scope=" .. (scope or "all"), "layout=" .. layout }
+  for _, screen in ipairs(sorted_keys(trees)) do
+    local t = trees[screen]
+    parts[#parts + 1] = "screen " .. screen .. "=" .. (t and (t.tree .. " " .. t.ratio) or "none")
+  end
+  for _, s in ipairs(new_slots) do
+    parts[#parts + 1] = "slot " .. s.slot .. "=" .. tostring(s.key)
+  end
+  for _, w in ipairs(windows) do
+    parts[#parts + 1] = "window " .. w.address .. "=" .. tostring(w.slot) .. " " .. tostring(w.spec) .. " "
+      .. tostring(w.new == true)
+  end
+  local text = table.concat(parts, "\n")
+  local h = 2166136261
+  for i = 1, #text do
+    h = (h ~ text:byte(i)) * 16777619 & 0xffffffff
+  end
+  return string.format("%08x", h)
+end
+
 -- capture { workspace? (default the focused one), scope ("all": the shared
 -- trees, "workspace": its own), apply? }: the windows of workspace N on
 -- every screen of the active desk as a layout, in one edit: a global slot
@@ -1330,7 +1356,9 @@ end
 -- N shows the new shared ones. Reply: workspace, scope, layout, trees
 -- (screen -> { tree, ratio }, or false for a screen left with none),
 -- new_slots[] ({ slot, key }), windows[] ({ address, class, title, slot,
--- spec, new }), applied, seq.
+-- spec, new }), plan (capture_fingerprint's), applied, seq. An apply given
+-- a preview's plan applies only that plan: windows opened, closed or moved
+-- since (a launch arriving while the editor asks y/n) refuse it.
 function handlers.capture(engine, args)
   if engine.refused then
     return fail("hyprslots is off: " .. engine.refused)
@@ -1349,6 +1377,9 @@ function handlers.capture(engine, args)
   local scope = args.scope
   if args.apply == true and scope ~= "all" and scope ~= "workspace" then
     return fail("say whom the capture is for: scope \"all\" (the shared trees) or \"workspace\" (its own)")
+  end
+  if args.plan ~= nil and type(args.plan) ~= "string" then
+    return fail("plan must be a capture preview's plan, got " .. tostring(args.plan))
   end
   local name, layout_err = target_layout(engine, {})
   if not name then
@@ -1445,10 +1476,13 @@ function handlers.capture(engine, args)
       new = w.new })
   end
   local reply = { workspace = n, scope = scope, layout = name, trees = trees, new_slots = new_slots,
-    windows = windows, applied = false }
+    windows = windows, plan = capture_fingerprint(n, scope, name, trees, new_slots, windows), applied = false }
   if args.apply ~= true then
     reply.seq = engine.seq
     return reply
+  end
+  if args.plan ~= nil and args.plan ~= reply.plan then
+    return fail("the windows changed since the preview: capture again")
   end
 
   -- Each window into its slot first, so the re-solve under the new specs

@@ -1714,7 +1714,7 @@ left-most; as an object key, `"1"`).
 | `save` | — | `path, seq` |
 | `reload` | — | `desk, layout, seq` |
 | `arrange` | — | `swaps, widened[]` (workspace ids): the scroll pass now, every column of the focused scroll workspace widened (Super+L entering slots) |
-| `capture` | `workspace?` (default the focused one), `scope` (`"all"`: the layout's shared trees, `"workspace"`: its own; needed with `apply`), `apply?` | `workspace, scope, layout, trees` (screen -> `{tree, ratio}`, or `false` for a screen left with none), `new_slots[]` (`{slot, key}`), `windows[]` (`{address, class, title, slot, spec, new}`), `applied, seq`: without `apply` a preview that changes nothing; with it one edit (Capture, below) |
+| `capture` | `workspace?` (default the focused one), `scope` (`"all"`: the layout's shared trees, `"workspace"`: its own; needed with `apply`), `apply?`, `plan?` (a preview's) | `workspace, scope, layout, trees` (screen -> `{tree, ratio}`, or `false` for a screen left with none), `new_slots[]` (`{slot, key}`), `windows[]` (`{address, class, title, slot, spec, new}`), `plan` (a token of the edit), `applied, seq`: without `apply` a preview that changes nothing; with it one edit (Capture, below), refused (`the windows changed since the preview: capture again`) when `plan` is not the one it would make now |
 | `set_launch` | `workspace`, `mode` (`never`, `on_demand`, `at_login`) | `workspace, mode, seq` |
 | `launch_missing` | `workspace?` (default the focused one) | `workspace, launched[]` (`{slot, command}`), `open[]`, `pending[]` (slots), `cannot[]` (`{slot, reason}`), `seq`; refused on a workspace whose setting is never |
 
