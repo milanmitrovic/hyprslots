@@ -15,6 +15,8 @@
 --
 -- Pure but for read_makes / system_makes, which read the vendor table.
 
+local util = require("hyprslots.util")
+
 local M = {}
 
 M.BUILT_IN = "Built-in"
@@ -31,20 +33,12 @@ local COMMON = {
   "Samsung Electric Company", "Sharp Corporation", "Sony", "ViewSonic Corporation",
 }
 
-local function set_of(list)
-  local out = {}
-  for _, name in ipairs(list) do
-    out[name] = true
-  end
-  return out
-end
-
 -- The makes in a PNP id table (make -> true): each line three letters, a
 -- tab, the vendor's name. The common ones when the file cannot be read.
 function M.read_makes(path)
   local file = io.open(path or M.PNP_IDS, "r")
   if not file then
-    return set_of(COMMON)
+    return util.set_of(COMMON)
   end
   local out = {}
   for line in file:lines() do
@@ -54,7 +48,7 @@ function M.read_makes(path)
     end
   end
   file:close()
-  return next(out) ~= nil and out or set_of(COMMON)
+  return next(out) ~= nil and out or util.set_of(COMMON)
 end
 
 local system
@@ -66,10 +60,6 @@ end
 
 local function text(value)
   return type(value) == "string" and value or ""
-end
-
-local function trim(value)
-  return (value:gsub("^%s+", ""):gsub("%s+$", ""))
 end
 
 -- Whether a connector is a laptop's own panel.
@@ -96,15 +86,15 @@ end
 -- What is left of a description once a make (`make`, else the longest
 -- known one) and the serial are taken off: { make, model } (either "").
 local function split(description, serial, make, makes)
-  local rest = trim(description)
+  local rest = util.trim(description)
   if serial ~= "" and rest:sub(-#serial) == serial and (#rest == #serial or rest:sub(-#serial - 1, -#serial - 1):match("%s")) then
-    rest = trim(rest:sub(1, -#serial - 1))
+    rest = util.trim(rest:sub(1, -#serial - 1))
   end
   if make == "" then
-    make = leading_make(rest, makes or set_of(COMMON)) or ""
+    make = leading_make(rest, makes or util.set_of(COMMON)) or ""
   end
   if make ~= "" and (rest == make or rest:sub(1, #make + 1) == make .. " ") then
-    rest = trim(rest:sub(#make + 1))
+    rest = util.trim(rest:sub(#make + 1))
   else
     make = ""
   end
@@ -117,11 +107,11 @@ function M.auto(monitor, makes)
   if M.internal_connector(monitor.name) then
     return M.BUILT_IN
   end
-  local model = trim(text(monitor.model))
+  local model = util.trim(text(monitor.model))
   if model ~= "" then
     return model
   end
-  local make, rest = split(text(monitor.description), text(monitor.serial), trim(text(monitor.make)), makes)
+  local make, rest = split(text(monitor.description), text(monitor.serial), util.trim(text(monitor.make)), makes)
   if rest ~= "" then
     return rest
   end

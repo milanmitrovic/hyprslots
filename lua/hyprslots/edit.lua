@@ -16,36 +16,14 @@ local serialize = require("hyprslots.serialize")
 local slot_key = require("hyprslots.slot_key")
 local spec = require("hyprslots.spec")
 local tree = require("hyprslots.tree")
+local util = require("hyprslots.util")
 local workspaces = require("hyprslots.workspaces")
 
 local M = {}
 local SLOT_NAME = "^[%a_][%w_%-]*$" -- config.lua's rule for slot names
 
-local function sorted_keys(t)
-  local keys = {}
-  for key in pairs(t) do
-    keys[#keys + 1] = key
-  end
-  table.sort(keys, function(a, b)
-    if type(a) == type(b) then
-      return a < b
-    end
-    return type(a) == "number"
-  end)
-  return keys
-end
-
 -- A deep copy of plain data.
-function M.copy(value)
-  if type(value) ~= "table" then
-    return value
-  end
-  local out = {}
-  for key, inner in pairs(value) do
-    out[key] = M.copy(inner)
-  end
-  return out
-end
+M.copy = util.deep_copy
 
 -- Fields that are one whole: a slot list partly built in code is code's.
 local WHOLE = { slots = true }
@@ -56,12 +34,12 @@ local WHOLE = { slots = true }
 -- (nil when it loaded none).
 function M.read_only(raw, given)
   local out = {}
-  for _, key in ipairs(sorted_keys(raw)) do
+  for _, key in ipairs(util.sorted_keys(raw)) do
     local value, source = raw[key], given and given[key]
     if source ~= nil and rawequal(value, source) then
       -- passed straight through: all of it is the data's
     elseif type(value) == "table" and type(source) == "table" and not WHOLE[key] then
-      for _, sub in ipairs(sorted_keys(value)) do
+      for _, sub in ipairs(util.sorted_keys(value)) do
         if not rawequal(value[sub], source[sub]) then
           out[#out + 1] = key .. "." .. tostring(sub)
         end
@@ -166,13 +144,6 @@ function M.remove_leaf(node, name)
   return out
 end
 
-local function gcd(a, b)
-  while b ~= 0 do
-    a, b = b, a % b
-  end
-  return a
-end
-
 -- A parsed tree as text that is the same for every tree laid out the same:
 -- each container's weights divided by their greatest common divisor (2:2 is
 -- 1:1), the root's own weight left out.
@@ -181,7 +152,7 @@ local function shape(node, weighted)
   if node.children then
     local divisor = 0
     for _, child in ipairs(node.children) do
-      divisor = gcd(child.weight or 1, divisor)
+      divisor = util.gcd(child.weight or 1, divisor)
     end
     local parts = {}
     for i, child in ipairs(node.children) do
@@ -239,14 +210,14 @@ end
 -- Every tree table of every layout: its default trees and each workspace's
 -- own, as (layout name, workspace or "default", screen -> text table).
 local function each_trees(data, fn)
-  for _, name in ipairs(sorted_keys(type(data.layouts) == "table" and data.layouts or {})) do
+  for _, name in ipairs(util.sorted_keys(type(data.layouts) == "table" and data.layouts or {})) do
     local entry = data.layouts[name]
     if type(entry) == "table" then
       if type(entry.default) == "table" then
         fn(name, "default", entry.default, entry)
       end
       local workspaces = type(entry.workspaces) == "table" and entry.workspaces or {}
-      for _, n in ipairs(sorted_keys(workspaces)) do
+      for _, n in ipairs(util.sorted_keys(workspaces)) do
         if type(workspaces[n]) == "table" then
           fn(name, n, workspaces[n], entry)
         end
@@ -301,7 +272,7 @@ end
 function M.slot_uses(data, name)
   local trees, specs = {}, {}
   each_trees(data, function(layout, n, branches)
-    for _, screen in ipairs(sorted_keys(branches)) do
+    for _, screen in ipairs(util.sorted_keys(branches)) do
       local node = tree.parse(branches[screen])
       if node then
         for _, slot in ipairs(tree.slots(node)) do
@@ -313,7 +284,7 @@ function M.slot_uses(data, name)
     end
   end)
   local all = type(data.specs) == "table" and data.specs or {}
-  for _, workspace in ipairs(sorted_keys(all)) do
+  for _, workspace in ipairs(util.sorted_keys(all)) do
     if type(all[workspace]) == "table" and all[workspace][name] ~= nil then
       specs[#specs + 1] = workspace
     end
@@ -580,7 +551,7 @@ end
 -- The desks that use layout `name`, sorted.
 function M.layout_users(data, name)
   local out = {}
-  for _, desk in ipairs(sorted_keys(section(data, "desks"))) do
+  for _, desk in ipairs(util.sorted_keys(section(data, "desks"))) do
     local entry = data.desks[desk]
     if type(entry) == "table" and entry.layout == name then
       out[#out + 1] = desk
@@ -875,7 +846,7 @@ function M.set_trees(data, layout, n, trees)
     return nil, "no trees to set: give \"trees\" as an object of screen -> tree"
   end
   local out = data
-  for _, screen in ipairs(sorted_keys(trees)) do
+  for _, screen in ipairs(util.sorted_keys(trees)) do
     local err
     out, err = M.set_tree(out, layout, n, screen, trees[screen])
     if not out then
@@ -958,7 +929,7 @@ local function override_needed(data, entry, n)
   local specs = section(data, "specs")[n]
   local mine, shared = placed_slots(own), placed_slots(default)
   local woken = {}
-  for _, slot in ipairs(sorted_keys(type(specs) == "table" and specs or {})) do
+  for _, slot in ipairs(util.sorted_keys(type(specs) == "table" and specs or {})) do
     if shared[slot] and not mine[slot] then
       woken[#woken + 1] = slot
     end
@@ -985,7 +956,7 @@ function M.fold_trees(data, layout)
   local target = out.layouts[layout]
   local report = { folded = {}, kept = {} }
   local workspaces = type(target.workspaces) == "table" and target.workspaces or {}
-  for _, n in ipairs(sorted_keys(workspaces)) do
+  for _, n in ipairs(util.sorted_keys(workspaces)) do
     if type(workspaces[n]) == "table" then
       local reason = override_needed(out, target, n)
       if reason then

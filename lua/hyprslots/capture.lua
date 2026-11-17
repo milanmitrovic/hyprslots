@@ -10,6 +10,7 @@ local edit = require("hyprslots.edit")
 local record = require("hyprslots.record")
 local spec = require("hyprslots.spec")
 local tree = require("hyprslots.tree")
+local util = require("hyprslots.util")
 
 local M = {}
 
@@ -65,13 +66,6 @@ function M.slot_name(class)
   return trimmed(name:sub(1, M.MAX_NAME))
 end
 
-local function gcd(a, b)
-  while b ~= 0 do
-    a, b = b, a % b
-  end
-  return a
-end
-
 -- Every arrangement of `n` children, weights 1 to 5 divided by their gcd,
 -- each once (computed once per count).
 local arrangements = {}
@@ -84,7 +78,7 @@ local function arrangements_of(n)
     if i > n then
       local common = 0
       for _, w in ipairs(current) do
-        common = gcd(common, w)
+        common = util.gcd(common, w)
       end
       local reduced = {}
       for j, w in ipairs(current) do

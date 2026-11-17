@@ -24,33 +24,9 @@ local edit = require("hyprslots.edit")
 local serialize = require("hyprslots.serialize")
 local slot_key = require("hyprslots.slot_key")
 local tree = require("hyprslots.tree")
+local util = require("hyprslots.util")
 
 local M = {}
-
-local function copy(value)
-  if type(value) ~= "table" then
-    return value
-  end
-  local out = {}
-  for key, inner in pairs(value) do
-    out[key] = copy(inner)
-  end
-  return out
-end
-
-local function sorted(t)
-  local keys = {}
-  for key in pairs(t) do
-    keys[#keys + 1] = key
-  end
-  table.sort(keys, function(a, b)
-    if type(a) == type(b) then
-      return a < b
-    end
-    return type(a) == "number"
-  end)
-  return keys
-end
 
 -- Whether data is in the per-workspace shape: `slots` keyed by workspace (a
 -- number), or per-workspace `descriptions`.
@@ -88,7 +64,7 @@ end
 -- Pinned screens are gone (a desk's `pinned`, and the arrangements' top-level
 -- `pinned` roles): the data without them (a copy), and whether it had any.
 function M.unpin(data)
-  local out = copy(data)
+  local out = util.deep_copy(data)
   if type(out) ~= "table" then
     return out, false
   end
@@ -141,14 +117,6 @@ function M.scroll_width(layouts, width)
     end
   end
   return changed
-end
-
-local function set_of(list)
-  local out = {}
-  for _, value in ipairs(list) do
-    out[value] = true
-  end
-  return out
 end
 
 -- One tree set (screen -> text) holding every global slot (`names`,
@@ -231,7 +199,7 @@ local function first_screen(data, name, screens, monitors)
   local usable = desk.usable(monitors)
   local users = {}
   if type(data.desks) == "table" then
-    for _, desk_name in ipairs(sorted(data.desks)) do
+    for _, desk_name in ipairs(util.sorted_keys(data.desks)) do
       local entry = data.desks[desk_name]
       if type(entry) == "table" and entry.layout == name and type(entry.monitors) == "table"
         and type(entry.monitors[1]) == "string" then
@@ -324,7 +292,7 @@ end
 -- (slot_key.fill: in slot name order, so left, main and right are l, m and
 -- r). Returns the data (a copy) and whether it changed.
 function M.normalize(data, monitors)
-  local out = copy(data)
+  local out = util.deep_copy(data)
   local keyed = type(out) == "table" and slot_key.fill(out.slots)
   if type(out) ~= "table" or type(out.slots) ~= "table" or type(out.layouts) ~= "table" then
     return out, keyed or false
@@ -336,9 +304,9 @@ function M.normalize(data, monitors)
     end
   end
   table.sort(names)
-  local global = set_of(names)
+  local global = util.set_of(names)
   local changed = keyed
-  for _, name in ipairs(sorted(out.layouts)) do
+  for _, name in ipairs(util.sorted_keys(out.layouts)) do
     local layout = out.layouts[name]
     if type(layout) == "table" then
       local elsewhere = placed_in(layout, global)
@@ -353,7 +321,7 @@ function M.normalize(data, monitors)
         changed = true
       end
       if type(layout.workspaces) == "table" then
-        for _, n in ipairs(sorted(layout.workspaces)) do
+        for _, n in ipairs(util.sorted_keys(layout.workspaces)) do
           if type(layout.workspaces[n]) == "table" and fill(layout.workspaces[n], names, global, elsewhere, needed_by(layout, n, out.specs)) then
             changed = true
           end
@@ -367,25 +335,25 @@ end
 -- The per-workspace slots of before read as global slots (a copy), and
 -- whether it had to change.
 function M.slots(data)
-  local out = copy(data)
+  local out = util.deep_copy(data)
   if not M.legacy(data) then
     return out, false
   end
 
   local slots, specs = {}, type(out.specs) == "table" and out.specs or {}
   local per_workspace = type(data.slots) == "table" and data.slots or {}
-  for _, key in ipairs(sorted(per_workspace)) do
+  for _, key in ipairs(util.sorted_keys(per_workspace)) do
     local entries = per_workspace[key]
     if type(key) ~= "number" then
-      slots[key] = copy(entries) -- a global slot given beside workspaces
+      slots[key] = util.deep_copy(entries) -- a global slot given beside workspaces
     elseif type(entries) ~= "table" then
       if specs[key] == nil then
-        specs[key] = copy(entries)
+        specs[key] = util.deep_copy(entries)
       end
     else
       local own = type(specs[key]) == "table" and specs[key] or {}
       specs[key] = own
-      for _, name in ipairs(sorted(entries)) do
+      for _, name in ipairs(util.sorted_keys(entries)) do
         if own[name] == nil then
           own[name] = entries[name]
         end
@@ -398,10 +366,10 @@ function M.slots(data)
 
   local texts, seen = {}, {}
   local descriptions = type(data.descriptions) == "table" and data.descriptions or {}
-  for _, workspace in ipairs(sorted(descriptions)) do
+  for _, workspace in ipairs(util.sorted_keys(descriptions)) do
     local entries = descriptions[workspace]
     if type(entries) == "table" then
-      for _, name in ipairs(sorted(entries)) do
+      for _, name in ipairs(util.sorted_keys(entries)) do
         local text = entries[name]
         if type(text) == "string" and text ~= "" and type(slots[name]) == "table" then
           seen[name] = seen[name] or {}
@@ -491,7 +459,7 @@ end
 -- left as it is (an `arrangements` beside them is config.validate's to
 -- report).
 function M.desks(data, monitors)
-  local out = copy(data)
+  local out = util.deep_copy(data)
   if type(out) ~= "table" or out.arrangements == nil or out.desks ~= nil or out.layouts ~= nil then
     return out, false
   end
@@ -500,14 +468,14 @@ function M.desks(data, monitors)
   end
   local arrangements = out.arrangements
   local desks, layouts, by_text = {}, {}, {}
-  for _, name in ipairs(sorted(arrangements)) do
+  for _, name in ipairs(util.sorted_keys(arrangements)) do
     local entry = arrangements[name]
     if type(entry) ~= "table" then
       desks[name] = entry -- config.validate says what is wrong with it
     else
       local screens = type(entry.screens) == "table" and entry.screens or {}
       local roles = {}
-      for _, role in ipairs(sorted(screens)) do
+      for _, role in ipairs(util.sorted_keys(screens)) do
         roles[#roles + 1] = role
       end
       local found = monitors and desk_match(roles, screens, monitors)

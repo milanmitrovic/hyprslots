@@ -14,6 +14,8 @@
 -- measured 1:1.37 as a decimal; here `weights` looks for the smallest integer
 -- ratio close to what was measured (see below). Pure: no `hl`, no I/O.
 
+local util = require("hyprslots.util")
+
 local M = {}
 
 -- Windows are separated by gaps; intervals closer than this along an axis
@@ -33,17 +35,10 @@ M.FINE_TOLERANCE = 0.02
 -- rounded to it, then reduced.
 M.FALLBACK_SCALE = 100
 
-local function gcd(a, b)
-  while b ~= 0 do
-    a, b = b, a % b
-  end
-  return a
-end
-
 local function reduce(list)
   local common = 0
   for _, value in ipairs(list) do
-    common = gcd(common, value)
+    common = util.gcd(common, value)
   end
   if common > 1 then
     for i = 1, #list do
@@ -53,15 +48,11 @@ local function reduce(list)
   return list
 end
 
-local function round(n)
-  return math.floor(n + 0.5)
-end
-
 local function snapped(extents, smallest, multiplier, tolerance)
   local out = {}
   for i, extent in ipairs(extents) do
     local w = extent / smallest * multiplier
-    local nearest = math.max(1, round(w))
+    local nearest = math.max(1, util.round(w))
     if math.abs(w - nearest) > tolerance * nearest then
       return nil
     end
@@ -89,7 +80,7 @@ function M.weights(extents)
   if not found then
     found = {}
     for i, extent in ipairs(extents) do
-      found[i] = math.max(1, round(extent / smallest * M.FALLBACK_SCALE))
+      found[i] = math.max(1, util.round(extent / smallest * M.FALLBACK_SCALE))
     end
   end
   return reduce(found)

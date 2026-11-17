@@ -23,6 +23,7 @@ local migrate = require("hyprslots.migrate")
 local slot_key = require("hyprslots.slot_key")
 local spec = require("hyprslots.spec")
 local tree = require("hyprslots.tree")
+local util = require("hyprslots.util")
 local workspaces = require("hyprslots.workspaces")
 
 local M = {}
@@ -45,14 +46,6 @@ local function copy(source, keys)
   local out = {}
   for _, key in ipairs(keys) do
     out[key] = source[key]
-  end
-  return out
-end
-
-local function shallow(source)
-  local out = {}
-  for key, value in pairs(source) do
-    out[key] = value
   end
   return out
 end
@@ -81,17 +74,6 @@ local function load_chunk(path, env)
   return result
 end
 
-local function deep_copy(value)
-  if type(value) ~= "table" then
-    return value
-  end
-  local out = {}
-  for key, inner in pairs(value) do
-    out[key] = deep_copy(inner)
-  end
-  return out
-end
-
 -- The environment config.lua runs in. `data` (name -> table) stands in for
 -- data files, so the engine can re-run config.lua over edited slots.lua data
 -- without writing it first. `loaded` (when given) records, per data file,
@@ -103,10 +85,10 @@ function M.sandbox(dir, data, loaded, monitors)
     "assert", "error", "ipairs", "next", "pairs", "pcall", "rawequal", "rawget", "rawlen", "rawset",
     "select", "setmetatable", "getmetatable", "tonumber", "tostring", "type", "xpcall", "_VERSION",
   })
-  env.string = shallow(string)
-  env.table = shallow(table)
-  env.math = shallow(math)
-  env.utf8 = shallow(utf8)
+  env.string = util.shallow(string)
+  env.table = util.shallow(table)
+  env.math = util.shallow(math)
+  env.utf8 = util.shallow(utf8)
   env.os = copy(os, { "getenv", "date", "time", "clock" })
   env.hostname = hostname
 
@@ -126,9 +108,9 @@ function M.sandbox(dir, data, loaded, monitors)
     end
     local migrated
     held, migrated = migrate.data(held, monitors)
-    local given = deep_copy(held)
+    local given = util.deep_copy(held)
     if loaded then
-      loaded[name] = { data = deep_copy(held), given = given, migrated = migrated }
+      loaded[name] = { data = util.deep_copy(held), given = given, migrated = migrated }
     end
     return given
   end
@@ -143,20 +125,6 @@ local function collector()
   return errors, function(path, message)
     errors[#errors + 1] = path .. ": " .. message
   end
-end
-
-local function sorted_keys(t)
-  local keys = {}
-  for key in pairs(t) do
-    keys[#keys + 1] = key
-  end
-  table.sort(keys, function(a, b)
-    if type(a) == type(b) then
-      return a < b
-    end
-    return type(a) < type(b)
-  end)
-  return keys
 end
 
 local function is_workspace(key, count)
@@ -190,7 +158,7 @@ local function validate_slots(raw, fail)
     return slots, names
   end
   local keyed = {}
-  for _, name in ipairs(sorted_keys(raw)) do
+  for _, name in ipairs(util.sorted_keys(raw)) do
     local path = key_path("slots", name)
     local entry = raw[name]
     if type(name) ~= "string" or not name:match(SLOT_NAME) then
@@ -238,7 +206,7 @@ local function validate_specs(raw, slots, fail, title_matching, count)
     fail("specs", "must be a table of workspace -> { slot = spec }")
     return specs
   end
-  for _, workspace in ipairs(sorted_keys(raw)) do
+  for _, workspace in ipairs(util.sorted_keys(raw)) do
     local path = key_path("specs", workspace)
     local entries = raw[workspace]
     if not is_workspace(workspace, count) then
@@ -247,7 +215,7 @@ local function validate_specs(raw, slots, fail, title_matching, count)
       fail(path, "must be a table of slot = spec")
     else
       specs[workspace] = {}
-      for _, name in ipairs(sorted_keys(entries)) do
+      for _, name in ipairs(util.sorted_keys(entries)) do
         local slot_path = key_path(path, name)
         if type(name) ~= "string" or not slots[name] then
           fail(slot_path, "no slot '" .. tostring(name) .. "' (define it under slots)")
@@ -275,7 +243,7 @@ local function validate_trees(path, raw, screens, slots, fail)
     return out
   end
   local placed = {}
-  for _, index in ipairs(sorted_keys(raw)) do
+  for _, index in ipairs(util.sorted_keys(raw)) do
     local branch_path = path .. "[" .. tostring(index) .. "]"
     if math.type(index) ~= "integer" or index < 1 or (screens and index > screens) then
       fail(branch_path, string.format("a screen must be an integer from 1 to %s", tostring(screens or "the layout's screens")))
@@ -332,7 +300,7 @@ local function validate_layout(name, raw, slots, fail, count)
   if raw.workspaces ~= nil and type(raw.workspaces) ~= "table" then
     fail(path .. ".workspaces", "must be a table of workspace -> { [screen] = tree }")
   else
-    for _, n in ipairs(sorted_keys(raw.workspaces or {})) do
+    for _, n in ipairs(util.sorted_keys(raw.workspaces or {})) do
       local ws_path = key_path(path .. ".workspaces", n)
       if not is_workspace(n, count) then
         fail(ws_path, workspace_range(count))
@@ -362,7 +330,7 @@ local function validate_geometry(path, raw, selectors, fail)
     listed[selector] = true
   end
   local out = {}
-  for _, selector in ipairs(sorted_keys(raw)) do
+  for _, selector in ipairs(util.sorted_keys(raw)) do
     local box_path = key_path(path, selector)
     local box = raw[selector]
     if type(selector) ~= "string" or not listed[selector] then
@@ -451,7 +419,7 @@ local function validate_title_matching(raw, fail)
     fail(path, "must be a table { extractors, strip_patterns, browser_apps }")
     return spec.title_matching(nil)
   end
-  for _, key in ipairs(sorted_keys(raw)) do
+  for _, key in ipairs(util.sorted_keys(raw)) do
     if key ~= "extractors" and key ~= "strip_patterns" and key ~= "browser_apps" then
       fail(path, "unknown key '" .. tostring(key) .. "'")
     end
@@ -461,7 +429,7 @@ local function validate_title_matching(raw, fail)
     if map ~= nil and type(map) ~= "table" then
       fail(path .. "." .. key, "must be a table of class -> string")
     elseif map then
-      for _, class in ipairs(sorted_keys(map)) do
+      for _, class in ipairs(util.sorted_keys(map)) do
         local value = map[class]
         local entry = key_path(path .. "." .. key, class)
         if type(class) ~= "string" or type(value) ~= "string" or value == "" then
@@ -536,7 +504,7 @@ local function validate_launch(raw, fail, count)
     fail("launch", "must be a table of workspace -> \"never\", \"on_demand\" or \"at_login\"")
     return out
   end
-  for _, key in ipairs(sorted_keys(raw)) do
+  for _, key in ipairs(util.sorted_keys(raw)) do
     local path = key_path("launch", key)
     if not is_workspace(key, count) then
       fail(path, "a workspace must be an integer from 1 to " .. count .. " (workspaces = " .. count .. ")")
@@ -560,7 +528,7 @@ local function validate_launch_commands(raw, fail, title_matching)
     fail("launch_commands", "must be a table of spec -> command")
     return out
   end
-  for _, key in ipairs(sorted_keys(raw)) do
+  for _, key in ipairs(util.sorted_keys(raw)) do
     local path = key_path("launch_commands", key)
     local parsed, err = type(key) == "string" and spec.parse(key, title_matching) or nil, nil
     if type(key) ~= "string" then
@@ -590,7 +558,7 @@ local function validate_desktop_ids(raw, fail)
     fail("desktop_ids", "must be a table of app class -> desktop id")
     return out
   end
-  for _, key in ipairs(sorted_keys(raw)) do
+  for _, key in ipairs(util.sorted_keys(raw)) do
     local id = raw[key]
     if type(key) ~= "string" or key == "" then
       fail(key_path("desktop_ids", key), "must be keyed by an app's class")
@@ -616,7 +584,7 @@ local function validate_monitor_names(raw, fail)
     fail("monitor_names", "must be a table of monitor (description, serial or connector) -> name")
     return out
   end
-  for _, key in ipairs(sorted_keys(raw)) do
+  for _, key in ipairs(util.sorted_keys(raw)) do
     local path = "monitor_names[" .. tostring(key) .. "]"
     local name = raw[key]
     if type(key) ~= "string" or key == "" then
@@ -660,7 +628,7 @@ function M.validate(raw, monitors)
 
   local errors, fail = collector()
 
-  for _, key in ipairs(sorted_keys(raw)) do
+  for _, key in ipairs(util.sorted_keys(raw)) do
     if key == "arrangements" then
       fail("arrangements", "arrangements are desks and layouts now; give either, not both")
     elseif not KNOWN[key] then
@@ -693,7 +661,7 @@ function M.validate(raw, monitors)
     if entries ~= nil and type(entries) ~= "table" then
       fail(section, "must be a table of name -> { ... }")
     else
-      for _, name in ipairs(sorted_keys(entries or {})) do
+      for _, name in ipairs(util.sorted_keys(entries or {})) do
         if check_entry_name(key_path(section, name), name, section == "desks" and "desk" or "layout", fail) then
           local entry
           if section == "layouts" then

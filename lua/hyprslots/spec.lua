@@ -22,6 +22,8 @@
 -- Ported from aerolayout (models.py WindowSpec, windows.py Window.matches).
 -- Pure: no `hl`, no I/O.
 
+local util = require("hyprslots.util")
+
 local M = {}
 
 -- Terminals that put a zellij/tmux session name first: "session | info".
@@ -74,10 +76,6 @@ end
 
 local DEFAULT_TM = M.title_matching(nil)
 
-local function trim(text)
-  return text:match("^%s*(.-)%s*$")
-end
-
 local function invalid(text, why)
   return nil, string.format("spec '%s': %s", text, why)
 end
@@ -90,7 +88,7 @@ function M.parse(text, title_matching)
   if type(text) ~= "string" then
     return nil, "a spec must be a string, got " .. type(text)
   end
-  local trimmed = trim(text)
+  local trimmed = util.trim(text)
   if trimmed == "" then
     return nil, "a spec must not be empty"
   end
@@ -102,7 +100,7 @@ function M.parse(text, title_matching)
     if not tag then
       return invalid(trimmed, "a tag needs a closing ']'")
     end
-    if trim(tag) == "" then
+    if util.trim(tag) == "" then
       return invalid(trimmed, "the tag is empty")
     end
     out.kind, out.tag = "tag", tag
@@ -110,10 +108,10 @@ function M.parse(text, title_matching)
       return out
     end
     local profile = rest:match("^/(.*)$")
-    if not profile or trim(profile) == "" then
+    if not profile or util.trim(profile) == "" then
       return invalid(trimmed, "expected [Tag] or [Tag]/Profile")
     end
-    out.profile = trim(profile)
+    out.profile = util.trim(profile)
     return out
   end
 
@@ -122,7 +120,7 @@ function M.parse(text, title_matching)
     out.kind, out.class = "class", trimmed
     return out
   end
-  class, pattern = trim(class), trim(pattern)
+  class, pattern = util.trim(class), util.trim(pattern)
   if class == "" then
     return invalid(trimmed, "the class before '/' is empty")
   end
@@ -152,7 +150,7 @@ function M.identifier(window, title_matching)
   if separator then
     local at = title:find(separator, 1, true)
     if at then
-      identifier = trim(title:sub(1, at - 1))
+      identifier = util.trim(title:sub(1, at - 1))
     end
   end
   local pattern = tm.strip_patterns[class]
@@ -160,7 +158,7 @@ function M.identifier(window, title_matching)
     -- A malformed pattern costs that one rule, not every match.
     local ok, stripped = pcall(string.gsub, identifier, pattern, "")
     if ok then
-      identifier = trim(stripped)
+      identifier = util.trim(stripped)
     end
   end
   return identifier
@@ -233,7 +231,7 @@ function M.from_window(window, title_matching)
   local tm = title_matching or DEFAULT_TM
   if tm.browser_apps[class] and type(title) == "string" then
     local tag = title:match("%[([^%]]-)%]")
-    if tag and trim(tag) ~= "" then
+    if tag and util.trim(tag) ~= "" then
       local profile = title:match("%(([^)]+)%)%s*$")
       if profile then
         return "[" .. tag .. "]/" .. profile

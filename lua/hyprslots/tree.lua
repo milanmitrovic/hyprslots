@@ -27,6 +27,8 @@
 -- `nudge` (keyboard resize) moves one edge and keeps the weights exact
 -- integers. Pure: no `hl`, no I/O.
 
+local util = require("hyprslots.util")
+
 local M = {}
 
 -- The narrowest column a scroll branch may ask for (a fraction of the screen).
@@ -284,14 +286,6 @@ function M.columns(node)
   return out
 end
 
-local function shallow(node)
-  local out = {}
-  for key, value in pairs(node) do
-    out[key] = value
-  end
-  return out
-end
-
 -- The tree with `slots` (names, in order) added: as new children of a tiled
 -- tree's root split (a bare leaf becoming h[leaf, slot, ...]), or as columns
 -- at the end of a scroll branch, before its `*` when that is the last
@@ -303,13 +297,13 @@ function M.append(node, slots)
   end
   local out
   if node.children then
-    out = shallow(node)
+    out = util.shallow(node)
     out.children = {}
     for i, child in ipairs(node.children) do
       out.children[i] = child
     end
   else
-    local leaf = shallow(node)
+    local leaf = util.shallow(node)
     leaf.weight = 1
     out = { split = "h", weight = node.weight or 1, children = { leaf } }
   end
@@ -416,10 +410,6 @@ local function divide(node, x, y, w, h, out)
   end
 end
 
-local function round(n)
-  return math.floor(n + 0.5)
-end
-
 -- Slot -> { x, y, w, h } in whole pixels for a tree laid over `area`. With
 -- `present` (a set of slot names), only those slots are laid out and the rest
 -- of the tree closes up around them.
@@ -427,8 +417,8 @@ function M.boxes(node, area, present)
   local out = {}
   local kept = prune(node, present)
   if kept then
-    local x, y = round(area.x), round(area.y)
-    divide(kept, x, y, round(area.x + area.w) - x, round(area.y + area.h) - y, out)
+    local x, y = util.round(area.x), util.round(area.y)
+    divide(kept, x, y, util.round(area.x + area.w) - x, util.round(area.y + area.h) - y, out)
   end
   return out
 end
@@ -464,21 +454,6 @@ local function index_of(list, value)
       return i
     end
   end
-end
-
-local function gcd(a, b)
-  while b ~= 0 do
-    a, b = b, a % b
-  end
-  return a
-end
-
-local function copy(node)
-  local out = {}
-  for key, value in pairs(node) do
-    out[key] = value
-  end
-  return out
 end
 
 local SIDE = { l = "left of", r = "right of", u = "above", d = "below" }
@@ -540,8 +515,8 @@ local LIMIT = 1 << 40 -- weights are never scaled past this
 -- The extent (w for h, h for v) of path[depth] when the root is laid over
 -- `area`, the way `boxes` divides it (ignoring absent slots).
 local function extent_of(path, depth, area)
-  local x, y = round(area.x), round(area.y)
-  local w, h = round(area.x + area.w) - x, round(area.y + area.h) - y
+  local x, y = util.round(area.x), util.round(area.y)
+  local w, h = util.round(area.x + area.w) - x, util.round(area.y + area.h) - y
   for d = 1, depth - 1 do
     local split, total, before, size = path[d], 0, 0, nil
     for _, child in ipairs(split.children) do
@@ -574,7 +549,7 @@ local function scaled(split, delta, extent)
   for _, child in ipairs(split.children) do
     total = total + child.weight
   end
-  local scale = extent and extent // gcd(extent, total) or RESOLUTION
+  local scale = extent and extent // util.gcd(extent, total) or RESOLUTION
   if total * scale > LIMIT then
     scale = 1
   end
@@ -653,13 +628,13 @@ function M.nudge(root, slot, dir, delta, opts)
 
   local common = 0
   for _, weight in ipairs(weights) do
-    common = gcd(weight, common)
+    common = util.gcd(weight, common)
   end
 
-  local node = copy(split)
+  local node = util.shallow(split)
   node.children = {}
   for k, child in ipairs(split.children) do
-    node.children[k] = copy(child)
+    node.children[k] = util.shallow(child)
     node.children[k].weight = weights[k] // common
   end
 
@@ -667,7 +642,7 @@ function M.nudge(root, slot, dir, delta, opts)
   for d = depth - 1, 1, -1 do
     local parent = path[d].source
     if parent then
-      local rebuilt = copy(parent)
+      local rebuilt = util.shallow(parent)
       rebuilt.children = {}
       for k, child in ipairs(parent.children) do
         rebuilt.children[k] = child == path[d + 1].source and node or child

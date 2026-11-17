@@ -21,6 +21,7 @@ local config = require("hyprslots.config")
 local desk = require("hyprslots.desk")
 local desktop = require("hyprslots.desktop")
 local launch = require("hyprslots.launch")
+local util = require("hyprslots.util")
 local workspaces = require("hyprslots.workspaces")
 local workspace_count = workspaces.count -- snapshot shadows `workspaces`
 local edit = require("hyprslots.edit")
@@ -51,28 +52,6 @@ end
 
 local function array(t)
   return setmetatable(t or {}, ARRAY)
-end
-
-local function shallow(t)
-  local out = {}
-  for key, value in pairs(t or {}) do
-    out[key] = value
-  end
-  return out
-end
-
-local function sorted_keys(t)
-  local keys = {}
-  for key in pairs(t or {}) do
-    keys[#keys + 1] = key
-  end
-  table.sort(keys, function(a, b)
-    if type(a) == type(b) then
-      return a < b
-    end
-    return type(a) == "number"
-  end)
-  return keys
 end
 
 -- The tree in force for a layout's workspace on a screen: a keyboard
@@ -112,7 +91,7 @@ end
 -- workspace's trees (or the default ones) of a layout.
 local function trees_info(engine, name, n, trees)
   local out = object()
-  for _, screen in ipairs(sorted_keys(trees or {})) do
+  for _, screen in ipairs(util.sorted_keys(trees or {})) do
     local configured = trees[screen]
     local effective = n ~= "default" and M.effective_branch(engine, name, n, screen) or configured
     out[tostring(screen)] = branch_info(effective, not rawequal(effective, configured))
@@ -149,7 +128,7 @@ local function layouts_info(engine, read_only)
       screens = layout.screens,
       default = trees_info(engine, name, "default", layout.default),
       workspaces = workspaces,
-      own = array(sorted_keys(layout.workspaces)),
+      own = array(util.sorted_keys(layout.workspaces)),
       used_by = users[name] or array(),
       active = engine.active ~= nil and engine.active.layout == name,
       read_only = not edit.editable(read_only, "layouts", name),
@@ -192,12 +171,12 @@ local function desks_info(engine, read_only, monitors)
     end
     out[name] = object({
       geometry = geometry,
-      monitors = array(shallow(entry.monitors)),
+      monitors = array(util.shallow(entry.monitors)),
       connected = connected,
       displays = displays,
       layout = entry.layout,
       active = active,
-      screens = active and array(shallow(engine.active.monitors)) or nil,
+      screens = active and array(util.shallow(engine.active.monitors)) or nil,
       auto = engine.auto_desks[name] or nil,
       read_only = not edit.editable(read_only, "desks", name),
     })
@@ -219,7 +198,7 @@ end
 local function specs_info(engine)
   local out = object()
   local specs = engine.cfg and engine.cfg.specs or {}
-  for _, workspace in ipairs(sorted_keys(specs)) do
+  for _, workspace in ipairs(util.sorted_keys(specs)) do
     local entries = object()
     for name, parsed in pairs(specs[workspace]) do
       entries[name] = parsed.text
@@ -266,7 +245,7 @@ local function used_workspaces(engine)
       end
     end
   end
-  return array(sorted_keys(seen))
+  return array(util.sorted_keys(seen))
 end
 
 -- The scroll branches of the active desk's workspaces and their
@@ -424,7 +403,7 @@ function M.snapshot(engine)
   for address, match in pairs(engine.overflow or {}) do
     overflow[address] = object({ workspace = match.workspace, slot = match.slot })
   end
-  local unassigned = array(sorted_keys(engine.unassigned))
+  local unassigned = array(util.sorted_keys(engine.unassigned))
   local read_only = read_only_paths(engine.cfg)
   local dir = engine.config_dir or config.dir()
   local ok, monitors = pcall(adapter.monitors)
@@ -449,7 +428,7 @@ function M.snapshot(engine)
     slots = slots_info(engine),
     specs = specs_info(engine),
     monitors = monitors_info(monitors, labels_of(engine)),
-    monitor_names = object(shallow(labels_of(engine))),
+    monitor_names = object(util.shallow(labels_of(engine))),
     used_workspaces = used_workspaces(engine),
     windows = windows_info(engine),
     dirty = engine.dirty == true or next(engine.resized or {}) ~= nil,
@@ -875,8 +854,8 @@ end
 -- assignments) and is undone when the edit fails. Returns cfg, or nil and
 -- why.
 local function apply_edit(engine, data, check, carry)
-  local saved = { resized = shallow(engine.resized), assignments = shallow(engine.assignments),
-    overflow = shallow(engine.overflow) }
+  local saved = { resized = util.shallow(engine.resized), assignments = util.shallow(engine.assignments),
+    overflow = util.shallow(engine.overflow) }
   if carry then
     carry(engine)
   end
@@ -960,7 +939,7 @@ local function rename_assignments(engine, old, new)
     local renamed = {}
     for address, a in pairs(engine[map] or {}) do
       if a.slot == old then
-        local copy = shallow(a)
+        local copy = util.shallow(a)
         copy.slot = new
         renamed[address] = copy
       else
@@ -1327,7 +1306,7 @@ end
 -- order. Two captures with the same token make the same edit.
 local function capture_fingerprint(n, scope, layout, trees, new_slots, windows)
   local parts = { "workspace=" .. n, "scope=" .. (scope or "all"), "layout=" .. layout }
-  for _, screen in ipairs(sorted_keys(trees)) do
+  for _, screen in ipairs(util.sorted_keys(trees)) do
     local t = trees[screen]
     parts[#parts + 1] = "screen " .. screen .. "=" .. (t and (t.tree .. " " .. t.ratio) or "none")
   end
@@ -1419,14 +1398,14 @@ function handlers.capture(engine, args)
       return fail(specs_err)
     end
   end
-  for _, slot in ipairs(sorted_keys(plan.specs)) do
+  for _, slot in ipairs(util.sorted_keys(plan.specs)) do
     data, err = edit.set_spec(data, n, slot, plan.specs[slot])
     if not data then
       return fail(err)
     end
   end
   local spec_texts = {}
-  for _, slot in ipairs(sorted_keys(plan.specs)) do
+  for _, slot in ipairs(util.sorted_keys(plan.specs)) do
     spec_texts[#spec_texts + 1] = plan.specs[slot]
   end
   data = with_desktop_ids(engine, data, spec_texts)
@@ -1762,7 +1741,7 @@ function handlers.add_desk(engine, args)
   if not cfg then
     return fail(apply_err)
   end
-  return { desk = args.name, monitors = array(shallow(cfg.desks[args.name].monitors)), layout = args.layout,
+  return { desk = args.name, monitors = array(util.shallow(cfg.desks[args.name].monitors)), layout = args.layout,
     active = active_desk(engine), seq = engine.seq }
 end
 
@@ -2207,7 +2186,7 @@ function handlers.drop_override(engine, args)
   if not data then
     return fail(drop_err)
   end
-  local saved = shallow(engine.resized)
+  local saved = util.shallow(engine.resized)
   for s = 1, engine.cfg.layouts[name].screens do
     if screen == nil or s == screen then
       resize.clear(engine, name, n, s)

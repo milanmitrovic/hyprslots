@@ -19,6 +19,8 @@
 -- format(node) renders every split below the root, so whatever it shows can
 -- be handed back to apply() and changes nothing. Pure: no `hl`, no I/O.
 
+local util = require("hyprslots.util")
+
 local M = {}
 
 M.STAR = "*"
@@ -148,13 +150,6 @@ function M.parse(text)
   end)
 end
 
-local function gcd(a, b)
-  while b ~= 0 do
-    a, b = b, a % b
-  end
-  return a
-end
-
 -- The integer ratio a list of positive numbers states: decimals become exact
 -- fractions (denominators up to 1000), then the common factor is divided out.
 -- 1.5:1 -> 3:2, 0.25:0.25:0.5 -> 1:1:2, 2:4:2 -> 1:2:1.
@@ -173,12 +168,12 @@ function M.integers(values)
     end
     num = math.floor(num + 0.5)
     fractions[i] = { num = num, den = den }
-    denominator = denominator * den // gcd(denominator, den)
+    denominator = denominator * den // util.gcd(denominator, den)
   end
   local out, common = {}, 0
   for i, f in ipairs(fractions) do
     out[i] = f.num * (denominator // f.den)
-    common = gcd(common, out[i])
+    common = util.gcd(common, out[i])
   end
   if common > 1 then
     for i = 1, #out do
@@ -238,10 +233,7 @@ end
 
 -- A copy of node with the ratio written in (validated beforehand).
 local function write(node, list)
-  local copy = {}
-  for key, value in pairs(node) do
-    copy[key] = value
-  end
+  local copy = util.shallow(node)
   if is_leaf(node) then
     return copy
   end

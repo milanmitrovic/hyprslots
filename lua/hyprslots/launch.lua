@@ -6,6 +6,7 @@
 -- hl_adapter.exec starts it). No `hl`, no I/O.
 
 local spec = require("hyprslots.spec")
+local util = require("hyprslots.util")
 
 local M = {}
 
@@ -89,15 +90,6 @@ function M.command(entry, commands, desktop)
   return { reason = M.NO_COMMAND }
 end
 
-local function sorted_keys(t)
-  local keys = {}
-  for key in pairs(t or {}) do
-    keys[#keys + 1] = key
-  end
-  table.sort(keys)
-  return keys
-end
-
 -- Which of workspace `input.workspace`'s empty slots to launch an app for:
 --
 --   input.specs        slot -> parsed spec (the workspace's)
@@ -129,7 +121,7 @@ function M.missing(input)
     end
   end
   local out = { launch = {}, open = {}, pending = {}, cannot = {} }
-  for _, slot in ipairs(sorted_keys(input.specs)) do
+  for _, slot in ipairs(util.sorted_keys(input.specs)) do
     local entry = input.specs[slot]
     if not filled[slot] then
       local found
