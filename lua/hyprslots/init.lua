@@ -324,27 +324,34 @@ end
 
 -- The slot an app was launched for (api launch_missing, at login) that this
 -- window, opening, is: one still on its way, empty, whose spec matches it.
--- The claim is used up. Nil for none.
+-- The claim is used up. Nil for none. The first by workspace, as a number
+-- (5 before 10), then by slot name.
 function Engine:launched_for(window)
   if not self.launching or next(self.launching) == nil then
     return nil
   end
-  local keys = {}
+  local waiting = {}
   for key in pairs(self.launching) do
-    keys[#keys + 1] = key
+    local n, slot = key:match("^(%d+)/(.+)$")
+    if n then
+      waiting[#waiting + 1] = { key = key, workspace = tonumber(n), slot = slot }
+    end
   end
-  table.sort(keys)
+  table.sort(waiting, function(a, b)
+    if a.workspace ~= b.workspace then
+      return a.workspace < b.workspace
+    end
+    return a.slot < b.slot
+  end)
   local taken = {}
   for _, a in pairs(self.assignments) do
     taken[a.workspace .. "/" .. a.slot] = true
   end
-  for _, key in ipairs(keys) do
-    local n, slot = key:match("^(%d+)/(.+)$")
-    n = tonumber(n)
-    local entry = n and self.cfg.specs[n] and self.cfg.specs[n][slot]
-    if entry and not taken[key] and spec.match(entry, window) then
-      self.launching[key] = nil
-      return { workspace = n, slot = slot }
+  for _, w in ipairs(waiting) do
+    local entry = self.cfg.specs[w.workspace] and self.cfg.specs[w.workspace][w.slot]
+    if entry and not taken[w.key] and spec.match(entry, window) then
+      self.launching[w.key] = nil
+      return { workspace = w.workspace, slot = w.slot }
     end
   end
   return nil

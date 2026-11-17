@@ -275,6 +275,31 @@ return { slots = data.slots, specs = data.specs, desks = data.desks, layouts = d
       local held = slot_of(other)
       assert.same({ 5, "main" }, { held.workspace, held.slot })
     end)
+
+    it("is the first of those waiting for its app by workspace, as a number, then by slot", function()
+      setup([[
+return {
+  slots = { main = { key = "m" }, aside = { key = "a" } },
+  specs = { [5] = { main = "foot" }, [10] = { main = "foot", aside = "foot" } },
+  desks = { solo = { monitors = { "HEADLESS-2" }, layout = "solo" } },
+  layouts = { solo = { screens = 1, default = { [1] = "h[main, aside]" } } },
+  launch = { [5] = "on_demand", [10] = "on_demand" },
+}
+]], (CONFIG:gsub("layouts = data.layouts", "layouts = data.layouts, workspaces = 10", 1)))
+      -- Launched by hand, 10 first: each waits until its window arrives.
+      assert.is_true(call("launch_missing", { workspace = 10 }).ok)
+      assert.is_true(call("launch_missing", { workspace = 5 }).ok)
+      assert.equal(3, #launched())
+      local windows = {}
+      for i = 1, 3 do
+        windows[i] = hl_stub.window(10 + i, "foot", { workspace = 1 })
+        open(windows[i])
+      end
+      -- 5 before 10, though "10/main" sorts before "5/main" as text.
+      assert.same({ workspace = 5, slot = "main" }, slot_of(windows[1]))
+      assert.same({ workspace = 10, slot = "aside" }, slot_of(windows[2]))
+      assert.same({ workspace = 10, slot = "main" }, slot_of(windows[3]))
+    end)
   end)
 
   describe("the desktop entry", function()
