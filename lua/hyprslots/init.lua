@@ -10,6 +10,7 @@
 
 local adapter = require("hyprslots.hl_adapter")
 local api = require("hyprslots.api")
+local edits = require("hyprslots.edits")
 local assign = require("hyprslots.assign")
 local blocks = require("hyprslots.blocks")
 local config = require("hyprslots.config")
@@ -243,7 +244,7 @@ function Engine:new_desk()
   -- Edits not yet saved (or a slots.lua of before, or a keyboard resize):
   -- the new desk then waits for Ctrl+S with them, never saved over them.
   local pending = self.dirty or next(self.resized or {}) ~= nil
-  local made = self.data and api.new_desk(self, name, selectors, layout, #monitors, trees)
+  local made = self.data and edits.new_desk(self, name, selectors, layout, #monitors, trees)
   if not made then
     -- config.lua builds the desks (or loads no slots.lua): this run only.
     if trees then

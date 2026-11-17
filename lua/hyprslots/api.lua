@@ -36,9 +36,25 @@ local serialize = require("hyprslots.serialize")
 local spec = require("hyprslots.spec")
 local tree = require("hyprslots.tree")
 
-local DATA_FILE = "slots.lua"
--- Messages reach the editor, so they name no files.
-local NO_DATA = "your config loads no editor data, so there is nothing the editor may change"
+local edits = require("hyprslots.edits")
+local DATA_FILE = edits.DATA_FILE
+local NO_DATA = edits.NO_DATA
+local read_only_paths = edits.read_only_paths
+local configured_tree = edits.configured_tree
+local apply_data = edits.apply_data
+local load_checked = edits.load_checked
+local apply_edit = edits.apply
+local not_taken = edits.not_taken
+local remember = edits.remember
+local editable_slots = edits.editable_slots
+local editable_specs = edits.editable_specs
+local section_editable = edits.section_editable
+local carry_overrides = edits.carry_overrides
+local on_every_tree = edits.on_every_tree
+local rename_assignments = edits.rename_assignments
+local workspace_spec = edits.workspace_spec
+local took_desk = edits.took_desk
+local took_layout = edits.took_layout
 local WORKSPACES = workspaces.DEFAULT -- config `workspaces` when unset
 
 local M = {}
@@ -60,14 +76,6 @@ end
 -- compares against it and save writes it.
 function M.effective_branch(engine, layout, workspace, screen)
   return resize.effective_branch(engine, layout, workspace, screen)
-end
-
-local function read_only_paths(cfg)
-  if not cfg or not cfg.raw then
-    return {}
-  end
-  local file = cfg.data_files and cfg.data_files[DATA_FILE]
-  return edit.read_only(cfg.raw, file and file.given)
 end
 
 -- { tree, ratio, slots, resized? } for one parsed branch.
@@ -498,27 +506,6 @@ local function as_screen(value)
   return as_integer(value)
 end
 
--- The configured tree of a layout's workspace (or "default") on a screen.
-local function configured_tree(cfg, name, n, screen)
-  local layout = cfg.layouts[name]
-  if n == "default" then
-    return layout and layout.default[screen]
-  end
-  local trees = config.trees_for(layout, n)
-  return trees and trees[screen]
-end
-
--- Run config.lua over edited data; on success the engine runs it. Returns the
--- new config, or nil and why (the running config stays).
-local function apply_data(engine, data)
-  local cfg, err = config.load(engine.config_dir, { data = { [DATA_FILE] = data } })
-  if not cfg then
-    return nil, err
-  end
-  engine:apply_config(cfg, data, true)
-  return cfg
-end
-
 local function set_tree(engine, name, n, screen, text)
   if not engine.data then
     return nil, NO_DATA
@@ -841,126 +828,8 @@ function handlers.unassign(engine, args)
     slot = previous and previous.slot or nil, spec = cleared, seq = engine.seq }
 end
 
--- The slot list's, Assignment and Arrangements views' edits. Each builds new slots.lua data
--- (edit.lua), re-runs config.lua over it, checks the edit took effect (a
--- field config.lua builds in code, or does not take from slots.lua, would
--- not), and only then runs it like any edit: re-assign, re-route, window
--- rules, relayout, change event. Nothing is written until save.
-
-
-
--- Re-run config.lua over edited data, applying nothing. `check(cfg)`
--- returns why the edit did not take, or nil. Returns cfg, or nil and why.
-local function load_checked(engine, data, check)
-  local cfg, err = config.load(engine.config_dir, { data = { [DATA_FILE] = data } })
-  if cfg and check then
-    err = check(cfg)
-    if err then
-      return nil, err
-    end
-  end
-  return cfg, err
-end
-
--- Run edited data. `check(cfg)` returns why the edit did not take, or nil;
--- `carry(engine)` moves in-memory state along (keyboard-resized trees,
--- assignments) and is undone when the edit fails. Returns cfg, or nil and
--- why.
-local function apply_edit(engine, data, check, carry)
-  local saved = { resized = util.shallow(engine.resized), assignments = util.shallow(engine.assignments),
-    overflow = util.shallow(engine.overflow) }
-  if carry then
-    carry(engine)
-  end
-  local cfg, err = load_checked(engine, data, check)
-  if not cfg then
-    engine.resized, engine.assignments, engine.overflow = saved.resized, saved.assignments, saved.overflow
-    return nil, err
-  end
-  engine:apply_config(cfg, data, true)
-  return cfg
-end
-
-local function not_taken(what)
-  return "your config does not take " .. what .. " from the editor's data, so the edit would change nothing; "
-    .. "change it in your config"
-end
-
--- Remember an edit that renames or removes what slots.lua names (a slot, an
--- layout) until data is the file's again: reset reads
--- the saved trees through them. `op` is edit.lua's function and its
--- arguments after the data.
-local function remember(engine, op, ...)
-  engine.since_save = engine.since_save or {}
-  engine.since_save[#engine.since_save + 1] = { op = op, args = table.pack(...) }
-end
-
--- Whether the global slots are the editor's to change.
-local function editable_slots(engine)
-  if not engine.data then
-    return nil, NO_DATA
-  end
-  if not edit.editable(read_only_paths(engine.cfg), "slots") then
-    return nil, "the slots are set by code in your config; edit them there"
-  end
-  return true
-end
-
--- The workspace of a spec edit, if its specs are the editor's.
-local function editable_specs(engine, args)
-  if not engine.data then
-    return nil, NO_DATA
-  end
-  local workspace = as_integer(args.workspace)
-  if not edit.editable(read_only_paths(engine.cfg), "specs", workspace) then
-    return nil, "workspace " .. tostring(workspace) .. "'s specs are set by code in your config; edit them there"
-  end
-  return workspace
-end
-
--- Rewrite every keyboard-resized tree with keep(override) -> key, node (nil
--- drops it).
-local function carry_overrides(engine, keep)
-  local out = {}
-  for _, override in ipairs(resize.overrides(engine)) do
-    local key, node = keep(override)
-    if key then
-      out[key] = node
-    end
-  end
-  engine.resized = out
-end
-
--- Carry every keyboard-resized tree through fn(node) -> node or nil.
-local function on_every_tree(fn)
-  return function(engine)
-    carry_overrides(engine, function(o)
-      local node = fn(o.tree)
-      return node and o.key, node
-    end)
-  end
-end
-
-local function rename_assignments(engine, old, new)
-  for _, map in ipairs({ "assignments", "overflow" }) do
-    local renamed = {}
-    for address, a in pairs(engine[map] or {}) do
-      if a.slot == old then
-        local copy = util.shallow(a)
-        copy.slot = new
-        renamed[address] = copy
-      else
-        renamed[address] = a
-      end
-    end
-    engine[map] = renamed
-  end
-end
-
-local function workspace_spec(cfg, workspace, slot)
-  local entry = cfg.specs[workspace] and cfg.specs[workspace][slot]
-  return entry and entry.text
-end
+-- The slot list's, Assignment and Arrangements views' edits: each runs
+-- through edits.lua's pipeline (edits.apply).
 
 local function list(items, last)
   if #items <= 1 then
@@ -1130,7 +999,7 @@ end
 
 -- set_spec { workspace, slot, spec }: the app that fills a global slot on a workspace.
 function handlers.set_spec(engine, args)
-  local workspace, err = editable_specs(engine, args)
+  local workspace, err = editable_specs(engine, as_integer(args.workspace))
   if not workspace then
     return fail(err)
   end
@@ -1154,7 +1023,7 @@ end
 -- slot (the slot and the trees stay; its window leaves it unless put there
 -- by hand).
 function handlers.clear_spec(engine, args)
-  local workspace, err = editable_specs(engine, args)
+  local workspace, err = editable_specs(engine, as_integer(args.workspace))
   if not workspace then
     return fail(err)
   end
@@ -1205,7 +1074,7 @@ function handlers.take_spec(engine, args)
   if not window then
     return fail("no open window " .. tostring(args.address))
   end
-  local workspace, err = editable_specs(engine, args)
+  local workspace, err = editable_specs(engine, as_integer(args.workspace))
   if not workspace then
     return fail(err)
   end
@@ -1383,7 +1252,7 @@ local function capture_edit(engine, plan, name, n, scope)
     end
   end
   if next(plan.specs) ~= nil then
-    local ok, specs_err = editable_specs(engine, { workspace = n })
+    local ok, specs_err = editable_specs(engine, n)
     if not ok then
       return nil, specs_err
     end
@@ -1664,16 +1533,6 @@ end
 
 -- Desks and layouts (the Desk view) --------------------------------
 
-local function section_editable(engine, section, name, what)
-  if not engine.data then
-    return nil, NO_DATA
-  end
-  if not edit.editable(read_only_paths(engine.cfg), section, name) then
-    return nil, what .. " is set by code in your config; edit it there"
-  end
-  return true
-end
-
 -- The desk a call means: args.desk, else the active one; it must be the
 -- editor's to change.
 local function target_desk(engine, args)
@@ -1700,18 +1559,6 @@ end
 
 local function active_layout(engine)
   return engine.active and engine.active.layout or nil
-end
-
-local function took_desk(name, want)
-  return function(c)
-    local entry = c.desks[name]
-    if not entry then
-      return not_taken("desk '" .. name .. "'")
-    end
-    if want and not want(entry) then
-      return not_taken("desk '" .. name .. "'")
-    end
-  end
 end
 
 -- Whether `selector` names a monitor: one a desk lists, or a connected
@@ -1851,14 +1698,6 @@ function handlers.apply_layout(engine, args)
     return fail(apply_err)
   end
   return { desk = name, layout = args.layout, active = active_desk(engine), seq = engine.seq }
-end
-
-local function took_layout(name)
-  return function(c)
-    if not c.layouts[name] then
-      return not_taken("layout '" .. name .. "'")
-    end
-  end
 end
 
 -- The default trees of a new layout for `screens` screens: the active
@@ -2031,37 +1870,6 @@ function handlers.delete_layout(engine, args)
   end
   remember(engine, "delete_layout", name, args.remap)
   return { layout = name, remap = args.remap, desks = array(users), active = active_layout(engine), seq = engine.seq }
-end
-
--- A desk the engine makes for monitors no desk knows (init.lua's
--- Engine:new_desk): `name` for these selectors using `layout`, made too (for
--- `screens` screens, with these default trees) when `trees` is given. An
--- edit like any other, in memory until saved. Returns true, or nil and why
--- not (config.lua does not take desks or layouts from slots.lua).
-function M.new_desk(engine, name, selectors, layout, screens, trees)
-  if not engine.data then
-    return nil, NO_DATA
-  end
-  local read_only = read_only_paths(engine.cfg)
-  if not edit.editable(read_only, "desks", name) or (trees and not edit.editable(read_only, "layouts", layout)) then
-    return nil, "your config sets the desks or layouts by code"
-  end
-  local data, err = engine.data, nil
-  if trees then
-    data, err = edit.add_layout(data, layout, screens, trees)
-    if not data then
-      return nil, err
-    end
-  end
-  data, err = edit.add_desk(data, name, selectors, layout)
-  if not data then
-    return nil, err
-  end
-  local cfg, apply_err = apply_edit(engine, data, took_desk(name))
-  if not cfg then
-    return nil, apply_err
-  end
-  return true
 end
 
 -- arrange {}: run the scroll pass now (order every scroll workspace
