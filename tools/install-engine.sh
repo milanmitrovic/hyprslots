@@ -18,11 +18,9 @@
 
 set -euo pipefail
 
-ID=io.github.milanmitrovic.hyprslots
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-plugin=${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/plugins/$ID
-folder=${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/workspace-layouts
-loader=$folder/zz-hyprslots.lua
+# shellcheck source=common.sh
+. "$here/common.sh"
 
 reload=1 keys=keep menu=keep
 for arg in "$@"; do
@@ -115,15 +113,7 @@ if ! hyprctl version >/dev/null 2>&1; then
   exit 0
 fi
 
-hyprctl reload >/dev/null
-engine() { hyprctl repl 'if hyprslots then return "running" end return "absent " .. tostring(hyprslots_load_error)' 2>&1; }
-state=''
-for _ in $(seq 50); do
-  state=$(engine)
-  [[ $state == running ]] && break
-  sleep 0.1
-done
-if [[ $state == running ]]; then
+if state=$(reload_and_wait running 'if hyprslots then return "running" end return "absent " .. tostring(hyprslots_load_error)'); then
   echo "Reloaded Hyprland: the hyprslots engine is running."
   exit 0
 fi

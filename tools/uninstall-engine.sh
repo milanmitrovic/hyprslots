@@ -12,8 +12,9 @@
 
 set -euo pipefail
 
-folder=${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/workspace-layouts
-loader=$folder/zz-hyprslots.lua
+here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=common.sh
+. "$here/common.sh"
 
 reload=1
 case ${1:-} in
@@ -36,7 +37,7 @@ else
   echo "The hyprslots loader is not installed ($loader)."
 fi
 # Its Omarchy menu entries (and keys, which the loader bound) go with it.
-"$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/menu-entries.sh" remove
+"$here/menu-entries.sh" remove
 
 ((reload)) || exit 0
 if ! hyprctl version >/dev/null 2>&1; then
@@ -44,15 +45,7 @@ if ! hyprctl version >/dev/null 2>&1; then
   exit 0
 fi
 
-hyprctl reload >/dev/null
-engine() { hyprctl repl 'return hyprslots and "running" or "absent"' 2>&1; }
-state=''
-for _ in $(seq 50); do
-  state=$(engine)
-  [[ $state == absent ]] && break
-  sleep 0.1
-done
-if [[ $state == absent ]]; then
+if state=$(reload_and_wait absent 'return hyprslots and "running" or "absent"'); then
   echo "Reloaded Hyprland: the hyprslots engine is off."
   exit 0
 fi
