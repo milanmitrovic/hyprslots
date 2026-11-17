@@ -148,3 +148,22 @@ test("while the Layout tab explains slots, its help row offers capturing and mak
     [{ key: "Tab", label: "view" }, { key: "q", label: "close" }],
   ]);
 });
+
+test("while the first state read is in flight, a tab says it is reading hyprslots", () => {
+  assert.equal(G.reading({ state: null, error: "" }), "Reading hyprslots…");
+  assert.equal(G.reading({ state: null, error: "" }, {}), "Reading hyprslots…");
+  assert.equal(G.reading({ state: null, error: "" }, { capture: false, record: false }), "Reading hyprslots…");
+});
+
+test("a Capture or Record owed on opening is named, so its prompt does not come out of nowhere", () => {
+  assert.equal(G.reading({ state: null, error: "" }, { capture: true }), "Reading hyprslots… then capturing your windows");
+  assert.equal(G.reading({ state: null, error: "" }, { record: true }), "Reading hyprslots… then recording your windows");
+});
+
+test("nothing is said to be reading once a state is there, on an error, or with no engine", () => {
+  assert.equal(G.reading({ state: fresh(), error: "" }, { capture: true }), "");
+  assert.equal(G.reading({ state: null, error: "hyprslots is not running" }, { capture: true }), "");
+  assert.equal(G.reading({ state: fresh(), error: "timed out" }), "");
+  assert.equal(G.reading(null, { record: true }), "");
+  assert.equal(G.reading(undefined), "");
+});

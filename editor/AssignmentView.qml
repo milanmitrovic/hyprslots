@@ -592,7 +592,7 @@ Item {
           anchors.centerIn: parent
           width: parent.width
           visible: root.rows.length === 0 && !root.empty
-          text: root.state ? "No windows" : (root.engine && root.engine.error === "" ? "Reading hyprslots…" : "")
+          text: root.state ? "No windows" : Guide.reading(root.engine)
         }
 
         // No slots yet: nothing can be assigned until the Layout tab makes one.

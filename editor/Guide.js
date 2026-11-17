@@ -76,6 +76,20 @@ function layoutHint(state) {
   return "Add more slots (s, then a), or go to Assignment (Tab) to put windows into them."
 }
 
+// What a tab shows while the first state read is in flight (an engine,
+// none read, no error yet): "Reading hyprslots…", with what opening still
+// owes once it lands (`pending`: { capture, record }, OpenFlow.qml's), so a
+// capture or record prompt does not come out of nowhere. "" otherwise: a
+// state is there, or the engine's error (or its absence) says why not.
+// `engine` is anything with `state` and `error` (Engine.qml).
+function reading(engine, pending) {
+  if (!engine || engine.state || engine.error !== "") return ""
+  var p = pending || {}
+  if (p.capture) return "Reading hyprslots… then capturing your windows"
+  if (p.record) return "Reading hyprslots… then recording your windows"
+  return "Reading hyprslots…"
+}
+
 // The first slot's name prompt and the message once it is made.
 function firstSlotLabel() {
   return "Name your first slot (main, left, notes…) [Enter] next  [Esc] cancel: "

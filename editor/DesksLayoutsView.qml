@@ -496,8 +496,7 @@ Item {
         anchors.centerIn: parent
         width: parent.width
         visible: root.rows.length === 0
-        text: root.state ? "No desks or layouts yet — n makes a layout"
-          : (root.engine && root.engine.error === "" ? "Reading hyprslots…" : "")
+        text: root.state ? "No desks or layouts yet — n makes a layout" : Guide.reading(root.engine)
       }
     }
   }
