@@ -52,7 +52,7 @@ case ${1:-} in
         then "Nothing to launch" else empty end)' <<<"$reply" |
       paste -sd ';' | sed 's/;/; /g') (workspace $(jq -r .workspace <<<"$reply"))."
     ;;
-  -h | --help | '') sed -n '2,10s/^# \{0,1\}//p' "${BASH_SOURCE[0]}" ;;
+  -h | --help | '') sed -n '1d; /^#/!q; s/^# \{0,1\}//p' "${BASH_SOURCE[0]}" ;;
   *)
     echo "hyprslots: unknown command '$1' (see --help)" >&2
     exit 2
