@@ -156,6 +156,12 @@ Item {
   // next until a workspace fills a slot (Guide.layoutHint).
   readonly property var welcome: Guide.layoutWelcome(state)
   readonly property string nextHint: Guide.layoutHint(state)
+  // A Capture or Record the panel owes on opening (OpenFlow.qml's), started
+  // once the first state read lands: until then the picture says it is
+  // reading, and what comes after (Guide.reading).
+  property bool pendingCapture: false
+  property bool pendingRecord: false
+  readonly property string readingText: Guide.reading(engine, { capture: pendingCapture, record: pendingRecord })
 
   // The controls strip: its groups (the panel draws them as a toolbar,
   // what the picture or the slot list would refuse now dimmed) and the
@@ -1497,6 +1503,15 @@ Item {
         width: body.width - slotPanel.width - body.spacing
         height: body.height
 
+        // Nothing read yet (no panes to draw): reading, and what comes next.
+        Placeholder {
+          objectName: "layoutReading"
+          anchors.centerIn: parent
+          width: parent.width - Style.spacing.xxl * 2
+          visible: root.readingText !== ""
+          text: root.readingText
+        }
+
         Repeater {
           id: paneRepeater
           // by count: a state read makes a new pane list, and panes made
@@ -2285,7 +2300,7 @@ Item {
               anchors.centerIn: parent
               width: parent.width
               visible: root.slotRows.length === 0
-              text: root.state ? "No slots yet" : ""
+              text: root.state ? "No slots yet" : Guide.reading(root.engine)
             }
           }
         }

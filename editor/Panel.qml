@@ -878,6 +878,8 @@ Item {
               id: layoutView
               anchors.fill: parent
               visible: root.tab === 1 && !root.enableCard
+              pendingCapture: root.openFlow.pendingCapture
+              pendingRecord: root.openFlow.pendingRecord
               onPressKey: function(name) { root.press(name) }
               engine: root.engine
               foreground: root.foreground
