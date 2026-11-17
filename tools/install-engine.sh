@@ -62,14 +62,16 @@ elif [[ $keys == on ]]; then
     entries=()
     # name, modmask (Super 64 + Ctrl 4 [+ Shift 1]), key, Hyprland's spelling, what it does
     while IFS='|' read -r name mask key combo label; do
-      taken=$(jq -r --argjson m "$mask" --arg k "$key" \
-        'first(.[] | select(.modmask == $m and (.key | ascii_downcase) == $k
-          and ((.description // "") | startswith("Hyprslots:") | not)) | (.description // .arg // "")) // empty' \
+      # "free", or "taken " and what the other bind says it does (which may
+      # be nothing).
+      verdict=$(jq -r --argjson m "$mask" --arg k "$key" \
+        '[.[] | select(.modmask == $m and (.key | ascii_downcase) == $k
+          and ((.description // "") | startswith("Hyprslots:") | not))]
+         | if length == 0 then "free" else "taken " + (.[0] | .description // .arg // "" | tostring) end' \
         <<<"$binds")
       pretty=$(sed -e 's/SUPER/Super/; s/CTRL/Ctrl/; s/SHIFT/Shift/; s/ + /+/g' <<<"$combo")
-      if [[ -n $taken ]] || jq -e --argjson m "$mask" --arg k "$key" \
-        'any(.[]; .modmask == $m and (.key | ascii_downcase) == $k and ((.description // "") | startswith("Hyprslots:") | not))' \
-        <<<"$binds" >/dev/null; then
+      if [[ $verdict != free ]]; then
+        taken=${verdict#taken }
         echo "$pretty is bound already${taken:+ ($taken)}: left as it is."
       else
         entries+=("$name = \"$combo\"")
