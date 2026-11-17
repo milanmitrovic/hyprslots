@@ -849,6 +849,19 @@ end
 
 
 
+-- Re-run config.lua over edited data, applying nothing. `check(cfg)`
+-- returns why the edit did not take, or nil. Returns cfg, or nil and why.
+local function load_checked(engine, data, check)
+  local cfg, err = config.load(engine.config_dir, { data = { [DATA_FILE] = data } })
+  if cfg and check then
+    err = check(cfg)
+    if err then
+      return nil, err
+    end
+  end
+  return cfg, err
+end
+
 -- Run edited data. `check(cfg)` returns why the edit did not take, or nil;
 -- `carry(engine)` moves in-memory state along (keyboard-resized trees,
 -- assignments) and is undone when the edit fails. Returns cfg, or nil and
@@ -859,13 +872,7 @@ local function apply_edit(engine, data, check, carry)
   if carry then
     carry(engine)
   end
-  local cfg, err = config.load(engine.config_dir, { data = { [DATA_FILE] = data } })
-  if cfg and check then
-    err = check(cfg)
-    if err then
-      cfg = nil
-    end
-  end
+  local cfg, err = load_checked(engine, data, check)
   if not cfg then
     engine.resized, engine.assignments, engine.overflow = saved.resized, saved.assignments, saved.overflow
     return nil, err
@@ -1325,87 +1332,68 @@ local function capture_fingerprint(n, scope, layout, trees, new_slots, windows)
   return string.format("%08x", h)
 end
 
--- capture { workspace? (default the focused one), scope ("all": the shared
--- trees, "workspace": its own), apply? }: the windows of workspace N on
--- every screen of the active desk as a layout, in one edit: a global slot
--- for each window no slot of N holds or takes (capture.plan: named after
--- its app), each screen's arrangement as its tree in the active layout and
--- each window's spec on N for its slot; the windows take their slots.
--- Without apply it only previews; scope "all" also drops N's own trees, so
--- N shows the new shared ones. Reply: workspace, scope, layout, trees
--- (screen -> { tree, ratio }, or false for a screen left with none),
--- new_slots[] ({ slot, key }), windows[] ({ address, class, title, slot,
--- spec, new }), plan (capture_fingerprint's), applied, seq. An apply given
--- a preview's plan applies only that plan: windows opened, closed or moved
--- since (a launch arriving while the editor asks y/n) refuse it.
-function handlers.capture(engine, args)
+-- A capture's arguments and what it needs of the engine: workspace n (the
+-- focused one when none is given), the scope, the layout it edits. Returns
+-- n, scope, layout, or nil and why.
+local function capture_target(engine, args)
   if engine.refused then
-    return fail("hyprslots is off: " .. engine.refused)
+    return nil, "hyprslots is off: " .. engine.refused
   end
   if not engine.data then
-    return fail(NO_DATA)
+    return nil, NO_DATA
   end
   if not engine.active then
-    return fail("no desk is active: the monitors connected are no desk's yet")
+    return nil, "no desk is active: the monitors connected are no desk's yet"
   end
   local n = args.workspace ~= nil and as_integer(args.workspace) or focused_workspace(engine)
   local ok_ws, ws_err = workspaces.check(n, workspaces.count(engine), args.workspace or n)
   if not ok_ws then
-    return fail(ws_err)
+    return nil, ws_err
   end
   local scope = args.scope
   if args.apply == true and scope ~= "all" and scope ~= "workspace" then
-    return fail("say whom the capture is for: scope \"all\" (the shared trees) or \"workspace\" (its own)")
+    return nil, "say whom the capture is for: scope \"all\" (the shared trees) or \"workspace\" (its own)"
   end
   if args.plan ~= nil and type(args.plan) ~= "string" then
-    return fail("plan must be a capture preview's plan, got " .. tostring(args.plan))
+    return nil, "plan must be a capture preview's plan, got " .. tostring(args.plan)
   end
   local name, layout_err = target_layout(engine, {})
   if not name then
-    return fail(layout_err)
+    return nil, layout_err
   end
+  return n, scope, name
+end
 
-  local plan, plan_err = capture.plan({
-    workspace = n,
-    slots = engine.cfg.slots,
-    specs = engine.cfg.specs[n] or {},
-    title_matching = engine.cfg.title_matching,
-    assignments = engine.assignments,
-    screens = capture_screens(engine, n, scope or "all"),
-  })
-  if not plan then
-    return fail(plan_err)
-  end
-
-  -- The edit: the new slots (keys picked as the slot list's a picks them),
-  -- the specs, the trees.
+-- A capture plan's edit of the data: the new slots (keys picked as the slot
+-- list's a picks them), workspace n's specs, the trees of layout `name` for
+-- the scope. Returns data and the reply's trees (screen -> { tree, ratio },
+-- or false), or nil and why.
+local function capture_edit(engine, plan, name, n, scope)
   local data, err = engine.data, nil
   if #plan.new_slots > 0 then
     local ok, slots_err = editable_slots(engine)
     if not ok then
-      return fail(slots_err)
+      return nil, slots_err
     end
   end
   for _, slot in ipairs(plan.new_slots) do
     data, err = edit.add_slot(data, slot)
     if not data then
-      return fail(err)
+      return nil, err
     end
   end
   if next(plan.specs) ~= nil then
     local ok, specs_err = editable_specs(engine, { workspace = n })
     if not ok then
-      return fail(specs_err)
-    end
-  end
-  for _, slot in ipairs(util.sorted_keys(plan.specs)) do
-    data, err = edit.set_spec(data, n, slot, plan.specs[slot])
-    if not data then
-      return fail(err)
+      return nil, specs_err
     end
   end
   local spec_texts = {}
   for _, slot in ipairs(util.sorted_keys(plan.specs)) do
+    data, err = edit.set_spec(data, n, slot, plan.specs[slot])
+    if not data then
+      return nil, err
+    end
     spec_texts[#spec_texts + 1] = plan.specs[slot]
   end
   data = with_desktop_ids(engine, data, spec_texts)
@@ -1421,30 +1409,32 @@ function handlers.capture(engine, args)
   data, err = edit.replace_trees(data, name, scope == "workspace" and n or "default", texts,
     scope ~= "workspace" and n or nil)
   if not data then
-    return fail(err)
+    return nil, err
   end
+  return data, trees
+end
 
-  local cfg, load_err = config.load(engine.config_dir, { data = { [DATA_FILE] = data } })
-  if cfg then
+-- load_checked's check of a capture: the config took every new slot and
+-- each of workspace n's specs from the data.
+local function capture_check(plan, n)
+  return function(cfg)
     for _, slot in ipairs(plan.new_slots) do
       if not cfg.slots[slot] then
-        cfg, load_err = nil, not_taken("the slots")
-        break
+        return not_taken("the slots")
       end
     end
-  end
-  if cfg then
     for slot, text in pairs(plan.specs) do
       if workspace_spec(cfg, n, slot) ~= text then
-        cfg, load_err = nil, not_taken("workspace " .. n .. "'s specs")
-        break
+        return not_taken("workspace " .. n .. "'s specs")
       end
     end
+    return nil
   end
-  if not cfg then
-    return fail(load_err)
-  end
+end
 
+-- The reply of a capture of workspace n (handlers.capture says its
+-- fields), not yet applied; cfg is the edit's, for the new slots' keys.
+local function capture_reply(plan, cfg, n, scope, name, trees)
   local new_slots = array()
   for i, slot in ipairs(plan.new_slots) do
     new_slots[i] = object({ slot = slot, key = cfg.slots[slot].key })
@@ -1454,18 +1444,14 @@ function handlers.capture(engine, args)
     windows[i] = object({ address = w.address, class = w.class, title = w.title, slot = w.slot, spec = w.spec,
       new = w.new })
   end
-  local reply = { workspace = n, scope = scope, layout = name, trees = trees, new_slots = new_slots,
+  return { workspace = n, scope = scope, layout = name, trees = trees, new_slots = new_slots,
     windows = windows, plan = capture_fingerprint(n, scope, name, trees, new_slots, windows), applied = false }
-  if args.apply ~= true then
-    reply.seq = engine.seq
-    return reply
-  end
-  if args.plan ~= nil and args.plan ~= reply.plan then
-    return fail("the windows changed since the preview: capture again")
-  end
+end
 
-  -- Each window into its slot first, so the re-solve under the new specs
-  -- keeps it there; the trees replaced lose their keyboard-resized copies.
+-- Run a capture's edit: each window into its slot first, so the re-solve
+-- under the new specs keeps it there; the trees replaced lose their
+-- keyboard-resized copies.
+local function apply_capture(engine, plan, cfg, data, name, n, scope)
   for address, slot in pairs(plan.assign) do
     engine.assignments[address] = { workspace = n, slot = slot }
     engine.overflow[address] = nil
@@ -1478,6 +1464,54 @@ function handlers.capture(engine, args)
     end
   end
   engine:apply_config(cfg, data, true)
+end
+
+-- capture { workspace? (default the focused one), scope ("all": the shared
+-- trees, "workspace": its own), apply? }: the windows of workspace N on
+-- every screen of the active desk as a layout, in one edit: a global slot
+-- for each window no slot of N holds or takes (capture.plan: named after
+-- its app), each screen's arrangement as its tree in the active layout and
+-- each window's spec on N for its slot; the windows take their slots.
+-- Without apply it only previews; scope "all" also drops N's own trees, so
+-- N shows the new shared ones. Reply: workspace, scope, layout, trees
+-- (screen -> { tree, ratio }, or false for a screen left with none),
+-- new_slots[] ({ slot, key }), windows[] ({ address, class, title, slot,
+-- spec, new }), plan (capture_fingerprint's), applied, seq. An apply given
+-- a preview's plan applies only that plan: windows opened, closed or moved
+-- since (a launch arriving while the editor asks y/n) refuse it.
+function handlers.capture(engine, args)
+  local n, scope, name = capture_target(engine, args)
+  if not n then
+    return fail(scope)
+  end
+  local plan, plan_err = capture.plan({
+    workspace = n,
+    slots = engine.cfg.slots,
+    specs = engine.cfg.specs[n] or {},
+    title_matching = engine.cfg.title_matching,
+    assignments = engine.assignments,
+    screens = capture_screens(engine, n, scope or "all"),
+  })
+  if not plan then
+    return fail(plan_err)
+  end
+  local data, trees = capture_edit(engine, plan, name, n, scope)
+  if not data then
+    return fail(trees)
+  end
+  local cfg, load_err = load_checked(engine, data, capture_check(plan, n))
+  if not cfg then
+    return fail(load_err)
+  end
+  local reply = capture_reply(plan, cfg, n, scope, name, trees)
+  if args.apply ~= true then
+    reply.seq = engine.seq
+    return reply
+  end
+  if args.plan ~= nil and args.plan ~= reply.plan then
+    return fail("the windows changed since the preview: capture again")
+  end
+  apply_capture(engine, plan, cfg, data, name, n, scope)
   reply.applied = true
   reply.seq = engine.seq
   return reply
