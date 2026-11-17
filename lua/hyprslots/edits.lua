@@ -62,17 +62,23 @@ end
 
 -- Run edited data. `check(cfg)` returns why the edit did not take, or nil;
 -- `carry(engine)` moves in-memory state along (keyboard-resized trees,
--- assignments) and is undone when the edit fails. Returns cfg, or nil and
--- why.
+-- assignments, overflow, windows taken out of their slots by hand) and is
+-- undone when the edit fails. Returns cfg, or nil and why.
+local CARRIED = { "resized", "assignments", "overflow", "unassigned" }
+
 function M.apply(engine, data, check, carry)
-  local saved = { resized = util.shallow(engine.resized), assignments = util.shallow(engine.assignments),
-    overflow = util.shallow(engine.overflow) }
+  local saved = {}
+  for _, map in ipairs(CARRIED) do
+    saved[map] = util.shallow(engine[map])
+  end
   if carry then
     carry(engine)
   end
   local cfg, err = M.load_checked(engine, data, check)
   if not cfg then
-    engine.resized, engine.assignments, engine.overflow = saved.resized, saved.assignments, saved.overflow
+    for _, map in ipairs(CARRIED) do
+      engine[map] = saved[map]
+    end
     return nil, err
   end
   engine:apply_config(cfg, data, true)
