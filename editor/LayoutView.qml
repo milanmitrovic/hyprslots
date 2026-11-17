@@ -1253,7 +1253,7 @@ Item {
   // on the trees it made.
   function applyCapture(reply) {
     say("Capturing workspace " + reply.workspace + "…", false)
-    engine.call("capture", { workspace: reply.workspace, scope: reply.scope, apply: true }, function(done) {
+    engine.call("capture", Capture.applyArgs(reply), function(done) {
       if (!done.ok) {
         root.endCapture(done.error, true)
         return

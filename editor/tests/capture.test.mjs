@@ -27,6 +27,7 @@ function reply(extra) {
       { address: "0x1", class: "com.mitchellh.ghostty", title: "notes | ~", slot: "ghostty", spec: "com.mitchellh.ghostty", new: true },
       { address: "0x2", class: "google-chrome", title: "Inbox", slot: "chrome", spec: "google-chrome", new: true },
     ],
+    plan: "1a2b3c4d",
     applied: false,
     seq: 7,
     ...extra,
@@ -77,6 +78,14 @@ test("the preview asks y/n, naming the slots it makes with their keys and how ma
   const none = reply({ new_slots: [] });
   assert.equal(C.previewText(none),
     "Capture workspace 3 (all workspaces): uses the slots there are, puts 2 windows into their slots. Apply it?");
+});
+
+test("y applies the plan previewed: its workspace, scope and plan token", () => {
+  assert.deepEqual(plain(C.applyArgs(reply())), { workspace: 3, scope: "all", apply: true, plan: "1a2b3c4d" });
+  assert.deepEqual(plain(C.applyArgs(reply({ scope: "workspace", plan: "00000000" }))),
+    { workspace: 3, scope: "workspace", apply: true, plan: "00000000" });
+  assert.deepEqual(plain(C.applyArgs(reply({ plan: undefined }))), { workspace: 3, scope: "all", apply: true },
+    "an engine of before sends no plan: none is sent back");
 });
 
 test("once applied it says what was made, unsaved", () => {

@@ -44,6 +44,15 @@ function previewTrees(reply) {
   return out
 }
 
+// The y's `capture` call: the previewed reply's workspace and scope, applied,
+// with its plan, so the engine applies the edit shown and refuses one the
+// windows changed since (opened, closed or moved while the band asked).
+function applyArgs(reply) {
+  var args = { workspace: reply.workspace, scope: reply.scope, apply: true }
+  if (typeof reply.plan === "string") args.plan = reply.plan
+  return args
+}
+
 // What the preview's tiles show under their slot names: each captured
 // window's title in its slot.
 function titles(reply) {
