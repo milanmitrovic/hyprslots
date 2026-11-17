@@ -104,17 +104,16 @@ Item {
   property int cardWidth: Math.min(Style.space(1100), window.width - Style.gapsOut * 2)
   property int cardHeight: Math.min(Style.space(640), window.height - Style.gapsOut * 2)
 
-  // `{"record": true}` (the bar widget's Record) opens on the Layout tab and
-  // starts its record flow (R) once the state is read; `{"capture": true}`
-  // (the bar's Capture, the Omarchy menu's and the keybind's) its capture
-  // flow (c) on the focused workspace.
-  property bool pendingRecord: false
-  property bool pendingCapture: false
-  // The tab it opens on is Guide.openingTab's: the Layout tab while there
-  // are no slots, else Assignment; one the payload asks for wins. Chosen
-  // again on the first state read after opening (the state it had may be
-  // older), unless a tab was picked meanwhile.
-  property bool pendingTab: false
+  // What opening still owes (OpenFlow.qml): the opening tab, settled on the
+  // first state read, and a payload's Record or Capture, started once the
+  // state is read.
+  readonly property OpenFlow openFlow: OpenFlow {
+    engine: root.engine
+    opened: root.opened
+    onTabSettled: function(index) { root.tab = index }
+    onRecordDue: if (!layoutView.prompting) layoutView.recordFocused()
+    onCaptureDue: if (!layoutView.prompting) layoutView.captureFocused()
+  }
   // Enable's outcome, said in the view the panel settles on (onStateRead).
   property string enableNews: ""
 
@@ -136,30 +135,8 @@ Item {
     layoutView.focusedWorkspace = assignmentView.focusedWorkspace
     layoutView.reset()
     desksView.reset()
-    var opening = Guide.openingTab(root.engine ? root.engine.state : null, payload)
-    root.tab = opening !== null ? opening : 0 // nothing read yet: Assignment, which says why
-    root.pendingTab = !Guide.asksForTab(payload)
-    if (payload.record === true) {
-      root.pendingRecord = true
-      Qt.callLater(root.startPendingRecord)
-    }
-    if (payload.capture === true) {
-      root.pendingCapture = true
-      Qt.callLater(root.startPendingCapture)
-    }
+    root.tab = root.openFlow.begin(payload)
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
-  }
-
-  function startPendingRecord() {
-    if (!root.pendingRecord || !root.opened || !root.engine || root.engine.state === null) return
-    root.pendingRecord = false
-    if (!layoutView.prompting) layoutView.recordFocused()
-  }
-
-  function startPendingCapture() {
-    if (!root.pendingCapture || !root.opened || !root.engine || root.engine.state === null) return
-    root.pendingCapture = false
-    if (!layoutView.prompting) layoutView.captureFocused()
   }
 
   // The Assignment tab's c: the Layout tab, capturing that page's workspace.
@@ -168,25 +145,15 @@ Item {
     if (!layoutView.prompting) layoutView.startCapture(n)
   }
 
-  // The first state read after opening settles the opening tab.
-  function settleTab() {
-    if (!root.pendingTab || !root.opened || !root.engine || root.engine.state === null) return
-    root.pendingTab = false
-    var opening = Guide.openingTab(root.engine.state, {})
-    if (opening !== null) root.tab = opening
-  }
-
   // A tab picked by key or click: the opening tab is settled.
   function pickTab(index) {
-    root.pendingTab = false
+    root.openFlow.tabPicked()
     root.tab = index
   }
 
   function close() {
     root.opened = false
-    root.pendingRecord = false
-    root.pendingCapture = false
-    root.pendingTab = false
+    root.openFlow.end()
     if (root.engine) root.engine.active = false
   }
 
@@ -585,13 +552,13 @@ Item {
     target: root.engine
     function onStateRead(ok) {
       if (!ok) return
-      root.settleTab()
+      root.openFlow.settleTab()
       if (root.enableNews !== "" && !root.enablePrompt && root.currentView) {
         root.currentView.say(root.enableNews, false)
         root.enableNews = ""
       }
-      root.startPendingRecord()
-      root.startPendingCapture()
+      root.openFlow.startRecord()
+      root.openFlow.startCapture()
     }
   }
 
