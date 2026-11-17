@@ -162,14 +162,42 @@ return { slots = data.slots, specs = data.specs, desks = data.desks, layouts = d
 
     it("not again while that app is on its way, nor for a window already open", function()
       setup((SLOTS:gsub("%[5%] = \"at_login\"", '[3] = "on_demand"')))
-      call("launch_missing", { workspace = 3 })
-      assert.same({}, call("launch_missing", { workspace = 3 }).launched)
+      local first = call("launch_missing", { workspace = 3 })
+      assert.same({}, first.open)
+      assert.same({}, first.pending)
+      local reply = call("launch_missing", { workspace = 3 })
+      assert.same({}, reply.launched)
+      assert.same({ "main" }, reply.pending)
+      assert.same({}, reply.open)
       assert.equal(1, #launched())
 
       hl.windows = { hl_stub.window(1, "foot", { workspace = 7 }) }
       hyprslots = fresh_module()
       hyprslots.setup({ config_dir = dir, desktop_dirs = { apps } })
-      assert.same({}, call("launch_missing", { workspace = 3 }).launched)
+      -- setup takes that window into main: the slot is not empty.
+      reply = call("launch_missing", { workspace = 3 })
+      assert.same({}, reply.launched)
+      assert.same({}, reply.open)
+      assert.same({}, reply.pending)
+
+      -- Out of its slot it is open, and still counts for main.
+      assert.is_true(call("unassign", { address = "0x1001" }).ok)
+      reply = call("launch_missing", { workspace = 3 })
+      assert.same({}, reply.launched)
+      assert.same({ "main" }, reply.open)
+      assert.same({}, reply.pending)
+      assert.equal(1, #launched())
+    end)
+
+    it("encodes every list in its reply as a JSON array, even an empty one", function()
+      setup((SLOTS:gsub("%[5%] = \"at_login\"", '[3] = "on_demand"')))
+      call("launch_missing", { workspace = 3 })
+      local raw = hyprslots.api.call("launch_missing", json.encode({ workspace = 3 }))
+      assert.matches('"launched":%[%]', raw)
+      assert.matches('"open":%[%]', raw)
+      assert.matches('"pending":%["main"%]', raw)
+      assert.matches('"cannot":%[{', raw)
+      assert.is_nil(raw:find('"open":{}', 1, true))
     end)
 
     it("refuses on a workspace that launches nothing", function()
