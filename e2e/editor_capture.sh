@@ -138,7 +138,7 @@ test_body() {
   expect_eq "the preview: the windows as they stand, 2:1" "1: h[foot:2, t-term]" "$(smoke capturePreview)"
   local said
   said=$(smoke message)
-  if [[ $said == "Capture workspace 1 for workspace 1 only: makes slots foot (f) and t-term ("?"), puts 2 windows into their slots. Apply it? (y/n)" ]]; then
+  if [[ $said == "Capture workspace 1 (this workspace only): makes slots foot (f) and t-term ("?"), puts 2 windows into their slots. Apply it? (y/n)" ]]; then
     pass "it asks y/n, naming the new slots with their keys: $said"
   else
     fail "preview: $said"
@@ -164,7 +164,7 @@ test_body() {
   expect_eq "unsaved" "true" "$(api_state | jq -r .dirty)"
   eventually 5 smoke_idle || true
   said=$(smoke message)
-  if [[ $said == "Captured workspace 1 for workspace 1 only: made slots foot (f) and t-term ("?"); 2 windows are in their slots. Ctrl+S saves." ]]; then
+  if [[ $said == "Captured workspace 1 (this workspace only): made slots foot (f) and t-term ("?"); 2 windows are in their slots. Ctrl+S saves." ]]; then
     pass "it says what it made: $said"
   else
     fail "message: $said"

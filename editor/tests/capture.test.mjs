@@ -67,23 +67,23 @@ test("the preview's titles: each captured window's in its slot, new slots includ
 
 test("the preview asks y/n, naming the slots it makes with their keys and how many windows go into slots", () => {
   assert.equal(C.previewText(reply()),
-    "Capture workspace 3 for all workspaces: makes slots ghostty (g) and chrome (c), puts 2 windows into their slots. Apply it?");
+    "Capture workspace 3 (all workspaces): makes slots ghostty (g) and chrome (c), puts 2 windows into their slots. Apply it?");
   assert.equal(C.previewText(reply({ scope: "workspace" })),
-    "Capture workspace 3 for workspace 3 only: makes slots ghostty (g) and chrome (c), puts 2 windows into their slots. Apply it?");
+    "Capture workspace 3 (this workspace only): makes slots ghostty (g) and chrome (c), puts 2 windows into their slots. Apply it?");
   const one = reply({ new_slots: [{ slot: "foot", key: "f" }], windows: [{ address: "0x1", class: "foot", slot: "foot", new: true }] });
-  assert.equal(C.previewText(one), "Capture workspace 3 for all workspaces: makes slot foot (f), puts 1 window into its slot. Apply it?");
+  assert.equal(C.previewText(one), "Capture workspace 3 (all workspaces): makes slot foot (f), puts 1 window into its slot. Apply it?");
   const three = reply({ new_slots: [{ slot: "a", key: "a" }, { slot: "b", key: "b" }, { slot: "c", key: "" }] });
   assert.match(C.previewText(three), /makes slots a \(a\), b \(b\) and c,/, "a slot with no key: its name alone");
   const none = reply({ new_slots: [] });
   assert.equal(C.previewText(none),
-    "Capture workspace 3 for all workspaces: uses the slots there are, puts 2 windows into their slots. Apply it?");
+    "Capture workspace 3 (all workspaces): uses the slots there are, puts 2 windows into their slots. Apply it?");
 });
 
 test("once applied it says what was made, unsaved", () => {
   assert.equal(C.appliedText(reply({ applied: true })),
-    "Captured workspace 3 for all workspaces: made slots ghostty (g) and chrome (c); 2 windows are in their slots. Ctrl+S saves.");
+    "Captured workspace 3 (all workspaces): made slots ghostty (g) and chrome (c); 2 windows are in their slots. Ctrl+S saves.");
   assert.equal(C.appliedText(reply({ applied: true, scope: "workspace", new_slots: [] })),
-    "Captured workspace 3 for workspace 3 only: 2 windows are in their slots. Ctrl+S saves.");
+    "Captured workspace 3 (this workspace only): 2 windows are in their slots. Ctrl+S saves.");
 });
 
 test("its words are plain", () => {

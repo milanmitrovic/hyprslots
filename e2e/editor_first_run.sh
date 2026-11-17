@@ -165,7 +165,7 @@ test_body() {
   eventually 5 bash -c "[[ -n \$($watch capturePreview) ]]" || true
   expect_eq "the picture previews the capture" "1: t-first" "$(smoke capturePreview)"
   expect_eq "and asks y/n, naming the slot it makes and its key" \
-    "Capture workspace 1 for all workspaces: makes slot t-first (t), puts 1 window into its slot. Apply it? (y/n)" "$(smoke message)"
+    "Capture workspace 1 (all workspaces): makes slot t-first (t), puts 1 window into its slot. Apply it? (y/n)" "$(smoke message)"
   sleep 0.5
   shot 2b-capture-preview
   expect_eq "n" "ok" "$(smoke press n)"
@@ -300,7 +300,7 @@ test_body() {
     "1: h[t-left:2, t-right, main]" "$(smoke capturePreview)"
   local preview
   preview=$(smoke message)
-  if [[ $preview == "Capture workspace 4 for workspace 4 only: makes slots t-left ("?") and t-right ("?"), puts 2 windows into their slots. Apply it? (y/n)" ]]; then
+  if [[ $preview == "Capture workspace 4 (this workspace only): makes slots t-left ("?") and t-right ("?"), puts 2 windows into their slots. Apply it? (y/n)" ]]; then
     pass "it asks y/n, naming the new slots and their keys: $preview"
   else
     fail "preview message: $preview"
@@ -322,7 +322,7 @@ test_body() {
   expect_eq "t-right's app on workspace 4" "t-right" "$(api_state | jq -r '.specs["4"]["t-right"]')"
   expect_eq "unsaved" "true" "$(api_state | jq -r .dirty)"
   eventually 5 smoke_idle || true
-  if [[ $(smoke message) == "Captured workspace 4 for workspace 4 only: made slots t-left ("?") and t-right ("?"); 2 windows are in their slots. Ctrl+S saves." ]]; then
+  if [[ $(smoke message) == "Captured workspace 4 (this workspace only): made slots t-left ("?") and t-right ("?"); 2 windows are in their slots. Ctrl+S saves." ]]; then
     pass "it says what it made: $(smoke message)"
   else
     fail "message: $(smoke message)"

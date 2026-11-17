@@ -75,7 +75,7 @@ function windowCount(reply) {
 }
 
 function whom(reply) {
-  return reply.scope === "workspace" ? "workspace " + reply.workspace + " only" : "all workspaces"
+  return reply.scope === "workspace" ? "this workspace only" : "all workspaces"
 }
 
 // The preview's y/n question (Prompts.confirm adds "(y/n)").
@@ -83,7 +83,7 @@ function previewText(reply) {
   var n = newCount(reply)
   var made = n === 0 ? "uses the slots there are" : "makes slot" + (n === 1 ? " " : "s ") + slotList(reply)
   var w = windowCount(reply)
-  return "Capture workspace " + reply.workspace + " for " + whom(reply) + ": " + made + ", puts " + w
+  return "Capture workspace " + reply.workspace + " (" + whom(reply) + "): " + made + ", puts " + w
     + (w === 1 ? " window into its slot" : " windows into their slots") + ". Apply it?"
 }
 
@@ -91,7 +91,7 @@ function previewText(reply) {
 function appliedText(reply) {
   var n = newCount(reply)
   var w = windowCount(reply)
-  return "Captured workspace " + reply.workspace + " for " + whom(reply) + ": "
+  return "Captured workspace " + reply.workspace + " (" + whom(reply) + "): "
     + (n === 0 ? "" : "made slot" + (n === 1 ? " " : "s ") + slotList(reply) + "; ")
     + w + (w === 1 ? " window is in its slot" : " windows are in their slots") + ". Ctrl+S saves."
 }

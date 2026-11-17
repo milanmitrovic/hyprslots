@@ -1222,11 +1222,11 @@ asks whom it is for, `Capture workspace 3: apply to (a)ll workspaces or
 `apply`): the panes draw the captured trees, slots not made yet included,
 each window's title in its tile (`Nothing to capture on this screen` for
 one left with none), on All workspaces for `a` started there, else on
-the workspace, and the band asks `Capture workspace 3 for all workspaces:
+the workspace, and the band asks `Capture workspace 3 (all workspaces):
 makes slots foot (f) and chrome (c), puts 3 windows into their slots.
 Apply it? (y/n)` (`uses the slots there are` when it makes none). `y`
 applies it (`capture` with `apply` and the scope): `Captured workspace 3
-for all workspaces: made slots foot and chrome; 3 windows are in their
+(all workspaces): made slots foot and chrome; 3 windows are in their
 slots. Ctrl+S saves.`, the header's `● unsaved`; `n` or Esc, `Capture
 cancelled: nothing changed.`, the picture as it was. A refusal (windows
 that overlap, no desk) shows in the band.
