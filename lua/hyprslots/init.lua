@@ -17,6 +17,7 @@ local config = require("hyprslots.config")
 local desk = require("hyprslots.desk")
 local workspaces = require("hyprslots.workspaces")
 local hotplug = require("hyprslots.hotplug")
+local launcher = require("hyprslots.launcher")
 local layout = require("hyprslots.layout")
 local log = require("hyprslots.log")
 local monitor_name = require("hyprslots.monitor_name")
@@ -24,7 +25,6 @@ local persist = require("hyprslots.persist")
 local resize = require("hyprslots.resize")
 local router = require("hyprslots.router")
 local scroll = require("hyprslots.scroll")
-local spec = require("hyprslots.spec")
 local starter = require("hyprslots.starter")
 local tree = require("hyprslots.tree")
 local window_rules = require("hyprslots.window_rules")
@@ -316,47 +316,12 @@ function Engine:assign(window)
   if not self.cfg or not window.address or self.unassigned[window.address] then
     return nil
   end
-  local assignment = self.assignments[window.address] or self:launched_for(window)
+  local assignment = self.assignments[window.address] or launcher.launched_for(self, window)
     or assign.claim(self.cfg, self.assignments, window)
   if assignment and not self.assignments[window.address] then
     self.assignments[window.address] = assignment
   end
   return assignment
-end
-
--- The slot an app was launched for (api launch_missing, at login) that this
--- window, opening, is: one still on its way, empty, whose spec matches it.
--- The claim is used up. Nil for none. The first by workspace, as a number
--- (5 before 10), then by slot name.
-function Engine:launched_for(window)
-  if not self.launching or next(self.launching) == nil then
-    return nil
-  end
-  local waiting = {}
-  for key in pairs(self.launching) do
-    local n, slot = key:match("^(%d+)/(.+)$")
-    if n then
-      waiting[#waiting + 1] = { key = key, workspace = tonumber(n), slot = slot }
-    end
-  end
-  table.sort(waiting, function(a, b)
-    if a.workspace ~= b.workspace then
-      return a.workspace < b.workspace
-    end
-    return a.slot < b.slot
-  end)
-  local taken = {}
-  for _, a in pairs(self.assignments) do
-    taken[a.workspace .. "/" .. a.slot] = true
-  end
-  for _, w in ipairs(waiting) do
-    local entry = self.cfg.specs[w.workspace] and self.cfg.specs[w.workspace][w.slot]
-    if entry and not taken[w.key] and spec.match(entry, window) then
-      self.launching[w.key] = nil
-      return { workspace = w.workspace, slot = w.slot }
-    end
-  end
-  return nil
 end
 
 -- The slot of an HL.Window, for recalculate.
@@ -516,7 +481,7 @@ local function start(self, opts)
   adapter.on("hyprland.start", function()
     on_start()
     -- Apps launched at login: on Hyprland's start only, never on a reload.
-    self:guard("launch at login", api.launch_at_login, self)
+    self:guard("launch at login", launcher.at_login, self)
   end)
   adapter.on("config.reloaded", on_start)
 
