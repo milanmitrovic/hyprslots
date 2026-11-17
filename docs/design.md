@@ -2070,19 +2070,25 @@ Under `lua/hyprslots/`:
 | pure | `capture` | a capture's plan: slot names from apps, trees (ratios snapped to 1 to 5), specs, assignments |
 | pure | `launch` | a spec's launch command, a desktop entry's `Exec`, which empty slots to launch for |
 | adapter | `desktop` | the desktop entry a window class stands for, in the XDG data dirs |
+| adapter | `launcher` | runs what `launch` plans: starts a workspace's missing apps (on demand, at login) and holds each launch's claim on its slot until its window takes it (§9, Launching apps) |
 | pure | `slot_key` | each global slot's key: check one, pick a new slot's, fill the ones missing (§4) |
 | adapter | `starter` | a fresh install's starter `config.lua` and empty `slots.lua`, written only where missing (§4) |
 | pure | `dkjson` | vendored JSON |
+| pure | `util` | small table, number and text helpers the modules share (no `hl`, no I/O) |
 | adapter | `init` | `setup()`, wrapped in `pcall`, never takes Hyprland down |
 | adapter | `hl_adapter` | the only module that touches `hl` |
 | adapter | `layout` | `hl.layout.register("slots", …)` |
 | adapter | `router` | window events → assignment and moves |
+| adapter | `window_rules` | generated per-class window rules (§7b), re-registered after desk changes and slot changes |
 | adapter | `workspaces` | workspace switching on top of `o.workspaces` |
 | adapter | `hotplug` | monitor events → desk selection, then re-route |
 | adapter | `blocks` | the active desk's screens own Omarchy's workspace blocks (screen i: block i-1); pure `plan` renumbers workspaces into them |
 | adapter | `scroll` | scroll branches on Hyprland's scrolling layout (pure `plan` / `order`, deferred pass, `describe`) |
 | adapter | `resize` | keyboard resize via `layout_msg`; the tree in force |
 | adapter | `api` | `state()` / `call(name, json)` for the editor |
+| adapter | `edits` | the edit pipeline: new `slots.lua` data, `config.lua` re-run over it, the edit checked to have taken, then re-assign, re-route, window rules, relayout (§9) |
+| adapter | `persist` | save and reset: `slots.lua` written from the running data and read back, the active desk's geometry recorded (§9, §8) |
+| adapter | `capture_apply` | capture's engine half: gathers a workspace's live windows for `capture`, turns the plan into an edit, fingerprints it so apply runs only the plan previewed (§9, Capture) |
 | adapter | `log` | ring buffer; `hyprslots.dump()` prints it with the state |
 
 Other top-level files and directories: `manifest.json` (the Omarchy plugin's
