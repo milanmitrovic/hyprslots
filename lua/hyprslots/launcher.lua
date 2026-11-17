@@ -2,9 +2,9 @@
 -- launch.lua says what to launch; this runs it. It finds an app's desktop
 -- entry (desktop.lua), starts the apps a workspace's empty slots wait for
 -- (on demand: the api's launch_missing; at login: Hyprland's start), and
--- holds each launch's claim on its slot (`engine.launching`, "<n>/<slot>")
--- until the app's window opens and takes it (launched_for) or the claim
--- runs out.
+-- holds each launch's claim on its slot until the app's window opens and
+-- takes it (launched_for) or the claim runs out. This module alone reads
+-- and writes the claims (`engine.launching`, workspace n -> slot -> claim).
 
 local adapter = require("hyprslots.hl_adapter")
 local desktop = require("hyprslots.desktop")
@@ -23,18 +23,50 @@ local LAUNCH_WAIT_MS = 20000
 local LOGIN_WAIT_MS = 1500
 local LOGIN_STAGGER_MS = 400
 
--- A launch's claim on slot `slot` of workspace n, as engine.launching
--- keys it ("<n>/<slot>"), and back: n (a number) and the slot, or nil.
-function M.claim_key(n, slot)
-  return n .. "/" .. slot
+-- Claims: engine.launching[n][slot] is the claim a launch holds on slot
+-- `slot` of workspace n (n a number), a table of its own so that the
+-- expiry of one claim never ends a later claim on the same slot.
+
+-- Claim slot `slot` of workspace n for an app on its way, until its window
+-- takes the claim (launched_for) or `ttl` ms (LAUNCH_WAIT_MS by default)
+-- pass.
+function M.claim(engine, n, slot, ttl)
+  engine.launching = engine.launching or {}
+  local slots = engine.launching[n] or {}
+  engine.launching[n] = slots
+  local claim = {}
+  slots[slot] = claim
+  adapter.defer(function() M.release(engine, n, slot, claim) end, ttl or LAUNCH_WAIT_MS)
+  return claim
 end
 
-function M.claim_of(key)
-  local n, slot = key:match("^(%d+)/(.+)$")
-  if not n then
-    return nil
+-- End the claim on slot `slot` of workspace n: only `claim` when given
+-- (the expiry of a claim already taken and made again leaves the new one).
+function M.release(engine, n, slot, claim)
+  local slots = engine.launching and engine.launching[n]
+  if not slots or slots[slot] == nil or (claim and slots[slot] ~= claim) then
+    return
   end
-  return tonumber(n), slot
+  slots[slot] = nil
+  if next(slots) == nil then
+    engine.launching[n] = nil
+  end
+end
+
+-- Whether slot `slot` of workspace n has an app on its way.
+function M.claimed(engine, n, slot)
+  local slots = engine.launching and engine.launching[n]
+  return slots ~= nil and slots[slot] ~= nil
+end
+
+-- The slots of workspace n with an app on its way, as a set.
+function M.pending_for(engine, n)
+  local pending = {}
+  local slots = engine.launching and engine.launching[n]
+  for slot in pairs(slots or {}) do
+    pending[slot] = true
+  end
+  return pending
 end
 
 -- fn(class) -> desktop id, command: the entry the data recorded for the
@@ -112,14 +144,7 @@ end
 -- onto its slot's workspace, silently; `stagger` ms apart when given.
 -- Returns launch.missing's plan.
 function M.workspace(engine, n, stagger)
-  engine.launching = engine.launching or {}
-  local pending = {}
-  for key in pairs(engine.launching) do
-    local ws, slot = M.claim_of(key)
-    if ws == n then
-      pending[slot] = true
-    end
-  end
+  local pending = M.pending_for(engine, n)
   local plan = launch.missing({
     workspace = n,
     specs = engine.cfg.specs[n] or {},
@@ -129,9 +154,8 @@ function M.workspace(engine, n, stagger)
     command = function(entry) return M.command(engine, entry) end,
   })
   for i, item in ipairs(plan.launch) do
-    local key = M.claim_key(n, item.slot)
     local id = slot_workspace_id(engine, n, item.slot)
-    engine.launching[key] = true
+    M.claim(engine, n, item.slot)
     engine.log:info("launch %s for %s on workspace %d: %s", item.spec, item.slot, n, item.command)
     local function run()
       engine:guard("launch " .. item.command, adapter.exec, item.command, id)
@@ -141,7 +165,6 @@ function M.workspace(engine, n, stagger)
     else
       run()
     end
-    adapter.defer(function() engine.launching[key] = nil end, LAUNCH_WAIT_MS)
   end
   return plan
 end
@@ -183,10 +206,9 @@ function M.launched_for(engine, window)
     return nil
   end
   local waiting = {}
-  for key in pairs(engine.launching) do
-    local n, slot = M.claim_of(key)
-    if n then
-      waiting[#waiting + 1] = { key = key, workspace = n, slot = slot }
+  for n, slots in pairs(engine.launching) do
+    for slot in pairs(slots) do
+      waiting[#waiting + 1] = { workspace = n, slot = slot }
     end
   end
   table.sort(waiting, function(a, b)
@@ -197,12 +219,14 @@ function M.launched_for(engine, window)
   end)
   local taken = {}
   for _, a in pairs(engine.assignments) do
-    taken[M.claim_key(a.workspace, a.slot)] = true
+    taken[a.workspace] = taken[a.workspace] or {}
+    taken[a.workspace][a.slot] = true
   end
   for _, w in ipairs(waiting) do
     local entry = engine.cfg.specs[w.workspace] and engine.cfg.specs[w.workspace][w.slot]
-    if entry and not taken[w.key] and spec.match(entry, window) then
-      engine.launching[w.key] = nil
+    local held = taken[w.workspace] and taken[w.workspace][w.slot]
+    if entry and not held and spec.match(entry, window) then
+      M.release(engine, w.workspace, w.slot)
       return { workspace = w.workspace, slot = w.slot }
     end
   end
