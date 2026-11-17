@@ -12,6 +12,7 @@ import "Help.js" as Help
 import "Guide.js" as Guide
 import "Assignment.js" as Assignment
 import "Capture.js" as Capture
+import "LayoutController.js" as Controller
 import "ui"
 
 // One workspace's trees in the active desk's layout, edited (aerolayout's
@@ -1105,67 +1106,74 @@ Item {
     })
   }
 
+  // The view as LayoutController.js reads it: workspace, scope, screen,
+  // selection, drafts.
+  function viewState() {
+    return { workspace: workspace, scope: scope, screen: screen, selectedKey: selectedKey, drafts: drafts }
+  }
+
+  // Set a LayoutController step's view: on another workspace, its panes
+  // re-read (sync) before the scope and the selection are set.
+  function setView(step) {
+    var v = step.view
+    if (step.moved) {
+      workspace = v.workspace
+      drafts = v.drafts
+      screen = v.screen
+      sync()
+    } else {
+      drafts = v.drafts
+      screen = v.screen
+    }
+    scope = v.scope
+    selectedKey = v.selectedKey
+  }
+
   // The bar widget's Record: R on the focused workspace and screen (the
   // view opens on All workspaces, which R does not record).
   function recordFocused() {
     if (state) {
-      var t = Layout.initialTarget(state, focusedWorkspace)
-      if (t.workspace !== workspace) {
-        workspace = t.workspace
-        scope = ""
-        drafts = ({})
-        selectedKey = ""
-      }
-      screen = String(t.screen)
+      // all of it before the sync, which then selects a leaf of its own
+      var v = Controller.recordFocused(viewState(), state, focusedWorkspace).view
+      workspace = v.workspace
+      scope = v.scope
+      drafts = v.drafts
+      selectedKey = v.selectedKey
+      screen = v.screen
       sync()
     }
     scoped(startRecord, false)
   }
 
-  function workspaceIdOf(n, k) {
-    var ws = state && state.workspaces ? state.workspaces : {}
-    for (var id in ws) if (ws[id].workspace === n && String(ws[id].screen) === k) return parseInt(id, 10)
-    return -1
-  }
-
   // R: measure the windows on the screen, show the tree it makes and what
-  // it would drop, apply only when confirmed.
+  // it would drop, apply only when confirmed (LayoutController.js).
   function startRecord() {
     if (refuseEdit()) return
-    if (workspace === "default") {
-      say("R records a workspace's windows: pick one with [ ] or its digit.", true)
+    var start = Controller.recordStart(viewState(), state)
+    if (start.error) {
+      say(start.error, true)
       return
     }
-    var id = workspaceIdOf(workspace, screen)
-    if (id < 0) {
-      say("Workspace " + workspace + " is not on screen " + screen + ".", true)
-      return
-    }
-    say("Recording workspace " + id + "…", false)
-    engine.call("record", { workspace_id: id, apply: false }, function(reply) {
+    say(start.text, false)
+    engine.call("record", { workspace_id: start.workspaceId, apply: false }, function(reply) {
       if (!reply.ok) {
         root.say(reply.error, true)
         return
       }
-      var missing = reply.missing || []
-      var text = "Recorded " + reply.tree + " (" + reply.ratio + ") from workspace " + reply.workspace_id
-        + (missing.length ? "; missing " + missing.join(", ") + ": applying drops " + (missing.length === 1 ? "it" : "them")
-          + " from the tree" : "") + ". Apply it?"
-      root.confirm(text, function() {
-        var r = String(reply.screen)
-        var trees = {}
-        trees[r] = reply.tree
-        root.engine.call("set_trees", { layout: reply.layout, workspace: root.scope === "all" ? "default" : reply.workspace,
-          trees: trees }, function(set) {
+      root.confirm(Controller.recordQuestion(reply), function() {
+        root.engine.call("set_trees", Controller.recordSetArgs(reply, root.scope), function(set) {
           if (!set.ok) {
             root.say(set.error, true)
             return
           }
-          var next = Object.assign({}, root.drafts)
-          next[r] = { node: Layout.parse(set.trees[r].tree).node, base: set.trees[r].tree }
-          root.drafts = next
+          var done = Controller.recordApplied(root.viewState(), reply, set)
+          if (done.error) {
+            root.say(done.error, true)
+            return
+          }
+          root.drafts = done.view.drafts
           root.keepSelection()
-          root.say("Applied the recorded tree " + set.trees[r].tree + ". Ctrl+S saves.", false)
+          root.say(done.text, false)
         })
       })
     })
@@ -1179,16 +1187,18 @@ Item {
   // other edits do (all workspaces: the shared trees; only workspace n: its
   // own), shows what it would make in the picture and asks y/n; n or Esc
   // puts the picture back. `n` defaults to the workspace shown, on All
-  // workspaces the focused one (Capture.workspaceFor).
+  // workspaces the focused one (Capture.workspaceFor). The view's moves
+  // are LayoutController.js's capture transitions.
   function startCapture(n) {
     if (refuseEdit() || !engine || !state) return
-    if (editedScreens().length > 0) {
-      say("Apply (w) or revert (d) your edits first: a capture replaces the arrangement.", true)
+    var start = Controller.captureStart(viewState(), n, state, focusedWorkspace, editedScreens())
+    if (start.error) {
+      say(start.error, true)
       return
     }
-    var target = n !== null && n !== undefined ? n : Capture.workspaceFor(state, workspace, focusedWorkspace)
-    var q = Capture.question(target)
-    ask(Prompts.choice(q.label, q.options, { inline: true }), function(scope) { root.previewCapture(target, scope) })
+    var target = start.workspace
+    ask(Prompts.choice(start.question.label, start.question.options, { inline: true }),
+      function(scope) { root.previewCapture(target, scope) })
   }
 
   // The bar's Capture and the open payload's: c on the focused workspace.
@@ -1210,20 +1220,9 @@ Item {
   // The preview: the panes draw the captured trees on the workspace they
   // are for (Capture.previewWorkspace), and the band asks y/n.
   function showCapture(reply) {
-    var back = { workspace: workspace, scope: scope, screen: screen, selectedKey: selectedKey }
-    var to = Capture.previewWorkspace(workspace, reply.scope, reply.workspace)
-    if (to !== workspace) {
-      workspace = to
-      scope = ""
-      drafts = ({})
-      screen = ""
-      sync()
-    }
-    var texts = Capture.previewTrees(reply)
-    var trees = {}
-    for (var k in texts) trees[k] = texts[k] !== null ? Layout.parse(texts[k]).node || null : null
-    selectedKey = ""
-    preview = { reply: reply, trees: trees, titles: Capture.titles(reply), back: back }
+    var step = Controller.capturePreview(viewState(), reply)
+    setView(step)
+    preview = step.preview
     var cancelled = function() { root.endCapture("Capture cancelled: nothing changed.", false) }
     ask(Prompts.confirm(Capture.previewText(reply)), function(yes) {
       if (yes) root.applyCapture(reply)
@@ -1233,18 +1232,9 @@ Item {
 
   // The picture as it was before the preview, and `text` said.
   function endCapture(text, isError) {
-    var back = preview ? preview.back : null
+    var step = Controller.captureEnd(viewState(), preview)
     preview = null
-    if (back && back.workspace !== workspace) {
-      workspace = back.workspace
-      drafts = ({})
-      screen = back.screen
-      sync()
-    }
-    if (back) {
-      scope = back.scope
-      selectedKey = back.selectedKey
-    }
+    setView(step)
     keepSelection()
     if (text) say(text, isError)
   }
@@ -1258,16 +1248,11 @@ Item {
         root.endCapture(done.error, true)
         return
       }
+      var step = Controller.captureApplied(root.viewState(), done)
       root.preview = null
-      root.scope = ""
-      var next = {}
-      for (var k in done.trees) {
-        var t = done.trees[k] && done.trees[k].tree ? String(done.trees[k].tree) : null
-        next[k] = { node: t !== null ? Layout.parse(t).node || null : null, base: t }
-      }
-      root.drafts = Object.assign({}, root.drafts, next)
+      root.setView(step)
       root.keepSelection()
-      root.say(Capture.appliedText(done), false)
+      root.say(step.text, false)
     })
   }
 

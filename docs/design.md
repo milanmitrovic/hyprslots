@@ -960,7 +960,7 @@ The repo is the plugin folder: `manifest.json` at its root (`kinds:
 | `Services.js` | where the service registers itself, for a bar widget whose bar hands it no `serviceFor` |
 | `AssignmentView.qml`, `LayoutView.qml`, `DesksLayoutsView.qml` | aerolayout's Assignment, Layout (with its logical slots as a list beside the screens) and monitors views (below) |
 | `ui/` (`qmldir`) | the editor's design system, one component per kind of element, all from the theme (below): `Tokens` (a singleton: colours, spacing, the Layout picture's divider band and line, the ratio label by the pointer, drag and drop's outline and fill, the mini-map's box), `SectionHeader`, `WorkspaceSwitcher`, `InfoText`, `ProblemText`, `Placeholder`, `TableHeader`, `TableRow` (`dropTarget`: outlined where a drag would land), `TableCell`, `PaneTitle`, `KeyCap`, `ActionButton`, `Toolbar`, `MiniMap` (a slot's place on its screen), `DeskMap` (a desk's monitors, the Desk tab), `DragGhost` (what a drag carries, and the label of what letting go does) |
-| `Protocol.js`, `Assignment.js`, `Layout.js`, `Slots.js`, `DesksLayouts.js`, `Prompts.js`, `Workspaces.js`, `BarStatus.js`, `Help.js`, `Messages.js`, `Guide.js`, `Install.js`, `Capture.js`, `Launch.js` | pure logic, tested under node (`editor/tests/`); `Slots.js` is the slot list's, `Workspaces.js` the workspace keys', `DesksLayouts.js` the Desk view's and the panel header's, `Help.js` the help rows', `Messages.js` the message band's, `Guide.js` the opening tab's and every empty state's, `Install.js` the enable prompt's (below), `Capture.js` the capture flow's question, preview and messages, `Launch.js` the Assignment page's launch setting, Launch column and Launch missing's reply |
+| `Protocol.js`, `Assignment.js`, `Layout.js`, `Slots.js`, `DesksLayouts.js`, `Prompts.js`, `Workspaces.js`, `BarStatus.js`, `Help.js`, `Messages.js`, `Guide.js`, `Install.js`, `Capture.js`, `LayoutController.js`, `Launch.js` | pure logic, tested under node (`editor/tests/`); `Slots.js` is the slot list's, `Workspaces.js` the workspace keys', `DesksLayouts.js` the Desk view's and the panel header's, `Help.js` the help rows', `Messages.js` the message band's, `Guide.js` the opening tab's and every empty state's, `Install.js` the enable prompt's (below), `Capture.js` the capture flow's question, preview and messages, `LayoutController.js` the Layout view's own moves through capture (preview, cancel, apply) and record, `Launch.js` the Assignment page's launch setting, Launch column and Launch missing's reply |
 
 **Opening tab.** The panel opens on the Layout tab while there are no
 global slots (that is where they are made), else on the Assignment tab
@@ -1225,7 +1225,7 @@ launches with (` (from your config)` for config.lua's, which the editor
 never edits), or why it cannot in the urgent colour (`can't launch: set a
 command`).
 
-**Capture, in the editor** (`Capture.js`, the Layout view). `c` (the
+**Capture, in the editor** (`Capture.js`, `LayoutController.js`, the Layout view). `c` (the
 toolbar's `capture`; the Assignment tab's `c`, the first-run button, the
 bar's menu, the Omarchy menu and Super+Ctrl+Shift+C lead here too) first
 asks whom it is for, `Capture workspace 3: apply to (a)ll workspaces or
@@ -2254,7 +2254,10 @@ Parked:
   arranged by hand captured), `e2e/editor_install.sh` (the enable prompt's
   choices toggled by key and click, the script run with `--keys --menu`),
   the smoke (Assignment `c`, the bar's Capture); node:
-  `editor/tests/capture.test.mjs`, `launch.test.mjs`.
+  `editor/tests/capture.test.mjs`, `layout-controller.test.mjs` (the view
+  moved to the preview, put back on n/Esc or a refused apply, kept on the
+  captured workspace once applied; record's checks and drafts),
+  `launch.test.mjs`.
 - **S3 — pure modules**: busted specs; aerolayout's unittest cases are ported
   where the logic carries over (tree parsing, weights, assignment, record).
 - **Editor**: the api it relies on is S2 (`spec/assignment_api_spec.lua`,
