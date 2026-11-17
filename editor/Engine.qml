@@ -52,6 +52,8 @@ Item {
 
   property int debounceMs: 60
   property int timeoutMs: 3000
+  // Enable's script polls the engine for a few seconds after the reload.
+  property int enableTimeoutMs: 30000
 
   // Every reply to a call, ok or not.
   signal replied(string name, var reply)
@@ -108,7 +110,7 @@ Item {
 
   // A job's process reports twice (its output, its exit); settle on both.
   function _settle(proc) {
-    if (!proc.outDone || !proc.exited || proc !== _current) return
+    if (!proc.outDone || !proc.exitDone || proc !== _current) return
     _complete(proc, Protocol.parseReply(proc.out, proc.code))
   }
 
@@ -192,13 +194,13 @@ Item {
       property string err: ""
       property bool outDone: false
       property bool errDone: false
-      property bool exited: false
+      property bool exitDone: false
       property int code: -1
 
       // It reports three times (its output, its errors, its exit); settle
       // on all of them.
       function settle() {
-        if (outDone && errDone && exited) root._enabled(enableProc, Install.outcome(code, out, err))
+        if (outDone && errDone && exitDone) root._enabled(enableProc, Install.outcome(code, out, err))
       }
 
       stdout: StdioCollector {
@@ -217,7 +219,7 @@ Item {
       }
       onExited: function(exitCode, exitStatus) {
         enableProc.code = exitCode
-        enableProc.exited = true
+        enableProc.exitDone = true
         enableProc.settle()
       }
     }
@@ -228,11 +230,12 @@ Item {
   Timer {
     id: enableWatchdog
     property var proc: null
-    interval: 30000
+    interval: root.enableTimeoutMs
     onTriggered: {
       if (!proc) return
       proc.running = false
-      root._enabled(proc, { ok: false, message: "tools/install-engine.sh did not finish within 30 s" })
+      root._enabled(proc, { ok: false, message: "tools/install-engine.sh did not finish within "
+        + root.enableTimeoutMs / 1000 + " s" })
     }
   }
 
@@ -245,7 +248,7 @@ Item {
       property var job: null
       property string out: ""
       property bool outDone: false
-      property bool exited: false
+      property bool exitDone: false
       property int code: -1
 
       stdout: StdioCollector {
@@ -257,7 +260,7 @@ Item {
       }
       onExited: function(exitCode, exitStatus) {
         proc.code = exitCode
-        proc.exited = true
+        proc.exitDone = true
         root._settle(proc)
       }
     }
