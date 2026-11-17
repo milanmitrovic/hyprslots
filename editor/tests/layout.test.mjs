@@ -334,9 +334,9 @@ import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const LUA = ["lua5.4", "lua5.5", "lua"].find((bin) => spawnSync(bin, ["-v"]).status === 0);
+import { luaBin, skipWithoutLua } from "./lua.mjs";
 
-test("tree text and ratios read as tree.lua, serialize.lua and ratio.lua read them", { skip: !LUA && "no lua" }, () => {
+test("tree text and ratios read as tree.lua, serialize.lua and ratio.lua read them", { skip: skipWithoutLua }, () => {
   const cases = [
     ["h[a, b:2, c]", "1:1:1"], ["h[v[left, main], right]", "2[1:2]:1"], ["h[v[a, b], v[c, d]]", "3[1:3]:1[3:1]"],
     ["h[a, b]", "1.5:1"], ["h[a, b, c]", "0.25:0.25:0.5"], ["h[a, b]", "1.37:1"], ["scroll[x, y, z]", "*:1:*"],
@@ -369,7 +369,7 @@ for line in io.lines() do
       .. (applied and serialize.tree(applied) or ("error: " .. aerr)))
   end
 end`;
-  const run = spawnSync(LUA, ["-e", script], { input: cases.map((c) => c.join("\t")).join("\n") + "\n", encoding: "utf8" });
+  const run = spawnSync(luaBin(), ["-e", script], { input: cases.map((c) => c.join("\t")).join("\n") + "\n", encoding: "utf8" });
   assert.equal(run.status, 0, run.stderr);
   const lua = run.stdout.trimEnd().split("\n");
   cases.forEach(([text, entry], i) => {
@@ -399,7 +399,7 @@ test("appendSlots adds slots as the engine's tree.append does: root split childr
   assert.equal(L.format(given), "h[a, b]", "the tree given is untouched");
 });
 
-test("appendSlots gives what tree.append gives", { skip: !LUA && "no lua" }, () => {
+test("appendSlots gives what tree.append gives", { skip: skipWithoutLua }, () => {
   const cases = [["h[a, b:2]", "x,y"], ["v[a, h[b, c]]", "x"], ["main", "x"], ["*", "x"], ["scroll:0.5[a, *]", "x,y"],
     ["scroll[*, a]", "x"], ["scroll[a]", "x"], ["h[a, *]", "x"], ["h[a:3, v[b, c]:2]", "x"], ["h[a, b]", ""]];
   const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -412,7 +412,7 @@ for line in io.lines() do
   for s in list:gmatch("[^,]+") do slots[#slots + 1] = s end
   print(serialize.tree(tree.append(assert(tree.parse(text)), slots)))
 end`;
-  const run = spawnSync(LUA, ["-e", script], { input: cases.map((c) => c.join("\t")).join("\n") + "\n", encoding: "utf8" });
+  const run = spawnSync(luaBin(), ["-e", script], { input: cases.map((c) => c.join("\t")).join("\n") + "\n", encoding: "utf8" });
   assert.equal(run.status, 0, run.stderr);
   const lua = run.stdout.trimEnd().split("\n");
   cases.forEach(([text, list], i) => {

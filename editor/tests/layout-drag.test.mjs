@@ -192,9 +192,9 @@ import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const LUA = ["lua5.4", "lua5.5", "lua"].find((bin) => spawnSync(bin, ["-v"]).status === 0);
+import { luaBin, skipWithoutLua } from "./lua.mjs";
 
-test("a drag is the whole tree's ratio as ratio.lua writes it in, and tree.lua reads it back", { skip: !LUA && "no lua" }, () => {
+test("a drag is the whole tree's ratio as ratio.lua writes it in, and tree.lua reads it back", { skip: skipWithoutLua }, () => {
   const cases = [
     ["h[main:2, right]", "main|right", 0.5], ["h[main, right]", "main|right", 0.43], ["h[main, right]", "main|right", 0.477],
     ["h[main, right]", "main|right", 0], ["h[a, b, c:8]", "a|b", 0], ["h[a, b, c]", "a|b", 0.25],
@@ -216,7 +216,7 @@ for line in io.lines() do
   local applied = assert(ratio.apply(node, ratio.format(after)))
   print(serialize.tree(applied) .. " | " .. serialize.tree(after))
 end`;
-  const run = spawnSync(LUA, ["-e", script], {
+  const run = spawnSync(luaBin(), ["-e", script], {
     // other windows' place shown: the drag writes it in, so the ratio is the
     // tree's with it (withOther)
     input: cases.map(([text, , , shown], i) => (shown ? L.format(L.withOther(tree(text))) : text) + "\t" + results[i])
