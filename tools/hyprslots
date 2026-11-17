@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# hyprslots from the command line (the Omarchy menu's entries run it):
+# hyprslots from the command line (the Omarchy menu's Launch missing apps
+# entry runs it; its Open editor and Capture entries summon the editor directly):
 #
 #   hyprslots editor              open the editor
 #   hyprslots capture             open it capturing the focused workspace

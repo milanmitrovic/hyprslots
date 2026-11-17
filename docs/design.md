@@ -2088,9 +2088,10 @@ Under `lua/hyprslots/`:
 Other top-level files and directories: `manifest.json` (the Omarchy plugin's
 manifest, §9), `editor/` (its QML, §9), `tools/` (the loader, the
 scripts that install and remove it, `menu-entries.sh` (the Omarchy menu's
-rows, §9) and `hyprslots` (the command line the menu runs: `editor`,
-`capture`, `launch-missing [N]`)), `spec/` (busted specs and
-`spec/helpers/hl_stub.lua`), `e2e/` (headless Hyprland harness).
+rows, §9) and `hyprslots` (a command line: `editor`, `capture`,
+`launch-missing [N]`; the Omarchy menu's Launch missing apps entry runs
+it, its Open editor and Capture entries summon the editor directly)),
+`spec/` (busted specs and `spec/helpers/hl_stub.lua`), `e2e/` (headless Hyprland harness).
 
 **Loading.** Nothing in the user's Hyprland config names hyprslots. Omarchy
 4.5's `default/hypr/toggles.lua` (line 23), which the stock `hyprland.lua`
