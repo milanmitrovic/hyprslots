@@ -2,7 +2,7 @@
 -- whether hyprslots opens the apps its empty slots wait for, never (the
 -- default), on demand (the editor's Launch missing) or at login too. This
 -- is the pure half: the command a spec launches with and which slots to
--- launch for. api.lua runs it (desktop.lua finds an app's desktop entry,
+-- launch for. launcher.lua runs it (desktop.lua finds an app's desktop entry,
 -- hl_adapter.exec starts it). No `hl`, no I/O.
 
 local spec = require("hyprslots.spec")

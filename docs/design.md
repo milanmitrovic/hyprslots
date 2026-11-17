@@ -866,12 +866,12 @@ new screen keeps whatever Omarchy shows on it.
 **Desk geometry.** While a desk is active the engine records its monitors'
 logical boxes (`desk.geometry`, §4) in slots.lua under the desk, so the
 editor can draw any desk's arrangement later, when it is not connected
-(§9's Desk tab). It does so (`api.record_geometry`, a oneshot hop after
+(§9's Desk tab). It does so (`persist.record_geometry`, a oneshot hop after
 `reselect`, which runs inside edits and saves) on load, after every desk
 change (hotplug, an edit) and on `monitor.layout_changed` (a mode, scale or
 position change), whenever the boxes differ from those recorded. Recording is
 no edit: it never makes the engine dirty. It is saved at once and quietly
-(`api.save`) while nothing else is unsaved, the same rule as a first run's
+(`persist.save`) while nothing else is unsaved, the same rule as a first run's
 new desk (no other edit, no slots.lua of before, no keyboard-resized tree);
 with edits pending, or slots.lua on disk no longer what runs (changed by
 hand, a `reload` that failed), it waits in the running data and goes with
@@ -909,11 +909,11 @@ where they are. The desk (`Engine:new_desk`):
   The editor's Desk view then applies another layout, forks one
   to customize, or renames the desk.
 
-It is an edit like the editor's (`api.new_desk`: `edit.add_layout`,
+It is an edit like the editor's (`edits.new_desk`: `edit.add_layout`,
 `edit.add_desk`, config.lua re-run), in memory until saved: `dirty`, the
 bar's unsaved dot, `state.desks[name].auto` until `save`. A reload without
 saving forgets it, and the monitors get one again. While there are no slots
-(a first run) the engine saves it at once (`api.save`, the atomic write of
+(a first run) the engine saves it at once (`persist.save`, the atomic write of
 `save`), so nothing reads as unsaved on first contact: the desk and its
 treeless layout are all there is to review. It does so only when nothing
 else is unsaved (no other edit, no slots.lua of before, no keyboard-resized
@@ -1916,7 +1916,7 @@ column is full width; a `*` among tiles is refused). The `ratio` in `state` is a
 and can be sent back unchanged. This `*` is the ratio grammar's own and is
 unrelated to the overflow leaf `*` of tree text.
 
-**Capture** (`capture.lua`, pure, and api `capture`; "turn what is on
+**Capture** (`capture.lua`, pure; `capture_apply.lua`; api `capture`; "turn what is on
 screen into a layout"). It reads workspace N's tiled windows on every
 screen of the active desk (floating ones are left out) and plans, in one
 edit:
@@ -1957,7 +1957,7 @@ one change event, unsaved until `save`, and the trees replaced lose their
 keyboard-resized copies. Without `apply` the same plan is checked and
 returned, changing nothing: the editor's preview.
 
-**Launching apps** (`launch.lua`, pure; `desktop.lua`; api `set_launch`,
+**Launching apps** (`launch.lua`, pure; `desktop.lua`; `launcher.lua`; api `set_launch`,
 `launch_missing`). Each workspace's `launch` setting (§4) says whether
 hyprslots opens the apps its empty slots wait for: **never** (the
 default), **on demand** (the editor's Launch missing, the Omarchy menu's
@@ -1991,7 +1991,7 @@ after it, the workspaces in order, their apps 0.4 s apart).
   for the slot is on its way (20 s, or until it arrives).
 - **Where.** `hl.exec_cmd(command, { workspace = "<id> silent" })`: on
   the slot's screen's workspace, not shown. The window that opens takes the
-  slot it was launched for (`Engine:launched_for`: the first, by
+  slot it was launched for (`launcher.launched_for`: the first, by
   workspace and slot, still on its way, empty, whose spec matches it), even
   where another workspace's slot with the same spec comes first in the
   router's precedence (§7); else it is routed as any window opening (a

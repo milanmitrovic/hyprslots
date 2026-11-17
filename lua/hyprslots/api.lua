@@ -4,15 +4,23 @@
 --   hyprctl repl 'return hyprslots.api.state()'
 --
 -- Every reply is a JSON string: { "ok": true, ... } or { "ok": false, "error": "..." }.
--- Nothing here raises into Hyprland. Calls: state, workspace, set_tree, set_ratio,
--- record, assign, unassign, save, reload, arrange; for the slot list (the
--- Layout tab's global slots) add_slot, remove_slot, rename_slot, describe_slot, set_slot_key; for the
--- Assignment view (each workspace's specs) take_spec, set_spec, clear_spec; for
--- the Layout view's shared trees fold_trees, drop_override; for
--- the Desk view add_desk, rename_desk, delete_desk, apply_layout, set_monitor_name,
--- add_layout, fork_layout, rename_layout, delete_layout (the
--- contract is in docs/design.md §9). Every change bumps `seq` and emits hl.dsp.event("hyprslots changed
--- <seq>").
+-- Nothing here raises into Hyprland. This is the protocol layer: it decodes
+-- a call's arguments, checks what the call needs, runs it and shapes the
+-- reply. The behaviour it runs lives in the engine's modules: the edit
+-- pipeline in edits.lua, saving and desk geometry in persist.lua, launching
+-- in launcher.lua, capture in capture_apply.lua (and capture.lua). The
+-- engine (init.lua) uses those, never this module, except to expose it.
+--
+-- Calls (the contract is in docs/design.md §9): state, workspace, set_tree,
+-- set_trees, set_ratio, reset, record, assign, unassign, save, reload,
+-- arrange; for the slot list (the Layout tab's global slots) add_slot,
+-- remove_slot, rename_slot, describe_slot, set_slot_key; for the Assignment
+-- view (each workspace's specs) take_spec, set_spec, clear_spec, and its
+-- launching set_launch, launch_missing; for the Layout view capture and the
+-- shared trees' fold_trees, drop_override; for the Desk view add_desk,
+-- rename_desk, delete_desk, apply_layout, set_monitor_name, add_layout,
+-- fork_layout, rename_layout, delete_layout. Every change bumps `seq` and
+-- emits hl.dsp.event("hyprslots changed <seq>").
 
 local json = require("hyprslots.dkjson")
 local adapter = require("hyprslots.hl_adapter")
