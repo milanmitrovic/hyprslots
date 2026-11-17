@@ -38,24 +38,9 @@ return {
 LUA
 }
 
-# hyprslots.api.call(name, json) -> its JSON reply.
-api() {
-  local args=${2:-'{}'}
-  args=${args//\\/\\\\}
-  args=${args//\"/\\\"}
-  repl "return hyprslots.api.call(\"$1\", \"$args\")"
-}
-
-# A field of a JSON reply (jq path).
-field() { jq -r "$1 | if . == null then \"\" else tostring end" 2>/dev/null; }
-
 main_tree() { api state | field '.layouts.solo.workspaces["3"]["1"].tree'; }
 
 tree_is() { [[ $(main_tree) == "$1" ]]; }
-
-on_workspace() {
-  [[ $(hc clients -j | jq -r --arg c "$1" 'first(.[] | select(.class == $c)) | .workspace.id') == "$2" ]]
-}
 
 # Socket2 lines, collected by a reader started in test_body.
 SOCKET2_LOG=''

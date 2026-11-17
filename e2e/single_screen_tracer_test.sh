@@ -37,17 +37,6 @@ LUA
 }
 
 # The value of a top-level key in hyprslots.api.call("state").
-state_field() {
-  repl 'return hyprslots.api.call("state", "{}")' | jq -r --arg k "$1" '.[$k] // empty | tostring' 2>/dev/null
-}
-
-desk_is() { [[ $(state_field desk) == "$1" ]]; }
-
-workspace_of() {
-  hc clients -j | jq -r --arg c "$1" 'first(.[] | select(.class == $c)) | .workspace.id'
-}
-
-on_workspace() { [[ $(workspace_of "$1") == "$2" ]]; }
 
 test_body() {
   output_create HEADLESS-2
@@ -58,7 +47,7 @@ test_body() {
 
   # The desk for the connected monitor, and its layout, are selected (after
   # the monitor appeared, so through monitor.added).
-  eventually 5 desk_is solo || true
+  eventually 5 is_desk solo || true
   expect_eq "active desk" "solo" "$(state_field desk)"
   expect_eq "screens" '["HEADLESS-2"]' "$(state_field screens)"
   expect_eq "active layout" "solo" "$(state_field layout)"

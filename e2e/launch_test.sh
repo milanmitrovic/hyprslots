@@ -40,13 +40,6 @@ return {
 LUA
 }
 
-api() {
-  local args=${2:-'{}'}
-  args=${args//\\/\\\\}
-  args=${args//\"/\\\"}
-  repl "return hyprslots.api.call(\"$1\", \"$args\")"
-}
-
 launched_count() { hc clients -j | jq '[.[] | select(.class == "t-launch")] | length'; }
 
 # "<workspace>/<slot>" of each t-launch window, sorted.

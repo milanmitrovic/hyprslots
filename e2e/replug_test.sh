@@ -12,10 +12,6 @@ workspace_monitor() {
   hc workspaces -j | jq -r --argjson id "$1" 'first(.[] | select(.id == $id)) | .monitor // empty'
 }
 
-active_desk() { repl 'return hyprslots.api.state()' | jq -r .desk; }
-
-is_desk() { [[ $(active_desk) == "$1" ]]; }
-
 test_body() {
   output_create HEADLESS-2
   output_create HEADLESS-3

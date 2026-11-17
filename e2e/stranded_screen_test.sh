@@ -40,15 +40,7 @@ return {
 LUA
 }
 
-active_desk() { repl 'return hyprslots.api.state()' | jq -r .desk; }
-
-is_desk() { [[ $(active_desk) == "$1" ]]; }
-
 assignments() { repl 'return hyprslots.api.state()' | jq -cS .assignments; }
-
-client_workspace() {
-  hc clients -j | jq -r --arg c "$1" 'first(.[] | select(.class == $c)) | .workspace.id'
-}
 
 blocks_file() {
   awk -F'\t' '{ printf "%s:%s ", $1, $2 }' "$E2E_STATE_HOME/omarchy/monitor-workspaces" | sed 's/ $//'
@@ -67,8 +59,8 @@ test_body() {
   hc dispatch "hl.dsp.focus({ workspace = '5' })" >/dev/null
   spawn_and_wait u-free
   settle
-  expect_eq "t-main on workspace 3" "3" "$(client_workspace t-main)"
-  expect_eq "u-free on workspace 5" "5" "$(client_workspace u-free)"
+  expect_eq "t-main on workspace 3" "3" "$(workspace_of t-main)"
+  expect_eq "u-free on workspace 5" "5" "$(workspace_of u-free)"
   local before
   before=$(assignments)
 
@@ -85,8 +77,8 @@ test_body() {
   # both windows under their workspace numbers.
   expect_eq "Omarchy's blocks" "0:HEADLESS-3" "$(blocks_file)"
   expect_eq "workspaces with windows" "3@HEADLESS-3 5@HEADLESS-3" "$(occupied)"
-  expect_eq "t-main on workspace 3" "3" "$(client_workspace t-main)"
-  expect_eq "u-free on workspace 5" "5" "$(client_workspace u-free)"
+  expect_eq "t-main on workspace 3" "3" "$(workspace_of t-main)"
+  expect_eq "u-free on workspace 5" "5" "$(workspace_of u-free)"
   local shown
   shown=$(hc monitors -j | jq -r 'first(.[] | select(.name == "HEADLESS-3")) | .activeWorkspace.id')
   if ((shown >= 1 && shown <= 9)); then pass "HEADLESS-3 shows workspace $shown"; else fail "HEADLESS-3 shows $shown, not 1-9"; fi

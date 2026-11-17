@@ -51,15 +51,7 @@ return {
 LUA
 }
 
-active_desk() { repl 'return hyprslots.api.state()' | jq -r .desk; }
-
-is_desk() { [[ $(active_desk) == "$1" ]]; }
-
 assignments() { repl 'return hyprslots.api.state()' | jq -cS .assignments; }
-
-client_workspace() {
-  hc clients -j | jq -r --arg c "$1" 'first(.[] | select(.class == $c)) | .workspace.id'
-}
 
 workspace_monitor() {
   hc workspaces -j | jq -r --argjson id "$1" 'first(.[] | select(.id == $id)) | .monitor // empty'
@@ -98,9 +90,9 @@ test_body() {
   hc dispatch "hl.dsp.focus({ workspace = '17' })" >/dev/null
   spawn_and_wait u-free
   settle
-  expect_eq "t-main on left's workspace 3" "3" "$(client_workspace t-main)"
-  expect_eq "t-side on right's workspace 5" "15" "$(client_workspace t-side)"
-  expect_eq "u-free on right's workspace 7" "17" "$(client_workspace u-free)"
+  expect_eq "t-main on left's workspace 3" "3" "$(workspace_of t-main)"
+  expect_eq "t-side on right's workspace 5" "15" "$(workspace_of t-side)"
+  expect_eq "u-free on right's workspace 7" "17" "$(workspace_of u-free)"
   local before
   before=$(assignments)
   log "assignments: $before"
@@ -117,9 +109,9 @@ test_body() {
   expect_eq "Omarchy's blocks" "0:HEADLESS-3" "$(blocks_file)"
   expect_workspace_between HEADLESS-3 1 9
   expect_eq "workspaces with windows" "3@HEADLESS-3 5@HEADLESS-3 7@HEADLESS-3" "$(occupied)"
-  expect_eq "t-main on workspace 3" "3" "$(client_workspace t-main)"
-  expect_eq "t-side on workspace 5" "5" "$(client_workspace t-side)"
-  expect_eq "u-free on workspace 7" "7" "$(client_workspace u-free)"
+  expect_eq "t-main on workspace 3" "3" "$(workspace_of t-main)"
+  expect_eq "t-side on workspace 5" "5" "$(workspace_of t-side)"
+  expect_eq "u-free on workspace 7" "7" "$(workspace_of u-free)"
   expect_eq "assignments kept" "$before" "$(assignments)"
 
   # When left is turned back on.
@@ -134,9 +126,9 @@ test_body() {
   expect_eq "Omarchy's blocks" "0:HEADLESS-2 1:HEADLESS-3" "$(blocks_file)"
   expect_workspace_between HEADLESS-2 1 9
   expect_workspace_between HEADLESS-3 11 19
-  expect_eq "t-main on left's workspace 3" "3" "$(client_workspace t-main)"
+  expect_eq "t-main on left's workspace 3" "3" "$(workspace_of t-main)"
   expect_eq "workspace 3 on left" "HEADLESS-2" "$(workspace_monitor 3)"
-  expect_eq "t-side on right's workspace 5" "15" "$(client_workspace t-side)"
+  expect_eq "t-side on right's workspace 5" "15" "$(workspace_of t-side)"
   expect_eq "workspace 15 on right" "HEADLESS-3" "$(workspace_monitor 15)"
   expect_eq "assignments kept" "$before" "$(assignments)"
   expect_eq "no workspace with windows left out of 1-9, 11-19" "" \

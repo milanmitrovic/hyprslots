@@ -157,6 +157,41 @@ expect_eq() {
   fi
 }
 
+# api NAME [JSON]: hyprslots.api.call(NAME, JSON) in the test instance, which
+# prints its JSON reply. JSON (default {}) travels inside a Lua string, so
+# its backslashes and double quotes are escaped here.
+api() {
+  local args=${2:-'{}'}
+  args=${args//\\/\\\\}
+  args=${args//\"/\\\"}
+  repl "return hyprslots.api.call(\"$1\", \"$args\")"
+}
+
+# The engine's state (hyprslots.api.state()), as JSON.
+api_state() { repl 'return hyprslots.api.state()'; }
+
+# state_is JQ-PATH VALUE: the state's JQ-PATH (jq -r) reads VALUE.
+state_is() { [[ $(api_state | jq -r "$1") == "$2" ]]; }
+
+# A field of the JSON reply on stdin (jq path), empty when null or unparsable.
+field() { jq -r "$1 | if . == null then \"\" else tostring end" 2>/dev/null; }
+
+# A top-level field of the state, by name, empty when absent.
+state_field() { api state | jq -r --arg k "$1" '.[$k] // empty | tostring' 2>/dev/null; }
+
+# The active desk's name, empty when there is none.
+active_desk() { api_state | jq -r '.desk // empty'; }
+
+is_desk() { [[ $(active_desk) == "$1" ]]; }
+
+# The workspace id of the (first) client of class $1, empty when none is.
+workspace_of() {
+  hc clients -j | jq -r --arg c "$1" 'first(.[] | select(.class == $c)) | .workspace.id'
+}
+
+# on_workspace CLASS WORKSPACE
+on_workspace() { [[ $(workspace_of "$1") == "$2" ]]; }
+
 # The error the loader (tools/loader.lua) caught loading hyprslots, or empty.
 # (`hyprctl repl` answers an empty string with "unknown request", so the
 # no-error case travels as a sentinel.)

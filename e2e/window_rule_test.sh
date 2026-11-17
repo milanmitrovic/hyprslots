@@ -36,10 +36,6 @@ opened_on() {
   grep -a "^openwindow>>.*,t-main," "$E2E_DIR/events.log" | head -n1 | cut -d'>' -f3 | cut -d, -f2
 }
 
-workspace_of() {
-  hc clients -j | jq -r --arg c "$1" 'first(.[] | select(.class == $c)) | .workspace.id'
-}
-
 test_body() {
   command -v socat >/dev/null || harness_fail "socat is needed to read socket2"
   output_create HEADLESS-2

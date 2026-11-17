@@ -58,18 +58,6 @@ return {
 LUA
 }
 
-state_field() {
-  repl 'return hyprslots.api.call("state", "{}")' | jq -r --arg k "$1" '.[$k] // empty | tostring' 2>/dev/null
-}
-
-desk_is() { [[ $(state_field desk) == "$1" ]]; }
-
-workspace_of() {
-  hc clients -j | jq -r --arg c "$1" 'first(.[] | select(.class == $c)) | .workspace.id'
-}
-
-on_workspace() { [[ $(workspace_of "$1") == "$2" ]]; }
-
 # Widths on workspace $1 in column order (left to right on the tape).
 widths() {
   hc clients -j | jq -r --arg w "$1" '[.[] | select(.workspace.id == ($w | tonumber) and (.floating | not))]
@@ -84,7 +72,7 @@ test_body() {
   local load_error
   load_error=$(hyprslots_load_error | head -n1)
   expect_eq "hyprslots loaded" "" "$load_error"
-  eventually 5 desk_is solo || true
+  eventually 5 is_desk solo || true
   expect_eq "active desk" "solo" "$(state_field desk)"
   expect_eq "active layout" "solo" "$(state_field layout)"
 

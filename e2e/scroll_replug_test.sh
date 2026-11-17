@@ -52,14 +52,6 @@ return {
 LUA
 }
 
-active_desk() { repl 'return hyprslots.api.state()' | jq -r '.desk // empty'; }
-
-is_desk() { [[ $(active_desk) == "$1" ]]; }
-
-workspace_of() {
-  hc clients -j | jq -r --arg c "$1" 'first(.[] | select(.class == $c)) | .workspace.id'
-}
-
 # Classes on workspace $1 in column order (left to right on the tape).
 columns() {
   hc clients -j | jq -r --arg w "$1" '[.[] | select(.workspace.id == ($w | tonumber) and (.floating | not))]

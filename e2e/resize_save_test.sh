@@ -39,15 +39,6 @@ return {
 LUA
 }
 
-api() {
-  local args=${2:-'{}'}
-  args=${args//\\/\\\\}
-  args=${args//\"/\\\"}
-  repl "return hyprslots.api.call(\"$1\", \"$args\")"
-}
-
-field() { jq -r "$1 | if . == null then \"\" else tostring end" 2>/dev/null; }
-
 main_tree() { api state | field '.layouts.solo.workspaces["3"]["1"].tree'; }
 
 tree_is() { [[ $(main_tree) == "$1" ]]; }

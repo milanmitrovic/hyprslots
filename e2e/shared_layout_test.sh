@@ -49,27 +49,6 @@ return {
 LUA
 }
 
-# hyprslots.api.call(name, json) -> its JSON reply.
-api() {
-  local args=${2:-'{}'}
-  args=${args//\\/\\\\}
-  args=${args//\"/\\\"}
-  repl "return hyprslots.api.call(\"$1\", \"$args\")"
-}
-
-# A field of a JSON reply (jq path).
-field() { jq -r "$1 | if . == null then \"\" else tostring end" 2>/dev/null; }
-
-active_desk() { api state | field .desk; }
-
-is_desk() { [[ $(active_desk) == "$1" ]]; }
-
-workspace_of() {
-  hc clients -j | jq -r --arg c "$1" 'first(.[] | select(.class == $c)) | .workspace.id'
-}
-
-on_workspace() { [[ $(workspace_of "$1") == "$2" ]]; }
-
 test_body() {
   output_create HEADLESS-2
   expect_eq "hyprslots loaded" "" "$(hyprslots_load_error | head -n1)"

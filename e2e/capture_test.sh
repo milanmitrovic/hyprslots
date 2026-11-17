@@ -27,13 +27,6 @@ LUA
   rm -rf "$E2E_CONFIG_HOME/hyprslots"
 }
 
-api() {
-  local args=${2:-'{}'}
-  args=${args//\\/\\\\}
-  args=${args//\"/\\\"}
-  repl "return hyprslots.api.call(\"$1\", \"$args\")"
-}
-
 state() { api state; }
 
 # A foot window of class foot titled $1 on the focused workspace.
