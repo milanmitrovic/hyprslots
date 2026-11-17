@@ -428,6 +428,48 @@ describe("a scroll branch", function()
     assert.are.equal(0.6, hl.widths[main.address])
   end)
 
+  -- Hyprland collapsed a column to 1 px after a zero resize (Engine:relayout
+  -- now spares scroll workspaces); the pass, having widened that column
+  -- before, leaves it so. Such a column is said once in the log, where
+  -- hyprslots.dump() shows it, not on every pass.
+  local function narrow_warnings()
+    local out = {}
+    for line in hyprslots.dump():gmatch("[^\n]+") do
+      if line:match(" warn scroll on workspace %d+: column") then
+        out[#out + 1] = line
+      end
+    end
+    return out
+  end
+
+  it("warns once when a column it widened ends up narrower than its layout", function()
+    setup()
+    local main = open(1, "t-main", 3)
+    focus(main)
+    hl.run_timers()
+    assert.are.same({}, narrow_warnings())
+    hl.widths[main.address] = 1 / 2400 -- collapsed by Hyprland
+    hl.emit("workspace.active", main.workspace)
+    hl.run_timers()
+    local warnings = narrow_warnings()
+    assert.are.equal(1, #warnings)
+    assert.matches("workspace 3", warnings[1], 1, true)
+    assert.matches(main.address, warnings[1], 1, true)
+    assert.matches("0.000 wide", warnings[1], 1, true)
+    assert.matches("layout says 0.99", warnings[1], 1, true)
+    focus(main)
+    hl.emit("workspace.active", main.workspace)
+    hl.run_timers()
+    assert.are.equal(1, #narrow_warnings(), "once per change, not every pass")
+    hl.widths[main.address] = 0.99
+    focus(main)
+    hl.run_timers()
+    hl.widths[main.address] = 1 / 2400 -- collapsed again: a new change
+    focus(main)
+    hl.run_timers()
+    assert.are.equal(2, #narrow_warnings())
+  end)
+
   describe("in the api", function()
     it("says which layout each workspace gets", function()
       setup()

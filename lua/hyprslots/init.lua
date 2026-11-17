@@ -68,6 +68,7 @@ local function new_engine()
     since_save = {}, -- renames and removals since data was slots.lua's (api.lua's reset reads through them)
     ruled = {}, -- workspace id -> the layout hyprslots gave it ("lua:slots" or "scrolling")
     scroll_seen = {}, -- workspace id -> set of windows whose columns scroll.lua has widened
+    scroll_narrow = {}, -- workspace id -> address -> width a too-narrow column was logged at (scroll.lua)
     resized = {}, -- "<layout>/<workspace>/<screen>" -> keyboard-resized tree (resize.lua)
     auto_desks = {}, -- desk name -> true: made for monitors no desk knew, not saved yet
     recent_layouts = {}, -- layout names, the most recently used first

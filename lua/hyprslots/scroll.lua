@@ -38,6 +38,11 @@ local M = {}
 -- not full width.
 local WIDTH_TOLERANCE = 0.005
 
+-- A column the pass widened that is narrower than its layout by more than
+-- this share of the layout's width, once the pass is done, is said in the
+-- log (Hyprland can collapse a column to 1 px, docs/design.md §6).
+local NARROW_TOLERANCE = 0.05
+
 -- Deferral for the pass, after the event that asked for it.
 local DEFER_MS = 20
 
@@ -200,10 +205,17 @@ function M.arrange(engine, opts)
       engine.scroll_widths[id] = nil
     end
   end
+  engine.scroll_narrow = engine.scroll_narrow or {}
+  for id in pairs(engine.scroll_narrow) do
+    if not scrolls[id] then
+      engine.scroll_narrow[id] = nil
+    end
+  end
 
   for _, id in ipairs(ids) do
     if not M.managed(engine, id) then
       engine.scroll_seen[id] = nil
+      engine.scroll_narrow[id] = nil
     else
       local entry = engine.workspaces[id]
       local windows, slots = columns(engine, id, entry)
@@ -252,9 +264,33 @@ function M.arrange(engine, opts)
         end
       end
       engine.scroll_seen[id] = now
+      M.check_widths(engine, id, now, width, changed and (columns(engine, id, entry)) or windows)
     end
   end
   return result
+end
+
+-- Say in the log, once per change, each column of workspace `id` the pass
+-- has widened (`widened`: address -> true) that ends up narrower than the
+-- layout's `width` (a fraction of the screen): `windows` as the pass leaves
+-- them. A column the user narrowed is said too; a column that is fine again
+-- is forgotten, so collapsing again is said again.
+function M.check_widths(engine, id, widened, width, windows)
+  engine.scroll_narrow = engine.scroll_narrow or {}
+  local said = engine.scroll_narrow[id] or {}
+  local now = {}
+  for _, window in ipairs(windows) do
+    local actual = window.width
+    if widened[window.address] and type(actual) == "number" and actual < width * (1 - NARROW_TOLERANCE) then
+      local shown = string.format("%.3f", actual)
+      now[window.address] = shown
+      if said[window.address] ~= shown then
+        engine.log:warn("scroll on workspace %d: column of window %s (slot %s) is %s wide, layout says %s",
+          id, tostring(window.address), tostring(window.slot or "none"), shown, tostring(width))
+      end
+    end
+  end
+  engine.scroll_narrow[id] = next(now) and now or nil
 end
 
 -- Give the engine `engine.rearrange(reason)`, which schedules one deferred
