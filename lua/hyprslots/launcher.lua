@@ -23,6 +23,20 @@ local LAUNCH_WAIT_MS = 20000
 local LOGIN_WAIT_MS = 1500
 local LOGIN_STAGGER_MS = 400
 
+-- A launch's claim on slot `slot` of workspace n, as engine.launching
+-- keys it ("<n>/<slot>"), and back: n (a number) and the slot, or nil.
+function M.claim_key(n, slot)
+  return n .. "/" .. slot
+end
+
+function M.claim_of(key)
+  local n, slot = key:match("^(%d+)/(.+)$")
+  if not n then
+    return nil
+  end
+  return tonumber(n), slot
+end
+
 -- fn(class) -> desktop id, command: the entry the data recorded for the
 -- class, else the one desktop.resolve finds; cached for the Lua state.
 local function desktop_resolver(engine)
@@ -101,8 +115,8 @@ function M.workspace(engine, n, stagger)
   engine.launching = engine.launching or {}
   local pending = {}
   for key in pairs(engine.launching) do
-    local ws, slot = key:match("^(%d+)/(.+)$")
-    if tonumber(ws) == n then
+    local ws, slot = M.claim_of(key)
+    if ws == n then
       pending[slot] = true
     end
   end
@@ -115,7 +129,7 @@ function M.workspace(engine, n, stagger)
     command = function(entry) return M.command(engine, entry) end,
   })
   for i, item in ipairs(plan.launch) do
-    local key = n .. "/" .. item.slot
+    local key = M.claim_key(n, item.slot)
     local id = slot_workspace_id(engine, n, item.slot)
     engine.launching[key] = true
     engine.log:info("launch %s for %s on workspace %d: %s", item.spec, item.slot, n, item.command)
@@ -170,9 +184,9 @@ function M.launched_for(engine, window)
   end
   local waiting = {}
   for key in pairs(engine.launching) do
-    local n, slot = key:match("^(%d+)/(.+)$")
+    local n, slot = M.claim_of(key)
     if n then
-      waiting[#waiting + 1] = { key = key, workspace = tonumber(n), slot = slot }
+      waiting[#waiting + 1] = { key = key, workspace = n, slot = slot }
     end
   end
   table.sort(waiting, function(a, b)
@@ -183,7 +197,7 @@ function M.launched_for(engine, window)
   end)
   local taken = {}
   for _, a in pairs(engine.assignments) do
-    taken[a.workspace .. "/" .. a.slot] = true
+    taken[M.claim_key(a.workspace, a.slot)] = true
   end
   for _, w in ipairs(waiting) do
     local entry = engine.cfg.specs[w.workspace] and engine.cfg.specs[w.workspace][w.slot]

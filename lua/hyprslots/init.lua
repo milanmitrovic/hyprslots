@@ -10,11 +10,11 @@
 
 local adapter = require("hyprslots.hl_adapter")
 local api = require("hyprslots.api")
-local edits = require("hyprslots.edits")
 local assign = require("hyprslots.assign")
 local blocks = require("hyprslots.blocks")
 local config = require("hyprslots.config")
 local desk = require("hyprslots.desk")
+local edits = require("hyprslots.edits")
 local workspaces = require("hyprslots.workspaces")
 local hotplug = require("hyprslots.hotplug")
 local launcher = require("hyprslots.launcher")
