@@ -4,7 +4,7 @@
 -- window no slot holds (named after its app), records each screen's
 -- arrangement as its tree and gives each window's slot the window's spec on
 -- that workspace. This is its pure half: the names, the trees and the
--- plan; api.lua gathers the windows and applies it. No `hl`, no I/O.
+-- plan; capture_apply.lua gathers the windows and applies it. No `hl`, no I/O.
 
 local edit = require("hyprslots.edit")
 local record = require("hyprslots.record")

@@ -158,4 +158,25 @@ function M.bind_keys(engine_ref)
   end
 end
 
+-- Workspace N of the focused workspace on the active desk (its screen's
+-- block, blocks.lua), or nil.
+function M.focused(engine)
+  local id = adapter.active_workspace_id()
+  local entry = engine:entry_of_workspace(id)
+  if entry then
+    return entry.workspace
+  end
+  if not engine.active or id == nil then
+    return nil
+  end
+  for n = 1, M.count(engine) do
+    for _, monitor in ipairs(engine.active.monitors) do
+      if adapter.workspace_id(monitor, n) == id then
+        return n
+      end
+    end
+  end
+  return nil
+end
+
 return M

@@ -17,6 +17,7 @@
 local json = require("hyprslots.dkjson")
 local adapter = require("hyprslots.hl_adapter")
 local capture = require("hyprslots.capture")
+local capture_apply = require("hyprslots.capture_apply")
 local config = require("hyprslots.config")
 local desk = require("hyprslots.desk")
 local desktop = require("hyprslots.desktop")
@@ -1020,87 +1021,6 @@ end
 
 -- Capture (docs/design.md §9) ----------------------------------------------
 
--- Workspace N of the focused workspace on the active desk (its screen's
--- block, blocks.lua), or nil.
-local function focused_workspace(engine)
-  local id = adapter.active_workspace_id()
-  local entry = engine:entry_of_workspace(id)
-  if entry then
-    return entry.workspace
-  end
-  if not engine.active or id == nil then
-    return nil
-  end
-  for n = 1, workspaces.count(engine) do
-    for _, monitor in ipairs(engine.active.monitors) do
-      if adapter.workspace_id(monitor, n) == id then
-        return n
-      end
-    end
-  end
-  return nil
-end
-
--- What capture.plan reads of workspace n's screens: each screen's tiled
--- windows (a scrolling one's with their columns), whether it scrolls, and
--- its tree in force for the scope's trees.
-local function capture_screens(engine, n, scope)
-  local layout = engine.cfg.layouts[engine.active.layout]
-  local current = scope == "all" and layout.default or (config.trees_for(layout, n) or {})
-  local all = adapter.windows()
-  local screens = {}
-  for i, monitor in ipairs(engine.active.monitors) do
-    local id = adapter.workspace_id(monitor, n)
-    local scrolling = adapter.workspace_tiled_layout(id) == "scrolling"
-    local columns = {}
-    if scrolling then
-      for _, w in ipairs(adapter.scroll_windows(id)) do
-        columns[w.address] = w
-      end
-    end
-    local windows = {}
-    for _, window in ipairs(all) do
-      if window.workspace_id == id and not window.floating and window.box and window.address then
-        local column = columns[window.address]
-        if not scrolling or column then
-          if column then
-            window.column, window.row, window.column_width = column.column, column.row, column.width
-          end
-          windows[#windows + 1] = window
-        end
-      end
-    end
-    screens[i] = { windows = windows, scroll = scrolling, current = current and current[i] or nil }
-  end
-  return screens
-end
-
--- What a capture would do, as one short token: FNV-1a (32 bits, hex) over
--- its workspace, scope (none counts as "all", as it previews), layout, each
--- screen's tree and ratio, the slots it makes
--- with their keys and each window's address, slot, spec and newness, in
--- order. Two captures with the same token make the same edit.
-local function capture_fingerprint(n, scope, layout, trees, new_slots, windows)
-  local parts = { "workspace=" .. n, "scope=" .. (scope or "all"), "layout=" .. layout }
-  for _, screen in ipairs(util.sorted_keys(trees)) do
-    local t = trees[screen]
-    parts[#parts + 1] = "screen " .. screen .. "=" .. (t and (t.tree .. " " .. t.ratio) or "none")
-  end
-  for _, s in ipairs(new_slots) do
-    parts[#parts + 1] = "slot " .. s.slot .. "=" .. tostring(s.key)
-  end
-  for _, w in ipairs(windows) do
-    parts[#parts + 1] = "window " .. w.address .. "=" .. tostring(w.slot) .. " " .. tostring(w.spec) .. " "
-      .. tostring(w.new == true)
-  end
-  local text = table.concat(parts, "\n")
-  local h = 2166136261
-  for i = 1, #text do
-    h = (h ~ text:byte(i)) * 16777619 & 0xffffffff
-  end
-  return string.format("%08x", h)
-end
-
 -- A capture's arguments and what it needs of the engine: workspace n (the
 -- focused one when none is given), the scope, the layout it edits. Returns
 -- n, scope, layout, or nil and why.
@@ -1114,7 +1034,7 @@ local function capture_target(engine, args)
   if not engine.active then
     return nil, "no desk is active: the monitors connected are no desk's yet"
   end
-  local n = args.workspace ~= nil and as_integer(args.workspace) or focused_workspace(engine)
+  local n = args.workspace ~= nil and as_integer(args.workspace) or workspaces.focused(engine)
   local ok_ws, ws_err = workspaces.check(n, workspaces.count(engine), args.workspace or n)
   if not ok_ws then
     return nil, ws_err
@@ -1133,74 +1053,6 @@ local function capture_target(engine, args)
   return n, scope, name
 end
 
--- A capture plan's edit of the data: the new slots (keys picked as the slot
--- list's a picks them), workspace n's specs, the trees of layout `name` for
--- the scope. Returns data and the reply's trees (screen -> { tree, ratio },
--- or false), or nil and why.
-local function capture_edit(engine, plan, name, n, scope)
-  local data, err = engine.data, nil
-  if #plan.new_slots > 0 then
-    local ok, slots_err = editable_slots(engine)
-    if not ok then
-      return nil, slots_err
-    end
-  end
-  for _, slot in ipairs(plan.new_slots) do
-    data, err = edit.add_slot(data, slot)
-    if not data then
-      return nil, err
-    end
-  end
-  if next(plan.specs) ~= nil then
-    local ok, specs_err = editable_specs(engine, n)
-    if not ok then
-      return nil, specs_err
-    end
-  end
-  local spec_texts = {}
-  for _, slot in ipairs(util.sorted_keys(plan.specs)) do
-    data, err = edit.set_spec(data, n, slot, plan.specs[slot])
-    if not data then
-      return nil, err
-    end
-    spec_texts[#spec_texts + 1] = plan.specs[slot]
-  end
-  data = launcher.with_desktop_ids(engine, data, spec_texts)
-  local texts, trees = {}, object()
-  for screen, node in pairs(plan.trees) do
-    if node then
-      texts[screen] = serialize.tree(node)
-      trees[tostring(screen)] = object({ tree = texts[screen], ratio = ratio.format(node) })
-    else
-      trees[tostring(screen)] = false
-    end
-  end
-  data, err = edit.replace_trees(data, name, scope == "workspace" and n or "default", texts,
-    scope ~= "workspace" and n or nil)
-  if not data then
-    return nil, err
-  end
-  return data, trees
-end
-
--- load_checked's check of a capture: the config took every new slot and
--- each of workspace n's specs from the data.
-local function capture_check(plan, n)
-  return function(cfg)
-    for _, slot in ipairs(plan.new_slots) do
-      if not cfg.slots[slot] then
-        return not_taken("the slots")
-      end
-    end
-    for slot, text in pairs(plan.specs) do
-      if workspace_spec(cfg, n, slot) ~= text then
-        return not_taken("workspace " .. n .. "'s specs")
-      end
-    end
-    return nil
-  end
-end
-
 -- The reply of a capture of workspace n (handlers.capture says its
 -- fields), not yet applied; cfg is the edit's, for the new slots' keys.
 local function capture_reply(plan, cfg, n, scope, name, trees)
@@ -1213,26 +1065,12 @@ local function capture_reply(plan, cfg, n, scope, name, trees)
     windows[i] = object({ address = w.address, class = w.class, title = w.title, slot = w.slot, spec = w.spec,
       new = w.new })
   end
-  return { workspace = n, scope = scope, layout = name, trees = trees, new_slots = new_slots,
-    windows = windows, plan = capture_fingerprint(n, scope, name, trees, new_slots, windows), applied = false }
-end
-
--- Run a capture's edit: each window into its slot first, so the re-solve
--- under the new specs keeps it there; the trees replaced lose their
--- keyboard-resized copies.
-local function apply_capture(engine, plan, cfg, data, name, n, scope)
-  for address, slot in pairs(plan.assign) do
-    engine.assignments[address] = { workspace = n, slot = slot }
-    engine.overflow[address] = nil
-    engine.unassigned[address] = nil
+  local json_trees = object()
+  for screen, t in pairs(trees) do
+    json_trees[screen] = t and object(t)
   end
-  for screen = 1, cfg.layouts[name].screens do
-    resize.clear(engine, name, scope == "workspace" and n or "default", screen)
-    if scope ~= "workspace" then
-      resize.clear(engine, name, n, screen)
-    end
-  end
-  engine:apply_config(cfg, data, true)
+  return { workspace = n, scope = scope, layout = name, trees = json_trees, new_slots = new_slots,
+    windows = windows, plan = capture_apply.fingerprint(n, scope, name, trees, new_slots, windows), applied = false }
 end
 
 -- capture { workspace? (default the focused one), scope ("all": the shared
@@ -1259,16 +1097,16 @@ function handlers.capture(engine, args)
     specs = engine.cfg.specs[n] or {},
     title_matching = engine.cfg.title_matching,
     assignments = engine.assignments,
-    screens = capture_screens(engine, n, scope or "all"),
+    screens = capture_apply.screens(engine, n, scope or "all"),
   })
   if not plan then
     return fail(plan_err)
   end
-  local data, trees = capture_edit(engine, plan, name, n, scope)
+  local data, trees = capture_apply.edit(engine, plan, name, n, scope)
   if not data then
     return fail(trees)
   end
-  local cfg, load_err = load_checked(engine, data, capture_check(plan, n))
+  local cfg, load_err = load_checked(engine, data, capture_apply.check(plan, n))
   if not cfg then
     return fail(load_err)
   end
@@ -1280,7 +1118,7 @@ function handlers.capture(engine, args)
   if args.plan ~= nil and args.plan ~= reply.plan then
     return fail("the windows changed since the preview: capture again")
   end
-  apply_capture(engine, plan, cfg, data, name, n, scope)
+  capture_apply.apply(engine, plan, cfg, data, name, n, scope)
   reply.applied = true
   reply.seq = engine.seq
   return reply
@@ -1327,7 +1165,7 @@ function handlers.launch_missing(engine, args)
   if not engine.cfg then
     return fail("hyprslots has no config running")
   end
-  local n = args.workspace ~= nil and as_integer(args.workspace) or focused_workspace(engine)
+  local n = args.workspace ~= nil and as_integer(args.workspace) or workspaces.focused(engine)
   local ok_ws, ws_err = workspaces.check(n, workspaces.count(engine), args.workspace or n)
   if not ok_ws then
     return fail(ws_err)
