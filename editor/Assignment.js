@@ -1,4 +1,5 @@
 .pragma library
+.import "Workspaces.js" as Workspaces
 
 // The Assignment view's model: which live window fills which slot, read off
 // one api `state` reply (docs/design.md §9). Ported from aerolayout's
@@ -23,17 +24,11 @@
 // for), "empty" (a slot of the workspace with no window and no spec: nothing
 // says what fills it, so nothing is missing).
 
-// How many workspaces the engine manages (state `workspace_count`, 1 to 10;
-// 10 without one), as Workspaces.js counts them.
-function workspaceCount(state) {
-  var n = state && state.workspace_count
-  return typeof n === "number" && n >= 1 && n <= 10 ? n : 10
-}
-
-// The pages ←/→ move through: workspaces 1 to N, the ones the engine manages.
+// The pages ←/→ move through: workspaces 1 to N, the ones the engine manages
+// (Workspaces.count).
 function pages(state) {
   var out = []
-  var last = workspaceCount(state)
+  var last = Workspaces.count(state)
   for (var n = 1; n <= last; n++) out.push({ workspace: n, label: "Workspace " + n })
   return out
 }
