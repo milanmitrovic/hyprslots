@@ -955,6 +955,7 @@ The repo is the plugin folder: `manifest.json` at its root (`kinds:
 |---|---|
 | `Engine.qml` | the service: runs the api through `hyprctl repl` (one `Process` per command, in order, 3 s watchdog), reads `state` debounced (60 ms) on `custom>>hyprslots changed` and on window events (`openwindow`, `closewindow`, `movewindowv2`, `windowtitlev2`, monitor events, `configreloaded`) via `Quickshell.Hyprland`'s `rawEvent`, only while someone follows it (`active`: the panel is open; `watchers`: bar widgets, from `watch()` / `unwatch()`); keeps `error` (last state read) and `lastError` (last call), `absent` / `loadError` (no engine, and why); `busy` while a call runs or the re-read after it is pending; `enable()` runs `tools/install-engine.sh` (the panel's Enable) |
 | `Panel.qml` | the panel: an `OverlayWindow` card (`qs.Ui`), themed through `qs.Commons` (`Color.menu.*`, `Color.muted`, `Style`) like Omarchy's own panels; folder tabs Assignment, Layout, Desk (Tab / Shift+Tab) over the page, the active desk and layout beside them, the message band (`MessageBand.qml`, `Messages.js`) at the page's foot and the help row under it; Ctrl+S saves, Esc or q closes (Esc in the Layout tab's slot list goes back to its picture); `press(key)` feeds a key by name (`Ctrl+s` with the modifier) |
+| `OpenFlow.qml` | what the panel owes once open: the opening tab, settled on the first state read unless a tab was picked, and the open payload's Record or Capture, started once state is read and only while the panel is open |
 | `BarWidget.qml` | the bar widget (below): glyph and active layout; left click toggles the panel, right click a menu |
 | `Services.js` | where the service registers itself, for a bar widget whose bar hands it no `serviceFor` |
 | `AssignmentView.qml`, `LayoutView.qml`, `DesksLayoutsView.qml` | aerolayout's Assignment, Layout (with its logical slots as a list beside the screens) and monitors views (below) |
@@ -2194,8 +2195,6 @@ Parked:
 - mouse-resize workaround, and an upstream Hyprland PR for a resize hook;
 - spanning windows;
 - an AUR package (the marketplace's `omarchy plugin add` is the release);
-- QML tests (the views' QML is covered only by the editor smoke; their
-  logic is in the node-tested `.js` models);
 - the Layout view's parked overflow leaf lives only while the panel is open
   (aerolayout kept it in the saved tree);
 - slot reorder (aerolayout's J/K): slots claim windows by name;
@@ -2260,7 +2259,18 @@ Parked:
   where the logic carries over (tree parsing, weights, assignment, record).
 - **Editor**: the api it relies on is S2 (`spec/assignment_api_spec.lua`,
   `spec/layout_api_spec.lua`, `spec/slots_api_spec.lua`, `spec/api_spec.lua`); its pure JavaScript runs under `node --test`
-  (`editor/tests/`, part of `make test`); `make editor-lint` runs Qt 6's
+  (`editor/tests/`, part of `make test`); the QML that holds logic of its
+  own runs under Qt 6's qmltestrunner (`make editor-qml-test`, part of
+  `make test` where qmltestrunner is installed, offscreen):
+  `editor/tests/qml/tst_engine.qml` (Engine.qml's one-at-a-time queue, the
+  debounced and deduplicated state read, the watchdog, events followed only
+  while someone looks, the service's registration, Enable and its timeout)
+  and `tst_openflow.qml` (OpenFlow.qml's opening tab and pending Record and
+  Capture), against stub `Quickshell`, `Quickshell.Io` (a `Process` that
+  runs nothing, logged in `ProcessLog` for the test to answer) and
+  `Quickshell.Hyprland` modules in `editor/tests/qml/stubs`; the views'
+  QML is covered by the editor smoke, their logic by the node-tested `.js`
+  models. `make editor-lint` runs Qt 6's
   qmllint. `make e2e-editor` (`e2e/editor_smoke.sh`, opt-in, needs qs, grim
   and wtype) runs the plugin in Quickshell on the nested Hyprland through
   `e2e/editor/shell.qml` (which stands in for the Omarchy shell: it injects

@@ -4,9 +4,14 @@ BUSTED ?= $(shell command -v busted 2>/dev/null || echo $(HOME)/.luarocks/bin/bu
 # The editor plugin's JavaScript (editor/*.js) is tested under node's own
 # test runner; `make test` skips it, saying so, where node is missing.
 NODE ?= $(shell command -v node 2>/dev/null)
+# Its QML (Engine.qml's queue, debounce and watchdog; OpenFlow.qml's opening
+# sequence) under Qt 6's qmltestrunner (/usr/bin/qmltestrunner may be Qt 5's),
+# against stub Quickshell modules (editor/tests/qml/stubs), offscreen;
+# `make test` skips it, saying so, where qmltestrunner is missing.
+QMLTESTRUNNER ?= $(shell test -x /usr/lib/qt6/bin/qmltestrunner && echo /usr/lib/qt6/bin/qmltestrunner)
 
-.PHONY: test lua-test editor-test editor-lint e2e e2e-editor e2e-editor-multimon
-test: lua-test editor-test
+.PHONY: test lua-test editor-test editor-qml-test editor-lint e2e e2e-editor e2e-editor-multimon
+test: lua-test editor-test editor-qml-test
 
 # Hyprland runs Lua 5.5 (a for loop's variables are constants there):
 # every file compiles under luac5.5 too, where it is installed.
@@ -22,6 +27,13 @@ ifeq ($(NODE),)
 	@echo "editor-test: node not found, skipping editor/tests"
 else
 	$(NODE) --test editor/tests/
+endif
+
+editor-qml-test:
+ifeq ($(QMLTESTRUNNER),)
+	@echo "editor-qml-test: Qt 6 qmltestrunner not found, skipping editor/tests/qml"
+else
+	QT_QPA_PLATFORM=offscreen $(QMLTESTRUNNER) -import editor/tests/qml/stubs -input editor/tests/qml
 endif
 
 # qmllint (Qt 6's; /usr/bin/qmllint is Qt 5's) over the plugin, with qs.Commons
