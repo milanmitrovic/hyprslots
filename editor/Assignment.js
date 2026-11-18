@@ -230,11 +230,17 @@ function titleText(row) {
   return row.title || "No Title"
 }
 
-// The Screen column: the screen number and the active desk's monitor there.
+// The Screen column: the screen number and the display name of the active
+// desk's monitor there ("1 · 27-inch", as the header and the Desk tab name
+// it), its connector from an engine that names none.
 function screenText(state, row) {
   if (!row || row.screen === null || row.screen === undefined) return ""
   var connector = state && Array.isArray(state.screens) ? state.screens[row.screen - 1] : null
-  return String(row.screen) + (connector ? " " + connector : "")
+  if (!connector) return String(row.screen)
+  var list = state && Array.isArray(state.monitors) ? state.monitors : []
+  var display = connector
+  for (var i = 0; i < list.length; i++) if (list[i].name === connector && list[i].display) display = list[i].display
+  return row.screen + " · " + display
 }
 
 // What `u` does for a row: { address, clearSpec, question } (the y/n it

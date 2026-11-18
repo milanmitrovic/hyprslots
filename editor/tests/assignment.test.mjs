@@ -79,9 +79,20 @@ test("rows say which screen each slot or window is on, by the monitor there", ()
   const state = fixture();
   const rows = plain(A.rows(state, 3));
   assert.deepEqual(rows.map((r) => r.screen), [1, 1, 2, null, 1, 2]);
-  assert.deepEqual(rows.map((r) => A.screenText(state, r)), ["1 HEADLESS-2", "1 HEADLESS-2", "2 HEADLESS-3", "", "1 HEADLESS-2",
-    "2 HEADLESS-3"]);
+  assert.deepEqual(rows.map((r) => A.screenText(state, r)), ["1 · HEADLESS-2", "1 · HEADLESS-2", "2 · HEADLESS-3", "",
+    "1 · HEADLESS-2", "2 · HEADLESS-3"], "an engine of before (no monitors): the connector");
   assert.equal(A.screenText(state, { screen: null }), "");
+});
+
+test("the Screen column names each screen's monitor by its display name, as the header and Desk tab do", () => {
+  const state = fixture();
+  state.monitors = [{ name: "HEADLESS-2", display: "27-inch" }, { name: "HEADLESS-3", display: "24-inch" }];
+  const rows = plain(A.rows(state, 3));
+  assert.deepEqual(rows.map((r) => A.screenText(state, r)), ["1 · 27-inch", "1 · 27-inch", "2 · 24-inch", "", "1 · 27-inch",
+    "2 · 24-inch"]);
+  state.monitors = [{ name: "HEADLESS-2", display: "27-inch" }, { name: "HEADLESS-3" }];
+  assert.equal(A.screenText(state, { screen: 2 }), "2 · HEADLESS-3", "a monitor the engine names no display for: its connector");
+  assert.equal(A.screenText(state, { screen: 3 }), "3", "no monitor at that position: the number alone");
 });
 
 test("no workspace means no rows", () => {
