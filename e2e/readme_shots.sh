@@ -19,14 +19,20 @@
 #   scroll-layout.png    screen 1 turned into scrolling columns (not applied)
 #   desk-tab.png         desks home (both screens, layout two-screen) and
 #                        laptop (not plugged, layout scrolling)
-#   desktop-layout.png   both screens with workspace 1's windows in their slots
+#   desk-docked.png      both screens with workspace 1's windows in their slots
+#   desk-laptop.png      the same workspace undocked, on the laptop's screen
+#                        alone: its slots as full-width scrolling columns,
+#                        the editor's in view, the edges of the columns
+#                        beside it (each as the screen shows it scrolled
+#                        there) dimmed to either side
 #
 # README_SHOTS_LIGHT=<an Omarchy theme dir> also takes layout-tab-light.png
 # with the editor in that (light) theme.
 #
 # Screens: DP-1 ("27-inch"), 2560x1440 at 0,0 (screen 1, Omarchy
 # block 0); HDMI-A-1 ("24-inch"), 1920x1080 at 2560,360 (screen 2, block
-# 1), plugged in after the capture.
+# 1), plugged in after the capture; eDP-1 ("Laptop"), 1920x1200, plugged
+# in alone at the end (desk laptop).
 
 SMOKE_THEME=${SMOKE_THEME:-${OMARCHY_PATH:-/usr/share/omarchy}/themes/tokyo-night}
 README_SHOTS=${README_SHOTS:-$E2E_ROOT/docs/screenshots}
@@ -37,6 +43,7 @@ test_setup() {
   cat >"$E2E_CONFIG_HOME/hypr/test-extra.lua" <<LUA
 hl.monitor({ output = "DP-1", mode = "2560x1440@60", position = "0x0", scale = 1 })
 hl.monitor({ output = "HDMI-A-1", mode = "1920x1080@60", position = "2560x360", scale = 1 })
+hl.monitor({ output = "eDP-1", mode = "1920x1200@60", position = "0x1440", scale = 1 })
 -- Omarchy's look: its gaps and borders, the theme's accent.
 hl.config({
   general = {
@@ -317,10 +324,13 @@ card_shot() {
   log "screenshot: $out (${w}x$h)"
 }
 
+# The desk pictures stand on a neutral dark fill (above the shorter screen,
+# between screens, a margin around), which reads the same on a light page
+# and a dark one.
+DESK_FILL='#1e1f22' DESK_MARGIN=16
+
 # Both screens side by side, bottoms aligned as they stand, at half size,
-# in 256 colours (a third of the size; the eye sees no difference). What
-# is outside the screens (above the shorter one, the strip between them) is
-# transparent, so the page shows through in a light theme or a dark one.
+# in 256 colours (a third of the size; the eye sees no difference).
 desktop_shot() {
   local a=$E2E_DIR/screen1.png b=$E2E_DIR/screen2.png out=$README_SHOTS/$1.png
   mkdir -p "$README_SHOTS"
@@ -329,8 +339,59 @@ desktop_shot() {
   WAYLAND_DISPLAY=$E2E_WAYLAND_DISPLAY grim -o DP-1 "$a" 2>>"$E2E_DIR/grim.log" &&
     WAYLAND_DISPLAY=$E2E_WAYLAND_DISPLAY grim -o HDMI-A-1 "$b" 2>>"$E2E_DIR/grim.log" ||
     { fail "grim could not take the screens"; return; }
-  magick \( "$a" -resize 50% \) \( -size 24x1 xc:none \) \( "$b" -resize 50% \) \
-    -background none -gravity South +append -dither None -colors 256 -strip -define png:compression-level=9 "$out" ||
+  magick \( "$a" -resize 50% \) \( -size 24x1 xc:"$DESK_FILL" \) \( "$b" -resize 50% \) \
+    -background "$DESK_FILL" -gravity South +append -bordercolor "$DESK_FILL" -border "$DESK_MARGIN" \
+    -dither None -colors 256 -strip -define png:compression-level=9 "$out" ||
+    { fail "could not compose $out"; return; }
+  optimize "$out"
+  log "screenshot: $out ($(magick identify -format '%wx%h' "$out"))"
+}
+
+# Screen $1 with the window of class $2 focused (the scrolling layout
+# scrolls it into view), into $3.
+scrolled_to() {
+  hc dispatch "hl.dsp.focus({ window = 'class:$2' })" >/dev/null
+  settle
+  sleep 0.6
+  local x
+  x=$(hc clients -j | jq -r --arg c "$2" 'first(.[] | select(.class == $c)) | .at[0]')
+  log "$2 in view at x=$x"
+  WAYLAND_DISPLAY=$E2E_WAYLAND_DISPLAY grim -o "$1" "$3" 2>>"$E2E_DIR/grim.log" ||
+    { fail "grim could not take $3"; return 1; }
+}
+
+# The laptop's screen $1 scrolled to the column of class $3, at half size,
+# with the columns beside it on the tape: the right edge of class $2's
+# (as the screen shows it scrolled there) to the left, the left edge of
+# class $4's to the right, each dimmed and fading into the fill. As tall as
+# the picture $6 (the docked one, so the two stand side by side), bottoms
+# aligned; into $README_SHOTS/$5.png.
+laptop_shot() {
+  local screen=$1 out=$README_SHOTS/$5.png prev=$E2E_DIR/laptop-prev.png cur=$E2E_DIR/laptop-cur.png
+  local next=$E2E_DIR/laptop-next.png w h sw height
+  mkdir -p "$README_SHOTS"
+  hc dismissnotify >/dev/null 2>&1
+  scrolled_to "$screen" "$2" "$prev" && scrolled_to "$screen" "$4" "$next" &&
+    scrolled_to "$screen" "$3" "$cur" || return
+  read -r w h <<<"$(magick identify -format '%w %h' "$cur")"
+  w=$((w / 2)) h=$((h / 2)) sw=$((w * 7 / 20))
+  height=$(($(magick identify -format '%h' "$6") - 2 * DESK_MARGIN))
+  # Each edge: a slice sw wide, blended into the fill through a gradient
+  # (15% of it at the outer side, 60% at the inner).
+  magick \( -size "${sw}x$h" xc:"$DESK_FILL" \) \
+    \( "$prev" -resize 50% -gravity East -crop "${sw}x$h+0+0" +repage \) \
+    \( -size "${h}x$sw" gradient:'gray(15%)'-'gray(60%)' -rotate -90 \) \
+    -compose over -composite "$E2E_DIR/laptop-left.png" &&
+    magick \( -size "${sw}x$h" xc:"$DESK_FILL" \) \
+      \( "$next" -resize 50% -gravity West -crop "${sw}x$h+0+0" +repage \) \
+      \( -size "${h}x$sw" gradient:'gray(15%)'-'gray(60%)' -rotate 90 \) \
+      -compose over -composite "$E2E_DIR/laptop-right.png" ||
+    { fail "could not cut the neighbouring columns"; return; }
+  magick "$E2E_DIR/laptop-left.png" \( -size 12x1 xc:"$DESK_FILL" \) \( "$cur" -resize 50% \) \
+    \( -size 12x1 xc:"$DESK_FILL" \) "$E2E_DIR/laptop-right.png" \
+    -background "$DESK_FILL" -gravity South +append -extent "$((2 * sw + 24 + w))x$height" \
+    -bordercolor "$DESK_FILL" -border "$DESK_MARGIN" \
+    -dither None -colors 256 -strip -define png:compression-level=9 "$out" ||
     { fail "could not compose $out"; return; }
   optimize "$out"
   log "screenshot: $out ($(magick identify -format '%wx%h' "$out"))"
@@ -414,7 +475,7 @@ return {
   },
   layouts = {
     ["two-screen"] = { screens = 2, default = { [1] = "h[left, main:2, right]", [2] = "v[chat:3, notes:2]" } },
-    scrolling = { screens = 1, default = { [1] = "scroll:0.5[main, left, right, chat, notes]" } },
+    scrolling = { screens = 1, default = { [1] = "scroll[left, main, right, chat, notes]" } },
   },
   monitor_names = { ["DP-1"] = "27-inch", ["HDMI-A-1"] = "24-inch", ["eDP-1"] = "Laptop" },
 }
@@ -482,7 +543,7 @@ LUA
   settle
   log "windows:"
   client_table | sed 's/^/    /'
-  desktop_shot desktop-layout
+  desktop_shot desk-docked
 
   # The hero picture of the plugin (Omarchy's plugin list shows it).
   cp "$README_SHOTS/layout-tab.png" "$E2E_ROOT/preview.png"
@@ -496,5 +557,23 @@ LUA
     card_shot layout-tab-light
     smoke press Escape >/dev/null
   fi
+
+  # 9. Undocked: the laptop's screen alone, desk laptop, workspace 1's
+  # windows as full-width scrolling columns in slot order. The laptop is
+  # plugged in first and the desk's screens pulled right after, faster
+  # than a new monitor setup gets a desk of its own.
+  output_create eDP-1
+  output_remove HDMI-A-1
+  output_remove DP-1
+  eventually 10 state_is .desk laptop || fail "undocked desk: $(api_state | jq -r .desk)"
+  local columns='[.[] | select(.workspace.id == 1 and (.floating | not))] | sort_by(.at[0]) | map(.class) | join(" ")'
+  eventually 10 bash -c "[[ \$(hyprctl -i $E2E_SIG clients -j | jq -r '$columns') == 'terminal editor browser chat notes' ]]" ||
+    fail "laptop columns: $(hc clients -j | jq -r "$columns")"
+  expect_eq "workspace 1 scrolls" "scrolling" \
+    "$(hc workspaces -j | jq -r 'first(.[] | select(.id == 1)) | .tiledLayout')"
+  settle
+  log "windows:"
+  client_table | sed 's/^/    /'
+  laptop_shot eDP-1 terminal editor browser desk-laptop "$README_SHOTS/desk-docked.png"
   expect_eq "nothing left unsaved" "false" "$(api_state | jq -r .dirty)"
 }
