@@ -17,7 +17,7 @@ test("no engine and nothing read yet: the whole page asks to enable it, saying w
   assert.equal(p.title, "Enable the hyprslots engine?");
   assert.deepEqual(p.lines, [
     "hyprslots puts your windows into their slots from inside Hyprland. Enabling it adds one file, zz-hyprslots.lua, to Omarchy's workspace-layouts folder (~/.local/state/omarchy/workspace-layouts), which Omarchy loads with its own saved layouts, and reloads Hyprland.",
-    "It doesn't edit your Hyprland config. Super+1..9 then switch every screen at once. To undo, run tools/uninstall-engine.sh from the plugin's folder.",
+    "It doesn't edit your Hyprland config. Super+1..9 then switch every screen at once. To undo, run ~/.config/omarchy/plugins/io.github.milanmitrovic.hyprslots/tools/uninstall-engine.sh.",
   ]);
   assert.deepEqual(p.action, { key: "e", label: "Enable" });
   assert.equal(p.busy, false);

@@ -9,6 +9,8 @@
 // Pure, so node can test it (editor/tests/install.test.mjs).
 
 var FOLDER = "~/.local/state/omarchy/workspace-layouts"
+// The uninstall script by its full path, so the prompt says where it is.
+var UNINSTALL = "~/.config/omarchy/plugins/io.github.milanmitrovic.hyprslots/tools/uninstall-engine.sh"
 
 // What Enable also does, as chosen in the prompt (k, m, or a click on the
 // box): bind the editor's keys (Super+Ctrl+Y opens it, Super+Ctrl+Shift+C
@@ -64,7 +66,7 @@ function prompt(input) {
         + " zz-hyprslots.lua, to Omarchy's workspace-layouts folder (" + FOLDER + "), which Omarchy loads"
         + " with its own saved layouts, and reloads Hyprland.",
       "It doesn't edit your Hyprland config. Super+1..9 then switch every screen at once."
-        + " To undo, run tools/uninstall-engine.sh from the plugin's folder.",
+        + " To undo, run " + UNINSTALL + ".",
     ]
   }
   if (out.busy) out.action.label = "Enabling…"

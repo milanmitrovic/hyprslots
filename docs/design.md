@@ -1026,7 +1026,9 @@ the panel asks:
   what enabling does (one file, `zz-hyprslots.lua`, in Omarchy's
   workspace-layouts folder, which Omarchy loads with its own saved layouts,
   and a Hyprland reload), that the Hyprland config is not edited, and how to
-  undo it (`tools/uninstall-engine.sh`); a button `[e] Enable`;
+  undo it (the uninstall script by its full path,
+  `~/.config/omarchy/plugins/io.github.milanmitrovic.hyprslots/tools/uninstall-engine.sh`);
+  a button `[e] Enable`;
 - a state read before (the engine went away under an open panel): a banner
   over the views' last state, `The hyprslots engine is not running: what
   shows here is from before.`, with the same button;

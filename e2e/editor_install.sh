@@ -75,7 +75,7 @@ test_body() {
   expect_eq "left click" "ok" "$(smoke barClick left)"
   eventually 10 prompt_starts "card" || true
   expect_eq "the panel asks to enable the engine, saying what that does" \
-    "card | Enable the hyprslots engine? | hyprslots puts your windows into their slots from inside Hyprland. Enabling it adds one file, zz-hyprslots.lua, to Omarchy's workspace-layouts folder (~/.local/state/omarchy/workspace-layouts), which Omarchy loads with its own saved layouts, and reloads Hyprland. | It doesn't edit your Hyprland config. Super+1..9 then switch every screen at once. To undo, run tools/uninstall-engine.sh from the plugin's folder. | [e] Enable" \
+    "card | Enable the hyprslots engine? | hyprslots puts your windows into their slots from inside Hyprland. Enabling it adds one file, zz-hyprslots.lua, to Omarchy's workspace-layouts folder (~/.local/state/omarchy/workspace-layouts), which Omarchy loads with its own saved layouts, and reloads Hyprland. | It doesn't edit your Hyprland config. Super+1..9 then switch every screen at once. To undo, run ~/.config/omarchy/plugins/io.github.milanmitrovic.hyprslots/tools/uninstall-engine.sh. | [e] Enable" \
     "$(smoke enablePrompt)"
   if [[ $(smoke help) == *'<font color="#'*'">e</font></b>nable'*'">k</font></b>eys'*'">m</font></b>enu'* ]]; then
     pass "the help row offers e, k and m"
