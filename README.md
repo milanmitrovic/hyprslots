@@ -10,10 +10,30 @@
 *The editor's Layout tab: slots `left`, `main` and `right` on screen 1, `chat` and `notes` on screen 2,
 shared by every workspace.*
 
-hyprslots is a window layout plugin for [Omarchy](https://omarchy.org) (Hyprland). You set it up once in
-an editor in Omarchy's shell; from then on every window you open goes straight to its place.
+## Why
+
+At my desk I have big monitors, and I use the room: a terminal on the left, the editor in the middle,
+docs on the right, chat and notes on the second screen. On the laptop alone the same apps sit in
+full-width scrolling columns, one at a time. Every other monitor setup lays them out its own way again.
+
+<table>
+  <tr>
+    <td><img width="440" alt="Docked: a terminal, nvim and docs side by side on a 27-inch screen, team chat and notes stacked on a 24-inch one" src="docs/screenshots/desk-docked.png"><br>
+      <em>At the desk: tiles across two monitors</em></td>
+    <td><img width="323" alt="Undocked: the same workspace on the laptop's screen, nvim filling it, the terminal's and the docs' columns just off either side" src="docs/screenshots/desk-laptop.png"><br>
+      <em>On the laptop: the same slots as scrolling columns</em></td>
+  </tr>
+</table>
+
+The slots are the same on every desk; only their arrangement changes. Keeping all of that in sync as
+I switch desks back and forth is what hyprslots does: plug in or unplug, and every workspace has the
+right apps in the right places on whichever desk I am at, without redoing anything.
 
 ## The idea in 4 concepts
+
+hyprslots is a window layout plugin for [Omarchy](https://omarchy.org) (Hyprland). You set up these
+four once, in an editor in Omarchy's shell; from then on every window you open goes straight to its
+place.
 
 **Slots** are named places on your screens: `left`, `main`, `right`, `notes`… You choose the names
 and how many. The same slots exist on every workspace.
@@ -22,10 +42,6 @@ and how many. The same slots exist on every workspace.
 exact ratios (`main` twice as wide as `right`), or scrolling columns, half or full screen wide. All
 workspaces share one layout; a workspace that needs another arrangement gets its own. A slot that
 nothing fills on a workspace takes no room there.
-
-![Two screens: a terminal, nvim and docs side by side on the left screen, team chat and notes stacked on the right one](docs/screenshots/desktop-layout.png)
-
-*What you get: workspace 1 with every window in its slot, on both screens.*
 
 **Assignments** say which app fills which slot on each workspace. Windows go there by themselves
 when they open, even when you open them on another workspace.
