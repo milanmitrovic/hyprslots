@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# hyprslots from the command line (the Omarchy menu's Launch missing apps
+# entry runs it; its Open editor and Capture entries summon the editor directly):
+#
+#   hyprslots editor              open the editor
+#   hyprslots capture             open it capturing the focused workspace
+#   hyprslots launch-missing [N]  launch the apps workspace N's (default: the
+#                                 focused one's) empty slots wait for, where
+#                                 its launch setting allows
+#
+# What happened is printed, and shown as a notification.
+
+set -euo pipefail
+
+ID=io.github.milanmitrovic.hyprslots
+
+say() {
+  printf '%s\n' "$1"
+  if [[ -n ${DBUS_SESSION_BUS_ADDRESS:-} ]] && command -v notify-send >/dev/null; then
+    notify-send -a Hyprslots "Hyprslots" "$1" 2>/dev/null || true
+  fi
+}
+
+# The engine's reply to api call $1 with JSON arguments $2.
+call() {
+  hyprctl repl "if not hyprslots then return '{\"ok\":false,\"error\":\"the hyprslots engine is not running\"}' end
+return hyprslots.api.call(\"$1\", [[$2]])" 2>&1
+}
+
+case ${1:-} in
+  editor) exec omarchy-shell shell summon "$ID" ;;
+  capture) exec omarchy-shell shell summon "$ID" '{"capture":true}' ;;
+  launch-missing)
+    args='{}'
+    if [[ -n ${2:-} ]]; then
+      [[ $2 =~ ^[0-9]+$ ]] || { echo "hyprslots: a workspace is a number, got '$2'" >&2; exit 2; }
+      args="{\"workspace\": $2}"
+    fi
+    reply=$(call launch_missing "$args")
+    if ! jq -e . >/dev/null 2>&1 <<<"$reply"; then
+      say "Launch missing apps: $reply"
+      exit 1
+    fi
+    if [[ $(jq -r .ok <<<"$reply") != true ]]; then
+      say "Launch missing apps: $(jq -r .error <<<"$reply")"
+      exit 1
+    fi
+    say "$(jq -r '
+      ([.launched[] | "\(.command | split(" ")[0]) for \(.slot)"] | if length > 0 then "Launched " + join(", ") else empty end),
+      ([.pending[]] | if length > 0 then "on its way already: " + join(", ") else empty end),
+      ([.cannot[] | .slot] | if length > 0 then "cannot launch " + join(", ") + ": set a command" else empty end),
+      (if (.launched | length) + (.pending | length) + (.cannot | length) == 0
+        then "Nothing to launch" else empty end)' <<<"$reply" |
+      paste -sd ';' | sed 's/;/; /g') (workspace $(jq -r .workspace <<<"$reply"))."
+    ;;
+  -h | --help | '') sed -n '1d; /^#/!q; s/^# \{0,1\}//p' "${BASH_SOURCE[0]}" ;;
+  *)
+    echo "hyprslots: unknown command '$1' (see --help)" >&2
+    exit 2
+    ;;
+esac

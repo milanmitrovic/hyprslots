@@ -1,0 +1,540 @@
+pragma ComponentBehavior: Bound
+import QtQuick
+import qs.Commons
+import qs.Commons as Commons
+import "DesksLayouts.js" as DesksLayouts
+import "Prompts.js" as Prompts
+import "Help.js" as Help
+import "Guide.js" as Guide
+import "ui"
+
+// The desks and the layouts (docs/design.md §9). A desk is a monitor setup:
+// the monitors it is made of (● connected) and the layout it uses; the desk
+// whose monitors are exactly the connected ones is
+// active, and every edit in the other tabs goes to its layout. A layout is a
+// set of trees for some number of screens; a desk can use a layout with the same number of screens, and
+// several desks may share one. One selection runs through both lists (↑/↓,
+// k/j). a applies a layout (on a layout row: to the active desk; on a desk
+// row: one picked among those with its screen count), f forks the selected
+// layout (or the desk's) under a new name and points the active desk at the
+// copy, n makes a layout (name, screen count; the default trees), r
+// renames, x deletes (a layout desks use moves them to another first), m on
+// a desk names one of its monitors (the label the editor shows for it;
+// empty: back to its own name, Built-in or the model). Edits
+// stay in memory until Ctrl+S (the
+// panel's). The model is DesksLayouts.js; the calls are the api's desk and
+// layout edits.
+Item {
+  id: root
+
+  property var engine: null
+
+  property color foreground: Commons.Color.menu.text
+  property color selectedBackground: Commons.Color.menu.selectedBackground
+  property color selectedText: Commons.Color.menu.selectedText
+  property string fontFamily: Style.font.menuFamily
+
+  readonly property var state: engine ? engine.state : null
+  readonly property var rows: DesksLayouts.rows(state)
+  // The cursor holds a row by key ("desk:laptop", "layout:docked"), so a
+  // rename, creation or delete cannot leave it on a row that moved; it opens
+  // on the active desk.
+  property string cursor: ""
+  readonly property int selected: indexOfKey(cursor)
+  readonly property var selectedRow: selected >= 0 && selected < rows.length ? rows[selected] : null
+
+  property var prompt: null
+  property var _answer: null
+  readonly property bool prompting: prompt !== null
+  property string message: ""
+  property bool messageIsError: false
+  // Counts say(): the panel's message band knows a message by it.
+  property int messageSeq: 0
+
+  readonly property string accent: String(Commons.Color.accent)
+  // The controls strip's groups (the panel's toolbar; DesksLayouts.actions
+  // dims what a read-only row refuses) and the same as StyledText.
+  readonly property var helpGroups: [
+    [{ key: "↑/↓", label: "select" }],
+    { title: selectedRow ? (selectedRow.kind === "desk" ? "Desk" : "Layout") : "", items: DesksLayouts.actions(selectedRow) },
+    [{ key: "Ctrl+S", label: "save" }],
+    [{ key: "Tab", label: "switch view" }, { key: "q", label: "close" }],
+  ]
+  readonly property string helpText: prompting ? Help.escape(Prompts.help(prompt)) : Help.row(helpGroups, accent)
+
+  // A key by name, for the panel to feed as if pressed (Panel.press): a
+  // double-click on a row runs its primary action, a (a desk: pick a layout
+  // for it; a layout: apply it to the active desk).
+  signal pressKey(string name)
+
+  function indexOfKey(key) {
+    for (var i = 0; i < rows.length; i++) if (rows[i].key === key) return i
+    for (var j = 0; j < rows.length; j++) if (rows[j].kind === "desk" && rows[j].active) return j
+    return rows.length > 0 ? 0 : -1
+  }
+
+  function select(index) {
+    if (rows.length === 0) return
+    var i = Math.max(0, Math.min(rows.length - 1, index))
+    cursor = rows[i].key
+    list.positionViewAtIndex(i, ListView.Contain)
+  }
+
+  function say(text, isError) {
+    message = text
+    messageIsError = !!isError
+    messageSeq++
+  }
+
+  function reset() {
+    prompt = null
+    _answer = null
+    message = ""
+    cursor = state && state.desk ? "desk:" + state.desk : ""
+  }
+
+  function ask(p, answer) {
+    prompt = p
+    _answer = answer
+    message = ""
+  }
+
+  // A call; ok(reply) says what it did. A refusal reopens `again` (with the
+  // answer kept) when given, else it is the message.
+  function run(name, args, ok, again, answer) {
+    if (!engine) return
+    engine.call(name, args, function(reply) {
+      if (reply.ok) root.say(ok(reply), false)
+      else if (again) root.ask(Prompts.withError(again, reply.error), answer)
+      else root.say(reply.error, true)
+    })
+  }
+
+  function confirm(text, action) {
+    ask(Prompts.confirm(text), function(yes) {
+      if (yes) action()
+      else root.message = ""
+    })
+  }
+
+  function needRow(editing) {
+    if (!selectedRow) {
+      say(state ? "No desks or layouts yet — n makes a layout." : "No state from hyprslots yet.", true)
+      return false
+    }
+    var refusal = editing ? DesksLayouts.readOnlyError(selectedRow) : ""
+    if (refusal !== "") {
+      say(refusal, true)
+      return false
+    }
+    return true
+  }
+
+  // a: on a layout row, that layout on the active desk; on a desk row, a
+  // layout for that desk among those with its screen count.
+  function startApply() {
+    if (!needRow(false)) return
+    var row = selectedRow
+    if (row.kind === "layout") {
+      var block = DesksLayouts.applyBlock(state, row.name)
+      if (block !== "") {
+        say(block, true)
+        return
+      }
+      if (state.layout === row.name) {
+        say("Desk '" + state.desk + "' uses '" + row.name + "' already.", false)
+        return
+      }
+      run("apply_layout", { layout: row.name }, function(reply) {
+        return "Desk '" + reply.desk + "' uses layout '" + reply.layout + "' now. Ctrl+S saves."
+      })
+      return
+    }
+    if (!needRow(true)) return
+    var names = DesksLayouts.layoutsFor(state, row.name)
+    if (names.length === 0) {
+      say("No layout has " + row.screens + (row.screens === 1 ? " screen" : " screens")
+        + " for desk '" + row.name + "': n makes one.", true)
+      return
+    }
+    var items = names.map(function(n) { return { label: n + (n === row.layout ? " (in use)" : ""), value: n } })
+    ask(Prompts.choice("Layout for desk '" + row.name + "'", Prompts.options(items)), function(layout) {
+      if (layout === row.layout) {
+        root.say("Desk '" + row.name + "' uses '" + layout + "' already.", false)
+        return
+      }
+      root.run("apply_layout", { desk: row.name, layout: layout }, function(reply) {
+        return "Desk '" + reply.desk + "' uses layout '" + reply.layout + "' now. Ctrl+S saves."
+      })
+    })
+  }
+
+  // f: a copy of the selected layout (or the selected desk's) under a new
+  // name; the active desk then uses the copy when its screen count matches.
+  function startFork() {
+    if (!needRow(false)) return
+    var source = DesksLayouts.forkSource(selectedRow)
+    var label = "Fork layout '" + source + "' as [Enter] fork  [Esc] cancel: "
+    var answer = function(to) {
+      to = to.trim()
+      root.engine.call("fork_layout", { layout: source, to: to }, function(reply) {
+        if (!reply.ok) {
+          root.ask(Prompts.withError(Prompts.text(label, { value: to, required: true }), reply.error), answer)
+          return
+        }
+        root.cursor = "layout:" + reply.to
+        root.say(DesksLayouts.forkMessage(reply), false)
+      })
+    }
+    ask(Prompts.text(label, { value: DesksLayouts.forkName(state, source), required: true }), answer)
+  }
+
+  // n: a new layout: its name, its screen count (the active desk's
+  // suggested); it starts with the default trees.
+  function startNew(values) {
+    values = values || { name: "", screens: "", error: "" }
+    ask(Prompts.withError(Prompts.text("Name the new layout [Enter] next  [Esc] cancel: ",
+      { value: values.name, required: true }), values.error), function(name) {
+      name = name.trim()
+      root.askScreens(name, values.screens !== "" ? values.screens : String(DesksLayouts.suggestedScreens(root.state)), "")
+    })
+  }
+
+  function askScreens(name, value, error) {
+    ask(Prompts.withError(Prompts.text("Screens of '" + name + "' [Enter] next  [Esc] cancel: ", { value: value, required: true }),
+      error), function(text) {
+      var parsed = DesksLayouts.parseScreens(text)
+      if (parsed.error) {
+        root.askScreens(name, text, parsed.error)
+        return
+      }
+      root.engine.call("add_layout", { name: name, screens: parsed.screens, default: true }, function(reply) {
+        if (!reply.ok) {
+          root.startNew({ name: name, screens: String(parsed.screens), error: reply.error })
+          return
+        }
+        root.cursor = "layout:" + reply.layout
+        root.say("Created layout '" + reply.layout + "' (" + reply.screens + (reply.screens === 1 ? " screen" : " screens")
+          + ", the default trees). a applies it to the active desk. Ctrl+S saves.", false)
+      })
+    })
+  }
+
+  // r: rename the selected desk or layout (desks using a layout follow it).
+  function startRename() {
+    if (!needRow(true)) return
+    var row = selectedRow
+    var desk = row.kind === "desk"
+    var label = "Rename " + (desk ? "desk" : "layout") + " '" + row.name + "' to [Enter] save  [Esc] cancel: "
+    var answer = function(to) {
+      to = to.trim()
+      if (to === row.name) return
+      var args = desk ? { desk: row.name, to: to } : { layout: row.name, to: to }
+      root.run(desk ? "rename_desk" : "rename_layout", args, function(reply) {
+        root.cursor = row.kind + ":" + reply.to
+        return (desk ? "Desk '" : "Layout '") + row.name + "' is now '" + reply.to + "'. Ctrl+S saves."
+      }, Prompts.text(label, { value: to, required: true }), answer)
+    }
+    ask(Prompts.text(label, { required: true }), answer)
+  }
+
+  // m: on a desk row, name one of its monitors (picked when it has more
+  // than one): the label shown for it everywhere in the editor; empty
+  // clears it. Desks keep matching by the monitor's selector.
+  function startName() {
+    if (!needRow(false)) return
+    var row = selectedRow
+    if (row.kind !== "desk") {
+      say("m names a monitor of a desk: select a desk.", true)
+      return
+    }
+    if (row.monitors.length === 1) {
+      askName(row.monitors[0])
+      return
+    }
+    ask(Prompts.choice(DesksLayouts.monitorQuestion(row), DesksLayouts.monitorOptions(row)), function(selector) {
+      for (var i = 0; i < row.monitors.length; i++) if (row.monitors[i].selector === selector) root.askName(row.monitors[i])
+    })
+  }
+
+  function askName(m) {
+    var label = DesksLayouts.nameQuestion(m)
+    var answer = function(name) {
+      name = name.trim()
+      root.run("set_monitor_name", { selector: m.selector, name: name }, function(reply) {
+        return DesksLayouts.nameMessage(reply, m)
+      }, Prompts.text(label, { value: name }), answer)
+    }
+    ask(Prompts.text(label, { value: m.label }), answer)
+  }
+
+  // x: delete a desk after y/n; a layout desks use moves them to another of
+  // the same screen count first (picked), else y/n (the engine says why it
+  // will not, while desks use it).
+  function startDelete() {
+    if (!needRow(true)) return
+    var row = selectedRow
+    if (row.kind === "desk") {
+      confirm(DesksLayouts.deleteDeskQuestion(row), function() {
+        root.run("delete_desk", { desk: row.name }, function() {
+          return "Deleted desk '" + row.name + "'." + (row.active ? " These monitors get a new desk in a second." : "")
+            + " Ctrl+S saves."
+        })
+      })
+      return
+    }
+    var plan = DesksLayouts.deleteLayoutPlan(state, row)
+    var done = function(reply) {
+      var moved = reply.desks && reply.desks.length
+        ? " " + (reply.desks.length === 1 ? "Desk " : "Desks ") + reply.desks.join(", ") + " use '" + reply.remap + "' now." : ""
+      return "Deleted layout '" + row.name + "'." + moved + " Ctrl+S saves."
+    }
+    if (plan.remap.length > 0) {
+      ask(Prompts.choice(plan.question, Prompts.options(plan.remap)), function(remap) {
+        root.run("delete_layout", { layout: row.name, remap: remap }, done)
+      })
+      return
+    }
+    confirm(plan.question, function() {
+      root.run("delete_layout", { layout: row.name }, done)
+    })
+  }
+
+  function handlePrompt(key, text, modifiers) {
+    var out = Prompts.key(prompt, Prompts.keyName(key, modifiers, Qt), Prompts.typed(text))
+    var answer = _answer
+    prompt = out.prompt
+    if (!out.result) return true
+    _answer = null
+    if (out.result.cancel) say("Cancelled.", false)
+    else if (answer) answer(out.result.value)
+    return true
+  }
+
+  function handleKey(key, text, modifiers) {
+    if (prompting) return handlePrompt(key, text, modifiers)
+    if (key === Qt.Key_Up || text === "k") select(selected - 1)
+    else if (key === Qt.Key_Down || text === "j") select(selected + 1)
+    else if (text === "a") startApply()
+    else if (text === "f") startFork()
+    else if (text === "m") startName()
+    else if (text === "n") startNew(null)
+    else if (text === "r") startRename()
+    else if (text === "x") startDelete()
+    else return false
+    return true
+  }
+
+  // The columns: the selection's stripe, a desk's map (its monitors,
+  // ui/DeskMap; empty on a layout row), the active mark, the name, then
+  // two of the section's own (a desk: monitors, layout; a layout: screens,
+  // the desks using it). Titles and cells share them, so they line up.
+  readonly property real mapWidth: Tokens.deskMapWidth + Tokens.cellPadding * 2
+  // The desk map under the pointer: { map (its DeskMap), row (its row) }, or
+  // null; the tooltip below shows its tip.
+  property var tipFor: null
+  readonly property real markWidth: Style.font.body + Style.spacing.md * 2
+  readonly property real nameWidth: width * 0.2
+  function secondWidth(desk) { return width * (desk ? 0.38 : 0.14) }
+  function thirdWidth(desk) { return width - Tokens.stripeWidth - mapWidth - markWidth - nameWidth - secondWidth(desk) }
+  // The selection is the strongest thing on the page (TableRow). The
+  // active desk and layout are quiet beside it: a small ● and
+  // full-strength text where the rest is a little dimmer.
+
+  Column {
+    anchors.fill: parent
+    spacing: Style.spacing.md
+
+    // What this tab is about, over the lists.
+    InfoText {
+      id: headerBox
+      width: parent.width
+      leftPadding: Tokens.textInset
+      rightPadding: Tokens.cellPadding
+      wrapMode: Text.WordWrap
+      text: Guide.deskIntro()
+    }
+
+    ProblemText {
+      id: problem
+      width: parent.width
+      text: {
+        if (!root.engine) return "No engine service."
+        if (root.engine.error !== "") return root.engine.error
+        var s = root.state
+        if (s && s.config_error) return "config error: " + s.config_error
+        return ""
+      }
+    }
+
+    ListView {
+      id: list
+      width: parent.width
+      height: parent.height - headerBox.height - (problem.visible ? problem.height + parent.spacing : 0)
+        - parent.spacing
+      clip: true
+      model: root.rows
+      boundsBehavior: Flickable.StopAtBounds
+      currentIndex: root.selected
+
+      delegate: Column {
+        id: entry
+        required property var modelData
+        required property int index
+        readonly property bool current: index === root.selected
+        readonly property bool desk: modelData.kind === "desk"
+        readonly property bool active: !!modelData.active
+        // the first row of its kind opens its section
+        readonly property bool first: index === 0 || root.rows[index - 1].kind !== modelData.kind
+        readonly property var cells: desk ? DesksLayouts.deskCells(modelData) : DesksLayouts.layoutCells(modelData)
+        readonly property color ink: current || active ? root.foreground : Tokens.restText
+        width: ListView.view.width
+
+        // The section's header: "DESKS  monitor setups ...".
+        Item {
+          visible: entry.first
+          width: parent.width
+          height: visible ? sectionHeader.height + sectionHeader.y + Style.spacing.sm : 0
+          SectionHeader {
+            id: sectionHeader
+            x: Tokens.textInset
+            y: entry.index === 0 ? Style.spacing.sm : Style.spacing.xxl
+            readonly property var header: DesksLayouts.sectionHeader(entry.modelData.kind)
+            title: header.title
+            hint: header.hint
+          }
+        }
+
+        // The section's column titles over the cells they name (a desk's
+        // layout column is the one it uses: "Uses layout", each cell
+        // "→ <layout>").
+        TableHeader {
+          id: columnTitles
+          visible: entry.first
+          width: parent.width
+          readonly property var titles: DesksLayouts.columnTitles(entry.modelData.kind)
+          columns: entry.desk
+            ? [{ text: "", width: Tokens.stripeWidth + root.mapWidth + root.markWidth },
+              { text: columnTitles.titles.name, width: root.nameWidth },
+              { text: columnTitles.titles.monitors, width: root.secondWidth(true) },
+              { text: columnTitles.titles.layout, width: root.thirdWidth(true) }]
+            : [{ text: "", width: Tokens.stripeWidth + root.mapWidth + root.markWidth },
+              { text: columnTitles.titles.name, width: root.nameWidth },
+              { text: columnTitles.titles.screens, width: root.secondWidth(false) },
+              { text: columnTitles.titles.usedBy, width: root.thirdWidth(false) }]
+        }
+
+        TableRow {
+          id: deskRow
+          width: parent.width
+          height: entry.desk ? Tokens.deskMapRowHeight : Tokens.rowHeight
+          objectName: "row:" + entry.index
+          selected: entry.current
+          onClicked: root.select(entry.index)
+          onDoubleClicked: {
+            root.select(entry.index)
+            root.pressKey("a")
+          }
+
+          Row {
+            height: parent.height
+            Item {
+              width: root.mapWidth
+              height: parent.height
+              DeskMap {
+                id: deskMap
+                visible: entry.desk
+                anchors.centerIn: parent
+                width: Tokens.deskMapWidth
+                height: Tokens.deskMapHeight
+                name: entry.desk ? entry.modelData.name : ""
+                map: entry.desk ? DesksLayouts.deskMap(entry.modelData, Tokens.deskMapWidth, Tokens.deskMapHeight)
+                  : ({ w: 0, h: 0, screens: [] })
+                tip: entry.desk ? DesksLayouts.deskMapTip(entry.modelData) : ""
+                active: entry.active
+                // the view's tooltip follows the map the pointer is on
+                onHoveredChanged: {
+                  if (hovered) root.tipFor = { map: deskMap, row: deskRow }
+                  else if (root.tipFor && root.tipFor.map === deskMap) root.tipFor = null
+                }
+                Component.onDestruction: if (root.tipFor && root.tipFor.map === deskMap) root.tipFor = null
+              }
+            }
+            TableCell {
+              width: root.markWidth
+              leftPadding: 0
+              horizontalAlignment: Text.AlignHCenter
+              text: entry.cells.mark
+              color: Commons.Color.accent
+              opacity: entry.current ? 1 : 0.8
+              font.pixelSize: Style.font.bodySmall
+            }
+            TableCell {
+              objectName: "deskname:" + entry.modelData.name
+              width: root.nameWidth
+              text: entry.cells.name
+              color: entry.current ? root.selectedText : entry.ink
+              font.bold: entry.current || entry.active
+            }
+            // a desk: its monitors and its layout; a
+            // layout: its screen count and the desks using it
+            TableCell {
+              width: root.secondWidth(entry.desk)
+              text: entry.desk ? entry.cells.monitors : entry.cells.screens
+              color: entry.ink
+            }
+            TableCell {
+              width: root.thirdWidth(entry.desk)
+              text: entry.desk ? entry.cells.layout : entry.cells.usedBy
+              color: entry.desk || entry.modelData.usedBy.length ? entry.ink : Tokens.info
+            }
+          }
+        }
+      }
+
+      Placeholder {
+        anchors.centerIn: parent
+        width: parent.width
+        visible: root.rows.length === 0
+        text: root.state ? "No desks or layouts yet — n makes a layout" : Guide.reading(root.engine)
+      }
+    }
+  }
+
+  // A desk map's tip (its screens' display names) while the pointer is on
+  // it: a tooltip on the tooltip surface just under the map's row, its left
+  // edge at the map's (above the row where the list has no room below), over
+  // the list, so it hides nothing on the hovered row and no clip cuts it.
+  Rectangle {
+    id: mapTip
+    objectName: root.tipFor ? "deskmaptip:" + root.tipFor.map.name : ""
+    visible: !!root.tipFor && root.tipFor.map.tip !== ""
+    z: 20
+    readonly property var at: {
+      list.contentY // follow the list when it scrolls
+      if (!root.tipFor) return { x: 0, y: 0 }
+      var map = root.tipFor.map.mapToItem(root, 0, 0)
+      var row = root.tipFor.row.mapToItem(root, 0, 0)
+      var below = row.y + root.tipFor.row.height + Style.spacing.xxs
+      var y = below + height <= root.height ? below : row.y - height - Style.spacing.xxs
+      return { x: Math.max(0, Math.min(root.width - width, map.x)), y: Math.max(0, y) }
+    }
+    x: at.x
+    y: at.y
+    width: mapTipText.implicitWidth + Style.spacing.md * 2
+    height: mapTipText.implicitHeight + Style.spacing.xs * 2
+    radius: Tokens.radius
+    color: Tokens.tipFill
+    border.width: 1
+    border.color: Tokens.tipBorder
+    Text {
+      id: mapTipText
+      anchors.centerIn: parent
+      textFormat: Text.PlainText
+      text: root.tipFor ? root.tipFor.map.tip : ""
+      color: Tokens.tipText
+      font.family: Tokens.fontFamily
+      font.pixelSize: Style.font.bodySmall
+    }
+  }
+}

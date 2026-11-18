@@ -1,0 +1,448 @@
+-- The only module that touches Hyprland's `hl` and Omarchy's `o`.
+--
+-- Both globals are read at call time, never captured, so the engine always
+-- talks to the current ones (and busted can swap in a stub per test). Hyprland
+-- objects (HL.Monitor, HL.Window) are copied into plain tables at this
+-- boundary; the pure modules never see them.
+
+local M = {}
+
+-- Hyprland notification icons (HL.NotificationOptions.icon).
+local ICON = { warning = 0, info = 1, hint = 2, error = 3, confused = 4, ok = 5 }
+
+local function hl()
+  return _G.hl
+end
+
+local vec2 -- defined below
+
+-- Connected monitors that show workspaces of their own (mirrors excluded):
+-- { name, description, serial, make?, model?, id, focused, x, y, width, height } (the
+-- position orders a desk's screens left to right, desk.lua).
+function M.monitors()
+  local out = {}
+  for _, monitor in ipairs(hl().get_monitors() or {}) do
+    if not monitor.is_mirror then
+      local px, py = vec2(monitor.position)
+      out[#out + 1] = {
+        name = monitor.name,
+        description = monitor.description or "",
+        serial = monitor.serial or "",
+        make = monitor.make, -- not in HL.Monitor today; taken when Hyprland adds them
+        model = monitor.model,
+        id = monitor.id,
+        focused = monitor.focused,
+        x = monitor.x or px or 0,
+        y = monitor.y or py or 0,
+        width = monitor.width,
+        height = monitor.height,
+        scale = monitor.scale,
+        transform = monitor.transform,
+      }
+    end
+  end
+  return out
+end
+
+-- An HL.Vec2-like value ({ x, y } or { [1], [2] }) as two numbers.
+function vec2(value)
+  if type(value) ~= "table" then
+    return nil
+  end
+  local x, y = value.x or value[1], value.y or value[2]
+  if type(x) == "number" and type(y) == "number" then
+    return x, y
+  end
+  return nil
+end
+
+-- A window's box { x, y, w, h } from its at / size, or nil.
+local function window_box(window)
+  local x, y = vec2(window.at)
+  local w, h = vec2(window.size)
+  if x and w then
+    return { x = x, y = y, w = w, h = h }
+  end
+  return nil
+end
+
+-- A plain copy of an HL.Window: { address, class, title, stable_id,
+-- workspace_id, floating, box }.
+function M.window(window)
+  local workspace = window.workspace
+  return {
+    address = window.address,
+    class = window.class,
+    title = window.title,
+    stable_id = window.stable_id,
+    workspace_id = workspace and workspace.id,
+    floating = window.floating == true,
+    box = window_box(window),
+  }
+end
+
+function M.windows()
+  local out = {}
+  for _, window in ipairs(hl().get_windows() or {}) do
+    out[#out + 1] = M.window(window)
+  end
+  return out
+end
+
+function M.active_monitor_name()
+  local monitor = hl().get_active_monitor()
+  return monitor and monitor.name
+end
+
+function M.on(event, callback)
+  return hl().on(event, callback)
+end
+
+-- Run `callback` once, after the current event has returned.
+function M.defer(callback, timeout_ms)
+  return hl().timer(callback, { type = "oneshot", timeout = timeout_ms or 1 })
+end
+
+function M.notify(text, kind)
+  return hl().notification.create({ text = text, timeout = 10000, icon = ICON[kind or "error"] })
+end
+
+function M.register_layout(name, provider)
+  hl().layout.register(name, provider)
+end
+
+function M.workspace_layout(workspace_id, layout)
+  return hl().workspace_rule({ workspace = tostring(workspace_id), layout = layout })
+end
+
+-- Register (or, under a name Hyprland already has, replace) a window rule.
+function M.window_rule(spec)
+  return hl().window_rule(spec)
+end
+
+-- Move a window to a workspace without following it.
+function M.move_window(address, workspace_id)
+  return hl().dispatch(hl().dsp.window.move({
+    workspace = tostring(workspace_id),
+    window = "address:" .. address,
+    follow = false,
+  }))
+end
+
+-- Run a shell command, its windows opening on workspace `workspace_id`
+-- without being shown (Hyprland's exec rules).
+function M.exec(command, workspace_id)
+  return hl().exec_cmd(command, { workspace = tostring(workspace_id) .. " silent" })
+end
+
+-- Print to Hyprland's log.
+function M.print(text)
+  print(text)
+end
+
+-- Omarchy's per-monitor workspaces, or nil when they are not loaded.
+function M.omarchy_workspaces()
+  local o = rawget(_G, "o")
+  return type(o) == "table" and o.workspaces or nil
+end
+
+-- Whether a planner (hyprmoncfg) has switched Omarchy's workspaces off.
+function M.omarchy_disabled()
+  local workspaces = M.omarchy_workspaces()
+  return workspaces ~= nil and workspaces.enabled == false
+end
+
+-- One of a function's upvalues, by name, or nil.
+local function upvalue(fn, name)
+  if type(fn) ~= "function" or type(debug) ~= "table" or type(debug.getupvalue) ~= "function" then
+    return nil
+  end
+  for i = 1, 255 do
+    local key, value = debug.getupvalue(fn, i)
+    if key == nil then
+      return nil
+    end
+    if key == name then
+      return value
+    end
+  end
+  return nil
+end
+
+-- Give the monitors `connectors` (in order) Omarchy's blocks 0, 1, 2...,
+-- and no other monitor a block, in Omarchy's own block table, written to its
+-- state file (the bar reads it). monitor-workspaces.lua keeps the table
+-- local, so it is reached through o.workspaces.workspace_id's upvalues:
+-- assign, and assign's blocks, identities_of and save. Returns whether the
+-- blocks changed, or nil and why they cannot be reached.
+function M.set_omarchy_blocks(connectors)
+  local workspaces = M.omarchy_workspaces()
+  local assign = workspaces and upvalue(workspaces.workspace_id, "assign")
+  local blocks, identities_of, save = upvalue(assign, "blocks"), upvalue(assign, "identities_of"), upvalue(assign, "save")
+  if type(blocks) ~= "table" or type(identities_of) ~= "function" or type(save) ~= "function" then
+    return nil, "Omarchy's workspace blocks are out of reach (o.workspaces.workspace_id has no assign with "
+      .. "blocks, identities_of and save)"
+  end
+  local monitors = {}
+  for i, name in ipairs(connectors) do
+    monitors[i] = hl().get_monitor(name)
+    if not monitors[i] then
+      return nil, "no monitor " .. tostring(name)
+    end
+  end
+  local identities = identities_of(monitors)
+  local want = {}
+  for i, name in ipairs(connectors) do
+    want[identities[name]] = i - 1
+  end
+  local changed = false
+  for identity, block in pairs(blocks) do
+    changed = changed or want[identity] ~= block
+  end
+  for identity, block in pairs(want) do
+    changed = changed or blocks[identity] ~= block
+  end
+  if changed then
+    for identity in pairs(blocks) do
+      blocks[identity] = nil
+    end
+    for identity, block in pairs(want) do
+      blocks[identity] = block
+    end
+  end
+  save(monitors, identities)
+  return changed
+end
+
+-- Run `before(added, gone)` ahead of every Omarchy reconcile: its event
+-- handlers call o.workspaces.reconcile through the table, so replacing the
+-- field reaches them. Returns false when there is no reconcile to wrap.
+function M.before_omarchy_reconcile(before)
+  local workspaces = M.omarchy_workspaces()
+  if not workspaces or type(workspaces.reconcile) ~= "function" then
+    return false
+  end
+  local reconcile = workspaces.reconcile
+  workspaces.reconcile = function(added, gone)
+    before(added, gone)
+    return reconcile(added, gone)
+  end
+  return true
+end
+
+-- Omarchy's reconcile: every monitor back on a workspace of its own block.
+function M.omarchy_reconcile()
+  local workspaces = M.omarchy_workspaces()
+  if workspaces and type(workspaces.reconcile) == "function" then
+    workspaces.reconcile()
+  end
+end
+
+-- Every regular workspace: { id, monitor (connector, or nil), windows }.
+function M.workspaces()
+  local out = {}
+  for _, workspace in ipairs(hl().get_workspaces() or {}) do
+    if not workspace.special and type(workspace.id) == "number" and workspace.id > 0 then
+      out[#out + 1] = {
+        id = workspace.id,
+        monitor = workspace.monitor and workspace.monitor.name or nil,
+        windows = workspace.windows or 0,
+      }
+    end
+  end
+  return out
+end
+
+-- Give a workspace another id.
+function M.rename_workspace(id, to)
+  return hl().dispatch(hl().dsp.workspace.change_id({ workspace = tostring(id), id = to }))
+end
+
+-- Workspace id of workspace N on a monitor (by connector name).
+function M.workspace_id(monitor_name, workspace)
+  return M.omarchy_workspaces().workspace_id({ name = monitor_name }, workspace)
+end
+
+-- Show workspace N on a monitor, the way Omarchy's Super+N does (the focused
+-- monitor when monitor_name is nil).
+function M.focus_workspace(workspace, monitor_name)
+  return hl().dispatch(M.omarchy_workspaces().focus(workspace, monitor_name))
+end
+
+-- The connector of the monitor a workspace is on, or nil when it does not
+-- exist.
+function M.workspace_monitor(workspace_id)
+  local workspace = hl().get_workspace(workspace_id)
+  local monitor = workspace and workspace.monitor
+  return monitor and monitor.name
+end
+
+-- Put a workspace on a monitor. A hidden workspace stays hidden there.
+function M.move_workspace(workspace_id, monitor_name)
+  return hl().dispatch(hl().dsp.workspace.move({ workspace = tostring(workspace_id), monitor = monitor_name }))
+end
+
+-- Focus a monitor (by connector name).
+function M.focus_monitor(monitor_name)
+  return hl().dispatch(hl().dsp.focus({ monitor = monitor_name }))
+end
+
+-- Replace whatever is bound to `keys`: through Omarchy's o.rebind when it is
+-- loaded (so its keybindings menu lists the description), else hl directly.
+function M.rebind(keys, description, action)
+  local o = rawget(_G, "o")
+  if type(o) == "table" and type(o.rebind) == "function" then
+    return o.rebind(keys, description, action)
+  end
+  hl().unbind(keys)
+  return hl().bind(keys, action, { description = description })
+end
+
+-- Bind keys to a shell command: through Omarchy's o.bind when it is loaded
+-- (the keybindings menu lists the description), else hl directly.
+function M.bind_command(keys, description, command)
+  local o = rawget(_G, "o")
+  if type(o) == "table" and type(o.bind) == "function" then
+    return o.bind(keys, description, command)
+  end
+  return hl().bind(keys, hl().dsp.exec_cmd(command), { description = description })
+end
+
+-- Register a bind action's replay expression with Omarchy's keybindings menu.
+function M.bind_expression(action, expression)
+  local o = rawget(_G, "o")
+  if type(o) == "table" and type(o.bind_expressions) == "table" then
+    o.bind_expressions[action] = expression
+  end
+  return action
+end
+
+-- Scrolling (scroll branches, see scroll.lua). ------------------------------
+
+-- The tiled layout of workspace `id` ("scrolling", "lua:slots", ...), or nil
+-- when it does not exist.
+function M.workspace_tiled_layout(id)
+  local workspace = hl().get_workspace(id)
+  return workspace and workspace.tiled_layout
+end
+
+-- Omarchy's state directory (its paths module when it is loaded, else the
+-- XDG default).
+local function state_home()
+  local ok, paths = pcall(require, "default.hypr.paths")
+  if ok and type(paths) == "table" and type(paths.state_home) == "string" then
+    return paths.state_home
+  end
+  local base = os.getenv("XDG_STATE_HOME")
+  if not base or base == "" then
+    base = (os.getenv("HOME") or "") .. "/.local/state"
+  end
+  return base
+end
+
+-- Omarchy's saved mode for workspace `id`: the file its workspace-layout
+-- toggle (and the user's Super+L cycle) writes into its workspace-layouts
+-- folder, `o.workspace_mode({ workspace = "3", mode = "dwindle" })`. The
+-- mode ("dwindle", "scrolling", "floating"), "" for a file that names none,
+-- nil for no file.
+function M.omarchy_saved_mode(id)
+  local file = io.open(string.format("%s/omarchy/workspace-layouts/%s.lua", state_home(), tostring(id)), "r")
+  if not file then
+    return nil
+  end
+  local text = file:read("a") or ""
+  file:close()
+  return text:match('mode%s*=%s*"([%a]+)"') or ""
+end
+
+-- Whether Omarchy has a saved mode for workspace `id`.
+function M.omarchy_mode_saved(id)
+  return M.omarchy_saved_mode(id) ~= nil
+end
+
+-- The tiled windows on workspace `id` that Hyprland's scrolling layout has a
+-- column for: { address, stable_id, column = its 0-based index, row = the
+-- window's index in it, width = the column's width (a fraction of the
+-- screen) }, from HL.Window.layout.
+function M.scroll_windows(id)
+  local out = {}
+  for _, window in ipairs(hl().get_windows() or {}) do
+    local workspace = window.workspace
+    local layout = workspace and workspace.id == id and not window.floating and window.layout
+    local column = type(layout) == "table" and layout.name == "scrolling" and layout.column
+    if type(column) == "table" and type(column.index) == "number" then
+      out[#out + 1] = {
+        address = window.address,
+        stable_id = window.stable_id,
+        column = column.index,
+        row = layout.index_in_column or 0,
+        width = column.width,
+      }
+    end
+  end
+  return out
+end
+
+-- Swap windows in pairs ({ a, b } addresses), focus kept: Hyprland's
+-- window.swap keeps the focus but warps the cursor to the moved window, so
+-- warps are off meanwhile (with cursor:no_warps Hyprland still focuses the
+-- monitor under that point, so the focused monitor is put back too).
+function M.swap_windows(swaps)
+  local no_warps = hl().get_config("cursor.no_warps")
+  local monitor = M.active_monitor_name()
+  hl().config({ cursor = { no_warps = true } })
+  local ok, err = pcall(function()
+    for _, swap in ipairs(swaps) do
+      hl().dispatch(hl().dsp.window.swap({ window = "address:" .. swap.a, target = "address:" .. swap.b }))
+    end
+    if monitor and M.active_monitor_name() ~= monitor then
+      M.focus_monitor(monitor)
+    end
+  end)
+  hl().config({ cursor = { no_warps = no_warps == true or no_warps == 1 } })
+  if not ok then
+    error(err, 0)
+  end
+end
+
+-- The focused window as a plain table (see M.window), or nil.
+function M.active_window()
+  local window = hl().get_active_window()
+  return window and M.window(window)
+end
+
+-- The focused workspace's tiled layout ("dwindle", "lua:slots", ...), or nil.
+function M.active_layout()
+  local workspace = hl().get_active_workspace()
+  return workspace and workspace.tiled_layout
+end
+
+-- Send a message to the focused workspace's layout.
+function M.layout_msg(msg)
+  return hl().dispatch(hl().dsp.layout(msg))
+end
+
+-- Hyprland's own relative resize of the focused window.
+function M.resize_window(dx, dy)
+  return hl().dispatch(hl().dsp.window.resize({ x = dx, y = dy, relative = true }))
+end
+
+-- The id of the focused monitor's active workspace, or nil.
+function M.active_workspace_id()
+  local workspace = hl().get_active_workspace()
+  return workspace and workspace.id
+end
+
+-- Emit `custom>>text` on socket2 (hyprctl dispatch event).
+function M.emit_event(text)
+  return hl().dispatch(hl().dsp.event(text))
+end
+
+-- Make Hyprland lay out the workspace holding a tiled window again: a lua
+-- layout recalculates on any resize request (CLuaTiledAlgorithm::resizeTarget
+-- discards the delta), so a zero resize is a relayout.
+function M.nudge(address)
+  return hl().dispatch(hl().dsp.window.resize({ x = 0, y = 0, relative = true, window = "address:" .. address }))
+end
+
+return M

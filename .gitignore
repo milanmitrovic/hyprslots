@@ -5,7 +5,6 @@ luacov.*.out
 *.rock
 /lua_modules/
 /.luarocks/
-.busted
 .busted_cache/
 
 # QML / Qt
@@ -22,3 +21,6 @@ build/
 .DS_Store
 .vscode/
 .idea/
+
+# e2e harness scratch (per-test temp dirs, logs, built shim)
+/.e2e-tmp/

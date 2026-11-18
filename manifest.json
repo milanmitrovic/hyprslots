@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.milanmitrovic.hyprslots",
+  "name": "Hyprslots",
+  "version": "1.0.0",
+  "author": "Milan Mitrovic",
+  "license": "MIT",
+  "description": "Named slots for your windows: every app finds its place on every workspace, on every screen, at every desk. The engine and its editor.",
+  "homepage": "https://github.com/milanmitrovic/hyprslots",
+  "repository": "https://github.com/milanmitrovic/hyprslots",
+  "kinds": [
+    "panel",
+    "service",
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "panel": "editor/Panel.qml",
+    "service": "editor/Engine.qml",
+    "barWidget": "editor/BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Hyprslots",
+    "description": "The active layout; click for the editor, right-click to re-apply, record, capture, save or reload",
+    "category": "Compositor",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}

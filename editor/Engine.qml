@@ -1,0 +1,306 @@
+pragma ComponentBehavior: Bound
+import QtQuick
+import Quickshell
+import Quickshell.Io
+import Quickshell.Hyprland
+import "Install.js" as Install
+import "Protocol.js" as Protocol
+import "Services.js" as Services
+
+// The editor's link to the running hyprslots engine (docs/design.md §9), as
+// the plugin's service. It talks to the engine only through Hyprland:
+//
+//   read   hyprctl repl 'return hyprslots.api.state()' (or, with no engine
+//          loaded, a marker: `absent`, below)
+//   write  hyprctl repl 'return hyprslots.api.call(name, json)'
+//   push   custom>>hyprslots changed <seq> on socket2 (Hyprland.rawEvent)
+//
+// Any change event means "read state again" (seq restarts when Hyprland
+// reloads its config, so it orders nothing); reads are debounced, so a burst
+// of events (a two-axis resize, a re-route moving several windows) is one
+// read. Commands run one at a time, in order, each in its own process with
+// a timeout. A failure is kept visible: `error` for the last state read,
+// `lastError` for the last call, and every call's reply is handed back.
+Item {
+  id: root
+
+  // Injected by the shell after creation (null in Component.onCompleted).
+  property var shell: null
+  property var manifest: null
+
+  // Whether anyone is looking: the panel is open (`active`), or bar widgets
+  // show the state (`watchers`, one per widget instance, from watch() and
+  // unwatch()). Events are only followed while someone is, so a closed panel
+  // with no widget on the bar costs nothing.
+  property bool active: false
+  property int watchers: 0
+  readonly property bool following: active || watchers > 0
+
+  property var state: null // the last state reply that read fine
+  property string error: "" // why the last state read failed, "" when it worked
+  // The last state read found no engine (Protocol.parseReply): not enabled,
+  // or its loader failed (`loadError`, "" when it did not run).
+  property bool absent: false
+  property string loadError: ""
+  // The panel's Enable (enable()): its script runs; its last run's error.
+  property bool enabling: false
+  property string enableError: ""
+  property string lastError: "" // the last failed call's error
+  // Also while a re-read is pending (the debounce after a reply or event):
+  // until it lands, a view's state lags what the engine already did.
+  property bool busy: _current !== null || _queue.length > 0 || debounce.running
+
+  property int debounceMs: 60
+  property int timeoutMs: 3000
+  // Enable's script polls the engine for a few seconds after the reload.
+  property int enableTimeoutMs: 30000
+
+  // Every reply to a call, ok or not.
+  signal replied(string name, var reply)
+  // After every state read, whether it worked or not.
+  signal stateRead(bool ok)
+
+  property var _queue: []
+  property var _current: null
+
+  // Read state soon (debounced).
+  function refresh() {
+    debounce.restart()
+  }
+
+  // A bar widget starts / stops showing the state.
+  function watch() {
+    watchers = watchers + 1
+  }
+
+  function unwatch() {
+    watchers = Math.max(0, watchers - 1)
+  }
+
+  // Run an api call; `done(reply)` gets {ok:true,...} or {ok:false,error}.
+  function call(name, args, done) {
+    _enqueue({ kind: "call", name: name, args: args || {}, done: done || null })
+  }
+
+  function _enqueue(job) {
+    var queue = _queue.slice()
+    queue.push(job)
+    _queue = queue
+    _pump()
+  }
+
+  function _readNow() {
+    for (var i = 0; i < _queue.length; i++) {
+      if (_queue[i].kind === "state") return // one read waiting is enough
+    }
+    _enqueue({ kind: "state" })
+  }
+
+  function _pump() {
+    if (_current !== null || _queue.length === 0) return
+    var queue = _queue.slice()
+    var job = queue.shift()
+    _queue = queue
+    var command = job.kind === "state" ? Protocol.stateCommand() : Protocol.callCommand(job.name, job.args)
+    // It starts as it is created; its output and exit arrive later, from
+    // the event loop, so _current is set in time.
+    _current = jobComponent.createObject(root, { job: job, command: command, running: true })
+    watchdog.restart()
+  }
+
+  // A job's process reports twice (its output, its exit); settle on both.
+  function _settle(proc) {
+    if (!proc.outDone || !proc.exitDone || proc !== _current) return
+    _complete(proc, Protocol.parseReply(proc.out, proc.code))
+  }
+
+  function _complete(proc, reply) {
+    watchdog.stop()
+    var job = proc.job
+    _current = null
+    proc.destroy()
+    if (job.kind === "state") {
+      if (reply.ok) {
+        state = reply
+        error = ""
+      } else {
+        error = reply.error
+      }
+      absent = reply.absent === true
+      loadError = absent ? String(reply.loadError || "") : ""
+      stateRead(reply.ok)
+    } else {
+      if (!reply.ok) lastError = reply.error
+      if (job.done) {
+        try {
+          job.done(reply)
+        } catch (e) {
+          console.warn("hyprslots: reply handler for " + job.name + " failed: " + e)
+        }
+      }
+      replied(job.name, reply)
+      // The engine announces the change too; the read is debounced, so the
+      // two become one.
+      if (reply.ok) refresh()
+    }
+    Qt.callLater(_pump)
+  }
+
+  // Enable the engine, on the user's say-so (the panel's Enable): run the
+  // plugin's tools/install-engine.sh, which installs the loader, reloads
+  // Hyprland and checks the engine runs (Install.js); `options` are the
+  // prompt's choices ({ keys, menu }: --keys binds the editor's keys,
+  // --menu adds hyprslots to the Omarchy menu). `done(result)` gets
+  // Install.outcome's { ok, message }. The service never runs it by itself.
+  function enable(done, options) {
+    if (enabling) return
+    enabling = true
+    enableError = ""
+    var proc = enableComponent.createObject(root, {
+      command: Install.enableCommand(Qt.resolvedUrl("../tools/install-engine.sh"), options || Install.defaults()),
+      done: done || null,
+      running: true,
+    })
+    enableWatchdog.proc = proc
+    enableWatchdog.restart()
+  }
+
+  function _enabled(proc, result) {
+    if (!enabling || proc.finished) return
+    proc.finished = true
+    enableWatchdog.stop()
+    enabling = false
+    if (!result.ok) enableError = result.message
+    refresh()
+    if (proc.done) {
+      try {
+        proc.done(result)
+      } catch (e) {
+        console.warn("hyprslots: enable handler failed: " + e)
+      }
+    }
+    proc.destroy()
+  }
+
+  Component {
+    id: enableComponent
+
+    Process {
+      id: enableProc
+
+      property var done: null
+      property bool finished: false
+      property string out: ""
+      property string err: ""
+      property bool outDone: false
+      property bool errDone: false
+      property bool exitDone: false
+      property int code: -1
+
+      // It reports three times (its output, its errors, its exit); settle
+      // on all of them.
+      function settle() {
+        if (outDone && errDone && exitDone) root._enabled(enableProc, Install.outcome(code, out, err))
+      }
+
+      stdout: StdioCollector {
+        onStreamFinished: {
+          enableProc.out = text
+          enableProc.outDone = true
+          enableProc.settle()
+        }
+      }
+      stderr: StdioCollector {
+        onStreamFinished: {
+          enableProc.err = text
+          enableProc.errDone = true
+          enableProc.settle()
+        }
+      }
+      onExited: function(exitCode, exitStatus) {
+        enableProc.code = exitCode
+        enableProc.exitDone = true
+        enableProc.settle()
+      }
+    }
+  }
+
+  // The script polls the engine for a few seconds after the reload; one that
+  // never returns fails instead of leaving Enable waiting.
+  Timer {
+    id: enableWatchdog
+    property var proc: null
+    interval: root.enableTimeoutMs
+    onTriggered: {
+      if (!proc) return
+      proc.running = false
+      root._enabled(proc, { ok: false, message: "tools/install-engine.sh did not finish within "
+        + root.enableTimeoutMs / 1000 + " s" })
+    }
+  }
+
+  Component {
+    id: jobComponent
+
+    Process {
+      id: proc
+
+      property var job: null
+      property string out: ""
+      property bool outDone: false
+      property bool exitDone: false
+      property int code: -1
+
+      stdout: StdioCollector {
+        onStreamFinished: {
+          proc.out = text
+          proc.outDone = true
+          root._settle(proc)
+        }
+      }
+      onExited: function(exitCode, exitStatus) {
+        proc.code = exitCode
+        proc.exitDone = true
+        root._settle(proc)
+      }
+    }
+  }
+
+  Timer {
+    id: debounce
+    interval: root.debounceMs
+    onTriggered: root._readNow()
+  }
+
+  // A command that never finishes (hyprctl wedged, Hyprland gone) fails
+  // instead of blocking every later one.
+  Timer {
+    id: watchdog
+    interval: root.timeoutMs
+    onTriggered: {
+      var proc = root._current
+      if (proc === null) return
+      proc.running = false
+      root._complete(proc, { ok: false, error: "hyprctl did not answer within " + root.timeoutMs + " ms" })
+    }
+  }
+
+  Connections {
+    target: Hyprland
+    function onRawEvent(event) {
+      if (root.following && event && Protocol.meansReread(String(event.name), String(event.data || ""))) root.refresh()
+    }
+  }
+
+  // Set by a panel that runs an engine of its own (no service): that one is
+  // the panel's, not for bar widgets.
+  property bool panelOwned: false
+
+  // For a bar widget its bar hands no service (Services.js).
+  Component.onCompleted: if (!panelOwned) Services.register(root)
+  Component.onDestruction: Services.unregister(root)
+
+  onFollowingChanged: if (following) refresh()
+  // Opening the panel reads again even while a widget kept the state fresh.
+  onActiveChanged: if (active) refresh()
+}
