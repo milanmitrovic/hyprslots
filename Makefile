@@ -14,7 +14,7 @@ NODE ?= $(shell command -v node 2>/dev/null)
 # `make test` skips it, saying so, where qmltestrunner is missing.
 QMLTESTRUNNER ?= $(shell test -x /usr/lib/qt6/bin/qmltestrunner && echo /usr/lib/qt6/bin/qmltestrunner)
 
-.PHONY: test lua-test editor-test editor-qml-test editor-lint e2e e2e-editor e2e-editor-multimon
+.PHONY: test lua-test editor-test editor-qml-test editor-lint e2e e2e-editor e2e-editor-multimon readme-shots
 test: lua-test editor-test editor-qml-test
 test: export HYPRSLOTS_REQUIRE_LUA := 1
 test: REQUIRE_NODE := 1
@@ -83,3 +83,11 @@ e2e-editor:
 # into $MULTIMON_SHOTS (default .e2e-tmp/multimon/latest).
 e2e-editor-multimon:
 	./e2e/run.sh e2e/editor_multimon.sh
+
+# The README's screenshots (opt-in, no gate runs it): a staged demo on the
+# nested Hyprland, into docs/screenshots/ (and preview.png, the Layout
+# tab); needs qs, grim, magick, nvim, bat and glow. README_SHOTS_LIGHT is
+# the light theme of layout-tab-light.png.
+README_SHOTS_LIGHT ?= $(OMARCHY_PATH)/themes/catppuccin-latte
+readme-shots:
+	README_SHOTS_LIGHT=$(README_SHOTS_LIGHT) ./e2e/run.sh e2e/readme_shots.sh
