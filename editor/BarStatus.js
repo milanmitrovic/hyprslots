@@ -1,0 +1,173 @@
+.pragma library
+.import "Workspaces.js" as Workspaces
+
+// The bar widget's model (docs/design.md §9): what BarWidget.qml shows for
+// the engine's state and the workspace its bar's monitor shows, and what its
+// right-click menu offers. Pure, so node can test it
+// (editor/tests/bar-status.test.mjs).
+
+var GLYPH = "󰕰" // nf-md-view_grid, the grid glyph for slots
+
+function workspaceOf(state, id) {
+  var ws = Workspaces.entry(state, id)
+  return ws ? ws.workspace : null
+}
+
+// Whether the active layout has a tree for that workspace on that screen.
+function hasTree(state, entry) {
+  var layout = Workspaces.activeLayout(state)
+  var trees = layout && layout.workspaces ? layout.workspaces[String(entry.workspace)] : null
+  return !!(trees && trees[String(entry.screen)])
+}
+
+var HINT = "Click: editor · Right-click: menu"
+var SETUP_HINT = "Click to set up your slots"
+var ENABLE_HINT = "Click to enable it"
+
+// The display name of the monitor a workspace entry is on (" on Built-in"),
+// "" when the engine names none.
+function onMonitor(state, entry) {
+  var list = state && Array.isArray(state.monitors) ? state.monitors : []
+  for (var i = 0; i < list.length; i++) {
+    if (entry && list[i].name === entry.monitor && list[i].display) return " on " + list[i].display
+  }
+  return ""
+}
+
+// Where the bar's screen is, in words: "desk laptop, workspace 3 on Built-in".
+function where(desk, entry, tree, workspaceId, state) {
+  if (!desk) return "no desk for these monitors"
+  if (entry) {
+    return "desk " + desk + ", workspace " + entry.workspace + onMonitor(state, entry)
+      + (tree ? "" : " has no tree on this screen")
+  }
+  if (workspaceId === undefined || workspaceId === null || workspaceId < 0) return "desk " + desk + ", no workspace"
+  return "desk " + desk + ", workspace " + workspaceId + " has no tree"
+}
+
+// "Layout: solo (also used by: office)", or "" with no layout.
+function layoutLine(state) {
+  if (!state || !state.layout) return ""
+  var l = Workspaces.activeLayout(state)
+  var others = (l && Array.isArray(l.used_by) ? l.used_by : []).filter(function(d) { return d !== state.desk })
+  return "Layout: " + state.layout + (others.length ? " (also used by: " + others.join(", ") + ")" : "")
+}
+
+// input: { engine (whether the service is there), error (its last state
+// read's error, "" when fine), state (the last state that read fine, or
+// null), absent and loadError (no engine runs, and the loader's error if it
+// failed: Protocol.parseReply), workspaceId (the bar's monitor's active
+// Hyprland workspace id, -1 if none) }. Returns { label, status: "normal" | "dirty" | "setup" | "error",
+// tooltip, error, workspace (its number 1 to 10, or null), desk ("" when
+// none), dirty, setup (zero slots: the widget asks to be set up, an accent
+// dot by its glyph) }. The label is the active layout's name ("none" without
+// one), and a dot for unsaved edits; "set up" while there are no slots.
+function view(input) {
+  var state = input.state
+  var entry = Workspaces.entry(state, input.workspaceId)
+  var workspace = entry ? entry.workspace : null
+  var tree = entry ? hasTree(state, entry) : false
+  var desk = state && state.desk ? String(state.desk) : ""
+  var dirty = !!(state && state.dirty === true)
+  var label = GLYPH + " " + (state && state.layout ? String(state.layout) : "none") + (dirty ? " •" : "")
+  var line = layoutLine(state)
+  var here = where(desk, entry, tree, input.workspaceId, state) + (dirty ? " · unsaved edits" : "") + (line ? "\n" + line : "")
+  var out = { label: label, status: dirty ? "dirty" : "normal", tooltip: "", error: "", workspace: workspace,
+    desk: desk, dirty: dirty }
+
+  if (!input.engine) {
+    out.error = "the io.github.milanmitrovic.hyprslots service is not running"
+  } else if (input.error) {
+    // The state is older than the failure, or there is none.
+    out.error = String(input.error)
+  } else if (state && state.refused) {
+    out.error = "hyprslots is off: " + state.refused
+    out.label = GLYPH + " off"
+  } else if (state && state.config_error) {
+    out.error = "config error: " + state.config_error
+  }
+  // The engine not enabled (a fresh install: the plugin added, its loader
+  // not yet; or taken away since): the same quiet nudge, to the editor's
+  // Enable. One that failed to load stays an error.
+  if (input.absent && !input.loadError) {
+    out.setup = true
+    out.status = "setup"
+    out.error = ""
+    out.label = GLYPH + " enable"
+    out.tooltip = "Hyprslots: the engine is not enabled\n" + ENABLE_HINT
+    return out
+  }
+  // Zero slots (a fresh install): a quiet nudge to set them up, until the
+  // first slot is made. An auto desk's unsaved dot waits until then.
+  out.setup = !out.error && !!state && Array.isArray(state.slots) && state.slots.length === 0
+  if (out.setup) {
+    out.status = "setup"
+    out.label = GLYPH + " set up"
+    out.tooltip = "Hyprslots: no slots yet\n" + SETUP_HINT
+  } else if (out.error) {
+    out.status = "error"
+    if (!state) out.label = GLYPH + " hyprslots"
+    out.tooltip = "Hyprslots: " + out.error + (state && input.engine && !input.error && !state.refused ? "\n" + here : "") + "\n" + HINT
+  } else {
+    out.tooltip = "Hyprslots: " + here + "\n" + HINT
+  }
+  return out
+}
+
+// The right-click menu for the same input as view(): [{ id, label, enabled }]
+// with ids "arrange", "record", "capture", "save", "reload". Re-apply,
+// record and capture need the bar's screen to show a workspace of a running
+// engine (a config error leaves the last good config running); record also
+// needs slots to record into (a fresh install has none), capture makes them;
+// save needs unsaved edits; reload needs only the service and an engine (it
+// is how a fixed config error is picked up). With no engine nothing is
+// offered: a click opens the editor's Enable.
+function menu(input) {
+  var v = view(input)
+  var state = input.state
+  var live = !!(input.engine && !input.error && !input.absent && state && !state.refused)
+  var onWorkspace = live && v.workspace !== null
+  var noSlots = !!state && Array.isArray(state.slots) && state.slots.length === 0
+  return [
+    { id: "arrange", label: "Re-apply layout" + (v.workspace !== null ? " (workspace " + v.workspace + ")" : ""),
+      enabled: onWorkspace },
+    { id: "record", label: "Record workspace" + (v.workspace !== null ? " " + v.workspace : "") + "…",
+      enabled: onWorkspace && !noSlots },
+    { id: "capture", label: "Capture this workspace…", enabled: onWorkspace },
+    { id: "save", label: "Save", enabled: live && v.dirty },
+    { id: "reload", label: "Reload config", enabled: !!input.engine && !input.absent },
+  ]
+}
+
+// The open payload a menu entry summons the panel with (Record: its R
+// flow, Capture: its c flow, both on the Layout tab), or null for an entry
+// that calls the engine (calls).
+function summon(id) {
+  if (id === "record") return { record: true }
+  if (id === "capture") return { capture: true }
+  return null
+}
+
+// The api calls a menu entry makes, in order ([] for record and capture,
+// which open the panel's Layout tab on their flows instead). Re-apply is the
+// workspace's Super+N (`workspace`: every screen of the desk shows it
+// again, scroll branches back in slot order) and then `arrange` (the scroll
+// pass now, the focused scroll workspace's columns widened).
+function calls(id, workspace) {
+  if (id === "arrange") return [{ name: "workspace", args: { workspace: workspace } }, { name: "arrange", args: {} }]
+  if (id === "save") return [{ name: "save", args: {} }]
+  if (id === "reload") return [{ name: "reload", args: {} }]
+  return []
+}
+
+// What a menu entry's last reply says, for a notification.
+function outcome(id, workspace, reply) {
+  if (!reply || !reply.ok) return reply && reply.error ? String(reply.error) : "the call failed"
+  if (id === "arrange") return "Workspace " + workspace + " laid out again."
+  if (id === "save") return "Saved."
+  if (id === "reload") {
+    return reply.desk ? "Reloaded the config; desk " + reply.desk + " runs layout " + reply.layout + "."
+      : "Reloaded the config; these monitors have no desk."
+  }
+  return "Done."
+}

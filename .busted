@@ -1,0 +1,11 @@
+-- busted configuration: `busted` from the repo root runs every spec/**/*_spec.lua.
+return {
+  _all = {
+    lpath = "lua/?.lua;lua/?/init.lua;spec/?.lua",
+  },
+  default = {
+    ROOT = { "spec" },
+    pattern = "_spec",
+    verbose = true,
+  },
+}

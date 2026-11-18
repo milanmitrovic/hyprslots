@@ -1,0 +1,350 @@
+// The Desk view's model (DesksLayouts.js): every stored desk (a
+// monitor setup) and every layout (a logical arrangement for N screens),
+// which desk is active and which layout it uses, and what each key does on
+// which row.
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { load } from "./load.mjs";
+
+const D = load("DesksLayouts.js");
+const plain = (value) => JSON.parse(JSON.stringify(value));
+
+const SAMSUNG = "Samsung Odyssey G95NC HNTW700044";
+
+function fixture() {
+  return {
+    desk: "docked",
+    layout: "docked",
+    screens: ["eDP-1", "DP-2"],
+    monitors: [
+      { name: "DP-2", description: SAMSUNG, serial: "HNTW700044", selector: SAMSUNG, x: 1920, y: 0,
+        display: "Odyssey G95NC" },
+      { name: "eDP-1", description: "BOE 0x0BCA", serial: "", selector: "eDP-1", x: 0, y: 0, internal: true,
+        display: "Built-in" },
+    ],
+    desks: {
+      docked: { monitors: ["eDP-1", SAMSUNG], connected: [true, true], displays: ["Built-in", "Odyssey G95NC"],
+        layout: "docked", active: true,
+        screens: ["eDP-1", "DP-2"], read_only: false },
+      laptop: { monitors: ["eDP-1"], connected: [true], displays: ["Built-in"], layout: "laptop", active: false,
+        read_only: false },
+      office: { monitors: ["eDP-1", "Dell U2723QE ABC"], connected: [true, false], displays: ["Built-in", "Dell U2723QE ABC"],
+        layout: "docked",
+        active: false, read_only: true },
+    },
+    monitor_names: {},
+    layouts: {
+      docked: { screens: 2, default: { 1: { tree: "main" } }, workspaces: {}, own: [3], used_by: ["docked", "office"],
+        active: true, read_only: false },
+      "docked-2": { screens: 2, default: {}, workspaces: {}, own: [], used_by: [], active: false, read_only: false },
+      laptop: { screens: 1, default: {}, workspaces: {}, own: [3], used_by: ["laptop"], active: false, read_only: false },
+      wide: { screens: 2, default: {}, workspaces: {}, own: [], used_by: [], active: false, read_only: true },
+    },
+  };
+}
+
+test("rows are every desk by name, then every layout by name", () => {
+  assert.deepEqual(plain(D.rows(fixture())).map((r) => [r.kind, r.name, r.active]), [
+    ["desk", "docked", true],
+    ["desk", "laptop", false],
+    ["desk", "office", false],
+    ["layout", "docked", true],
+    ["layout", "docked-2", false],
+    ["layout", "laptop", false],
+    ["layout", "wide", false],
+  ]);
+  assert.deepEqual(plain(D.rows(null)), []);
+});
+
+test("a desk row has its monitors, whether each is connected and which monitor it is, and its layout", () => {
+  const rows = plain(D.rows(fixture()));
+  assert.deepEqual(rows[0], {
+    kind: "desk", key: "desk:docked", name: "docked", active: true, auto: false, readOnly: false, layout: "docked",
+    screens: 2, geometry: [],
+    monitors: [
+      { selector: "eDP-1", connected: true, connector: "eDP-1", description: "BOE 0x0BCA", display: "Built-in", label: "" },
+      { selector: SAMSUNG, connected: true, connector: "DP-2", description: SAMSUNG, display: "Odyssey G95NC", label: "" },
+    ],
+  });
+  assert.deepEqual(rows[2].monitors[1], { selector: "Dell U2723QE ABC", connected: false, connector: "", description: "",
+    display: "Dell U2723QE ABC", label: "" });
+  assert.equal(rows[2].readOnly, true);
+});
+
+test("a desk the engine just made is marked new and unsaved", () => {
+  const state = fixture();
+  state.desks.laptop.auto = true;
+  assert.equal(D.rows(state)[1].auto, true);
+  assert.match(D.deskCells(D.rows(state)[1]).name, /^laptop \(new, unsaved\)$/);
+});
+
+test("a desk row's monitors carry the user's label and fall back to the selector without a display name", () => {
+  const state = fixture();
+  state.monitor_names = { [SAMSUNG]: "Samsung" };
+  state.desks.docked.displays = ["Built-in", "Samsung"];
+  assert.deepEqual(plain(D.rows(state)[0].monitors[1]).label, "Samsung");
+  assert.equal(D.deskCells(D.rows(state)[0]).monitors, "1 · Built-in + 2 · Samsung");
+  delete state.desks.office.displays;
+  assert.equal(D.deskCells(D.rows(state)[2]).monitors, "1 · Built-in + 2 · ○ Dell U2723QE ABC", "the connected monitor's");
+  state.monitors = [];
+  assert.equal(D.deskCells(D.rows(state)[2]).monitors, "1 · eDP-1 + 2 · ○ Dell U2723QE ABC", "else the selector");
+});
+
+test("a desk row reads: name, monitors by screen number (○ when not connected), → the layout it uses", () => {
+  const rows = D.rows(fixture());
+  assert.deepEqual(plain(D.deskCells(rows[0])), {
+    mark: "●",
+    name: "docked",
+    monitors: "1 · Built-in + 2 · Odyssey G95NC",
+    layout: "→ docked",
+  });
+  assert.deepEqual(plain(D.deskCells(rows[2])), {
+    mark: "",
+    name: "office (set in your config)",
+    monitors: "1 · Built-in + 2 · ○ Dell U2723QE ABC",
+    layout: "→ docked",
+  });
+});
+
+test("each section has a quiet header: its title and what it lists", () => {
+  assert.deepEqual(plain(D.sectionHeader("desk")), { title: "Desks", hint: "monitor setups · ○ not connected" });
+  assert.deepEqual(plain(D.sectionHeader("layout")), { title: "Layouts", hint: "a desk can use a layout with the same number of screens" });
+});
+
+test("a layout row has its screen count and the desks that use it", () => {
+  const rows = D.rows(fixture());
+  assert.deepEqual(plain(rows[3]), { kind: "layout", key: "layout:docked", name: "docked", active: true, readOnly: false,
+    screens: 2, usedBy: ["docked", "office"] });
+  assert.deepEqual(plain(D.layoutCells(rows[3])), { mark: "●", name: "docked", screens: "2 screens",
+    usedBy: "docked, office" });
+  assert.deepEqual(plain(D.layoutCells(rows[5])), { mark: "", name: "laptop", screens: "1 screen", usedBy: "laptop" });
+  assert.deepEqual(plain(D.layoutCells(rows[6])), { mark: "", name: "wide (set in your config)", screens: "2 screens",
+    usedBy: "unused" });
+});
+
+test("the keys that act on a row: no pinning, no p", () => {
+  const rows = D.rows(fixture());
+  assert.deepEqual(plain(D.actions(rows[0]).map((a) => a.key)), ["a", "f", "m", "n", "r", "x"]);
+  assert.deepEqual(plain(D.actions(rows[3]).map((a) => a.key)), ["a", "f", "n", "r", "x"]);
+  assert.deepEqual(plain(D.actions(rows[3]).map((a) => a.label)), ["apply to the active desk", "fork", "new layout",
+    "rename", "delete"]);
+  assert.deepEqual(plain(D.actions(rows[0]).map((a) => a.label)), ["apply a layout", "fork its layout",
+    "monitor name", "new layout", "rename", "delete"]);
+  assert.deepEqual(plain(D.actions(null).map((a) => a.key)), ["n"]);
+});
+
+test("a desk may use the layouts with as many screens as it has monitors", () => {
+  const state = fixture();
+  assert.deepEqual(plain(D.layoutsFor(state, "docked")), ["docked", "docked-2", "wide"]);
+  assert.deepEqual(plain(D.layoutsFor(state, "laptop")), ["laptop"]);
+  assert.deepEqual(plain(D.layoutsFor(state, "nope")), []);
+});
+
+test("applying a layout to the active desk is refused when the screen counts differ, or there is no active desk", () => {
+  const state = fixture();
+  assert.equal(D.applyBlock(state, "docked-2"), "");
+  assert.equal(D.applyBlock(state, "laptop"), "Layout 'laptop' has 1 screen; desk 'docked' has 2 monitors — pick a layout with 2 screens.");
+  state.desk = null;
+  assert.equal(D.applyBlock(state, "docked-2"), "No desk is active: these monitors have none yet.");
+});
+
+test("a fork is suggested as <name>-2, or the next free number", () => {
+  const state = fixture();
+  assert.equal(D.forkName(state, "laptop"), "laptop-2");
+  assert.equal(D.forkName(state, "docked"), "docked-3", "docked-2 is taken");
+  assert.equal(D.forkName(state, "docked-2"), "docked-3", "a fork of a fork counts on");
+  assert.equal(D.forkName(null, "x"), "x-2");
+});
+
+test("the layout a fork copies: the selected one, or on a desk row that desk's", () => {
+  const rows = D.rows(fixture());
+  assert.equal(D.forkSource(rows[1]), "laptop");
+  assert.equal(D.forkSource(rows[4]), "docked-2");
+  assert.equal(D.forkSource(null), null);
+});
+
+test("a fork's reply says whether the active desk now uses the copy", () => {
+  assert.equal(D.forkMessage({ layout: "docked", to: "docked-3", desk: "docked" }),
+    "Forked 'docked' as 'docked-3'; desk 'docked' uses it now. Ctrl+S saves.");
+  assert.equal(D.forkMessage({ layout: "laptop", to: "laptop-2", desk: null }),
+    "Forked 'laptop' as 'laptop-2'; the active desk has another screen count, so it keeps its layout. Ctrl+S saves.");
+});
+
+test("a new layout's screen count is suggested from the active desk", () => {
+  assert.equal(D.suggestedScreens(fixture()), 2);
+  const none = fixture();
+  none.desk = null;
+  none.screens = [];
+  assert.equal(D.suggestedScreens(none), 1);
+});
+
+test("a screen count must be a whole number from 1", () => {
+  assert.deepEqual(plain(D.parseScreens(" 2 ")), { screens: 2 });
+  assert.match(D.parseScreens("0").error, /whole number/);
+  assert.match(D.parseScreens("two").error, /whole number/);
+  assert.match(D.parseScreens("1.5").error, /whole number/);
+});
+
+test("deleting a desk asks, and warns when it is the active one", () => {
+  const rows = D.rows(fixture());
+  assert.equal(D.deleteDeskQuestion(rows[1]), "Delete desk 'laptop'? Its layout 'laptop' stays.");
+  assert.equal(D.deleteDeskQuestion(rows[0]), "Delete desk 'docked'? It is the active desk: these monitors get a new desk "
+    + "(the layout used last with 2 screens) in a second. Its layout 'docked' stays.");
+});
+
+test("deleting a used layout offers the layouts with as many screens to move its desks to", () => {
+  const state = fixture();
+  const rows = D.rows(state);
+  const used = plain(D.deleteLayoutPlan(state, rows[3]));
+  assert.equal(used.question, "Layout 'docked' is used by desks docked, office: move them to");
+  assert.deepEqual(used.remap, ["docked-2", "wide"]);
+  assert.deepEqual(plain(D.deleteLayoutPlan(state, rows[4])), { question: "Delete layout 'docked-2'? No desk uses it.", remap: [] });
+  // laptop is used, and no other 1-screen layout can take its desk: the engine says why
+  assert.deepEqual(plain(D.deleteLayoutPlan(state, rows[5])), { question: "Delete layout 'laptop'? Desk laptop uses it.",
+    remap: [] });
+});
+
+test("the panel's header names the desk's monitors in screen order, as the Desk tab does", () => {
+  const state = mapState();
+  state.layout = "docked";
+  assert.equal(D.header(state), "Desk: docked (HEADLESS-2 + HEADLESS-3) · Layout: docked (also used by: office)");
+});
+
+test("the panel's header names the desk, its layout and the other desks that share it", () => {
+  const state = fixture();
+  assert.equal(D.header(state), "Desk: docked (Built-in + Odyssey G95NC) · Layout: docked (also used by: office)");
+  state.layout = "laptop";
+  state.desk = "laptop";
+  assert.equal(D.header(state), "Desk: laptop (Built-in) · Layout: laptop");
+  state.desks.laptop.auto = true;
+  assert.equal(D.header(state), "Desk: laptop (Built-in; new, unsaved) · Layout: laptop");
+  delete state.desks.laptop.displays;
+  delete state.desks.laptop.auto;
+  assert.equal(D.header(state), "Desk: laptop · Layout: laptop", "an engine of before names no monitors");
+  state.desk = null;
+  state.layout = null;
+  assert.equal(D.header(state), "Desk: none");
+  assert.equal(D.header(null), "Desk: none");
+});
+
+test("the other desks that use a layout, for the warning that an edit changes it for them too", () => {
+  assert.deepEqual(plain(D.sharedWith(fixture(), "docked", "docked")), ["office"]);
+  assert.deepEqual(plain(D.sharedWith(fixture(), "laptop", "laptop")), []);
+  assert.deepEqual(plain(D.sharedWith(fixture(), "nope", "docked")), []);
+});
+
+test("the Layout tab's warning on a shared layout points to the Desk tab for a fork", () => {
+  assert.equal(D.sharedNote(["office"]), "Shared with desk office: edits here change it there too — fork it in the Desk tab.");
+  assert.equal(D.sharedNote(["office", "travel"]),
+    "Shared with desks office, travel: edits here change it there too — fork it in the Desk tab.");
+  assert.equal(D.sharedNote([]), "");
+});
+
+test("a read-only row refuses edits, saying where it is set", () => {
+  const rows = D.rows(fixture());
+  assert.equal(D.readOnlyError(rows[2]), "Desk 'office' is set in your config.");
+  assert.equal(D.readOnlyError(rows[6]), "Layout 'wide' is set in your config.");
+  assert.equal(D.readOnlyError(rows[0]), "");
+});
+
+test("each section's column titles say what the columns are: a desk's layout is the one it uses", () => {
+  assert.deepEqual(plain(D.columnTitles("desk")), { name: "Desk", monitors: "Monitors", layout: "Uses layout" });
+  assert.deepEqual(plain(D.columnTitles("layout")), { name: "Layout", screens: "Screens", usedBy: "Used by" });
+});
+
+test("m names one of the desk's monitors: which (when it has more than one), then the name", () => {
+  const rows = D.rows(fixture());
+  assert.deepEqual(plain(D.monitorOptions(rows[0])), [
+    { key: "1", label: "Built-in", value: "eDP-1" },
+    { key: "2", label: "Odyssey G95NC", value: SAMSUNG },
+  ]);
+  assert.deepEqual(plain(D.monitorOptions(rows[1])), [{ key: "1", label: "Built-in", value: "eDP-1" }]);
+  assert.equal(D.monitorQuestion(rows[0]), "Name a monitor of desk 'docked'");
+  const samsung = rows[0].monitors[1];
+  assert.equal(D.nameQuestion(samsung),
+    "Name monitor 'Odyssey G95NC' (empty: its own name) [Enter] save  [Esc] cancel: ");
+  assert.equal(D.nameMessage({ name: "Samsung", display: "Samsung" }, samsung),
+    "Monitor 'Odyssey G95NC' is 'Samsung' now. Ctrl+S saves.");
+  assert.equal(D.nameMessage({ name: "", display: "Odyssey G95NC" }, { display: "Samsung", label: "Samsung" }),
+    "Monitor 'Samsung' is 'Odyssey G95NC' again, its own name. Ctrl+S saves.");
+});
+
+test("an action a read-only row refuses looks unavailable: a desk's a, r, x; a layout's r, x", () => {
+  const rows = D.rows(fixture());
+  const off = (row) => plain(D.actions(row).filter((a) => a.enabled === false).map((a) => a.key));
+  assert.deepEqual(off(rows[0]), [], "an editable desk");
+  const desk = { ...rows[0], readOnly: true };
+  assert.deepEqual(off(desk), ["a", "r", "x"]);
+  assert.deepEqual(off(rows[6]), ["r", "x"], "layout wide is set in the config; it may still go on the active desk");
+});
+
+// The Desk tab's mini-maps: each desk's monitors as the engine reports them
+// (state.desks[].geometry: one box per selector, its screen number), fitted
+// into the map's box at their own shape.
+const DUAL_GEOMETRY = [
+  { x: 2400, y: 135, w: 1920, h: 1080, screen: 2 },
+  { x: 0, y: 0, w: 2400, h: 1350, screen: 1 },
+];
+
+function mapState() {
+  const state = fixture();
+  state.desks.docked.monitors = ["HEADLESS-3", "HEADLESS-2"];
+  state.desks.docked.displays = ["HEADLESS-3", "HEADLESS-2"];
+  state.desks.docked.connected = [false, true];
+  state.desks.docked.geometry = DUAL_GEOMETRY;
+  return state;
+}
+
+test("a desk's map fits its monitors' boxes into the map's box at their shape, screen by screen", () => {
+  const row = D.rows(mapState())[0];
+  const map = plain(D.deskMap(row, 72, 36));
+  // 4320 x 1350 logical: 72 px across, 22.5 (23) down
+  assert.deepEqual([map.w, map.h], [72, 23]);
+  assert.deepEqual(map.screens.map((s) => [s.screen, s.x, s.y, s.w, s.h, s.connected, s.display]), [
+    [1, 0, 0, 40, 23, true, "HEADLESS-2"],
+    [2, 40, 2, 32, 18, false, "HEADLESS-3"],
+  ]);
+});
+
+test("a desk's map is as tall as the box allows when the desk is narrow", () => {
+  const state = fixture();
+  state.desks.laptop.geometry = [{ x: 0, y: 0, w: 1080, h: 1920, screen: 1 }];
+  const map = plain(D.deskMap(D.rows(state)[1], 72, 36));
+  assert.deepEqual([map.w, map.h], [20, 36]);
+  assert.deepEqual(map.screens.map((s) => [s.screen, s.x, s.y, s.w, s.h]), [[1, 0, 0, 20, 36]]);
+});
+
+test("two equal screens side by side share the width; boxes meet without a gap or an overlap", () => {
+  const state = fixture();
+  state.desks.office.geometry = [{ x: 0, y: 0, w: 1600, h: 900, screen: 1 }, { x: 1600, y: 0, w: 1600, h: 900, screen: 2 }];
+  const map = plain(D.deskMap(D.rows(state)[2], 72, 36));
+  assert.deepEqual([map.w, map.h], [72, 20]);
+  assert.deepEqual(map.screens.map((s) => [s.screen, s.x, s.w]), [[1, 0, 36], [2, 36, 36]]);
+});
+
+test("a desk the state gives no geometry is its monitors as equal boxes side by side", () => {
+  const row = D.rows(fixture())[0];
+  const map = plain(D.deskMap(row, 72, 36));
+  assert.deepEqual(map.screens.map((s) => [s.screen, s.x, s.w, s.display]),
+    [[1, 0, 36, "Built-in"], [2, 36, 36, "Odyssey G95NC"]]);
+});
+
+test("a desk's map tip names its screens by number and display name, saying which are not connected", () => {
+  assert.equal(D.deskMapTip(D.rows(mapState())[0]), "1 HEADLESS-2 · 2 HEADLESS-3 (not connected)");
+  assert.equal(D.deskMapTip(D.rows(fixture())[1]), "1 Built-in");
+});
+
+test("a desk's monitors read in screen order, left to right as its map and layouts number them, not as it lists them", () => {
+  // docked lists HEADLESS-3 first, but it is screen 2: right of HEADLESS-2
+  assert.equal(D.deskCells(D.rows(mapState())[0]).monitors, "1 · HEADLESS-2 + 2 · ○ HEADLESS-3");
+  const state = fixture();
+  state.desks.docked.geometry = [{ x: 5120, y: 0, w: 1920, h: 1080, screen: 2 }, { x: 0, y: 0, w: 5120, h: 1440, screen: 1 }];
+  assert.equal(D.deskCells(D.rows(state)[0]).monitors, "1 · Odyssey G95NC + 2 · Built-in");
+});
+
+test("m numbers a desk's monitors by screen, as the Monitors column does", () => {
+  assert.deepEqual(plain(D.monitorOptions(D.rows(mapState())[0])), [
+    { key: "1", label: "HEADLESS-2", value: "HEADLESS-2" },
+    { key: "2", label: "HEADLESS-3", value: "HEADLESS-3" },
+  ]);
+});

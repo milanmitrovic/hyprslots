@@ -1,0 +1,182 @@
+-- Workspace switching on top of Omarchy's per-monitor workspaces (docs/design.md §5).
+--
+-- Workspace N on a screen is o.workspaces.focus(N, <its connector>), in the
+-- screen's block (screen i holds block i-1 while a desk is active,
+-- blocks.lua). A
+-- workspace switch shows workspace N on every screen of the active
+-- desk, the focused screen (the origin) last, then refocuses the origin.
+-- With no desk it switches the focused screen alone, as Omarchy's Super+N
+-- does.
+
+local adapter = require("hyprslots.hl_adapter")
+
+local M = {}
+
+-- Omarchy's workspaces per screen: the most hyprslots can manage (config
+-- `workspaces` is at most this; Super+1..0).
+M.MAX = 10
+-- How many it manages when config sets no `workspaces`: workspace 10
+-- (Super+0) stays Omarchy's unless config says otherwise.
+M.DEFAULT = 9
+
+-- How many workspaces the engine manages (config `workspaces`, default
+-- M.DEFAULT).
+function M.count(engine)
+  return engine and engine.cfg and engine.cfg.workspaces or M.DEFAULT
+end
+
+-- Whether `workspace` is one of 1..count (default all M.MAX of Omarchy's: the
+-- fallback to Omarchy's own switch while hyprslots is not running).
+function M.valid(workspace, count)
+  return math.type(workspace) == "integer" and workspace >= 1 and workspace <= (count or M.MAX)
+end
+
+-- true when `workspace` is one of 1..count (default M.MAX), else nil and why
+-- not. `given` is what the message says was given (default `workspace`):
+-- the raw argument, when `workspace` is it converted.
+function M.check(workspace, count, given)
+  count = count or M.MAX
+  if not M.valid(workspace, count) then
+    if given == nil then
+      given = workspace
+    end
+    return nil, "a workspace must be an integer from 1 to " .. count .. ", got " .. tostring(given)
+  end
+  return true
+end
+
+-- Activate workspace N. Returns true, or nil and why not.
+function M.activate(engine, workspace)
+  local ok, err = M.check(workspace, M.count(engine))
+  if not ok then
+    return nil, err
+  end
+  if engine.refused then
+    return nil, "hyprslots is not running: " .. engine.refused
+  end
+  local origin = adapter.active_monitor_name()
+  if not origin then
+    return nil, "no focused monitor"
+  end
+
+  engine.active_workspace = workspace
+  local screens = M.screens(engine, origin)
+  engine.log:info("workspace %d on %s", workspace, #screens > 0 and table.concat(screens, ", ") or "no screen")
+  for _, monitor in ipairs(screens) do
+    adapter.focus_workspace(workspace, monitor)
+  end
+  adapter.focus_monitor(origin)
+  -- Scroll branches back in slot order, even where the workspace was showing.
+  if engine.rearrange then
+    engine.rearrange("event")
+  end
+  return true
+end
+
+-- The connectors a workspace switch shows the workspace on, in order: every
+-- screen of the active desk, left to right, the origin last; or just the
+-- origin when no desk is active.
+function M.screens(engine, origin)
+  local active = engine.active
+  if not active then
+    return { origin }
+  end
+  local out, origin_switches = {}, false
+  for _, monitor in ipairs(active.monitors) do
+    if monitor == origin then
+      origin_switches = true
+    else
+      out[#out + 1] = monitor
+    end
+  end
+  if origin_switches then
+    out[#out + 1] = origin
+  end
+  return out
+end
+
+-- Show the active workspace (the last one switched to) on screens that were
+-- just plugged in, then refocus the focused screen.
+-- `monitors` is a set of connector names. Does nothing before the first
+-- workspace switch or with no active desk.
+function M.show_active(engine, monitors)
+  local workspace, active = engine.active_workspace, engine.active
+  if not workspace or not active or engine.refused then
+    return
+  end
+  local shown = {}
+  for _, monitor in ipairs(active.monitors) do
+    if monitors[monitor] then
+      shown[#shown + 1] = monitor
+    end
+  end
+  if #shown == 0 then
+    return
+  end
+  local origin = adapter.active_monitor_name()
+  engine.log:info("workspace %d on returning %s", workspace, table.concat(shown, ", "))
+  for _, monitor in ipairs(shown) do
+    adapter.focus_workspace(workspace, monitor)
+  end
+  if origin then
+    adapter.focus_monitor(origin)
+  end
+end
+
+-- The action bound to SUPER + N in place of o.workspaces.focus(N). While
+-- hyprslots is not running (refused, e.g. hyprmoncfg's workspace planner was
+-- turned back on, or setup failed) the key does what Omarchy's own Super+N
+-- does, through whatever o.workspaces.focus is now, so it never goes dead.
+function M.action(engine_ref, workspace)
+  local action = function()
+    local engine = engine_ref()
+    if not engine or engine.refused then
+      if M.valid(workspace) and adapter.omarchy_workspaces() then
+        adapter.focus_workspace(workspace)
+      end
+      if engine then
+        engine.log:warn("workspace %s: hyprslots is not running, Omarchy's switch instead", tostring(workspace))
+      end
+      return
+    end
+    local ok, err = M.activate(engine, workspace)
+    if not ok then
+      engine.log:warn("workspace %s: %s", tostring(workspace), err)
+    end
+  end
+  return adapter.bind_expression(action, "hyprslots.workspace(" .. tostring(workspace) .. ")")
+end
+
+-- Rebind SUPER + 1..0 (key codes 10..19, as Omarchy binds them) to workspace
+-- switching, as many as the engine manages (config `workspaces`: with 9,
+-- Super+0 stays Omarchy's). Not called by setup(): the cutover calls it from
+-- the user's config once hyprslots should own those keys.
+function M.bind_keys(engine_ref)
+  for workspace = 1, M.count(engine_ref()) do
+    local keys = "SUPER + code:" .. tostring(workspace + 9)
+    adapter.rebind(keys, "Switch to workspace " .. workspace .. " on every screen", M.action(engine_ref, workspace))
+  end
+end
+
+-- Workspace N of the focused workspace on the active desk (its screen's
+-- block, blocks.lua), or nil.
+function M.focused(engine)
+  local id = adapter.active_workspace_id()
+  local entry = engine:entry_of_workspace(id)
+  if entry then
+    return entry.workspace
+  end
+  if not engine.active or id == nil then
+    return nil
+  end
+  for n = 1, M.count(engine) do
+    for _, monitor in ipairs(engine.active.monitors) do
+      if adapter.workspace_id(monitor, n) == id then
+        return n
+      end
+    end
+  end
+  return nil
+end
+
+return M

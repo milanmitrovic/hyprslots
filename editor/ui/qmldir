@@ -1,0 +1,17 @@
+singleton Tokens 1.0 Tokens.qml
+SectionHeader 1.0 SectionHeader.qml
+WorkspaceSwitcher 1.0 WorkspaceSwitcher.qml
+InfoText 1.0 InfoText.qml
+ProblemText 1.0 ProblemText.qml
+Placeholder 1.0 Placeholder.qml
+TableHeader 1.0 TableHeader.qml
+TableRow 1.0 TableRow.qml
+TableCell 1.0 TableCell.qml
+PaneTitle 1.0 PaneTitle.qml
+KeyCap 1.0 KeyCap.qml
+ActionButton 1.0 ActionButton.qml
+Toolbar 1.0 Toolbar.qml
+MiniMap 1.0 MiniMap.qml
+DragGhost 1.0 DragGhost.qml
+DeskMap 1.0 DeskMap.qml
+CheckRow 1.0 CheckRow.qml
