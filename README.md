@@ -2,7 +2,13 @@
 
 **Name your slots once — every app finds its place on every workspace, on every screen, at every desk you plug into.**
 
-![The hyprslots editor: the Layout tab on a two-screen desk](preview.png)
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="docs/screenshots/layout-tab-light.png">
+  <img alt="The hyprslots editor: the Layout tab on a two-screen desk" src="preview.png">
+</picture>
+
+*The editor's Layout tab: slots `left`, `main` and `right` on screen 1, `chat` and `notes` on screen 2,
+shared by every workspace.*
 
 hyprslots is a window layout plugin for [Omarchy](https://omarchy.org) (Hyprland). You set it up once in
 an editor in Omarchy's shell; from then on every window you open goes straight to its place.
@@ -17,22 +23,25 @@ exact ratios (`main` twice as wide as `right`), or scrolling columns, half or fu
 workspaces share one layout; a workspace that needs another arrangement gets its own. A slot that
 nothing fills on a workspace takes no room there.
 
+![Two screens: a terminal, nvim and docs side by side on the left screen, team chat and notes stacked on the right one](docs/screenshots/desktop-layout.png)
+
+*What you get: workspace 1 with every window in its slot, on both screens.*
+
 **Assignments** say which app fills which slot on each workspace. Windows go there by themselves
 when they open, even when you open them on another workspace.
 
-```
- Screen 1 (laptop)    Screen 2 (ultrawide)
-┌───────────────┐   ┌──────────┬──────────────────────┬──────────┐
-│     notes     │   │   left   │         main         │  right   │
-└───────────────┘   └──────────┴──────────────────────┴──────────┘
- workspace 3:  main = terminal in ~/deltaf   left = Chrome, "DeltaF" profile   notes = Obsidian
- workspace 4:  main = Firefox                right = Slack       (left and notes close up)
-```
+![The Assignment tab: workspace 1's slots, the editor's window dragged onto main](docs/screenshots/assignment-tab.png)
+
+*The Assignment tab: drag a window onto its slot (or select it and press `a`).*
 
 **Desks** are your monitor setups: the laptop alone, docked with an ultrawide, the office… hyprslots
 recognises the one you are at from the monitors connected, and each desk uses a layout made for its
 number of screens (two desks can share one). Super+1–9 switch every screen together: workspace 3
 shows on all of them at once, each screen with its part of the layout.
+
+![The Desk tab: desks home and laptop with their monitor maps and layouts](docs/screenshots/desk-tab.png)
+
+*The Desk tab: each desk drawn as its monitors stand, the one you are at marked ●.*
 
 ## Install
 
@@ -78,6 +87,9 @@ which says **Start with your slots**. Pick one of two ways.
 4. Choose `a` (all workspaces share this arrangement) or `o` (only this workspace).
 5. Check the preview: each window becomes a slot named after its app (rename it later), and the
    picture shows the arrangement. Press `y`.
+
+   ![The capture preview: an editor and a terminal about to become slots, with a Yes/No line](docs/screenshots/capture-preview.png)
+
 6. **Ctrl+S** saves.
 
 **B. Start from scratch**
