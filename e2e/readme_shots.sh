@@ -17,7 +17,8 @@
 #   layout-tab.png       All workspaces: the shared layout on both screens,
 #                        the slot list beside it (also preview.png)
 #   scroll-layout.png    screen 1 turned into scrolling columns (not applied)
-#   desk-tab.png         desks home (both screens) and laptop (not plugged)
+#   desk-tab.png         desks home (both screens, layout two-screen) and
+#                        laptop (not plugged, layout scrolling)
 #   desktop-layout.png   both screens with workspace 1's windows in their slots
 #
 # README_SHOTS_LIGHT=<an Omarchy theme dir> also takes layout-tab-light.png
@@ -90,8 +91,8 @@ return {
 LUA
   cat >"$E2E_CONFIG_HOME/hyprslots/slots.lua" <<'LUA'
 return {
-  desks = { home = { monitors = { "DP-1" }, layout = "home" } },
-  layouts = { home = { screens = 1 } },
+  desks = { home = { monitors = { "DP-1" }, layout = "single" } },
+  layouts = { single = { screens = 1 } },
   monitor_names = { ["DP-1"] = "27-inch", ["HDMI-A-1"] = "24-inch", ["eDP-1"] = "Laptop" },
 }
 LUA
@@ -317,7 +318,9 @@ card_shot() {
 }
 
 # Both screens side by side, bottoms aligned as they stand, at half size,
-# in 256 colours (a third of the size; the eye sees no difference).
+# in 256 colours (a third of the size; the eye sees no difference). What
+# is outside the screens (above the shorter one, the strip between them) is
+# transparent, so the page shows through in a light theme or a dark one.
 desktop_shot() {
   local a=$E2E_DIR/screen1.png b=$E2E_DIR/screen2.png out=$README_SHOTS/$1.png
   mkdir -p "$README_SHOTS"
@@ -403,15 +406,15 @@ return {
     [1] = { left = "terminal", right = "browser", chat = "chat", notes = "notes" },
   },
   desks = {
-    home = { monitors = { "DP-1", "HDMI-A-1" }, layout = "home" },
+    home = { monitors = { "DP-1", "HDMI-A-1" }, layout = "two-screen" },
     laptop = {
-      monitors = { "eDP-1" }, layout = "laptop",
+      monitors = { "eDP-1" }, layout = "scrolling",
       geometry = { ["eDP-1"] = { x = 0, y = 0, w = 1920, h = 1200 } },
     },
   },
   layouts = {
-    home = { screens = 2, default = { [1] = "h[left, main:2, right]", [2] = "v[chat:3, notes:2]" } },
-    laptop = { screens = 1, default = { [1] = "scroll:0.5[main, left, right, chat, notes]" } },
+    ["two-screen"] = { screens = 2, default = { [1] = "h[left, main:2, right]", [2] = "v[chat:3, notes:2]" } },
+    scrolling = { screens = 1, default = { [1] = "scroll:0.5[main, left, right, chat, notes]" } },
   },
   monitor_names = { ["DP-1"] = "27-inch", ["HDMI-A-1"] = "24-inch", ["eDP-1"] = "Laptop" },
 }
